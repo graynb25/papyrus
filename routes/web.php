@@ -1,11 +1,156 @@
 <?php
 
+use App\Http\Controllers\CoverController;
+use App\Http\Controllers\ReaderController;
+use App\Http\Controllers\ReaderProgressController;
+use App\Http\Controllers\SuwayomiProxyController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
 
+/*
+ * Chapter page images, same origin as the app so the browser never holds a
+ * Suwayomi token. The path allowlist lives in the controller - this is not a
+ * general-purpose proxy to Suwayomi.
+ */
+Route::middleware(['auth'])->get('suwayomi/api/v1/{path}', SuwayomiProxyController::class)
+    ->where('path', '.*')
+    ->name('suwayomi.proxy');
+
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::view('dashboard', 'dashboard')->name('dashboard');
+    /*
+     * The library is what the app is for, so it is where the dashboard goes.
+     * Redirect rather than delete: the route name is in the sidebar and in every
+     * saved link, and a 404 for a reader with the app open is worse than a
+     * redirect.
+     */
+    Route::redirect('dashboard', 'library')->name('dashboard');
+
+    Route::livewire('library', 'pages::library')->name('library');
+
+    /*
+     * The download centre.
+     *
+     * Reads this reader's ledger, which a background job keeps reconciled against
+     * Suwayomi's shared queue every ten seconds. The page itself does not poll the
+     * server for download state; it polls its own rows. See App\Downloads.
+     */
+    Route::livewire('downloads', 'pages::downloads')->name('downloads');
+
+    /*
+     * The migration wizard.
+     *
+     * Separate from the series page because it is a different job: the series page
+     * reads one series, and this one searches 82 of them. Measured 21.9 seconds, so
+     * the search is behind a job and this route is where a reader waits on a poll
+     * rather than on a request.
+     *
+     * Note what is absent. Suwayomi exposes no migration primitive, so there is no
+     * "apply" endpoint here that the server would honour; the wizard composes the
+     * move from a search, a chapter mapping and a state rewrite, and records what it
+     * did because nothing upstream does.
+     */
+    Route::livewire('migrate/{manga}', 'pages::migrate')->name('migrate');
+
+    /*
+ * Livewire mount() arguments come from the route parameter name, so the single-file
+ * component declares `mount($manga)` and reads the id itself. Without this the
+ * container tries to resolve an int with no default and the page 500s.
+ */
+    Route::livewire('search', 'pages::search')->name('search');
+    Route::livewire('sources', 'pages::sources')->name('sources');
+    Route::livewire('health', 'pages::health')->name('health');
+
+    /*
+     * One manga id, no source segment. Measured: manga ids are global, so
+     * `manga(id:)` resolves with no source named and 174 is One Piece on
+     * MangaDex while 76 is a Berserker title on Asura Scans.
+     */
+    Route::livewire('series/{manga}', 'pages::series')
+        ->whereNumber('manga')
+        ->name('series');
+
+    Route::get('read/{manga}/{chapter}', ReaderController::class)
+        ->whereNumber(['manga', 'chapter'])
+        ->name('reader.show');
+
+    /*
+     * Progress ping from the reader. Debounced in the browser, and sendBeacon on
+     * page close, so this accepts a form post as well as JSON.
+     */
+    Route::post('read/{manga}/{chapter}/progress', ReaderProgressController::class)
+        ->whereNumber(['manga', 'chapter'])
+        ->name('reader.progress');
+
+    /*
+     * Reader settings for one series. A separate endpoint rather than a query
+     * parameter on the reader, because these are durable overrides that the
+     * series page also reads and writes, not per-page view state.
+     */
+    Route::put('read/{manga}/settings', [ReaderController::class, 'updateSettings'])
+        ->whereNumber('manga')
+        ->name('reader.settings');
+
+    /*
+     * Colour filters, session-scoped by default.
+     *
+     * A separate route from the settings above, because the default is the opposite: a
+     * reader dragging a brightness slider is adjusting for the light they are in right
+     * now, and writing it to the series would follow them to a desk they are not
+     * sitting at. "Remember" is a flag on the request rather than a third route, so
+     * the client does not have to know which of two URLs means "keep this".
+     *
+     * The reader's own session, not a per-reader row: a temporary filter is not user
+     * state, so it does not belong in a table a migration or an export would sweep.
+     */
+    Route::put('read/{manga}/filters', [ReaderController::class, 'updateFilters'])
+        ->whereNumber('manga')
+        ->name('reader.filters');
+
+    /*
+     * Drop every session filter, back to the durable settings.
+     *
+     * Separate from the update route rather than an empty body, because "set everything
+     * to nothing" and "forget what I was overriding" are the same request from the
+     * panel's point of view, and the first should not have to enumerate every key to
+     * say so.
+     */
+    Route::delete('read/{manga}/filters', [ReaderController::class, 'clearFilters'])
+        ->whereNumber('manga')
+        ->name('reader.filters.clear');
+
+    /*
+     * The reader's note on the chapter it is showing.
+     *
+     * One PUT, and no DELETE. A note is a memo with one value, so clearing the box and
+     * typing a new note are the same gesture from the reader's side of it, and an empty
+     * body is the request that says "forget this". Two routes would make the client
+     * decide which one the reader meant, and the reader is not the one making that
+     * decision on purpose.
+     *
+     * Scoped to the chapter as well as the series, unlike settings and filters, which
+     * are per series. A note is about one chapter, and the series page writes the same
+     * row, so the two cannot disagree about what is on it.
+     */
+    Route::put('read/{manga}/{chapter}/note', [ReaderController::class, 'updateNote'])
+        ->whereNumber(['manga', 'chapter'])
+        ->name('reader.note');
+
+    /*
+     * A reader's own cover for a series.
+     *
+     * A GET that serves the bytes, behind the same auth as everything else. It is a route
+     * rather than a file under `public/` because covers are per reader: the table is
+     * unique on `(user_id, suwayomi_manga_id)`, and this project is multi-tenant from
+     * migration 1, so a guessable public path would hand one reader's art to another.
+     *
+     * The upload itself is not here. It goes through the series page, which is Livewire,
+     * so the browser gets upload progress for free and the same form posts to the same
+     * place as the rest of that page's controls.
+     */
+    Route::get('covers/{manga}', [CoverController::class, 'show'])
+        ->whereNumber('manga')
+        ->name('covers.show');
 });
 
 require __DIR__.'/settings.php';

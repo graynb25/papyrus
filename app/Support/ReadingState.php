@@ -1,0 +1,552 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\CategorySeries;
+use App\Models\ChapterState;
+use App\Models\SeriesState;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * The per-user reading state that Suwayomi cannot hold.
+ *
+ * ## Why none of this is in Suwayomi
+ *
+ * `updateMangaPatchInput` exposes only `inLibrary`, and even that is useless to
+ * us: the server is single-tenant, so every authenticated request resolves to
+ * `Admin(1)` and its "library" belongs to whoever logged in last. Measured in
+ * `AuthMode.kt`, which carries a `// TODO: ACCOUNT` above the check.
+ *
+ * So library membership, read state and progress are ours. The ids we key on are
+ * Suwayomi's, which keeps the server as the source of truth for what a series
+ * *is* while we own everything about a person's relationship with it.
+ *
+ * ## Why manga ids need no source segment
+ *
+ * Measured against v2.3.2243: `manga(id:)` resolves with no source named, and
+ * manga 174 is One Piece on MangaDex while manga 76 is a Berserker title on
+ * Asura Scans. The ids are global, so `(user, manga_id)` identifies a series
+ * within a user. An earlier research note claimed ids were per-source; that was
+ * wrong and would have made every state lookup ambiguous.
+ *
+ * ## pageCount is not trustworthy before a read
+ *
+ * Suwayomi reports `pageCount: -1` for every chapter whose pages have not been
+ * fetched, which is all of them until the reader opens one. So progress here is
+ * recorded as *pages read*, never as a fraction of a count we do not have. A
+ * percentage computed from -1 is either 0% or a division by zero, and both lie.
+ */
+class ReadingState
+{
+    /**
+     * The user's row for a series, unsaved, ready for the caller to fill in.
+     *
+     * Not firstOrNew with a where on user_id, because user_id is deliberately not
+     * mass-assignable and OwnedModel's creating hook only fills it from the
+     * current auth context. Set explicitly instead, which is what makes this work
+     * from a queue job or a command with nobody logged in.
+     */
+    public function series(User|int $user, int $mangaId): SeriesState
+    {
+        $state = new SeriesState;
+        $state->setAttribute('user_id', $user instanceof User ? $user->getKey() : $user);
+        $state->suwayomi_manga_id = $mangaId;
+
+        return $state;
+    }
+
+    /**
+     * Read-only, so a render never creates rows as a side effect.
+     */
+    public function findSeries(User|int $user, int $mangaId): ?SeriesState
+    {
+        return SeriesState::forUser($user instanceof User ? $user->getKey() : $user)
+            ->where('suwayomi_manga_id', $mangaId)
+            ->first();
+    }
+
+    /**
+     * The user's row for a chapter, unsaved, ready to fill in.
+     *
+     * Loads an existing row first so a caller can mutate and save without knowing
+     * whether this is the first write. Setting user_id explicitly is what lets
+     * this work with no authenticated user; see {@see self::series()}.
+     */
+    public function chapter(User|int $user, int $mangaId, int $chapterId): ChapterState
+    {
+        $userId = $user instanceof User ? $user->getKey() : $user;
+
+        $existing = ChapterState::forUser($userId)
+            ->where('suwayomi_chapter_id', $chapterId)
+            ->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $chapter = new ChapterState;
+        $chapter->setAttribute('user_id', $userId);
+        $chapter->suwayomi_chapter_id = $chapterId;
+        $chapter->suwayomi_manga_id = $mangaId;
+
+        return $chapter;
+    }
+
+    public function findChapter(User|int $user, int $chapterId): ?ChapterState
+    {
+        return ChapterState::forUser($user instanceof User ? $user->getKey() : $user)
+            ->where('suwayomi_chapter_id', $chapterId)
+            ->first();
+    }
+
+    /**
+     * Add or remove a series from this user's library.
+     */
+    /**
+     * Load or create, in one call.
+     *
+     * Every mutator needs this, and forgetting it means a second save() creating
+     * a duplicate row rather than updating, which the unique index on
+     * (user_id, suwayomi_manga_id) would turn into a query exception.
+     *
+     * Public because something outside this class is a mutator too: filing a
+     * series into a shelf writes a membership keyed on this row, and
+     * {@see Library} is not a mutator on the series itself.
+     */
+    public function loadOrCreate(User|int $user, int $mangaId): SeriesState
+    {
+        return $this->findSeries($user, $mangaId) ?? $this->series($user, $mangaId);
+    }
+
+    public function setInLibrary(User|int $user, int $mangaId, bool $inLibrary): SeriesState
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+        $state->in_library = $inLibrary;
+
+        // The date is what makes "added on" answerable, and clearing it on removal
+        // means re-adding records when the reader actually re-added it.
+        $state->added_at = $inLibrary ? now() : null;
+        $state->save();
+
+        return $state;
+    }
+
+    public function setFavourited(User|int $user, int $mangaId, bool $favourited): SeriesState
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+        $state->favourited_at = $favourited ? now() : null;
+        $state->save();
+
+        return $state;
+    }
+
+    public function setReadLater(User|int $user, int $mangaId, bool $readLater): SeriesState
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+        $state->read_later_at = $readLater ? now() : null;
+        $state->save();
+
+        return $state;
+    }
+
+    /**
+     * Record that a chapter was opened, and move the series pointer with it.
+     *
+     * Both writes go in one transaction because a chapter marked read with no
+     * series pointer leaves "continue reading" pointing at the wrong chapter,
+     * which is the single most annoying state for a reader to be in.
+     */
+    public function openChapter(User|int $user, int $mangaId, int $chapterId): ChapterState
+    {
+        $userId = $user instanceof User ? $user->getKey() : $user;
+
+        return ChapterState::query()->getConnection()->transaction(function () use ($userId, $mangaId, $chapterId): ChapterState {
+            $chapter = $this->chapter($userId, $mangaId, $chapterId);
+            $chapter->last_read_at = now();
+            $chapter->save();
+
+            $series = $this->loadOrCreate($userId, $mangaId);
+            $series->last_read_chapter_id = $chapterId;
+            $series->last_read_at = now();
+            $series->save();
+
+            return $chapter;
+        });
+    }
+
+    /**
+     * Record the furthest page read.
+     *
+     * Never moves backwards. A reader scrolling back to re-read a page should not
+     * lose their place, and "resume" means forward, not where they happen to be.
+     */
+    public function recordProgress(User|int $user, int $mangaId, int $chapterId, int $page, ?int $totalPages = null): ChapterState
+    {
+        $chapter = $this->chapter($user, $mangaId, $chapterId);
+
+        $chapter->last_page_read = max((int) $chapter->last_page_read, $page);
+        $chapter->last_read_at = now();
+
+        /*
+         * Read is inferred once we know the count. Suwayomi's own pageCount is -1
+         * until the pages are fetched, so a page number alone cannot decide this
+         * and the reader page has to pass the count it just learned.
+         */
+        if ($totalPages !== null && $totalPages > 0) {
+            $chapter->is_read = $chapter->last_page_read >= $totalPages - 1;
+        }
+
+        $chapter->save();
+
+        return $chapter;
+    }
+
+    public function addReadSeconds(User|int $user, int $chapterId, int $seconds): void
+    {
+        if ($seconds <= 0) {
+            return;
+        }
+
+        $chapter = $this->chapter($user, 0, $chapterId);
+
+        if ($chapter->exists) {
+            $chapter->read_seconds = (int) $chapter->read_seconds + $seconds;
+            $chapter->save();
+        }
+    }
+
+    public function setBookmark(User|int $user, int $mangaId, int $chapterId, bool $bookmarked): ChapterState
+    {
+        $chapter = $this->chapter($user, $mangaId, $chapterId);
+        $chapter->is_bookmarked = $bookmarked;
+        $chapter->save();
+
+        return $chapter;
+    }
+
+    public function markRead(User|int $user, int $mangaId, int $chapterId, bool $read = true): ChapterState
+    {
+        $chapter = $this->chapter($user, $mangaId, $chapterId);
+        $chapter->is_read = $read;
+
+        if ($read) {
+            $chapter->last_read_at = now();
+        }
+
+        $chapter->save();
+
+        return $chapter;
+    }
+
+    /**
+     * Read state for a whole chapter list, keyed by chapter id.
+     *
+     * One query for the list rather than one per chapter: a 1000 chapter series
+     * would otherwise issue 1000 queries to render a page of 50.
+     *
+     * @param  array<int, int>  $chapterIds
+     * @return array<int, ChapterState>
+     */
+    public function chapterStates(User|int $user, array $chapterIds): array
+    {
+        if ($chapterIds === []) {
+            return [];
+        }
+
+        return ChapterState::forUser($user instanceof User ? $user->getKey() : $user)
+            ->whereIn('suwayomi_chapter_id', $chapterIds)
+            ->get()
+            ->keyBy('suwayomi_chapter_id')
+            ->all();
+    }
+
+    /**
+     * How many chapters in this list the reader has finished.
+     *
+     * @param  array<int, array<string, mixed>>  $chapters
+     * @param  array<int, ChapterState>  $states
+     */
+    public function readCount(array $chapters, array $states): int
+    {
+        $read = 0;
+
+        foreach ($chapters as $chapter) {
+            $state = $states[(int) ($chapter['id'] ?? 0)] ?? null;
+
+            if ($state !== null && $state->is_read) {
+                $read++;
+            }
+        }
+
+        return $read;
+    }
+
+    // Migration ------------------------------------------------------------
+
+    /**
+     * Moves a reader's whole state for one series onto another series.
+     *
+     * The only reason this lives here and not in the migrator: this class is the
+     * only sanctioned path to series and chapter state rows, and a migration writes
+     * both of them in bulk. Reaching for the models directly from a caller would be
+     * the first place in the app that does.
+     *
+     * ## Why this is not a pair of updates
+     *
+     * Two unique indexes make a naive remap fail rather than merely lose data:
+     * `chapter_states` is unique on `(user_id, suwayomi_chapter_id)` and
+     * `series_states` is unique on `(user_id, suwayomi_manga_id)`. So if the reader
+     * has any state on the destination series already, updating a row onto a chapter
+     * id that exists raises a constraint violation halfway through, and a migration
+     * is exactly the operation that must not half-apply.
+     *
+     * The two cases are therefore separate:
+     *
+     *   - the destination already has a row: merge into it, then drop ours
+     *   - it does not: move ours
+     *
+     * and the destination series state is handled the same way. All of it runs in one
+     * transaction, so a failure anywhere leaves the reader where they were.
+     *
+     * ## What is merged rather than overwritten
+     *
+     * Read flags are OR-ed, page positions take the larger, read seconds add up and
+     * the later timestamp wins. A reader who read chapter 3 on the old source and
+     * chapter 5 on the new one has read two chapters, not one, and the seconds are
+     * time genuinely spent.
+     *
+     * The chapter list fingerprint is cleared rather than copied. It is a hash over
+     * the chapter ids in order, and every one of them is about to change, so keeping
+     * it would tell the library the list is unchanged when it has entirely turned
+     * over. That is the exact failure it exists to catch.
+     *
+     * @param  array<int, int>  $chapterMap  old chapter id to new chapter id
+     * @return array{chapter_rows_moved: int, chapter_rows_merged: int, series_merged: bool}
+     */
+    public function moveSeries(User|int $user, int $fromMangaId, int $toMangaId, array $chapterMap): array
+    {
+        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+
+        return DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $chapterMap): array {
+            $moved = 0;
+            $merged = 0;
+
+            /*
+             * Chapter rows first, because the series row's last_read_chapter_id is
+             * remapped using the same table and should see the final ids.
+             */
+            $rows = ChapterState::forUser($userId)
+                ->where('suwayomi_manga_id', $fromMangaId)
+                ->get();
+
+            foreach ($rows as $row) {
+                $oldId = (int) $row->suwayomi_chapter_id;
+                $newId = $chapterMap[$oldId] ?? null;
+
+                if ($newId === null || $newId === $oldId) {
+                    // Unplaceable, or already pointing at itself. Left in place and
+                    // inert: nothing joins on it any more, and deleting a reader's
+                    // history because a new source lacked a counterpart is worse than
+                    // keeping an unreachable row.
+                    continue;
+                }
+
+                $existing = ChapterState::forUser($userId)
+                    ->where('suwayomi_chapter_id', $newId)
+                    ->first();
+
+                if ($existing === null) {
+                    $row->suwayomi_chapter_id = $newId;
+                    $row->suwayomi_manga_id = $toMangaId;
+                    $row->save();
+
+                    $moved++;
+
+                    continue;
+                }
+
+                $existing->is_read = $existing->is_read || $row->is_read;
+                $existing->is_bookmarked = $existing->is_bookmarked || $row->is_bookmarked;
+                $existing->last_page_read = max((int) $existing->last_page_read, (int) $row->last_page_read);
+                $existing->read_seconds = (int) $existing->read_seconds + (int) $row->read_seconds;
+                $existing->last_read_at = $this->latest($existing->last_read_at, $row->last_read_at);
+                $existing->save();
+
+                $row->delete();
+
+                $merged++;
+            }
+
+            $seriesMerged = $this->moveSeriesState($userId, $fromMangaId, $toMangaId, $chapterMap);
+
+            return [
+                'chapter_rows_moved' => $moved,
+                'chapter_rows_merged' => $merged,
+                'series_merged' => $seriesMerged,
+            ];
+        });
+    }
+
+    /**
+     * The series row itself, with the same collision handling as its chapters.
+     *
+     * @param  array<int, int>  $chapterMap
+     */
+    private function moveSeriesState(int $userId, int $fromMangaId, int $toMangaId, array $chapterMap): bool
+    {
+        $source = SeriesState::forUser($userId)->where('suwayomi_manga_id', $fromMangaId)->first();
+
+        if ($source === null) {
+            return false;
+        }
+
+        $target = SeriesState::forUser($userId)->where('suwayomi_manga_id', $toMangaId)->first();
+
+        if ($target === null) {
+            $source->suwayomi_manga_id = $toMangaId;
+            $this->remapChapterPointer($source, $chapterMap);
+
+            // Cleared on this path too, not only when two rows merge. The fingerprint
+            // is a hash over chapter ids in order and every one of them is about to
+            // change, so keeping it tells the library the list is unchanged when it
+            // has turned over entirely. Caught by a test, because the merge path had
+            // it and this one did not.
+            $source->chapter_list_fingerprint = null;
+            $source->chapter_list_checked_at = null;
+
+            $source->save();
+
+            return false;
+        }
+
+        // The reader already had the destination filed, so the two rows are one now.
+        $target->in_library = $target->in_library || $source->in_library;
+        $target->favourited_at = $this->earliest($target->favourited_at, $source->favourited_at);
+        $target->read_later_at = $this->earliest($target->read_later_at, $source->read_later_at);
+        $target->last_read_at = $this->latest($target->last_read_at, $source->last_read_at);
+        $target->added_at = $this->earliest($target->added_at, $source->added_at);
+        $target->rating ??= $source->rating;
+        $target->tags ??= $source->tags;
+        $target->reader_settings ??= $source->reader_settings;
+        $target->reading_mode ??= $source->reading_mode;
+        $target->chapter_list_settings ??= $source->chapter_list_settings;
+        $target->excluded_scanlators ??= $source->excluded_scanlators;
+        $target->fetch_interval_days ??= $source->fetch_interval_days;
+        $target->update_strategy ??= $source->update_strategy;
+        $target->default_category_id ??= $source->default_category_id;
+
+        /*
+         * The last chapter read is a chapter id, so it moves with the chapters. If
+         * that chapter found no counterpart the pointer is dropped rather than left
+         * addressing a chapter id this reader no longer has any state for.
+         */
+        $lastRead = (int) ($source->last_read_chapter_id ?? 0);
+        $target->last_read_chapter_id = $lastRead === 0
+            ? $target->last_read_chapter_id
+            : ($chapterMap[$lastRead] ?? $target->last_read_chapter_id);
+
+        // Every chapter id changed, so the fingerprint describing them is void.
+        $target->chapter_list_fingerprint = null;
+        $target->chapter_list_checked_at = null;
+
+        $target->save();
+
+        $this->mergeShelves($source, $target, $userId);
+        $source->delete();
+
+        return true;
+    }
+
+    /**
+     * Carry the source series' shelf memberships onto the destination.
+     *
+     * Many-to-many, so this is a union rather than a copy. A reader who filed the
+     * old series on two shelves and the new one on a third should end up on all
+     * three, and a shelf they were on must not be quietly forgotten because the
+     * destination already had a row.
+     *
+     * Written through the query builder rather than the pivot model, because
+     * `category_series` carries a `user_id` that the pivot's own definition does not
+     * declare, and letting the model insert produced a NOT NULL violation halfway
+     * through a migration. {@see Library::attach()} sets the same four columns and
+     * this deliberately matches it.
+     */
+    private function mergeShelves(SeriesState $source, SeriesState $target, int $userId): void
+    {
+        $sourceId = (int) $source->getKey();
+        $targetId = (int) $target->getKey();
+
+        $categories = CategorySeries::query()
+            ->where('series_state_id', $sourceId)
+            ->pluck('category_id')
+            ->all();
+
+        $existing = CategorySeries::query()
+            ->where('series_state_id', $targetId)
+            ->pluck('category_id')
+            ->all();
+
+        $now = now();
+        $rows = [];
+
+        foreach (array_diff($categories, $existing) as $categoryId) {
+            $rows[] = [
+                'user_id' => $userId,
+                'category_id' => (int) $categoryId,
+                'series_state_id' => $targetId,
+                'added_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if ($rows !== []) {
+            DB::connection()->table('category_series')->insert($rows);
+        }
+
+        CategorySeries::query()->where('series_state_id', $sourceId)->delete();
+    }
+
+    /**
+     * Point a series row at the counterpart of the chapter it last read.
+     *
+     * @param  array<int, int>  $chapterMap
+     */
+    private function remapChapterPointer(SeriesState $state, array $chapterMap): void
+    {
+        $lastRead = (int) ($state->last_read_chapter_id ?? 0);
+
+        if ($lastRead === 0) {
+            return;
+        }
+
+        $state->last_read_chapter_id = $chapterMap[$lastRead] ?? null;
+    }
+
+    private function latest(mixed $a, mixed $b): mixed
+    {
+        if ($a === null) {
+            return $b;
+        }
+
+        if ($b === null) {
+            return $a;
+        }
+
+        return $a->gt($b) ? $a : $b;
+    }
+
+    private function earliest(mixed $a, mixed $b): mixed
+    {
+        if ($a === null) {
+            return $b;
+        }
+
+        if ($b === null) {
+            return $a;
+        }
+
+        return $a->lt($b) ? $a : $b;
+    }
+}

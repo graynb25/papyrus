@@ -13,14 +13,23 @@
                 <flux:navbar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Dashboard') }}
                 </flux:navbar.item>
+
+                <flux:navbar.item icon="magnifying-glass" :href="route('search')" :current="request()->routeIs('search')" wire:navigate>
+                    {{ __('Search') }}
+                </flux:navbar.item>
+
+                <flux:navbar.item icon="folder-git-2" :href="route('sources')" :current="request()->routeIs('sources')" wire:navigate>
+                    {{ __('Sources') }}
+                </flux:navbar.item>
+
+                <flux:navbar.item icon="heart" :href="route('health')" :current="request()->routeIs('health')" wire:navigate>
+                    {{ __('Health') }}
+                </flux:navbar.item>
             </flux:navbar>
 
             <flux:spacer />
 
             <flux:navbar class="me-1.5 space-x-0.5 rtl:space-x-reverse py-0!">
-                <flux:tooltip :content="__('Search')" position="bottom">
-                    <flux:navbar.item class="!h-10 [&>div>svg]:size-5" icon="magnifying-glass" href="#" :label="__('Search')" />
-                </flux:tooltip>
                 <flux:tooltip :content="__('Repository')" position="bottom">
                     <flux:navbar.item
                         class="h-10 max-lg:hidden [&>div>svg]:size-5"
@@ -55,6 +64,18 @@
                 <flux:sidebar.group :heading="__('Platform')">
                     <flux:sidebar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard')  }}
+                    </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="magnifying-glass" :href="route('search')" :current="request()->routeIs('search')" wire:navigate>
+                        {{ __('Search') }}
+                    </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="folder-git-2" :href="route('sources')" :current="request()->routeIs('sources')" wire:navigate>
+                        {{ __('Sources') }}
+                    </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="heart" :href="route('health')" :current="request()->routeIs('health')" wire:navigate>
+                        {{ __('Health') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>

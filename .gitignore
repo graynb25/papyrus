@@ -37,3 +37,33 @@ yarn-error.log
 /boost.json
 /opencode.json
 /opencode.jsonc
+
+# --- Papyrus -------------------------------------------------------------
+# Runtime state. Laravel's own nested .gitignore files cover the contents, and
+# these repeat it at the top so a stray file is ignored even if one of those is
+# ever removed. 247 files live under storage/ on a working install and none of
+# them belong in version control.
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/app/private/*
+!/storage/app/private/.gitignore
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+
+# Local tooling output: browser-gate screenshots and scratch scripts. The probes
+# under .tools/suwayomi/ are kept outside this repository on purpose, because
+# several of them carry a local seed account's credentials.
+/.openchamber
+/.openchamber/
+
+# Local environment overrides and editor droppings that Laravel's defaults miss
+/.env.*
+!/.env.example
+/.phpunit.cache/
+/Thumbs.db

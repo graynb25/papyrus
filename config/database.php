@@ -38,8 +38,36 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
+
+            /*
+             * WAL, and this is a fix rather than a preference.
+             *
+             * Measured: a search run over 40 sources lost 31 of them to
+             * "SQLSTATE[HY000]: General error: 5 database is locked". The shape is one
+             * queue worker writing and the web process reading at the same time, which
+             * is exactly what this app does: a fan-out writes a row per source while the
+             * page polls every three seconds.
+             *
+             * In the default rollback journal a reader and a writer cannot overlap at
+             * all, so a poll that lands mid-transaction blocks the worker and a worker
+             * mid-transaction blocks the poll. `busy_timeout` was already 60 seconds and
+             * did not save it, because the conflict is a lock held across statements
+             * rather than a lock waited on for a moment.
+             *
+             * WAL lets readers and one writer proceed at once, which is the whole
+             * workload. The mode is persistent, stored in the database file itself, so
+             * this only has to be right once.
+             */
+            'journal_mode' => 'wal',
+
+            /*
+             * With WAL a wait is short and bounded, so a modest timeout is right. The
+             * default here was null, which Laravel turns into whatever PDO defaults to,
+             * and that turned out to be lower than the 60 seconds the pragma was
+             * actually reporting.
+             */
+            'busy_timeout' => 10000,
+
             'synchronous' => null,
             'transaction_mode' => 'DEFERRED',
         ],

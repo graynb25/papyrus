@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="PAPYRUS_DEPLOYMENT_MODE" value="single"/>
+        <env name="SUWAYOMI_URL" value="http://127.0.0.1:4567"/>
+        <env name="SUWAYOMI_USERNAME" value="testing"/>
+        <env name="SUWAYOMI_PASSWORD" value="testing"/>
     </php>
 </phpunit>
