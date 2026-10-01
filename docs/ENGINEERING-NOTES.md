@@ -43,8 +43,8 @@ targeted PHP parser for one site, as a last resort.
 | JRE | 26.0.2 Oracle JDK, which satisfies Suwayomi's JRE 21+ requirement |
 | Virtualization | **OFF.** No WSL2, no Hyper-V, no Docker. Suwayomi runs as a **JAR**. |
 | CPU | i7-12700K x64, so the ARM64 JCEF segfault does not apply |
-| Suwayomi | **v2.3.2243**, running, `AuthMode=UI_LOGIN`, `127.0.0.1:4567` |
-| JAR | `.tools\suwayomi\Suwayomi-Server-v2.3.2243.jar`, SHA256 verified |
+| Suwayomi | **v2.4.2366**, running, `AuthMode=UI_LOGIN`, `127.0.0.1:4567`. Upgraded from v2.3.2243; H2 schema migrated 59 to 65 with no errors and all 82 extensions intact. |
+| JAR | `.tools\suwayomi\Suwayomi-Server-v2.4.2366.jar`, SHA256 verified against the release's `Checksums.sha256`. The v2.3.2243 jar is kept beside it so a rollback is one move. |
 | CEF | Downloaded on first run (260 MB). JCEF works on native Windows. |
 | Herd site | `papyrus`, a symlink from `Herd's Sites directory` to `papyrus\` |
 | Data root | `the Suwayomi data root` |
@@ -618,6 +618,17 @@ Each of these cost real time. Do not repeat them.
 119. **`Request::data()` is not reliably an array across every request a fake saw**, so
     `Http::assertSent(fn ($r) => $r->data()['query'])` threw "Cannot use object of type
     stdClass as array" on some requests. Read `$request->body()` and match the string.
+120. **Suwayomi's login is `username`, not `email`, and it was asked about twice.**
+     Papyrus's own login is email only, which makes the Suwayomi one look like an
+     oversight by comparison. It is not. Measured on v2.3.2243 and again on v2.4.2366:
+     `LoginInput` has exactly `password` and `username`, both `NON_NULL`; the mutation
+     accepts `username` and refuses `email` with "a field name 'email' that is not
+     defined for input object type 'LoginInput'"; and all 614 files in the bundled web
+     UI say "Username", with no email-flavoured login string anywhere in them. Renaming
+     `SUWAYOMI_USERNAME` to `SUWAYOMI_EMAIL` would have broken authentication against the
+     version installed. This is item 5 again: measure the thing on the server you are
+     actually running, because a plausible-sounding rename is indistinguishable from a fix
+     until it is deployed.
 78. **`foreach ($map as $id)` on an id-keyed map gives `true`, not the id.** In a
     `Http::fake` that builds a batch response from `$libraryIds[$mangaId] = true`, the
     loop then emits a series numbered `1` for everything asked for, so every assertion

@@ -40,7 +40,7 @@ live in `docs/ENGINEERING-NOTES.md` section 3.
 | CPU | i7-12700K (x64) | ARM64 JCEF segfault (#2170) does not apply |
 | Herd nginx | `Herd's nginx config directory` | Site config generated at runtime from `herd.sqlite` |
 | Java on PATH | Yes, `JAVA_HOME` empty | |
-| **Suwayomi** | **v2.3.2243 running**, `AuthMode=UI_LOGIN`, bound to `127.0.0.1:4567` | JAR at `.tools\suwayomi\`, SHA256 verified against `Checksums.sha256` |
+| **Suwayomi** | **v2.4.2366 running** (was v2.3.2243 when this was written), `AuthMode=UI_LOGIN`, bound to `127.0.0.1:4567` | JAR at `.tools\suwayomi\`, SHA256 verified against `Checksums.sha256` |
 | **CEF** | Downloaded on first run (260 MB) | JCEF initialised fine on native Windows; Cloudflare solving is available |
 | Data root | `the Suwayomi data root` | Default Windows location |
 
@@ -279,7 +279,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
 - [x] 77 tests green, Pint clean, PHPStan level 7 clean
-- [x] **Install Suwayomi:** v2.3.2243 JAR, SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
+- [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,863 entries)
 - [x] **Keiyoushi store added via `index.pb`:** 1,379 extensions, 4 installed, live fetches returning real results

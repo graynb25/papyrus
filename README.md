@@ -129,13 +129,19 @@ Point `.env` at your server:
 
 ```dotenv
 SUWAYOMI_URL=http://127.0.0.1:4567
-SUWAYOMI_USERNAME=your-suwayomi-user
+SUWAYOMI_USERNAME=whatever-you-registered-with-suwayomi
 SUWAYOMI_PASSWORD=a-password-only-you-know
 ```
 
-Generate that password rather than reusing one. Suwayomi's REST endpoints answer `401`
-without a token, and it holds the credentials for every manga account you configure in
-it, so it is worth treating as a secret even on a loopback address. See
+`SUWAYOMI_USERNAME` is named for Suwayomi's API field, not for Papyrus's own login. Papyrus
+is email only: it has no username column and Fortify is set to `'username' => 'email'`.
+Suwayomi calls it a username in both its GraphQL schema and its web UI, and it is still
+`username` on v2.4.2366 as it was on v2.3.2243. If you registered Suwayomi with an email
+address, that address goes here.
+
+Generate the password rather than reusing one. Suwayomi's REST endpoints answer `401`
+without a token, and it holds the credentials for every manga account you configure in it,
+so it is worth treating as a secret even on a loopback address. See
 [`docs/SECURITY.md`](docs/SECURITY.md) for the deployment notes.
 
 Register a store and mirror the catalogue:

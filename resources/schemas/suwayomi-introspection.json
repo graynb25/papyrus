@@ -1,12 +1,13 @@
 {
-    "capturedAt": "2026-09-30T00:48:05+00:00",
-    "serverVersion": "v2.3.2243",
+    "capturedAt": "2026-10-01T21:49:38+00:00",
+    "serverVersion": "v2.4.2366",
     "fingerprint": [
         "AboutServerPayload.buildTime",
         "AboutServerPayload.buildType",
         "AboutServerPayload.discord",
         "AboutServerPayload.github",
         "AboutServerPayload.name",
+        "AboutServerPayload.platformInfo",
         "AboutServerPayload.revision",
         "AboutServerPayload.version",
         "AboutWebUI.channel",
@@ -92,6 +93,7 @@
         "CategoryType.id",
         "CategoryType.includeInDownload",
         "CategoryType.includeInUpdate",
+        "CategoryType.isDefaultCategory",
         "CategoryType.mangas",
         "CategoryType.meta",
         "CategoryType.name",
@@ -117,6 +119,8 @@
         "ChapterConditionInput$sourceOrder",
         "ChapterConditionInput$uploadDate",
         "ChapterConditionInput$url",
+        "ChapterDownloadReorderInput$chapterId",
+        "ChapterDownloadReorderInput$to",
         "ChapterEdge.cursor",
         "ChapterEdge.node",
         "ChapterFilterInput$and",
@@ -197,6 +201,8 @@
         "ClearCachedImagesPayload.cachedThumbnails",
         "ClearCachedImagesPayload.clientMutationId",
         "ClearCachedImagesPayload.downloadedThumbnails",
+        "ClearCookiesAndCacheInput$clientMutationId",
+        "ClearCookiesAndCachePayload.clientMutationId",
         "ClearDownloaderInput$clientMutationId",
         "ClearDownloaderPayload.clientMutationId",
         "ClearDownloaderPayload.downloadStatus",
@@ -566,6 +572,10 @@
         "IntFilterInput$notEqualToAll",
         "IntFilterInput$notEqualToAny",
         "IntFilterInput$notIn",
+        "JvmInfo.javaVersion",
+        "JvmInfo.vmName",
+        "JvmInfo.vmVendor",
+        "JvmInfo.vmVersion",
         "KoSyncConnectPayload.clientMutationId",
         "KoSyncConnectPayload.message",
         "KoSyncConnectPayload.status",
@@ -791,6 +801,7 @@
         "Mutation.bindTrack",
         "Mutation.bindTrackRecord",
         "Mutation.clearCachedImages",
+        "Mutation.clearCookiesAndCache",
         "Mutation.clearDownloader",
         "Mutation.connectKoSyncAccount",
         "Mutation.createBackup",
@@ -830,6 +841,7 @@
         "Mutation.refreshToken",
         "Mutation.removeExtensionStore",
         "Mutation.reorderChapterDownload",
+        "Mutation.reorderChapterDownloads",
         "Mutation.resetSettings",
         "Mutation.resetWebUIUpdateStatus",
         "Mutation.restoreBackup",
@@ -871,6 +883,9 @@
         "NodeList.nodes",
         "NodeList.pageInfo",
         "NodeList.totalCount",
+        "OSInfo.build",
+        "OSInfo.name",
+        "OSInfo.version",
         "PageInfo.endCursor",
         "PageInfo.hasNextPage",
         "PageInfo.hasPreviousPage",
@@ -1063,6 +1078,10 @@
         "PartialSettingsTypeInput$webUIFlavor",
         "PartialSettingsTypeInput$webUIInterface",
         "PartialSettingsTypeInput$webUIUpdateCheckInterval",
+        "PlatformInfo.arch",
+        "PlatformInfo.headless",
+        "PlatformInfo.jvm",
+        "PlatformInfo.os",
         "PullKoSyncProgressInput$chapterId",
         "PullKoSyncProgressInput$clientMutationId",
         "PullKoSyncProgressPayload.chapter",
@@ -1119,6 +1138,8 @@
         "ReorderChapterDownloadInput$to",
         "ReorderChapterDownloadPayload.clientMutationId",
         "ReorderChapterDownloadPayload.downloadStatus",
+        "ReorderChapterDownloadsInput$clientMutationId",
+        "ReorderChapterDownloadsInput$reorders",
         "ResetSettingsInput$clientMutationId",
         "ResetSettingsPayload.clientMutationId",
         "ResetSettingsPayload.settings",
@@ -1955,6 +1976,22 @@
                             "ofType": {
                                 "kind": "SCALAR",
                                 "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "platformInfo",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "OBJECT",
+                                "name": "PlatformInfo",
                                 "ofType": null
                             }
                         }
@@ -3141,6 +3178,22 @@
                         }
                     },
                     {
+                        "name": "isDefaultCategory",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "Boolean",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
                         "name": "name",
                         "description": null,
                         "isDeprecated": false,
@@ -3415,6 +3468,40 @@
                             "kind": "SCALAR",
                             "name": "String",
                             "ofType": null
+                        }
+                    }
+                ],
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "INPUT_OBJECT",
+                "name": "ChapterDownloadReorderInput",
+                "description": null,
+                "fields": null,
+                "inputFields": [
+                    {
+                        "name": "chapterId",
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "Int",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "Int",
+                                "ofType": null
+                            }
                         }
                     }
                 ],
@@ -4527,6 +4614,46 @@
                         "type": {
                             "kind": "SCALAR",
                             "name": "Boolean",
+                            "ofType": null
+                        }
+                    }
+                ],
+                "inputFields": null,
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "INPUT_OBJECT",
+                "name": "ClearCookiesAndCacheInput",
+                "description": null,
+                "fields": null,
+                "inputFields": [
+                    {
+                        "name": "clientMutationId",
+                        "type": {
+                            "kind": "SCALAR",
+                            "name": "String",
+                            "ofType": null
+                        }
+                    }
+                ],
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "OBJECT",
+                "name": "ClearCookiesAndCachePayload",
+                "description": null,
+                "fields": [
+                    {
+                        "name": "clientMutationId",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "SCALAR",
+                            "name": "String",
                             "ofType": null
                         }
                     }
@@ -10221,6 +10348,80 @@
             },
             {
                 "kind": "OBJECT",
+                "name": "JvmInfo",
+                "description": null,
+                "fields": [
+                    {
+                        "name": "javaVersion",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "vmName",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "vmVendor",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "vmVersion",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    }
+                ],
+                "inputFields": null,
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "OBJECT",
                 "name": "KoSyncConnectPayload",
                 "description": null,
                 "fields": [
@@ -13968,6 +14169,31 @@
                         }
                     },
                     {
+                        "name": "reorderChapterDownloads",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [
+                            {
+                                "name": "input",
+                                "type": {
+                                    "kind": "NON_NULL",
+                                    "name": null,
+                                    "ofType": {
+                                        "kind": "INPUT_OBJECT",
+                                        "name": "ReorderChapterDownloadsInput",
+                                        "ofType": null
+                                    }
+                                }
+                            }
+                        ],
+                        "type": {
+                            "kind": "OBJECT",
+                            "name": "ReorderChapterDownloadPayload",
+                            "ofType": null
+                        }
+                    },
+                    {
                         "name": "startDownloader",
                         "description": null,
                         "isDeprecated": false,
@@ -15292,6 +15518,31 @@
                                 "ofType": null
                             }
                         }
+                    },
+                    {
+                        "name": "clearCookiesAndCache",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [
+                            {
+                                "name": "input",
+                                "type": {
+                                    "kind": "INPUT_OBJECT",
+                                    "name": "ClearCookiesAndCacheInput",
+                                    "ofType": null
+                                }
+                            }
+                        ],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "OBJECT",
+                                "name": "ClearCookiesAndCachePayload",
+                                "ofType": null
+                            }
+                        }
                     }
                 ],
                 "inputFields": null,
@@ -15477,6 +15728,60 @@
                         "name": "TrackerNodeList"
                     }
                 ]
+            },
+            {
+                "kind": "OBJECT",
+                "name": "OSInfo",
+                "description": null,
+                "fields": [
+                    {
+                        "name": "build",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "SCALAR",
+                            "name": "String",
+                            "ofType": null
+                        }
+                    },
+                    {
+                        "name": "name",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "version",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    }
+                ],
+                "inputFields": null,
+                "enumValues": null,
+                "possibleTypes": null
             },
             {
                 "kind": "OBJECT",
@@ -16035,7 +16340,7 @@
                         "name": "extensionRepos",
                         "description": null,
                         "isDeprecated": true,
-                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations",
+                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations, replace with extensionStores",
                         "args": [],
                         "type": {
                             "kind": "LIST",
@@ -17499,6 +17804,80 @@
                         }
                     }
                 ],
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "OBJECT",
+                "name": "PlatformInfo",
+                "description": null,
+                "fields": [
+                    {
+                        "name": "arch",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "headless",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "SCALAR",
+                                "name": "Boolean",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "jvm",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "OBJECT",
+                                "name": "JvmInfo",
+                                "ofType": null
+                            }
+                        }
+                    },
+                    {
+                        "name": "os",
+                        "description": null,
+                        "isDeprecated": false,
+                        "deprecationReason": null,
+                        "args": [],
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "OBJECT",
+                                "name": "OSInfo",
+                                "ofType": null
+                            }
+                        }
+                    }
+                ],
+                "inputFields": null,
                 "enumValues": null,
                 "possibleTypes": null
             },
@@ -19234,6 +19613,43 @@
                     }
                 ],
                 "inputFields": null,
+                "enumValues": null,
+                "possibleTypes": null
+            },
+            {
+                "kind": "INPUT_OBJECT",
+                "name": "ReorderChapterDownloadsInput",
+                "description": null,
+                "fields": null,
+                "inputFields": [
+                    {
+                        "name": "clientMutationId",
+                        "type": {
+                            "kind": "SCALAR",
+                            "name": "String",
+                            "ofType": null
+                        }
+                    },
+                    {
+                        "name": "reorders",
+                        "type": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                                "kind": "LIST",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "NON_NULL",
+                                    "name": null,
+                                    "ofType": {
+                                        "kind": "INPUT_OBJECT",
+                                        "name": "ChapterDownloadReorderInput"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ],
                 "enumValues": null,
                 "possibleTypes": null
             },
@@ -21066,7 +21482,7 @@
                         "name": "extensionRepos",
                         "description": null,
                         "isDeprecated": true,
-                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations",
+                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations, replace with extensionStores",
                         "args": [],
                         "type": {
                             "kind": "LIST",
@@ -22790,7 +23206,7 @@
                         "name": "extensionRepos",
                         "description": null,
                         "isDeprecated": true,
-                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations",
+                        "deprecationReason": "Replaced with addExtensionStore and removeExtensionStore mutations, replace with extensionStores",
                         "args": [],
                         "type": {
                             "kind": "NON_NULL",

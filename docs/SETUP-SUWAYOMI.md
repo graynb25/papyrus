@@ -33,6 +33,35 @@ families are already visible upstream (`versionCode` Int→Long, boolean `isNsfw
 `php artisan suwayomi:check` captures the version, and `suwayomi:schema:dump` commits a schema
 snapshot so an upgrade that breaks us shows up as a readable diff.
 
+### Upgrading
+
+This box runs **v2.4.2366**, upgraded from v2.3.2243. The sequence that worked, and the order
+matters:
+
+1. **Stop the server and back up the data root.** The H2 database, `extensions/`, `settings/`
+   and `server.conf` are the irreplaceable parts. Everything else in the root (`bin`, `cache`,
+   `webUI`, `logs`) is regenerable and can be large.
+2. **Verify the download** against the release's own `Checksums.sha256`. The format is
+   `<hash>  <filename>`, so parse it with a regex rather than splitting on whitespace, or a
+   release path containing a space will hand you the wrong token.
+3. **Keep the old jar next to the new one**, so a rollback is one file move.
+4. **Start it and read the migration log.** This upgrade ran H2 schema migrations 59 to 65 and
+   logged nothing but success. A migration that half-applies is the failure mode worth watching
+   for, not a GraphQL error.
+5. **`suwayomi:check`, then `suwayomi:schema:dump`.** The diff is the actual signal. This
+   upgrade was 421 insertions and 5 deletions, where every deletion was a timestamp, the version
+   string, or a `deprecationReason` that had moved. Nothing Papyrus depends on was removed.
+6. **Run the browser gates**, not just the unit tests. A server upgrade can change behaviour
+   that no fake would notice.
+
+Worth knowing: v2.4.2366 fixed `fetchSourceManga` with filters containing nested group changes,
+which was the exact error MangaDex was returning as `Expected group change at position 4`. A
+`status:completed` run had 31 sources failing before the upgrade and none after. Upgrading was
+the fix; working around it in the client would have been the wrong one.
+
+Do not run `suwayomi:schema:dump` while a search fan-out is in flight. Both write, and a
+contended SQLite write shows up as a job failure rather than as anything recognisably related.
+
 ## 3. Bind to loopback only
 
 **Do this before anything else.** Suwayomi's CORS reflects any origin with credentials, and
