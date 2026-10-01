@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Support\Deployment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
@@ -15,6 +16,19 @@ class RegistrationTest extends TestCase
         parent::setUp();
 
         $this->skipUnlessFortifyHas(Features::registration());
+
+        /*
+         * Fortify's feature flag says registration is compiled in. Whether it is reachable
+         * is a separate question, and the answer is the deployment mode: `single` closes
+         * it, which is the default the test environment runs in.
+         *
+         * This test used to pass without saying so, because nothing enforced the mode. It
+         * was asserting that Fortify works while the app it runs in has registration
+         * switched off, and only the gate's absence made that consistent.
+         *
+         * `RegistrationGateTest` covers the mode rule itself.
+         */
+        config(['papyrus.deployment_mode' => Deployment::SHARED]);
     }
 
     public function test_registration_screen_can_be_rendered(): void

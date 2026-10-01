@@ -162,6 +162,39 @@ php artisan queue:work     # otherwise a search never finishes
 Then open the site. `composer dev` starts all three at once if you would rather not keep
 separate terminals.
 
+### There are two logins, and they are unrelated
+
+This trips people up, so it is worth being blunt about it.
+
+| | What it is | Where it lives |
+|---|---|---|
+| **Suwayomi** | Credentials for the *server* that fetches manga. The app uses them; you never type them. | `SUWAYOMI_USERNAME` / `SUWAYOMI_PASSWORD` in `.env` |
+| **Papyrus** | Credentials for *your* account here. An email address and a password. | A row in the `users` table |
+
+They share no storage and neither one will work on the other. Typing your Suwayomi
+username into the Papyrus login gets `Please include an '@' in the email address`, which
+is the correct answer to a question you were not asking.
+
+### Making your first account
+
+`single` mode is the default and it **disables registration**, which is the point: it is a
+one-reader install, and an open sign-up form is a hole in one. So there is no "Sign up"
+link and `/register` answers 404. That leaves a command:
+
+```bash
+php artisan users:create --email=you@example.com --name="Your Name"
+```
+
+It generates a password, prints it **once**, and marks the address verified. Add `--admin`
+for an administrator, and `--no-email` on a box with no mail transport. Use
+`--password=` only for an unattended install, and note that it lands in your shell history;
+the command says so when you do.
+
+The password is not recoverable from the app. If you lose it, make another account and
+delete the old row.
+
+If you want open registration, set `PAPYRUS_DEPLOYMENT_MODE=shared` instead.
+
 ## How the code is laid out
 
 ```
@@ -240,12 +273,17 @@ simply the case where there is one user, so nothing has to reconcile.
 
 | Mode | Registration | Quotas | Abuse controls |
 |---|---|---|---|
-| `single` | disabled | none | none |
+| `single` | 404 on `/register` | none | none |
 | `shared` | enabled | per-user | none |
 | `public` | enabled | per-user | moderation surfaces |
 
 Set `PAPYRUS_DEPLOYMENT_MODE` in `.env`. It is read through `App\Support\Deployment`, so
 branch on `isSingle()` and friends rather than reading the env var.
+
+The registration rule is enforced by `RegistrationMustBeAllowed`, which answers 404 rather
+than 403 so a closed mode does not advertise the endpoint. It took a while to notice this
+was missing: `allowsRegistration()` existed and was unit tested, and nothing called it, so
+`single` behaved exactly like `shared` while the table above claimed otherwise.
 
 ## Commands
 
@@ -253,6 +291,7 @@ branch on `isSingle()` and friends rather than reading the env var.
 php artisan suwayomi:check        # connectivity, auth mode, version, drift against the snapshot
 php artisan suwayomi:schema:dump  # re-introspect and commit, with a field diff
 php artisan sources:sync          # mirror stores and the source catalogue
+php artisan users:create --email=you@example.com
 php artisan search:fanout "berserk" --lang=en --limit=6
 ```
 

@@ -51,9 +51,19 @@
             </div>
         </form>
 
-        <div class="space-x-1 text-sm text-center rtl:space-x-reverse text-zinc-600 dark:text-zinc-400">
-            <span>{{ __('Don\'t have an account?') }}</span>
-            <flux:link :href="route('register')" wire:navigate>{{ __('Sign up') }}</flux:link>
-        </div>
+        {{--
+            The sign-up link only when the deployment mode actually has registration.
+
+            It was unconditional, so a single-user install pointed at an endpoint that
+            `RegistrationMustBeAllowed` answers with a 404. Which of the two was wrong is
+            worth stating: the mode was the documented behaviour and the link was the bug,
+            so the link goes rather than the rule.
+        --}}
+        @if (app(App\Support\Deployment::class)->allowsRegistration())
+            <div class="space-x-1 text-sm text-center rtl:space-x-reverse text-zinc-600 dark:text-zinc-400">
+                <span>{{ __('Don\'t have an account?') }}</span>
+                <flux:link :href="route('register')" wire:navigate>{{ __('Sign up') }}</flux:link>
+            </div>
+        @endif
     </div>
 </x-layouts::auth>

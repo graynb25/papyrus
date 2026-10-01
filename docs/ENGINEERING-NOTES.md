@@ -629,6 +629,26 @@ Each of these cost real time. Do not repeat them.
      version installed. This is item 5 again: measure the thing on the server you are
      actually running, because a plausible-sounding rename is indistinguishable from a fix
      until it is deployed.
+121. **A unit test on a predicate is not coverage of the behaviour.**
+     `Deployment::allowsRegistration()` was written with the deployment modes,
+     documented as the thing that closes `single`, and unit tested to return false in
+     `single`. The unit test passed the entire time and nothing ever called the method,
+     so `/register` answered 200 on a one-reader install and anyone who could reach the
+     site could create an account. The suite ran in `single` mode and RegistrationTest
+     passed too, because it asserted that Fortify works in an app where registration had
+     been switched off, and only the absence of the gate made that consistent. There is
+     now a RegistrationGateTest that makes requests, and the answer is a 404. The general
+     form: a test asserting that a function returns a value is evidence about the
+     function. Only a test that goes through the entry point is evidence about the app.
+122. **A command that mass-assigns a field the model has not marked fillable will not
+     tell you.** `role` is absent from `User` fillable on purpose, so `users:create
+     --admin` passed `role` to `create()`, Eloquent dropped it, the column default of
+     `user` applied, and the command printed `Role: user` without erroring. The fix was
+     to write the field after creation rather than widen fillable, which is the same
+     reasoning as `createFor()` over setting `user_id`: mass assignment is for web input,
+     and a console command that must set a privileged field should do so where it is
+     visible. Then read the column back and assert it, because the alternative is a flag
+     that does nothing.
 78. **`foreach ($map as $id)` on an id-keyed map gives `true`, not the id.** In a
     `Http::fake` that builds a batch response from `$libraryIds[$mangaId] = true`, the
     loop then emits a series numbered `1` for everything asked for, so every assertion
