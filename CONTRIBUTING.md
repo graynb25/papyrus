@@ -1,7 +1,9 @@
 # Working on Papyrus
 
-The house style, and the traps. `..\AGENT.md` has the full agreement and the 34 recorded
-traps; this is the short version you need before your first commit.
+The house style, and the traps. [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) has
+the full agreement and **122 recorded traps**; this is the short version you need before
+your first commit. Section 14 of the notes also lists what the code does not do, which is
+worth reading before you trust a claim in any of these documents.
 
 ## Before you write anything
 
@@ -12,8 +14,8 @@ research and the running server disagree, the server wins and the research gets 
 ```bash
 php artisan suwayomi:check                  # is it up, which auth mode, any drift
 php artisan suwayomi:schema:dump            # introspect and diff against the snapshot
-php .tools/suwayomi/schema-inspect.php Fetch
-php .tools/suwayomi/field-args.php Query extensions
+php ../.tools/suwayomi/schema-inspect.php Fetch
+php ../.tools/suwayomi/field-args.php Query extensions
 ```
 
 **Never re-implement a parser in PHP.** Keiyoushi extensions are Kotlin. That is the one
@@ -62,8 +64,8 @@ Say the thing, then stop.
 Check before you call it done:
 
 ```bash
-php .tools/suwayomi/scan-dashes.php              # docs and source, everything
-php .tools/suwayomi/list-dash-lines.php <file>   # one file, offending lines and numbers
+php ../.tools/suwayomi/scan-dashes.php              # docs and source, everything
+php ../.tools/suwayomi/list-dash-lines.php <file>   # one file, offending lines and numbers
 ```
 
 Both are byte scans. An earlier PowerShell version reported zero em dashes in a file
@@ -78,9 +80,12 @@ Name tests for the behaviour, not the method. `tests/Unit` for pure logic,
 `tests/Feature` for anything touching the database.
 
 A test that passes but never runs the browser cannot catch an Alpine error. Three bugs in
-this project passed 214 tests and were visible on the first click. So:
+this project passed 194 tests and were visible on the first click. So:
 
 **Open the page.** That is the fifth gate.
+
+The suite is currently **868 tests across 46 files**, and eleven browser gates live in
+`..\.tools\suwayomi\`. A sixth bug of the same kind is waiting for whoever reads this next.
 
 `Http::fake()` the GraphQL endpoint; tests must never reach the real server. Use
 `Tests\Support\MintsTokens` for tokens, since a fake returning `"token-1"` has no readable

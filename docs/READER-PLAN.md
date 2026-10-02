@@ -1,14 +1,22 @@
 # Web Manga Reader: Research & Implementation Plan
 
+**This document is historical.** It is the original design, kept because the reasoning in
+it is why the reader is shaped the way it is, and because "what changed from the original
+sketch" only means something while the original survives. It is not a description of the
+software.
+
 **Name:** Papyrus
 **Stack:** Laravel 13 · Livewire 4 · Flux 2 · Tailwind 4 · Alpine.js · PHP 8.4
 **Engine:** Suwayomi-Server (JVM), sources only
 **Written:** 2026-09-29
-**Status:** Phase 1 shipped. Phases 2 to 6 not started.
+**Status when written:** Phase 1 shipped, phases 2 to 6 not started. **All six have since
+shipped except H7, bulk actions.** For what exists, read
+[`ENGINEERING-NOTES.md`](ENGINEERING-NOTES.md) section 11, and section 14 for the list of
+things the code does not actually do.
 
-> This is the original plan and its backlog, kept for the reasoning and the severity
-> ordering. **For current state, read `docs/ENGINEERING-NOTES.md` section 11**, which is maintained.
-> Where the two disagree, the code and `docs/ENGINEERING-NOTES.md` are right.
+Where the two disagree, the code and the engineering notes are right. Two claims in here
+were caught being wrong during a documentation pass in October 2026 and are marked in place
+rather than deleted, since a plan that only records what it got right is not worth keeping.
 
 Several items below were answered by measurement after the plan was written, in ways
 that changed the design. Those are marked where they appear, and the live measurements
@@ -68,11 +76,11 @@ Everything here was measured, not assumed. Re-verification scripts live in `.too
 | `lang` values | `en` 398, `all` 129, `ja` 126, **`pt-BR` 112**, `es` 107 …: **region-qualified, not always two letters** |
 | Extension artifact | `ExtensionType.jarUrl`: Suwayomi pulls the pre-converted **JAR**, so no APK→JAR conversion (sidesteps #2298) |
 | **Source ids exceed 2^53** | e.g. `8513894820944573933`: cannot survive a JavaScript number. `LongString` handling is mandatory, not defensive |
-| Manga ids | small sequential ints (1, 2, 21, …), **per server, not global**: the same series from two sources is two rows, which is the raw material for dedupe (H1) |
+| Manga ids | small sequential ints (1, 2, 21, …), **global to the server, not per source**: the same series from two sources is two rows with different ids, which is the raw material for dedupe (H1). **This line said "per server, not global" and was wrong**, in the confusing direction: an earlier research note claimed ids were per-source, and this table then contradicted it by inverting the words while keeping the mistake. The route is `series/{manga}` with a single integer, and `ReadPathTest::test_the_series_route_takes_only_a_manga_id` holds it there. See the engineering notes. |
 | `fetchSourceManga` LATEST | Throws `java.lang.Exception: Source does not support latest` **with a full stack trace**. `SourceType.supportsLatest` must be checked *before* calling |
 | Live source fetch | Alpha Manga POPULAR 20 results / 0.7s · Akaza Scans 18 / 1.2s · Asura Scans 20 / 0.4s |
 | Dead source observed | Aqua Manga returns 0 on both POPULAR and LATEST: a live example of exactly what H2's health ledger exists to surface |
-| Schema snapshot | 1,863 `Type.field` entries, 1.2 MB, committed |
+| Schema snapshot | 1,884 `Type.field` entries, 1.2 MB, committed |
 
 **Two bugs found only by running against a live server.** Both fixed, both now covered by tests.
 
@@ -281,7 +289,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 - [x] 77 tests green, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
-- [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,863 entries)
+- [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
 - [x] **Keiyoushi store added via `index.pb`:** 1,379 extensions, 4 installed, live fetches returning real results
 - [ ] Configure `serveConversions` to WebP with a `default` entry
 
@@ -312,7 +320,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 **Verified live:** 6 sources fanned out in 2.9s → 25 raw hits → 20 deduplicated, 4 multi-source series collapsed, per-source outcomes recorded, health ledger populated. "BERSERK", "Berserk Gaiden" and "Berserk Princess" correctly stayed distinct.
 
 **Two decisions awaiting the user:**
-1. **Cross-language dedupe is not implemented.** `mb_convert_kana` folds full-width alphanumerics, not kana, so a Japanese title and its English translation do not collide. With 252 `ja` sources against 790 `en` this is a major case, not an edge case. Closing it needs kana→romaji transliteration, which is a dependency and a product call. Pinned by a test so it cannot be forgotten.
+1. **Cross-language dedupe is not implemented.** `mb_convert_kana` folds full-width alphanumerics, not kana, so a Japanese title and its English translation do not collide. With 252 `ja` sources against 790 `en` this is a major case, not an edge case. Closing it needs kana→romaji transliteration, which is a dependency and a product call. **The source counts here are impossible and were never checked**: this same document's own table gives `ja` 126 and `en` 398 against a store of 1,379, and 252 and 790 cannot both exist inside it. What survives from the claim is the shape of the problem, not its arithmetic. Pinned by a test so it cannot be forgotten.
 2. **Dedupe threshold is 0.95, tuned against measured values.** At 0.92, "One Piece G" folded into "One Piece". The measurements are documented in `config/papyrus.php`.
 
 **Acceptance:** a query returns merged, deduped results across N sources in under 30s with visible per-source status; a dead source degrades instead of hanging.

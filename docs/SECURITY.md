@@ -53,13 +53,35 @@ so nothing installs itself quietly. It cannot tell you whether an extension is w
 behaved, because nobody can without reading the source. Treat the store URL as the trust
 decision it is: paste one you have looked at.
 
+## What the app already does for you
+
+Worth knowing before deciding what to add in front of it:
+
+- **Registration is closed in `single` mode**, which is the default. `/register` answers 404,
+  and the sign-up link is hidden, so a one-reader install cannot be joined by accident.
+- **Login is rate limited** to 5 attempts a minute, and there are separate limiters for
+  two-factor and passkey challenges.
+- **Two-factor authentication** is available per account, with password confirmation to
+  enable or disable it.
+- **Passkeys** are available per account, and `.well-known/passkey-endpoints` is public by
+  necessity, since that is what a passkey provider fetches.
+- **Every page image streams through a Laravel route**, with an allow-list of the two URL
+  shapes and only `format` and `updateProgress` forwarded to Suwayomi. A page image is
+  therefore never a request Suwayomi's REST layer can serve unauthenticated.
+- **Page routes require a bearer token**, so a bare request to Suwayomi's REST endpoint gets
+  a 401 and not a page.
+
 ## Deployment modes
 
-`single` is the default and disables registration. `shared` and `public` enable it, which
-means anyone who can reach the site can create an account.
+`single` is the default and closes registration. `shared` and `public` open it, which means
+anyone who can reach the site can create an account.
 
-`public` additionally exposes moderation surfaces. Neither mode has rate limiting, so do not
-put `public` on the open internet without something in front of it.
+**`shared` and `public` are otherwise identical.** The quota column in the README's mode
+table and the moderation surfaces are aspirations: `enforcesQuotas()` and `quotaFor()` exist
+and are unit tested, and no application code calls either, so `storage_quota_bytes` is
+written by nothing. Section 14 of the engineering notes has the detail.
+
+No application route is rate limited. Only the Fortify endpoints are.
 
 ## Reporting
 

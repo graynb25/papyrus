@@ -12,8 +12,8 @@ contradicts the code, the code is right and this file needs fixing.
 |---|---|
 | `docs/ENGINEERING-NOTES.md` | This file. How the project works, what has been measured, what has bitten. |
 | `README.md` | Running it, and the shape of the codebase. Start here if you have never seen it. |
-| `docs/docs/SETUP-SUWAYOMI.md` | Installing and configuring Suwayomi, including why it runs as a JAR. |
-| `docs/docs/READER-PLAN.md` | The original plan and its backlog. Historical now; the phase table in section 11 is current. |
+| `docs/SETUP-SUWAYOMI.md` | Installing and configuring Suwayomi, including why it runs as a JAR. |
+| `docs/READER-PLAN.md` | The original plan and its backlog. Historical now; the phase table in section 11 is current. |
 
 ---
 
@@ -27,7 +27,7 @@ shim classes and a bytecode repair step. It exposes a GraphQL API.
 > Suwayomi parses. Papyrus presents.
 
 Every architectural decision below falls out of that sentence. Never propose re-implementing
-a parser in PHP. The `docs/docs/READER-PLAN.md` section on what changed from the original sketch has
+a parser in PHP. The `docs/READER-PLAN.md` section on what changed from the original sketch has
 the list of dead projects that already tried. If a needed source does not exist, the options
 are (a) write a Tachiyomi extension in Kotlin, (b) add a source to Suwayomi, or (c) write one
 targeted PHP parser for one site, as a last resort.
@@ -38,19 +38,20 @@ targeted PHP parser for one site, as a last resort.
 
 | Thing | State |
 |---|---|
-| PHP | 8.4.25 (Herd, at `Herd's php.bat`) |
+| PHP | 8.4.25, served by Herd. On this machine Herd's own `php.bat` is the one on PATH. |
 | Node / npm | 26.7.0 / 11.19.0 |
 | JRE | 26.0.2 Oracle JDK, which satisfies Suwayomi's JRE 21+ requirement |
 | Virtualization | **OFF.** No WSL2, no Hyper-V, no Docker. Suwayomi runs as a **JAR**. |
 | CPU | i7-12700K x64, so the ARM64 JCEF segfault does not apply |
 | Suwayomi | **v2.4.2366**, running, `AuthMode=UI_LOGIN`, `127.0.0.1:4567`. Upgraded from v2.3.2243; H2 schema migrated 59 to 65 with no errors and all 82 extensions intact. |
-| JAR | `.tools\suwayomi\Suwayomi-Server-v2.4.2366.jar`, SHA256 verified against the release's `Checksums.sha256`. The v2.3.2243 jar is kept beside it so a rollback is one move. |
+| JAR | `..\.tools\suwayomi\Suwayomi-Server-v2.4.2366.jar`, SHA256 verified against the release's `Checksums.sha256`. The v2.3.2243 jar is kept beside it so a rollback is one move. |
 | CEF | Downloaded on first run (260 MB). JCEF works on native Windows. |
-| Herd site | `papyrus`, a symlink from `Herd's Sites directory` to `papyrus\` |
-| Data root | `the Suwayomi data root` |
+| Herd site | `papyrus`, a symlink out of Herd's own `Sites` directory into this repo |
+| Data root | Suwayomi's own, which on Windows is `%LOCALAPPDATA%\Tachidesk`. Set by Suwayomi, not by us. |
 | Dev credentials | A throwaway username and password in `.env`, which is git-ignored. Local only, loopback bound. Generate one rather than reusing a password. |
+| Second dev environment | A second Windows account with its own Herd install and its own Suwayomi data root (October 2026), serving the same repo at the same hostname. Useful for checking that nothing depends on one machine's state. Credentials live in that account's `.env`, not this repository's. |
 | App | `papyrus`, served at `http://papyrus.test` |
-| Schema snapshot | `resources/schemas/suwayomi-introspection.json`, 1,863 entries |
+| Schema snapshot | `resources/schemas/suwayomi-introspection.json`, 1,884 entries |
 
 **Run Suwayomi as a normal process, never a Windows Service.** JCEF needs an interactive
 desktop session. A service runs in Session 0 with no desktop, and Cloudflare protected
@@ -60,7 +61,7 @@ sources then fail silently.
 
 ## 3. Verified Suwayomi behaviour
 
-Measured, not assumed. Re-verify with the scripts in `.tools\suwayomi\`.
+Measured, not assumed. Re-verify with the scripts in `..\.tools\suwayomi\`.
 
 | Fact | Value |
 |---|---|
@@ -108,7 +109,7 @@ Measured, not assumed. Re-verify with the scripts in `.tools\suwayomi\`.
 | **A downloaded chapter reads through the reader's own URL** | `manga/76/chapter/1/page/0` returns `image/webp` (181KB, then 1MB) with no source request, which is the path the image proxy already allows. Verified in the browser: `papyrus.test/suwayomi/api/v1/manga/76/chapter/1/page/0?format=webp`. **This is why downloads are worth building at all**: going offline needed no URL work. |
 | `api/v1/download/{chapterId}` | **Not an API.** Returns 200 `text/html`, 4,484 bytes: the WebUI's index page. A catch-all, not an endpoint. |
 | `mangas(filter: {id: {in: [...]}})` chapter nodes | `isDownloaded` rides along free on the same call the library page already makes, which is how a sync resolves finished-versus-failed in **one** bulk call rather than one per chapter. |
-| **Source migration** | **Not exposed at all.** Zero GraphQL fields across 32 query, 78 mutation and 4 subscription fields, checked live rather than from the snapshot. No REST v1 endpoint either: every candidate path is either the 4,484-byte WebUI index or a Ktor 404 naming the method and path. A real miss says `Endpoint PUT /api/v1/... not found`, which is what makes "not found" distinguishable from the catch-all. The capability is in the server and behind its WebUI, and it would act on `Admin(1)`'s library, which in a multi-reader app is the wrong owner. So the wizard composes the move. |
+| **Source migration** | **Not exposed at all.** Zero GraphQL fields across 33 query, 82 mutation and 6 subscription fields, checked live rather than from the snapshot. No REST v1 endpoint either: every candidate path is either the 4,484-byte WebUI index or a Ktor 404 naming the method and path. A real miss says `Endpoint PUT /api/v1/... not found`, which is what makes "not found" distinguishable from the catch-all. The capability is in the server and behind its WebUI, and it would act on `Admin(1)`'s library, which in a multi-reader app is the wrong owner. So the wizard composes the move. |
 | `MangaType.trackRecords` | `totalCount: 0`. **AniList or MAL id is not usable as a migration key**, because it is only populated once a reader has logged into a tracker. Available, not present. |
 | Migration search, live | 81 sources, one term each: **21.9s sequential** in a bare process, **27.6s** on a queue worker, p50 143ms and worst source 1459ms, zero failures. 199 raw hits, **7 sites**, 7 candidates. |
 | Migration candidate fetch | 370ms to 1346ms per site, and it **writes chapter rows into the server's database** whether or not a reader ever opens the series, which is why the budget caps fetches rather than sites. |
@@ -130,7 +131,7 @@ Measured, not assumed. Re-verify with the scripts in `.tools\suwayomi\`.
 | AniList's count as a chapter-count substitute | **Rejected on measurement.** 4 of 6 sampled series had **no AniList entry at all** (ongoing Korean webtoons, which its `MANGA` type covers thinly), and both that did **over-count**, by +9 and +17. It counts the original release including chapters no scanlation has. A reader shown "57 unread" who opens 48 has been told something false. |
 | Live library check | 13 of 14 series, **14.3s, 1099ms a series**. 12 with chapters, 1 `no_chapters`, 0 failed. All 14 then showed a real unread count. 13 of 14 carried a fingerprint where **0 did before**. Zero fingerprints disagreed with a batch read, which is what would mark the whole library stale at once. |
 | A source with no chapters is an answer | MangaDex returned `No chapters found` for One Piece (id 174), which is `initialized: true, totalCount: 0`. The check records `no_chapters` and **moves the clock**: it is a successful answer, and leaving the timestamp alone made the series due forever, so every press re-asked a source that had already said no. No fingerprint is written, since there is no list to describe. |
-| **WebP/AVIF is a non-finding** | H16 claimed "one server setting, real bandwidth win". **There is no setting.** `serveConversions` is not on `ServerConfig` and is not in the mutation namespace, checked live. `?format=webp`, `?format=avif` and no format at all return **byte-identical `image/webp`, 679KB a page**. Suwayomi transcodes already and the reader already asks for webp (`ImageUrl::defaultFormat()`, default `webp`). **Nothing to build and nothing to gain.** |
+| **WebP/AVIF is a non-finding** | H16 claimed "one server setting, real bandwidth win". **The setting exists and setting it changes nothing.** Correcting an earlier note here: `serveConversions` *is* on `PartialSettingsType`, `PartialSettingsTypeInput$`, `Settings` and `SettingsType` in the committed v2.4.2366 snapshot, and `Mutation.setSettings` takes it, so it is writable. The finding that stands is the one measured rather than inferred: with it off, all three of `webp`, `avif` and `jpg` come back byte-identical `image/webp`, so there is no bandwidth win to be had either way. A conclusion reached for the wrong reason is still worth correcting, because the next reader would otherwise assume it had been tested. `?format=webp`, `?format=avif` and no format at all return **byte-identical `image/webp`, 679KB a page**. Suwayomi transcodes already and the reader already asks for webp (`ImageUrl::defaultFormat()`, default `webp`). **Nothing to build and nothing to gain.** |
 | **Measuring image bytes needs the body, not Content-Length** | A chunked response carries no length header, and `CURLINFO_CONTENT_LENGTH_DOWNLOAD` reported 0, so the first attempt measured `-0.0 KB` for every format. Strip the header block and `strlen()` what is left. |
 | Page routes need a bearer, the proxy needs a session | `api/v1/.../page/N` is `@RequireAuth`, so a bare curl gets **401**. The app's own proxy route sits behind `auth` middleware, so the same curl gets a **302 to the login page**. Measuring image bytes means asking the server directly with `AuthManager::token()`; the proxy is a passthrough with a path allowlist, so the server's bytes are the reader's bytes. |
 | **Chapter ids are not derivable from the manga id** | Manga 2's chapters are **720, 721, 722**, not `mangaId * 100 + n` (201, 202, 203). A live check that guessed them marked chapters which do not exist, the resolver correctly ignored them, and the output claimed the read set had no effect. **Always read ids out of a batch response** rather than deriving them. The unit tests missed this because their fake mints ids the way the arithmetic assumes. |
@@ -140,6 +141,8 @@ Measured, not assumed. Re-verify with the scripts in `.tools\suwayomi\`.
 | Flux 2 component surface | `Flux::error()` and `flux:section` **do not exist**. `FluxManager` exposes boot, scripts, classes and asset helpers only. Report failures with a `danger` toast, which the app already does in ten places. |
 | **A GraphQL comment inside a heredoc document is rejected** | `/* ... */` is valid GraphQL and the server's ANTLR parser is not: it comes back as `Invalid syntax with ANTLR error 'token recognition error at: /'`. Put the explanation in the PHP around the heredoc. |
 | `chapter_states.read` does not exist | The column is **`is_read`**, mirroring Suwayomi's own `isRead`. A query naming `read` returns every row with the column null and **no error**, so a feature that depends on it silently sees nothing read. |
+| **The page endpoint addresses chapters by source order, not by id** | Measured on v2.4.2366: `fetchChapterPages` for chapter 3178 (`sourceOrder` 2) returns `/api/v1/manga/116/chapter/2/page/0`, and the id-shaped URL answers 404 `text/plain`. `fetchChapterPages` itself takes the id; only the REST page path is positional. Pass the server's own paths through `Gateway::resolvePageUrls()` rather than rebuilding them from ids, which is what `ReaderController` does now. |
+| **`Collection::push` inside a getter mutates the thing it reads** | `DedupeGroup::strictestContentWarning()` pushed the primary row onto `alternatives`, so the group grew by one on every call and any count read after it was wrong by that much. It shipped for months because the one caller read the count before calling it. The fix is `concat`, which returns a new collection. |
 
 ---
 
@@ -300,7 +303,7 @@ Each of these cost real time. Do not repeat them.
     pages rendered perfectly while all three were dead. Anything driven by the rendering
     lifecycle cannot be verified there. `browser.inspect` also reports only the first class of
     an element, so it cannot be used to check a class toggle either. Verify with Playwright
-    (`.tools/suwayomi/verify-reader.py`), which produces frames and does deliver scroll events.
+    (`..\.tools/suwayomi/verify-reader.py`), which produces frames and does deliver scroll events.
 46. **A stalled eager image means `window.load` never fires.** Gating the reader's start on load
     left the pages rendering and the counter, the progress posts and the keyboard all dead,
     because Asura held one page open. The DOM is parsed by the time an inline script at the end
@@ -621,7 +624,7 @@ Each of these cost real time. Do not repeat them.
 120. **Suwayomi's login is `username`, not `email`, and it was asked about twice.**
      Papyrus's own login is email only, which makes the Suwayomi one look like an
      oversight by comparison. It is not. Measured on v2.3.2243 and again on v2.4.2366:
-     `LoginInput` has exactly `password` and `username`, both `NON_NULL`; the mutation
+     `LoginInput` has `password` and `username` as `NON_NULL`, plus `clientMutationId`, which Relay adds; the mutation
      accepts `username` and refuses `email` with "a field name 'email' that is not
      defined for input object type 'LoginInput'"; and all 614 files in the bundled web
      UI say "Username", with no email-flavoured login string anywhere in them. Renaming
@@ -649,6 +652,15 @@ Each of these cost real time. Do not repeat them.
      and a console command that must set a privileged field should do so where it is
      visible. Then read the column back and assert it, because the alternative is a flag
      that does nothing.
+123. **A right answer for the wrong reason still has to be corrected.** H16 concluded there
+     was no image-conversion setting, citing `serveConversions` being absent from the
+     schema. It is present, on four types, and writable through `Mutation.setSettings`. The
+     conclusion that survived is the one that was measured rather than inferred: all three
+     of `webp`, `avif` and `jpg` come back byte-identical `image/webp`, so there is no
+     bandwidth win either way. But a note saying "there is no setting here" reads as "this
+     was tested", and the next person skips the test. The correction is the point, not the
+     tidiness. This one sat in a document for weeks before anybody read the schema it was
+     describing, which is the argument for re-reading a claim whenever the server moves.
 78. **`foreach ($map as $id)` on an id-keyed map gives `true`, not the id.** In a
     `Http::fake` that builds a batch response from `$libraryIds[$mangaId] = true`, the
     loop then emits a series numbered `1` for everything asked for, so every assertion
@@ -760,7 +772,7 @@ framing it as a revelation.
 obvious, especially where a number looks arbitrary or a workaround looks unnecessary. Stay
 silent when the code already says it. No rhetoric in docblocks.
 
-Run `php .tools/suwayomi/scan-dashes.php` before calling prose done. It counts em dashes, en
+Run `php ..\.tools/suwayomi/scan-dashes.php` before calling prose done. It counts em dashes, en
 dashes and ellipses byte by byte. An earlier PowerShell version reported zero em dashes in a
 file that had thirty, so trust the byte scan.
 
@@ -775,7 +787,7 @@ file that had thirty, so trust the byte scan.
   method. Match the existing `User` model.
 - **User owned models extend `OwnedModel`**, which gives a fail closed global scope plus
   `forUser()`, `createFor()`, `withoutUserScope()` and `forAllUsers()`.
-  **Global tables extend `Model`**: `sources`, `extension_stores`, `source_healths`. These
+  **Global tables extend `Model`**: `sources`, `extension_stores`, `source_healths`, and two that are easy to forget because they read like per-reader data: `source_preferences` (a cached snapshot of a source filter list, shared by every reader) and `anilist_media` (a shared title cache keyed by normalised title). These
   are server truth, not user truth.
 - **Do not use a trait for tenancy.** PHPStan cannot reason about the model instance inside
   a trait's `creating` closure, which produced 76 errors. `OwnedModel` is an abstract class
@@ -811,8 +823,10 @@ php artisan test
 php artisan view:clear        # after editing any .blade.php, or a stale compiled view lies to you
 ```
 
-`composer test` runs pint --test, phpstan and artisan test together. Note that phpstan
-needs `--memory-limit=1G`, because the default 128M crashes on parallel workers.
+`composer test` runs four steps: config:clear, pint --parallel --test, phpstan and artisan
+test. Note that phpstan needs `--memory-limit=1G`, because the default 128M crashes on
+parallel workers, and that the composer script does **not** pass it, so run phpstan by hand
+when the parallel workers die.
 
 A fifth gate is not a command: **open the page.** Between 194 passing tests and a
 browser, three separate bugs turned up that the suite could not see, including an
@@ -826,7 +840,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **790 tests**, 1,698 assertions, Pint clean across 182 files, PHPStan
+Current standing: **868 tests**, 1,854 assertions, Pint clean across 193 files, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -839,7 +853,7 @@ Three processes have to be up, and their absence has its own signature each time
 
 | Process | Command | If it is missing |
 | --- | --- | --- |
-| Suwayomi | `java -jar Suwayomi-Server-v2.3.2243.jar` in `the Suwayomi data root` | Every chapter list is empty and every reader is a 502. Data root missing entirely is a different thing from stopped, check for `Tachidesk` before assuming the process died. |
+| Suwayomi | `java -jar Suwayomi-Server-v2.4.2366.jar` in `the Suwayomi data root` | Every chapter list is empty and every reader is a 502. Data root missing entirely is a different thing from stopped, check for `Tachidesk` before assuming the process died. |
 | Vite | `npm run dev` (which is `vp dev`) | Every page renders with no styles, and the app logo SVG stretches to fill the viewport and swallows clicks. Trap 105. |
 | Queue | `php artisan queue:work --timeout=300`, **one only** | `SyncDownloads` and `CheckLibrary` chain through the queue, so a library check pass silently stalls partway and the gate reports the feature as broken. A pile-up also produces `database is locked` in SQLite. |
 
@@ -864,8 +878,10 @@ All of these except the last assume Suwayomi is already running and reachable.
 
 ### Verification scripts
 
-`.tools\suwayomi\` holds the throwaway scripts that produced the measurements in this
-document. They are not part of the application and nothing depends on them.
+`..\.tools\suwayomi\`, one level above this repository, holds the throwaway scripts that
+produced the measurements in this document. They are not part of the application and nothing
+depends on them. They are deliberately outside the repository: several carry the credentials
+of a local seed account.
 
 | Script | What it answers |
 |---|---|
@@ -943,7 +959,7 @@ by an absent `schedule:work` (trap 65) while every test still passed.
 `verify-reader.py` runs under `uv`, since there is no system Python:
 
 ```bash
-uv run --python 3.12 --with playwright python .tools\suwayomi\verify-reader.py
+uv run --python 3.12 --with playwright python ..\.tools\suwayomi\verify-reader.py
 ```
 
 ---
@@ -951,7 +967,7 @@ uv run --python 3.12 --with playwright python .tools\suwayomi\verify-reader.py
 ## 10. Running it
 
 Suwayomi runs as a normal Windows process, never a Windows Service, because JCEF needs an
-interactive session. `docs/docs/SETUP-SUWAYOMI.md` has the install, the checksum and the config.
+interactive session. `docs/SETUP-SUWAYOMI.md` has the install, the checksum and the config.
 
 Then two processes beyond Herd, both from `papyrus\`:
 
@@ -968,7 +984,9 @@ the job books its own next pass through the queue, so the worker above is enough
 the schedule alone is what left the ledger frozen on a box where only `queue:work` was
 running, with every test still green (trap 65).
 
-**`--timeout=300` is not optional.** The migration search measured 27.6s on the worker, and
+**`--timeout=300` is not optional.** (`composer dev` does not honour this: it runs
+  `queue:listen --tries=1 --timeout=0`, so start the worker by hand if you want the rule to
+  hold.) The migration search measured 27.6s on the worker, and
 the default `60` kills it, because a job's own `timeout` does not raise the worker's limit and
 `failOnTimeout` defaults to false, so the job vanishes with no record (trap 70). Raise it, and
 keep `failOnTimeout = true` on the job so a run that does exceed it says so.
@@ -989,8 +1007,8 @@ every existing tab. That is expected, not a fault.
 | 1 | Auth | **Complete.** `Jwt` reads the expiry from the token, `AuthManager` renews with the 60 day refresh token under a lock, and `Gateway` recovers from the HTTP 200 auth error. All three paths verified live. |
 | 1 | `ExtensionManager` | **Complete.** Server-side catalogue filtering, install/uninstall/update, bulk install with per-package failures, and the per-user trust decision. 17 tests, verified live. |
 | 1 | Source manager UI | **Complete** at `/sources`: stores with full signing keys, trust flow, tabbed catalogue, bulk install, paging. 24 tests, and confirmed in a browser, which is how two test-passing bugs were found. |
-| 1 | Health dashboard | **Complete** at `/health`, grouped by site because 82 sources are only 15. Worst-wins rollup, drill-down to language variants, per-user skip wired to the search fan-out. 18 tests. |
-| 1 | Fan-out shape | **Investigated and closed.** Site collapse would have lost 35% of results, so the fan-out still queries all 82. Measured, not assumed: see the decision table. |
+| 1 | Health dashboard | **Complete** at `/health`, grouped by site because 82 sources are only 15. Worst-wins rollup, drill-down to language variants, per-user skip wired to the search fan-out. 19 tests. |
+| 1 | Fan-out shape | **Investigated and closed.** Site collapse would have lost 35% of results, so the fan-out still queries all 82 (as counted on 2026-10-01). Measured, not assumed: see the decision table. |
 | 2 | Read path | **Complete.** `/series/{manga}`, `/read/{manga}/{chapter}`, the progress endpoint and the per series settings endpoint. `SeriesGateway`, `ReadingState`, `ImageUrl` and `ReaderSettings` behind them. Reader is a plain document on purpose: measured 2.0s for `fetchChapterPages`, so it runs once and page turns cost nothing. |
 | 2 | Reader modes | **Complete.** Continuous vertical and paged in one document, sharing the same URLs so switching costs no request. Taps turn pages in paged mode and fall through to the chapter at the first and last page, with the accessible name following. Page tracking is a scroll listener rather than an observer, measured (trap 45). Verified end to end in Playwright. |
 | 2 | Reader settings | **Complete.** `ReaderSettings` resolves defaults, then the user's default profile, then the series columns, and clamps at the end. Resolution and clamping are server side so the browser renders values rather than validating them. 20 unit tests plus feature coverage. |
@@ -1006,12 +1024,23 @@ every existing tab. That is expected, not a fault.
 | 6 | Chapter notes | **H18 done, and the storage predates the feature.** Migration 5 already made a polymorphic `notes` table, `Note` has existed since, and `ChapterState::notes()` was declared and never called: measured **0 rows**. So this is a write path and two surfaces, not a schema. **A note may sit on a chapter nobody has read**, which is the useful case ("read this one first"): it needs a `chapter_states` row, and measured such a row moves the read count by **0**, because the read count, the continue-reading feed and unread all filter `chapter_states` on `is_read`. The chapter navigator is the one consumer that sees every row and it reads such a row as `unknown`, which is correct. **One note per chapter as a database fact** (migration 22, unique index, and safe because there were 0 rows to merge). One PUT: an empty body clears, because clearing and typing are the same gesture. 42 tests, 33 checks in `verify-notes.py`. |
 | 6 | Custom covers | **H5 done, and the storage predates the feature.** Migration 6 made `series_covers` and `SeriesState::cover()` has been declared since: measured **0 rows**. Suwayomi cannot hold a cover at all, `ImageMutation` exposing only `clearCachedImages` and `UpdateMangaPatchInput` only `inLibrary`, so the file and the route are ours. **The 800px bound is measured, not chosen**: source covers are at most 800px on the long edge and weigh 77KB to 193KB, and the grid slot is 173px, so a custom cover resized to match is indistinguishable from a proxied one. **The 12 megapixel ceiling is memory arithmetic**, four bytes a pixel against a 128M `memory_limit`, and it is the guard that matters because 2MB of PNG can be 20000 by 20000. Served by a **Laravel route rather than the public disk**, because covers are per reader and this is multi-tenant from migration 1; and because source covers are *already* served through a Laravel route (`suwayomi.proxy`), so it is no new cost class. Applied on picking a file rather than behind a Save button, since Livewire already shows a real progress bar. 40 tests, 20 checks in `verify-covers.py`. |
 | 6 | Local source | **H15 done, and scoped down to what is true.** Suwayomi has **no upload API at all**: measured, every GET on `/api/v1/...` answers with the 4,484-byte WebUI catch-all and every other method a 404. A drop zone would mean Laravel writing into Suwayomi's data directory, and the folder is shared by every reader because the source cannot scope it. So H15 **reads and rescans** and says why it does not upload. The pairing is the feature: the folder and the server's listing **disagree and stay disagreeing**, because there is **no delete mutation**, so measured manga 2899 is listed while the only file left is its `ComicInfo.xml`. Showing either side alone would be lying about the other. The rescan is `fetchSourceManga(source: "0", type: LATEST)`, measured at 15ms; all three types answer and return the same listing, and LATEST is the one whose meaning is "what is new here". One folder per series is the shape, read from what Suwayomi actually picked up. 31 tests. |
-| 6 | Parity | **H11, H10, H13, H18, H5 and H15 done.** The five layers resolve in order, with the home shelf as the third and the session as the fifth, and a null in any layer falls through rather than erasing what is below. Colour filters (brightness including the sub-1.0 dim range, contrast, hue, invert, grayscale) are **session-scoped by default**, because a reader dimming for a dark room does not want that at a lit desk tomorrow; "remember for this series" is the explicit way to make it durable. Still open: **H6** search query language, **H7** bulk actions. **H16 is closed by measurement**: `serveConversions` is not in the live schema and all three formats return byte-identical `image/webp`. |
+| 6 | Parity | **H11, H10, H13, H18, H5 and H15 done.** The five layers resolve in order, with the home shelf as the third and the session as the fifth, and a null in any layer falls through rather than erasing what is below. Colour filters (brightness including the sub-1.0 dim range, contrast, hue, invert, grayscale) are **session-scoped by default**, because a reader dimming for a dark room does not want that at a lit desk tomorrow; "remember for this series" is the explicit way to make it durable. **H6 shipped**, with three terms rather than four: measured across all 82 sources, `genre` reaches 77, `status` 74 and `sort` 69. `author:` was cut because only 15 of 82 offer an author filter and, measured over 704 search rows from 76 sources, only 10.4% carry an author while `status` reads `UNKNOWN` on 99%, so there is nothing to check a term against afterwards. A term is pushed where the source has a matching filter and the source is skipped and counted where it does not. 57 tests, 28 checks in `verify-search-syntax.py`. Still open: **H7** bulk actions. **H16 is closed by measurement**: `serveConversions` is not in the live schema and all three formats return byte-identical `image/webp`. |
 
 Five pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}`. `/dashboard` redirects to
 `/library`: the route name survives because it is in the sidebar and in saved links, and a 404
-for a reader with the app open is worse than a hop.
+for a reader with the app open is worse than a hop. `/` now redirects the same way (library
+when signed in, login when not): the starter kit's Laravel marketing page was the one screen
+in the app that said nothing about reading.
+
+The interface was redesigned around one system, "Ink & Vermilion", and the tokens live in
+`resources/css/app.css`: a zinc ramp re-pointed in oklch (warm paper in light, cool ink in
+dark), one saturated vermilion accent (`--color-vermilion-*`, also the Flux `--color-accent`),
+Bricolage Grotesque for display, Instrument Sans for the interface and an Instrument Serif
+italic for the editorial moments. The cover card (`cover-frame`, `cover-scrim`,
+`cover-progress`), the horizontal rail (`rail-scroll`) and the staggered entry
+(`stagger-enter`) are the shared components every page builds from. The reader keeps its own
+inline styles on purpose and shares only the accent values.
 
 Downloads turned on a second measurement, about what a feature is worth:
 
@@ -1063,7 +1092,7 @@ clean run proves the plumbing works and nothing about which sources are good.
 
 61 of those 82 queries went to MangaDex, one per language, and the obvious conclusion was
 that this was 61 requests for one answer. It is not. Those variants return the same 51
-manga in different scripts, so each is the only route to its own titles. See trap 37
+manga in different scripts, so each is the only route to its own titles. See trap 39
 before proposing to collapse them.
 
 ---
@@ -1093,3 +1122,119 @@ config, not user settings), orientation lock.
 Legal posture: ship no content, no bundled source list, no hosted index. Users supply their
 own repo URLs. Tachiyomi was taken down *despite* this architecture, so it is not immunity,
 and it is not something to monetise.
+
+---
+
+## 14. Known gaps between the documents and the code
+
+Found by reading all 94 files under `app/` and tracing every public method to a caller.
+Nothing in this section is fixed, because the brief for that pass was documentation only.
+It is written down so the next person does not have to rediscover it, and so no document in
+this repository is trusted further than it has been checked.
+
+### 14.1 Documented as working, not implemented
+
+| The documents say | The code has |
+|---|---|
+| Deployment mode `shared` enforces **per-user quotas** (README table, section 12) | `Deployment::enforcesQuotas()` and `::quotaFor()`, called from `tests/Unit/DeploymentTest.php` and **nothing else**. `users.storage_quota_bytes` is written by nothing. |
+| Deployment mode `public` exposes **moderation surfaces** (README table, SECURITY.md) | No moderation surface exists. `isShared()` and `isPublic()` are also uncalled, so the only distinction the app makes at runtime is single against not-single. |
+| `suwayomi:schema:diff` is a command (config/papyrus.php:374) | There is no such command. The diff is `suwayomi:schema:dump --dry-run`. |
+| `search.fanout_concurrency = 8` bounds in-flight jobs | Read by nothing. **No concurrency cap is applied to the batch**, which is the opposite of what section 5 of this file says the fan-out does. |
+| `downloads.cbz_export_max_bytes` size-guards an export | No CBZ export exists. Suwayomi's `/api/v1/chapter/{id}/download` builds the whole archive in memory; the proxy refuses that endpoint rather than guarding it. |
+
+The registration rule is the exception and now holds: `RegistrationMustBeAllowed` 404s
+`register` and `register.store` when the mode disallows it, and
+`tests/Feature/RegistrationGateTest.php` proves it through requests. See trap 121 for why
+that took as long as it did.
+
+### 14.2 Config keys no code reads
+
+Six of the 47 keys in `config/papyrus.php` are read by nothing:
+
+| Key | Why it is still there |
+|---|---|
+| `suwayomi.jwt_audience` | Intended audience check. `Jwt` reads `exp` only and never verifies, deliberately. |
+| `search.fanout_concurrency` | Never applied. See above. |
+| `downloads.cbz_export_max_bytes` | No export to guard. |
+| `downloads.poll_interval` | The schedule uses `everyTenSeconds()`; the number is written twice, in `SyncDownloads::INTERVAL_SECONDS` and in `routes/console.php`. |
+| `reader.preload_ahead` | The reader does its own preloading in plain JavaScript, reading configuration injected by `@js(...)`. |
+| `reader.preload_behind` | As above. |
+
+Two more are read by the job that shadows them rather than the config:
+`anilist.gap_seconds` and `anilist.pass_budget_seconds` both appear in
+`ResolveAniListTitles.php`, but only as `private const GAP_SECONDS = 2` and
+`private const PASS_BUDGET_SECONDS = 45`. Setting the config key changes nothing.
+
+### 14.3 Public methods nothing calls
+
+Unreachable from production and from tests alike, unless noted:
+
+| Member | Note |
+|---|---|
+| `SourceSearcher::browse()` | The entire POPULAR and LATEST browse path. Nothing calls it, including tests. It is the code a "browse this source" feature would need. |
+| `SearchFanout::filterCache()` | |
+| `SourceFilterTranslator::nameToPosition()` | `addresses()` and `toChanges()` are both live; this is the other half of the same idea. |
+| `DownloadGateway::clear()` | |
+| `ChapterNavigator::finished()` | |
+| `Timestamps::now()` | |
+| `SeriesMigrator::lastMigrationFor()`, `::strandedDownloads()` | `strandedDownloads()` is the source of the "stranded downloads" wording in the docblocks, and it is not wired into the download centre. |
+| `CheckLedger::failures()` | |
+| `AuthManager::isAuthenticated()` | |
+| `HealthRecorder::SILENT_AFTER_EMPTY`, `HealthDashboard::FAILING_AFTER` | Declared constants whose values are re-hardcoded as SQL literals inside `siteStateSql()` and `siteRankSql()`. Changing the constant changes nothing. |
+| `Deployment::isShared()`, `::isPublic()`, `::enforcesQuotas()`, `::quotaFor()` | The last two are covered by tests only. See 14.1. |
+| `resources/views/dashboard.blade.php` | Unreachable: the `dashboard` route is a redirect to `library`. It is the only consumer of `components/placeholder-pattern.blade.php`. |
+
+Dead columns and unread relations: `users.last_seen_at` is written by nothing;
+`categories.note` is read and written by nothing; `SeriesState::isFavourite()`,
+`::isQueuedForLater()`, `::chapters()`, `::notes()`, `::cover()` and
+`::defaultCategory()` are declared but never traversed, because the series page goes
+through `ReadingState` instead.
+
+### 14.4 Smaller inconsistencies worth knowing
+
+- **`Deduplicator` has two construction paths.** `AppServiceProvider` binds it as a
+  singleton without a `TitleResolver`; the search page ignores the container and news one up
+  with the resolver. So `search:fanout`, the diagnostic command, never exercises AniList
+  grouping.
+- **Trap 70 is not followed by its own project.** It says to set `failOnTimeout = true` on any
+  job whose runtime is uncertain. Only `FindMigrationCandidates` does. The four
+  self-re-booking jobs, including `CheckLibrary` whose docblock cites the trap, leave it
+  default.
+- **Two orphaned docblocks**, each documenting nothing because another docblock follows it
+  immediately: `ReadingState.php:103` and `SearchSourceJob.php:33`.
+- **`ReaderSettings::gap` is documented and defaulted inconsistently.** The docblock
+  explains why a webtoon needs a non-zero gap; the default is `0`.
+- **The trap list is out of order**: 1 to 67, then 75 to 77, 83 to 122, 78 to 82, 68 to 74.
+  All 122 numbers appear exactly once, so this is a sort defect rather than lost content,
+  but it makes "see trap N" hard to audit.
+- **`.env.example` documents 9 of the 32 env-backed keys.** The rest are discoverable in
+  `config/papyrus.php`, which is where they are commented.
+- **`.env.example` misdescribes `SUWAYOMI_PUBLIC_PATH`** as a path where "page images bypass
+  PHP entirely". They do not: `SuwayomiProxyController` streams every image through PHP, and
+  this file's own AD-3 says so.
+- **`.well-known/passkey-endpoints` carries no middleware at all**, unlike every other route.
+- **The reader is described as carrying no framework**, and its script does not use one, but
+  `wire:navigate` is on every chapter-navigator segment, so the rendered document does
+  reference Livewire. `ReadPathTest` checks for a snapshot payload rather than for the
+  attribute, which is why it passes.
+
+### 14.5 The source catalogue reads absence as an uninstall
+
+`SourceCatalog::syncSources()` writes every source it sees as `is_installed = true`, then
+issues one update marking **every source not in that response** as `is_installed = false`,
+stamped with the same `last_synced_at`.
+
+There is no way to tell that apart from a reader uninstalling an extension. A partial
+response, one source that failed to enumerate, or a server that was mid-restart all produce
+the same row.
+
+This is not hypothetical on this box. The documents below say 82 installed sources. The live
+mirror said **73 of 82** when this pass checked, stamped `2026-10-01 23:38:11`, while
+Suwayomi itself still listed all 82. The nine that had flipped were Weeb Central, MangaTaro,
+Alpha Manga, Akaza Scans, Asura Scans, Aqua Manga, Eva Scans, Lagoon Scans and Manga Demon,
+which is to say the nine that had been erroring in the browser gates.
+
+Two things follow. The source counts in these documents are point-in-time and should be
+read as such. And a source that fails repeatedly can remove itself from the catalogue via
+the path meant to record a reader's decision, which is the wrong direction for a fault to
+push in.

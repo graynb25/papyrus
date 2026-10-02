@@ -98,13 +98,29 @@ SUWAYOMI_PASSWORD=your-password
 
 and clear the config cache: `php artisan config:clear`
 
-## 5. Configure image conversion (optional but recommended)
+## 5. Image conversion: measured, and not worth setting
 
-Set `serveConversions` to transcode to WebP with a `default` entry. Manga pages are large and this
-cuts bandwidth substantially. The reader requests `?format=webp`, which the proxy forwards.
+This section used to recommend switching `serveConversions` on to cut bandwidth. That
+recommendation was withdrawn on measurement, and the reason is worth keeping.
+
+**The setting exists and is writable.** `serveConversions` is on `Settings`,
+`PartialSettingsTypeInput$` and the others in the committed v2.4.2366 snapshot, and
+`Mutation.setSettings` takes it. An earlier note here claimed the setting was absent from
+the schema, which was wrong.
+
+**Turning it on changed nothing measurable.** With it off, requesting `?format=webp`,
+`?format=avif` and `?format=jpg` all returned byte-identical `image/webp`. There is no
+bandwidth win available, so leave it alone.
+
+A conclusion reached for the wrong reason is still worth correcting, because the next person
+reading "there is no setting here" would otherwise assume it had been tested. This is trap
+122.
 
 Note: Suwayomi's `/api/v1/chapter/{id}/download` builds an entire zip in memory and has open
-memory issues (#2353, #2236). Phase 4 will size-guard it and zip from the on-disk layout instead.
+memory issues (#2353, #2236). Papyrus does not expose that endpoint at all: the proxy
+allow-list covers only page and thumbnail URLs, so the route is refused rather than size
+guarded. The `downloads.cbz_export_max_bytes` key in `config/papyrus.php` is an unused
+reminder of the guard that was once planned.
 
 ## 6. Add an extension store
 
@@ -113,7 +129,7 @@ app (Phase 1), and Suwayomi fetches the catalogue from there.
 
 Keiyoushi, the main community repository, publishes its index in **protobuf** at
 `https://github.com/keiyoushi/extensions/raw/repo/index.pb`, gzip-compressed, ~696 KB decompressed,
-containing ~1,380 extensions. The sibling `index.min.json` on the same branch holds only two helper
+containing ~1,400 extensions, and growing. The sibling `index.min.json` on the same branch holds only two helper
 entries and is a leftover; **`index.pb` is the real catalogue and what Mihon reads.**
 
 We deliberately do *not* parse that file ourselves. Suwayomi models `ExtensionStoreType` with
@@ -136,14 +152,21 @@ php artisan suwayomi:check
 Expected:
 
 ```
-  Suwayomi URL ....................................... http://127.0.0.1:4567
-  Server version ..................................... 2.3.x
-  Auth mode .......................................... UI_LOGIN
-  Last call latency ................................. NNms
-  Extension stores .................................. N
-  Extensions available .............................. NNN
-  Schema snapshot ................................... not captured
+  Suwayomi URL ................................................. http://127.0.0.1:4567
+  Server version ............................................... v2.4.2366
+  Auth mode .................................................. UI_LOGIN
+  Last call latency .......................................... 220ms
+
+  Extension stores ........................................... 1
+  Extensions available ....................................... 1396
+  Schema snapshot ........................................... captured 2026-10-01T21:49:38+00:00
 ```
+
+Verbatim from this box. Two things to note. The command prints a captured **timestamp**
+for the snapshot and never the words "not captured"; when the file is missing it warns
+on its own line instead. And `Extensions available` is `extensions.totalCount` from the
+server, so it moves as the store grows: 1,379 when this project first measured it, 1,396
+at the last sync. Treat it as a dated figure, not a constant.
 
 A failure names the cause directly: bad credentials, an unreachable server, or a timeout all
 produce distinct messages with a hint.

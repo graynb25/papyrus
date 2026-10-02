@@ -46,16 +46,20 @@ not immunity, and this is not something to monetise.
 ## Status
 
 Discovery and the read path are both done, verified against a live Suwayomi. Search,
-source management, health, the series page and the reader all work.
+source management, health, downloads, migration between sources, the series page, the
+reader and settings all work.
 
 | Screen | Route | What it does |
 |---|---|---|
 | Search | `/search` | Fans one query out across every eligible source, deduplicates, shows per-source outcomes |
-| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the 1,379 extension catalogue |
-| Health | `/health` | Per-site health, grouped because 82 sources are really 15 sites |
+| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the extension catalogue, 1,396 at the last sync |
+| Health | `/health` | Per-site health, grouped because 82 sources are really 15 sites (counted 2026-10-01) |
 | Library | `/library` | Everything you added, filed into shelves, with unread counts |
-| Series | `/series/{id}` | Chapters with dates, scanlator filtering, per-series reading mode |
+| Downloads | `/downloads` | What is queued, downloading or finished, reconciled in two calls a pass |
+| Move to another source | `/migrate/{manga}` | Searches every other source for the same series, ranks the candidates, transfers on confirmation |
+| Series | `/series/{manga}` | Chapters with dates, scanlator filtering, per-series reading mode |
 | Reader | `/read/{manga}/{chapter}` | Continuous scroll or paged, progress saved per user |
+| Settings | `/settings/profile`, `/settings/appearance`, `/settings/security` | Profile, reader appearance, and password, two-factor and passkeys |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
 
@@ -199,12 +203,25 @@ If you want open registration, set `PAPYRUS_DEPLOYMENT_MODE=shared` instead.
 
 ```
 app/Suwayomi/       Everything that talks to Suwayomi
-app/Search/         Fan-out, dedupe, health
+app/Search/         Fan-out, dedupe, health, and the filter vocabulary
+app/Library/        Shelve filing, background checks, continue reading, the chapter navigator
+app/Migration/      Finding a series on another source and moving state to it
+app/AniList/        Optional title matching, per reader, off by default
+app/Covers/         Reader-supplied cover art, which Suwayomi cannot store
+app/Downloads/      The per-reader ledger against Suwayomi's shared queue
+app/Local/          The local folder source Suwayomi picks up from disk
+app/Jobs/           Five queued jobs, three of which re-book themselves
+app/Http/           The reader, the cover route, and the image proxy
 app/Models/         Side tables, all user-scoped or all global
 app/Console/        Artisan commands
 resources/views/pages/   Livewire pages, one file each
-config/papyrus.php  Timeouts, concurrency, and the measured thresholds
+config/papyrus.php  Timeouts, thresholds, and the measured numbers
 ```
+
+Six of the 47 keys in `config/papyrus.php` are read by nothing. They are listed, with the
+rest, in [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) section 14, along with
+the public methods nothing calls and the claims in these documents that the code does not
+back up.
 
 ### app/Suwayomi
 
@@ -217,7 +234,10 @@ config/papyrus.php  Timeouts, concurrency, and the measured thresholds
 | `SourceCatalog` | Mirrors stores and sources out of the server. Every write to those tables. |
 | `ExtensionManager` | The extension catalogue, install and uninstall, and the per-user trust decision. |
 | `SourceFilterTranslator` | Tachiyomi's positional filter format into something nameable. |
+| `SeriesGateway` | One series, its chapter list, and the batch forms of both. |
+| `DownloadGateway` | Suwayomi's shared download queue: read it, enqueue, dequeue, delete. |
 | `SuwayomiException` | Typed failures with the kind, so callers can branch instead of matching strings. |
+| `FailureKind` | The enum those failures carry: timeout, unauthenticated, unavailable, query, unknown. |
 
 `SourceCatalog` and `ExtensionManager` split on purpose: one owns what the server says is
 registered, the other owns the catalogue and what this user decided to do about it.
@@ -227,7 +247,14 @@ registered, the other owns the catalogue and what this user decided to do about 
 | Class | Role |
 |---|---|
 | `SearchFanout` | Picks eligible sources and dispatches the per-source jobs. |
+| `SourceSearcher` | Runs one source's search and classifies the outcome. |
+| `QueryParser` | Splits `label:value` out of a typed query. An unknown label stays text. |
+| `FilterVocabulary` | The three terms that ship, the pattern that finds each source's own name, and whether it is a filter or an order. |
+| `FilterPlan` | Per source: what to push, what it cannot express, what it cannot sort by. |
+| `FilterValue` | Maps our value onto that source's option, which is a different shape per filter kind. |
+| `TitleNormalizer` | Folds titles so two spellings of one series meet. |
 | `Deduplicator` | Collapses the same series found on several sources into one entry. |
+| `DedupeGroup` | One series and every source it turned up on. |
 | `HealthRecorder` | Folds one outcome into the ledger, separating failed from reachable-but-silent. |
 | `HealthDashboard` | Reads the ledger back, grouped by site. |
 
@@ -236,10 +263,12 @@ registered, the other owns the catalogue and what this user decided to do about 
 | Class | Role |
 |---|---|
 | `ReadingState` | Every read of and write to a series or chapter state. The only path to those rows. |
-| `ChapterStateFactory` | Builds the display model for a chapter list from state plus source data. |
-| `ReaderSettings` | Resolves and clamps the reader's settings: defaults, profile, series. |
+| `ReaderSettings` | Resolves and clamps the reader's settings across five layers. |
+| `SessionOverride` | The topmost layer: colour filters that last for the session and no longer. |
+| `ChapterNotes` | Per-chapter notes, one per chapter, over a polymorphic table that predates the feature. |
 | `Library` | The library page's data: entries, shelves, filing, unread, staleness. |
 | `ImageUrl` | Builds proxy URLs. Nothing else may build one. |
+| `Deployment` | Reads the deployment mode. Only its registration rule is wired up. |
 | `Suwayomi\Timestamps` | Reads Suwayomi's epoch values, which are not all in the same unit. |
 
 ## Three things worth knowing before you touch it
@@ -274,16 +303,23 @@ simply the case where there is one user, so nothing has to reconcile.
 | Mode | Registration | Quotas | Abuse controls |
 |---|---|---|---|
 | `single` | 404 on `/register` | none | none |
-| `shared` | enabled | per-user | none |
-| `public` | enabled | per-user | moderation surfaces |
+| `shared` | enabled | not implemented | none |
+| `public` | enabled | not implemented | not implemented |
 
 Set `PAPYRUS_DEPLOYMENT_MODE` in `.env`. It is read through `App\Support\Deployment`, so
 branch on `isSingle()` and friends rather than reading the env var.
 
-The registration rule is enforced by `RegistrationMustBeAllowed`, which answers 404 rather
-than 403 so a closed mode does not advertise the endpoint. It took a while to notice this
-was missing: `allowsRegistration()` existed and was unit tested, and nothing called it, so
-`single` behaved exactly like `shared` while the table above claimed otherwise.
+**The registration rule is the only part of this table the code enforces.** `enforcesQuotas()`
+and `quotaFor()` exist and are covered by unit tests, and no application code calls either,
+so `storage_quota_bytes` is written by nothing. `isShared()` and `isPublic()` are likewise
+uncalled: `shared` and `public` are indistinguishable at runtime and both differ from
+`single` in exactly one respect. The quota and moderation columns are aspirations, not
+behaviour, and section 14 of the engineering notes says so where it cannot be missed.
+
+Registration is enforced by `RegistrationMustBeAllowed`, which answers 404 rather than 403
+so a closed mode does not advertise the endpoint. It took a while to notice this was
+missing: `allowsRegistration()` existed and was unit tested, and nothing called it, so
+`single` behaved exactly like `shared` while this table claimed otherwise.
 
 ## Commands
 
