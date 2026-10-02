@@ -6,7 +6,16 @@ use App\Http\Controllers\ReaderProgressController;
 use App\Http\Controllers\SuwayomiProxyController;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome')->name('home');
+/*
+ * The entry point sends a reader where they are going: the library when signed
+ * in, the sign-in screen when not. The starter kit's marketing page is gone:
+ * a self-hosted reader who opened the app has no use for it.
+ */
+Route::get('/', function () {
+    return auth()->check()
+        ? redirect()->route('library')
+        : redirect()->route('login');
+})->name('home');
 
 /*
  * Chapter page images, same origin as the app so the browser never holds a

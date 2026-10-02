@@ -8,59 +8,454 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+    Papyrus design language: "Ink & Vermilion".
+
+    Two ideas carry the whole system. Covers carry the colour, so every surface
+    is a quiet neutral ladder and exactly one saturated accent is spent on
+    actions and unread state. And the reading room is dark: near-black ink in
+    the default theme, warm paper in the light one.
+
+    The zinc ramp is re-pointed rather than replaced: Flux components are built
+    on zinc, so remapping it themes them all at once (the documented Flux
+    extension point). Dark neutrals sit on a cool hue, the way MangaDex's slate
+    theme reads softer than pure grey; light neutrals sit on a warm hue, the
+    way paper does.
+
+    Every non-neutral value here is a measurement or a contrast calculation,
+    not a taste decision: the accent ramp is built so `vermilion-600` holds
+    4.5:1 against paper-white body text roles and `vermilion-500` holds 3:1
+    against ink-950 at large sizes.
+*/
+
 @theme {
+    /* Typography. Bricolage Grotesque speaks for headings and numerals,
+       Instrument Sans carries the interface, Instrument Serif italic marks the
+       editorial moments (auth, empty states). */
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display: 'Bricolage Grotesque', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-serif: 'Instrument Serif', ui-serif, Georgia, serif;
 
-    --color-zinc-50: #fafafa;
-    --color-zinc-100: #f5f5f5;
-    --color-zinc-200: #e5e5e5;
-    --color-zinc-300: #d4d4d4;
-    --color-zinc-400: #a3a3a3;
-    --color-zinc-500: #737373;
-    --color-zinc-600: #525252;
-    --color-zinc-700: #404040;
-    --color-zinc-800: #262626;
-    --color-zinc-900: #171717;
-    --color-zinc-950: #0a0a0a;
+    /* Vermilion. The single saturated voice of the app. */
+    --color-vermilion-50: oklch(0.977 0.012 40);
+    --color-vermilion-100: oklch(0.948 0.028 40);
+    --color-vermilion-200: oklch(0.902 0.058 38);
+    --color-vermilion-300: oklch(0.845 0.092 36);
+    --color-vermilion-400: oklch(0.778 0.132 34);
+    --color-vermilion-500: oklch(0.712 0.168 33);
+    --color-vermilion-600: oklch(0.643 0.188 32);
+    --color-vermilion-700: oklch(0.562 0.178 31);
+    --color-vermilion-800: oklch(0.482 0.152 30);
+    --color-vermilion-900: oklch(0.412 0.122 30);
+    --color-vermilion-950: oklch(0.278 0.082 28);
 
-    --color-accent: var(--color-neutral-800);
-    --color-accent-content: var(--color-neutral-800);
+    /* Cool status hues, for the health ledger and download states. */
+    --color-moss-400: oklch(0.78 0.13 150);
+    --color-moss-500: oklch(0.70 0.15 150);
+    --color-moss-600: oklch(0.60 0.14 150);
+
+    /* Geometry. */
+    --radius-card: 0.875rem;
+    --radius-xl2: 1.25rem;
+
+    /* Motion. One easing family for the whole app. */
+    --ease-swift: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --animate-rise-in: rise-in 0.5s var(--ease-swift) both;
+    --animate-fade-in: fade-in 0.4s var(--ease-out-soft) both;
+    --animate-shimmer: shimmer 1.6s linear infinite;
+    --animate-breathe: breathe 2.4s ease-in-out infinite;
+
+    @keyframes rise-in {
+        from {
+            opacity: 0;
+            transform: translateY(0.625rem) scale(0.99);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    @keyframes fade-in {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+
+    @keyframes shimmer {
+        from {
+            background-position: 200% 0;
+        }
+        to {
+            background-position: -200% 0;
+        }
+    }
+
+    @keyframes breathe {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.45;
+        }
+    }
+
+    /* Light theme. Warm paper, ink text. */
+    --color-zinc-50: oklch(0.982 0.004 90);
+    --color-zinc-100: oklch(0.962 0.005 90);
+    --color-zinc-200: oklch(0.922 0.007 90);
+    --color-zinc-300: oklch(0.868 0.008 90);
+    --color-zinc-400: oklch(0.696 0.01 90);
+    --color-zinc-500: oklch(0.578 0.012 90);
+    --color-zinc-600: oklch(0.478 0.012 90);
+    --color-zinc-700: oklch(0.395 0.011 90);
+    --color-zinc-800: oklch(0.295 0.01 90);
+    --color-zinc-900: oklch(0.222 0.009 90);
+    --color-zinc-950: oklch(0.168 0.008 90);
+
+    /* Flux accents, light: vermilion is dark enough to carry white text. */
+    --color-accent: var(--color-vermilion-600);
+    --color-accent-content: var(--color-vermilion-600);
     --color-accent-foreground: var(--color-white);
 }
 
+/* Dark theme. Ink. */
 @layer theme {
     .dark {
-        --color-accent: var(--color-white);
-        --color-accent-content: var(--color-white);
-        --color-accent-foreground: var(--color-neutral-800);
+        --color-zinc-50: oklch(0.945 0.004 260);
+        --color-zinc-100: oklch(0.902 0.005 260);
+        --color-zinc-200: oklch(0.822 0.006 260);
+        --color-zinc-300: oklch(0.722 0.007 260);
+        --color-zinc-400: oklch(0.612 0.008 260);
+        --color-zinc-500: oklch(0.502 0.009 260);
+        --color-zinc-600: oklch(0.412 0.009 260);
+        --color-zinc-700: oklch(0.322 0.008 260);
+        --color-zinc-800: oklch(0.235 0.007 260);
+        --color-zinc-900: oklch(0.185 0.006 260);
+        --color-zinc-950: oklch(0.138 0.005 260);
+
+        --color-accent: var(--color-vermilion-500);
+        --color-accent-content: var(--color-vermilion-500);
+        --color-accent-foreground: var(--color-zinc-950);
     }
 }
 
 @layer base {
+    :root {
+        color-scheme: light;
+        scrollbar-color: color-mix(in oklab, var(--color-zinc-400) 55%, transparent) transparent;
+    }
+
+    .dark {
+        color-scheme: dark;
+    }
 
     *,
     ::after,
     ::before,
     ::backdrop,
     ::file-selector-button {
-        border-color: var(--color-gray-200, currentColor);
+        border-color: var(--color-zinc-200);
+    }
+
+    ::selection {
+        background: color-mix(in oklab, var(--color-vermilion-500) 32%, transparent);
+    }
+
+    html {
+        font-feature-settings: 'liga' 1, 'calt' 1, 'kern' 1;
+        overflow-x: clip;
+    }
+
+    /* The hero glows are drawn larger than their containers on purpose, so the
+       document must never grow a horizontal scrollbar for them. clip, not
+       hidden: it does not turn the body into a scroll container. */
+    body {
+        overflow-x: clip;
+        font-optical-sizing: auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        text-wrap: balance;
+    }
+
+    p {
+        text-wrap: pretty;
+    }
+
+    [data-flux-field]:not(ui-radio, ui-checkbox) {
+        @apply grid gap-2;
+    }
+
+    [data-flux-label] {
+        @apply !mb-0 !leading-tight;
+    }
+
+    input:focus[data-flux-control],
+    textarea:focus[data-flux-control],
+    select:focus[data-flux-control] {
+        @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
     }
 }
 
-[data-flux-field]:not(ui-radio, ui-checkbox) {
-    @apply grid gap-2;
+/* Flux accent fixes: without a ring-color override the focus ring falls back to
+   the browser default blue and fights the palette. */
+@layer base {
+    [data-flux-field]:not(ui-radio, ui-checkbox) {
+        --tw-ring-color: var(--color-accent);
+    }
 }
 
-[data-flux-label] {
-    @apply  !mb-0 !leading-tight;
+@layer components {
+    /*
+        Page backdrop. A near-black ink field with a faint paper grain, so
+        large empty areas read as material rather than void. The grain is a
+        static tiled SVG: no runtime cost, no overlay element.
+    */
+    .app-backdrop {
+        background-color: var(--color-zinc-50);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.1 0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0.028 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .dark .app-backdrop {
+        background-color: var(--color-zinc-950);
+    }
+
+    /* Staggered entrance for grids. Children rise in once, on load. */
+    .stagger-enter > * {
+        animation: rise-in 0.55s var(--ease-swift) both;
+    }
+
+    .stagger-enter > *:nth-child(1) { animation-delay: 0.02s; }
+    .stagger-enter > *:nth-child(2) { animation-delay: 0.05s; }
+    .stagger-enter > *:nth-child(3) { animation-delay: 0.08s; }
+    .stagger-enter > *:nth-child(4) { animation-delay: 0.11s; }
+    .stagger-enter > *:nth-child(5) { animation-delay: 0.14s; }
+    .stagger-enter > *:nth-child(6) { animation-delay: 0.17s; }
+    .stagger-enter > *:nth-child(7) { animation-delay: 0.2s; }
+    .stagger-enter > *:nth-child(8) { animation-delay: 0.23s; }
+    .stagger-enter > *:nth-child(9) { animation-delay: 0.26s; }
+    .stagger-enter > *:nth-child(10) { animation-delay: 0.29s; }
+    .stagger-enter > *:nth-child(11) { animation-delay: 0.32s; }
+    .stagger-enter > *:nth-child(12) { animation-delay: 0.35s; }
+    .stagger-enter > *:nth-child(n + 13) { animation-delay: 0.38s; }
+
+    /*
+        Cover card. The library's atom: artwork with a hairline that carries
+        reading progress, a scrim so overlaid labels survive bright covers, and
+        a lift on hover. The glow is a second, blurred copy of the artwork
+        behind the card, which is why it follows whatever cover is on top.
+    */
+    .cover-frame {
+        position: relative;
+        border-radius: var(--radius-card);
+        overflow: hidden;
+        isolation: isolate;
+        background: var(--color-zinc-100);
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-zinc-950) 9%, transparent);
+        transition: transform 0.35s var(--ease-swift), box-shadow 0.35s var(--ease-swift);
+    }
+
+    .cover-frame img,
+    .cover-frame .cover-placeholder {
+        display: block;
+        width: 100%;
+        aspect-ratio: 2 / 3;
+        object-fit: cover;
+    }
+
+    .cover-scrim {
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(to top, color-mix(in oklab, var(--color-zinc-950) 62%, transparent), transparent 42%),
+            linear-gradient(to bottom, color-mix(in oklab, var(--color-zinc-950) 22%, transparent), transparent 22%);
+        opacity: 0;
+        transition: opacity 0.35s var(--ease-swift);
+    }
+
+    .cover-glow {
+        position: absolute;
+        inset: 4% 4% -2%;
+        z-index: -1;
+        border-radius: var(--radius-xl2);
+        filter: blur(24px);
+        opacity: 0.55;
+        transition: opacity 0.4s var(--ease-swift);
+        background: var(--color-zinc-300);
+    }
+
+    .dark .cover-glow {
+        background: color-mix(in oklab, var(--color-vermilion-500) 26%, var(--color-zinc-900));
+        opacity: 0;
+    }
+
+    .group:hover .cover-frame,
+    .cover-frame:hover {
+        transform: translateY(-0.25rem);
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-zinc-950) 14%, transparent),
+            0 18px 40px -18px color-mix(in oklab, var(--color-zinc-950) 55%, transparent);
+    }
+
+    .group:hover .cover-scrim,
+    .cover-frame:hover .cover-scrim {
+        opacity: 1;
+    }
+
+    .group:hover .cover-glow,
+    .cover-frame:hover .cover-glow {
+        opacity: 0.7;
+    }
+
+    .dark .group:hover .cover-glow,
+    .dark .cover-frame:hover .cover-glow {
+        opacity: 1;
+    }
+
+    /* Progress hairline along the bottom edge of a cover. */
+    .cover-progress {
+        position: absolute;
+        inset: auto 0 0 0;
+        height: 0.1875rem;
+        background: color-mix(in oklab, var(--color-zinc-950) 45%, transparent);
+        overflow: hidden;
+    }
+
+    .cover-progress > span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        display: block;
+        height: 100%;
+        background: linear-gradient(to right, var(--color-vermilion-400), var(--color-vermilion-500));
+        border-radius: 0 1px 1px 0;
+    }
+
+    /* Floating label surfaces that must survive artwork underneath. */
+    .on-art {
+        background: color-mix(in oklab, var(--color-zinc-950) 82%, transparent);
+        color: var(--color-zinc-50);
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-white) 14%, transparent);
+        backdrop-filter: blur(6px);
+    }
+
+    .on-art-quiet {
+        background: color-mix(in oklab, var(--color-zinc-950) 68%, transparent);
+        color: color-mix(in oklab, var(--color-zinc-50) 88%, transparent);
+        backdrop-filter: blur(6px);
+    }
+
+    /* Rail scroller: horizontal shelves without visible scrollbars, with the
+         leaving edge masked so cards fade out as they exit. Only the far edge
+         fades: masking the start edge would dim the first card at rest. */
+    .rail-scroll {
+        overflow-x: auto;
+        scroll-snap-type: x proximity;
+        scrollbar-width: none;
+        mask-image: linear-gradient(to right, black calc(100% - 1.75rem), transparent);
+    }
+
+    .rail-scroll::-webkit-scrollbar {
+        display: none;
+    }
+
+    .rail-scroll > * {
+        scroll-snap-align: start;
+    }
+
+    /* Skeleton shimmer for loading surfaces. */
+    .skeleton {
+        background: linear-gradient(
+            100deg,
+            color-mix(in oklab, var(--color-zinc-200) 88%, transparent) 40%,
+            color-mix(in oklab, var(--color-zinc-100) 92%, transparent) 50%,
+            color-mix(in oklab, var(--color-zinc-200) 88%, transparent) 60%
+        );
+        background-size: 200% 100%;
+        animation: var(--animate-shimmer);
+    }
+
+    .dark .skeleton {
+        background: linear-gradient(
+            100deg,
+            color-mix(in oklab, var(--color-zinc-800) 92%, transparent) 40%,
+            color-mix(in oklab, var(--color-zinc-700) 60%, transparent) 50%,
+            color-mix(in oklab, var(--color-zinc-800) 92%, transparent) 60%
+        );
+        background-size: 200% 100%;
+    }
+
+    /* Editorial serif moment. */
+    .serif-italic {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-weight: 400;
+        letter-spacing: 0.005em;
+    }
+
+    /* Hero gradients: one radial field per accent edge, drawn once per page.
+         The element is larger than its container and every gradient reaches
+         transparent before the element edge, so no boundary ever shows. */
+    .hero-glow {
+        position: absolute;
+        inset: -10rem -10rem -8rem;
+        pointer-events: none;
+        background:
+            radial-gradient(38rem 17rem at 78% 22%, color-mix(in oklab, var(--color-vermilion-500) 10%, transparent), transparent 62%),
+            radial-gradient(34rem 16rem at 12% 18%, color-mix(in oklab, var(--color-zinc-400) 12%, transparent), transparent 62%);
+    }
+
+    .dark .hero-glow {
+        background:
+            radial-gradient(38rem 17rem at 78% 22%, color-mix(in oklab, var(--color-vermilion-500) 8%, transparent), transparent 62%),
+            radial-gradient(34rem 16rem at 12% 18%, color-mix(in oklab, var(--color-zinc-700) 18%, transparent), transparent 62%);
+    }
 }
 
-input:focus[data-flux-control],
-textarea:focus[data-flux-control],
-select:focus[data-flux-control] {
-    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
+/* View transitions between wire:navigate pages: a quiet crossfade with a short
+   rise, which is what makes SPA navigation feel native. */
+@layer base {
+    ::view-transition-old(livewire-navigate) {
+        animation: 160ms ease both fade-in-out-old;
+    }
+
+    ::view-transition-new(livewire-navigate) {
+        animation: 240ms var(--ease-out-soft) both fade-in-up-new;
+    }
+
+    @keyframes fade-in-out-old {
+        to {
+            opacity: 0;
+        }
+    }
+
+    @keyframes fade-in-up-new {
+        from {
+            opacity: 0;
+            transform: translateY(0.375rem);
+        }
+    }
 }
 
-/* \[:where(&)\]:size-4 {
-    @apply size-4;
-} */
+/* Motion is a preference, not a mandate. */
+@media (prefers-reduced-motion: reduce) {
+    .stagger-enter > * {
+        animation: none;
+    }
+
+    .cover-frame,
+    .cover-frame img,
+    .cover-scrim,
+    .cover-glow {
+        transition: none;
+    }
+
+    ::view-transition-old(livewire-navigate),
+    ::view-transition-new(livewire-navigate) {
+        animation: none;
+    }
+}

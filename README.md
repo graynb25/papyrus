@@ -57,7 +57,7 @@ source management, health, the series page and the reader all work.
 | Series | `/series/{id}` | Chapters with dates, scanlator filtering, per-series reading mode |
 | Reader | `/read/{manga}/{chapter}` | Continuous scroll or paged, progress saved per user |
 
-`/dashboard` redirects to `/library`.
+`/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
 
 ### The library
 

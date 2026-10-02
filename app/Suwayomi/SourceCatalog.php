@@ -195,7 +195,9 @@ class SourceCatalog
                 'last_synced_at' => $now,
             ];
 
-            $existing = Source::query()->find($sourceId);
+            // The model's primary key is the auto-increment id, so find() would
+            // never match and a second sync would violate the unique index.
+            $existing = Source::query()->where('suwayomi_source_id', $sourceId)->first();
 
             if ($existing !== null) {
                 $existing->fill($payload)->save();

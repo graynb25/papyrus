@@ -278,7 +278,8 @@ new #[Title('Move to another source')] class extends Component {
         {{-- What is being moved -------------------------------------------- --}}
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0">
-                <flux:heading level="1" size="xl" class="truncate">{{ $series['title'] }}</flux:heading>
+                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('A new home for an old friend.') }}</p>
+                <flux:heading level="1" size="xl" class="mt-1 truncate font-display font-semibold tracking-tight">{{ $series['title'] }}</flux:heading>
                 <flux:text size="sm" class="mt-1">
                     {{ __('On') }} <span class="font-medium">{{ $series['source']['name'] }}</span>
                     <span class="text-zinc-500">({{ $series['source']['lang'] }})</span>
@@ -357,7 +358,7 @@ new #[Title('Move to another source')] class extends Component {
                         aria-valuenow="{{ $search->sources_searched }}"
                     >
                         <div
-                            class="h-full rounded-full bg-purple-500 transition-[width] duration-500"
+                            class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
                             style="width: {{ (int) round(($search->sources_searched / $search->sources_total) * 100) }}%"
                         ></div>
                     </div>

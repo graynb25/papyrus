@@ -229,32 +229,38 @@ new #[Title('Downloads')] class extends Component {
 }; ?>
 <div class="w-full space-y-6">
     {{-- Header ---------------------------------------------------------- --}}
-    <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-            <flux:heading level="1" size="xl">{{ __('Downloads') }}</flux:heading>
-            <flux:text size="sm" class="mt-1">
-                @if ($this->counts['pending'] > 0)
-                    {{ trans_choice(
-                        ':count downloading|:count downloading',
-                        $this->counts['pending'],
-                        ['count' => $this->counts['pending']]
-                    ) }}
-                @elseif ($this->counts['finished'] > 0)
-                    {{ trans_choice(
-                        ':count chapter ready offline|:count chapters ready offline',
-                        $this->counts['finished'],
-                        ['count' => $this->counts['finished']]
-                    ) }}
-                @else
-                    {{ __('Nothing queued.') }}
-                @endif
-            </flux:text>
-        </div>
+    <header class="relative">
+        <div class="hero-glow" aria-hidden="true"></div>
 
-        <flux:button variant="ghost" size="sm" icon="arrow-path" wire:click="$refresh">
-            {{ __('Refresh') }}
-        </flux:button>
-    </div>
+        <div class="relative flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Reading ahead, quietly.') }}</p>
+                <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Downloads') }}</flux:heading>
+
+                <flux:text size="sm" class="mt-1.5">
+                    @if ($this->counts['pending'] > 0)
+                        {{ trans_choice(
+                            ':count downloading|:count downloading',
+                            $this->counts['pending'],
+                            ['count' => $this->counts['pending']]
+                        ) }}
+                    @elseif ($this->counts['finished'] > 0)
+                        {{ trans_choice(
+                            ':count chapter ready offline|:count chapters ready offline',
+                            $this->counts['finished'],
+                            ['count' => $this->counts['finished']]
+                        ) }}
+                    @else
+                        {{ __('Nothing queued.') }}
+                    @endif
+                </flux:text>
+            </div>
+
+            <flux:button variant="ghost" size="sm" icon="arrow-path" wire:click="$refresh">
+                {{ __('Refresh') }}
+            </flux:button>
+        </div>
+    </header>
 
     {{--
         The shared queue.
@@ -291,7 +297,7 @@ new #[Title('Downloads')] class extends Component {
         {{-- Totals -------------------------------------------------------- --}}
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
             @foreach ([
-                ['label' => __('Downloading'), 'value' => $this->counts['pending'], 'tone' => 'text-purple-600 dark:text-purple-400'],
+                ['label' => __('Downloading'), 'value' => $this->counts['pending'], 'tone' => 'text-vermilion-600 dark:text-vermilion-400'],
                 ['label' => __('Ready offline'), 'value' => $this->counts['finished'], 'tone' => 'text-emerald-600 dark:text-emerald-400'],
                 ['label' => __('Failed or removed'), 'value' => $this->counts['failed'], 'tone' => $this->counts['failed'] > 0 ? 'text-red-600 dark:text-red-400' : ''],
                 ['label' => __('Pages on disk'), 'value' => $this->counts['pages'], 'tone' => ''],
@@ -346,7 +352,7 @@ new #[Title('Downloads')] class extends Component {
                                 aria-valuenow="{{ (int) round($row->progress * 100) }}"
                             >
                                 <div
-                                    class="h-full rounded-full bg-purple-500 transition-[width] duration-700"
+                                    class="h-full rounded-full bg-vermilion-500 transition-[width] duration-700"
                                     style="width: {{ max(2, (int) round($row->progress * 100)) }}%"
                                 ></div>
                             </div>

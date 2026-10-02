@@ -3,17 +3,17 @@
     <head>
         @include('partials.head')
     </head>
-    <body class="min-h-screen bg-white dark:bg-zinc-800">
-        <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+    <body class="min-h-screen app-backdrop antialiased">
+        <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200/80 bg-zinc-50 dark:border-white/[0.06] dark:bg-zinc-950">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('library') }}" wire:navigate />
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
-                    {{-- Library first. It is what the app is for, and a reader who
-                         has just arrived goes straight to it. --}}
+                {{-- Library first. It is what the app is for, and a reader who
+                     has just arrived goes straight to it. --}}
+                <flux:sidebar.group :heading="__('Reading')">
                     <flux:sidebar.item icon="book-open" :href="route('library')" :current="request()->routeIs('library')" wire:navigate>
                         {{ __('Library') }}
                     </flux:sidebar.item>
@@ -21,7 +21,9 @@
                     <flux:sidebar.item icon="magnifying-glass" :href="route('search')" :current="request()->routeIs('search')" wire:navigate>
                         {{ __('Search') }}
                     </flux:sidebar.item>
+                </flux:sidebar.group>
 
+                <flux:sidebar.group :heading="__('System')">
                     <flux:sidebar.item icon="cloud-arrow-down" :href="route('downloads')" :current="request()->routeIs('downloads')" wire:navigate>
                         {{ __('Downloads') }}
                     </flux:sidebar.item>
@@ -37,16 +39,6 @@
             </flux:sidebar.nav>
 
             <flux:spacer />
-
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
 
             <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
         </flux:sidebar>

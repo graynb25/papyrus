@@ -175,7 +175,14 @@ new #[Title('Health')] class extends Component {
 }; ?>
 
 <div class="w-full space-y-6">
-    <flux:heading level="1" class="sr-only">{{ __('Source health') }}</flux:heading>
+    <header class="relative">
+        <div class="hero-glow" aria-hidden="true"></div>
+
+        <div class="relative">
+            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Every source, watched.') }}</p>
+            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Source health') }}</flux:heading>
+        </div>
+    </header>
 
     {{-- Summary tiles ---------------------------------------------------- --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

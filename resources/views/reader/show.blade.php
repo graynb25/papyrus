@@ -73,6 +73,37 @@
         }
 
         /*
+         * The progress hairline. Pure CSS scroll-driven animation: the bar grows
+         * with the document scroll on the compositor, so it costs nothing per
+         * frame and has no script to disagree with the page counter. Hidden in
+         * paged mode, where the document never scrolls, and removed entirely for
+         * readers who ask for reduced motion.
+         */
+        .reader-progress {
+            position: fixed;
+            inset-block-start: 0;
+            inset-inline: 0;
+            z-index: 21;
+            block-size: 2px;
+            transform-origin: 0 50%;
+            transform: scaleX(0);
+            background: linear-gradient(to right, #f76a45, #fb8a63);
+            animation: reader-progress-grow linear both;
+            animation-timeline: scroll(root block);
+            pointer-events: none;
+        }
+
+        body[data-mode="paged"] .reader-progress { display: none; }
+
+        @keyframes reader-progress-grow {
+            to { transform: scaleX(1); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reader-progress { display: none; }
+        }
+
+        /*
          * The reading column. Width is a percentage of the viewport so it works on
          * a phone and a monitor without a breakpoint, and the reader can narrow it.
          */
@@ -260,11 +291,15 @@
             width: 2.5rem;
             height: 2.5rem;
             border-radius: 9999px;
-            background: rgb(24 24 27 / .8);
+            background: rgb(24 24 27 / .82);
             color: #d4d4d8;
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(10px);
             border: 0;
             cursor: pointer;
+            box-shadow:
+                inset 0 0 0 1px rgb(255 255 255 / .09),
+                0 6px 20px -6px rgb(0 0 0 / .5);
+            transition: background .2s, transform .2s;
         }
 
         .reader-back { inset-inline-end: 1rem; }
@@ -283,13 +318,18 @@
         .reader-back:hover,
         .reader-toggle:hover,
         .reader-settings-toggle:hover,
-        .reader-note-toggle:hover { background: rgb(39 39 42 / .9); }
+        .reader-note-toggle:hover { background: rgb(39 39 42 / .92); }
+
+        .reader-back:active,
+        .reader-toggle:active,
+        .reader-settings-toggle:active,
+        .reader-note-toggle:active { transform: scale(.94); }
 
         /* Visible to a keyboard, which is how a control like this is found. */
         .reader-back:focus-visible,
         .reader-toggle:focus-visible,
         .reader-settings-toggle:focus-visible,
-        .reader-note-toggle:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+        .reader-note-toggle:focus-visible { outline: 2px solid #f76a45; outline-offset: 2px; }
 
         /*
          * The settings drawer.
@@ -320,10 +360,10 @@
             max-block-size: 80dvh;
             overflow-y: auto;
             overscroll-behavior: contain;
-            background: rgb(24 24 27 / .96);
-            backdrop-filter: blur(12px);
-            border-block-start: 1px solid rgb(63 63 70 / .6);
-            padding: 1rem 1.25rem 1.5rem;
+            background: rgb(20 20 23 / .96);
+            backdrop-filter: blur(14px);
+            border-block-start: 1px solid rgb(255 255 255 / .07);
+            padding: 1.25rem 1.25rem 1.5rem;
 
             /*
              * Room at the bottom for the corner controls.
@@ -389,7 +429,7 @@
 
         .reader-panel input[type="range"] {
             inline-size: 100%;
-            accent-color: #a78bfa;
+            accent-color: #f76a45;
         }
 
         .reader-segments {
@@ -425,7 +465,7 @@
         .reader-segments button[data-filter-reset]:hover,
         .reader-segments button[data-filter-reset]:focus-visible {
             color: #fafafa;
-            border-color: #a78bfa;
+            border-color: #f76a45;
         }
 
         /* Swatches are sized by their own colour so the control is the swatch. */
@@ -436,7 +476,7 @@
         }
 
         .reader-segments .reader-swatch[aria-pressed="true"] {
-            outline: 2px solid #a78bfa;
+            outline: 2px solid #f76a45;
             outline-offset: 2px;
         }
 
@@ -447,7 +487,7 @@
         }
 
         .reader-check span { text-transform: none; letter-spacing: normal; font-size: .875rem; color: #d4d4d8; }
-        .reader-check input { accent-color: #a78bfa; inline-size: 1rem; block-size: 1rem; }
+        .reader-check input { accent-color: #f76a45; inline-size: 1rem; block-size: 1rem; }
 
         .reader-panel-note { color: #71717a; font-size: .75rem; }
 
@@ -468,7 +508,7 @@
             inline-size: .4375rem;
             block-size: .4375rem;
             border-radius: 9999px;
-            background: #a78bfa;
+            background: #f76a45;
             box-shadow: 0 0 0 2px rgb(9 9 11 / .8);
         }
 
@@ -502,7 +542,7 @@
         }
 
         .reader-note-input:focus {
-            outline: 2px solid #a78bfa;
+            outline: 2px solid #f76a45;
             outline-offset: 1px;
             border-color: transparent;
         }
@@ -547,7 +587,7 @@
         .reader-note-save {
             padding: .375rem .75rem;
             border-radius: .375rem;
-            background: #a78bfa;
+            background: #f76a45;
             color: #18181b;
             font-size: .8125rem;
             font-weight: 500;
@@ -555,7 +595,7 @@
             cursor: pointer;
         }
 
-        .reader-note-save:hover { background: #c4b5fd; }
+        .reader-note-save:hover { background: #fb8a63; }
         .reader-note-save:focus-visible { outline: 2px solid #fafafa; outline-offset: 2px; }
 
         /*
@@ -641,7 +681,7 @@
         }
 
         .reader-nav-swatch[data-state="read"] { background: #4ade80; border-color: #4ade80; }
-        .reader-nav-swatch[data-state="partial"] { background: #a78bfa; border-color: #a78bfa; }
+        .reader-nav-swatch[data-state="partial"] { background: #f76a45; border-color: #f76a45; }
         .reader-nav-swatch[data-state="unknown"] { background: transparent; border-style: dashed; }
 
         .reader-nav-strip {
@@ -684,12 +724,12 @@
             inset-block: 0;
             inset-inline-start: 0;
             inline-size: var(--fill, 0%);
-            background: #a78bfa;
+            background: #f76a45;
         }
 
         .reader-nav-seg[data-state="read"] { border-color: #4ade80; background: rgb(74 222 128 / .2); }
         .reader-nav-seg[data-state="read"] .reader-nav-fill { background: #4ade80; inline-size: 100%; }
-        .reader-nav-seg[data-state="partial"] { border-color: #a78bfa; }
+        .reader-nav-seg[data-state="partial"] { border-color: #f76a45; }
 
         /*
          * The current chapter, ringed rather than tinted, so it is distinguishable
@@ -701,7 +741,7 @@
         }
 
         .reader-nav-seg:hover { border-color: #e4e4e7; }
-        .reader-nav-seg:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+        .reader-nav-seg:focus-visible { outline: 2px solid #f76a45; outline-offset: 2px; }
 
         /*
          * Room for the bar at the bottom of the page, so the last chapter's final
@@ -731,7 +771,7 @@
                 inset-block: 0 0 auto;
                 inset-inline-start: auto;
                 border-block-start: 0;
-                border-inline-start: 1px solid rgb(63 63 70 / .6);
+                border-inline-start: 1px solid rgb(255 255 255 / .07);
                 max-inline-size: 22rem;
             }
         }
@@ -788,6 +828,12 @@
 --}}
 class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $navigator['chapters'] !== [] ? 'has-nav' : '' }}"
 >
+    {{-- Chapter progress as a hairline, drawn by the compositor. The scroll
+         timeline means no script and no scroll handler: it cannot compete with
+         the page tracking, it simply cannot be wrong about how far down the
+         chapter the reader is. Paged mode has no document scroll, so it hides. --}}
+    <div class="reader-progress" aria-hidden="true"></div>
+
     <div class="page-marker" aria-hidden="true">
         <span data-reader-current>{{ $resumeAt + 1 }}</span> / <span data-reader-total>{{ $pageCount }}</span>
     </div>

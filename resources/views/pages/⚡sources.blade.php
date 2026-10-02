@@ -492,7 +492,14 @@ new #[Title('Sources')] class extends Component {
 }; ?>
 
 <div class="w-full space-y-8">
-    <flux:heading level="1">{{ __('Sources') }}</flux:heading>
+    <header class="relative">
+        <div class="hero-glow" aria-hidden="true"></div>
+
+        <div class="relative">
+            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Keiyoushi, on your terms.') }}</p>
+            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Sources') }}</flux:heading>
+        </div>
+    </header>
 
     <flux:callout variant="secondary" icon="information-circle">
         <div class="space-y-1 text-sm">
@@ -596,7 +603,7 @@ new #[Title('Sources')] class extends Component {
                                             <a
                                                 href="{{ route('series', ['manga' => $row['manga_id']]) }}"
                                                 wire:navigate
-                                                class="text-purple-600 hover:underline dark:text-purple-400"
+                                                class="text-vermilion-600 hover:underline dark:text-vermilion-400"
                                             >
                                                 {{ __('Open') }}
                                             </a>

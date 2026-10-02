@@ -750,7 +750,7 @@ new #[Title('Series')] class extends Component {
     }
 }; ?>
 
-<div class="w-full space-y-6">
+<div class="w-full space-y-7">
     @php($series = $this->series)
 
     @if ($series === null)
@@ -761,208 +761,233 @@ new #[Title('Series')] class extends Component {
             </p>
         </flux:callout>
     @else
-        {{-- Header ---------------------------------------------------------- --}}
-        <div class="flex flex-col gap-6 sm:flex-row">
-            <div class="w-full shrink-0 overflow-hidden rounded-lg bg-zinc-100 sm:w-48 dark:bg-white/5">
+        {{--
+            The hero.
+
+            A panel rather than a full bleed, because the reader scrolls into a
+            chapter list below and a hard cut from banner to content reads better
+            than a floating banner. The backdrop is the cover itself, blown up and
+            blurred, with scrims so the title survives any artwork.
+        --}}
+        <section class="relative overflow-hidden rounded-3xl border border-zinc-200/80 dark:border-white/[0.06]">
+            <div class="absolute inset-0" aria-hidden="true">
                 @if ($cover = $this->coverUrl)
                     <img
                         src="{{ $cover }}"
                         alt=""
                         loading="lazy"
-                        data-test="series-cover"
-                        class="aspect-[2/3] w-full object-cover"
+                        class="h-full w-full scale-110 object-cover opacity-40 blur-2xl saturate-150 dark:opacity-30"
                     />
-                @else
-                    <div class="flex aspect-[2/3] items-center justify-center text-zinc-300 dark:text-zinc-600">
-                        <flux:icon name="photo" class="size-8" />
-                    </div>
                 @endif
+
+                <div class="absolute inset-0 bg-linear-to-b from-zinc-50/70 via-zinc-50/85 to-zinc-100 dark:from-zinc-950/60 dark:via-zinc-950/85 dark:to-zinc-950"></div>
+                <div class="absolute inset-0 bg-linear-to-tr from-transparent via-transparent to-vermilion-500/[0.06]"></div>
             </div>
 
-            {{--
-                The reader's own cover.
-
-                Under the cover rather than in the settings row, because the reader is
-                looking at the cover while deciding whether to replace it, and a preview
-                they have to open a dialog to see is not a preview.
-
-                The file input is a label, so the whole box is the target and the control
-                is keyboard reachable without a hidden input to focus. The remove button
-                only exists when there is something to remove: a control that appears and
-                disappears is a control a reader cannot learn.
-            --}}
-            <div class="w-full shrink-0 sm:w-48">
-                <input
-                    type="file"
-                    id="cover-upload"
-                    wire:model="coverUpload"
-                    accept="image/jpeg,image/png,image/webp"
-                    class="sr-only"
-                />
-
-                <label
-                    for="cover-upload"
-                    class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 focus-within:ring-2 focus-within:ring-purple-500 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-white/5"
-                >
-                    <flux:icon name="photo" class="size-4 shrink-0" />
-
-                    @if ($this->customCover)
-                        <span>{{ __('Change cover') }}</span>
-                    @else
-                        <span>{{ __('Use your own cover') }}</span>
-                    @endif
-                </label>
-
-                {{--
-                    Upload progress, which is why this goes through Livewire rather than
-                    a plain form post: a reader uploading a photo gets a real bar instead
-                    of a button that goes quiet for two seconds.
-                --}}
-                @if ($coverUpload)
-                    <div wire:loading wire:target="coverUpload,saveCover" class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        <div class="h-1 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                            <div class="h-full w-full origin-left animate-pulse bg-purple-500"></div>
-                        </div>
-
-                        <p class="mt-1">{{ __('Uploading...') }}</p>
+            <div class="relative flex flex-col gap-7 p-5 sm:flex-row sm:p-7">
+                <div class="flex shrink-0 flex-col gap-2.5">
+                    <div class="cover-frame w-40 sm:w-48 md:w-52" data-test="series-cover">
+                        @if ($cover = $this->coverUrl)
+                            <img
+                                src="{{ $cover }}"
+                                alt=""
+                                loading="lazy"
+                            />
+                        @else
+                            <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                <flux:icon name="photo" class="size-8" />
+                            </div>
+                        @endif
                     </div>
-                @endif
 
-                @error('coverUpload')
-                    <p class="mt-2 text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
-                @enderror
+                    {{--
+                        The reader's own cover.
 
-                @if ($this->customCover)
-                    <flux:button
-                        size="xs"
-                        variant="ghost"
-                        wire:click="removeCover"
-                        wire:loading.attr="disabled"
-                        class="mt-2 w-full"
-                    >
-                        {{ __('Use the source cover') }}
-                    </flux:button>
-                @endif
+                        Under the cover rather than in the settings row, because the reader is
+                        looking at the cover while deciding whether to replace it, and a preview
+                        they have to open a dialog to see is not a preview.
 
-                @if ($this->customCover)
-                    <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('Yours, replacing the one the source has.') }}
-                    </p>
-                @endif
-            </div>
+                        The file input is a label, so the whole box is the target and the control
+                        is keyboard reachable without a hidden input to focus. The remove button
+                        only exists when there is something to remove: a control that appears and
+                        disappears is a control a reader cannot learn.
+                    --}}
+                    <div class="w-full sm:w-48 md:w-52">
+                        <input
+                            type="file"
+                            id="cover-upload"
+                            wire:model="coverUpload"
+                            accept="image/jpeg,image/png,image/webp"
+                            class="sr-only"
+                        />
 
-            <div class="min-w-0 flex-1 space-y-4">
-                <div>
-                    <flux:heading level="1">{{ $series['title'] }}</flux:heading>
+                        <label
+                            for="cover-upload"
+                            class="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-zinc-300/90 px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 focus-within:ring-2 focus-within:ring-vermilion-500 dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/5"
+                        >
+                            <flux:icon name="photo" class="size-4 shrink-0" />
 
-                    <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                            @if ($this->customCover)
+                                <span>{{ __('Change cover') }}</span>
+                            @else
+                                <span>{{ __('Use your own cover') }}</span>
+                            @endif
+                        </label>
+
+                        {{--
+                            Upload progress, which is why this goes through Livewire rather than
+                            a plain form post: a reader uploading a photo gets a real bar instead
+                            of a button that goes quiet for two seconds.
+                        --}}
+                        @if ($coverUpload)
+                            <div wire:loading wire:target="coverUpload,saveCover" class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                <div class="h-1 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                    <div class="h-full w-full origin-left animate-pulse bg-vermilion-500"></div>
+                                </div>
+
+                                <p class="mt-1">{{ __('Uploading...') }}</p>
+                            </div>
+                        @endif
+
+                        @error('coverUpload')
+                            <p class="mt-2 text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+
+                        @if ($this->customCover)
+                            <flux:button
+                                size="xs"
+                                variant="ghost"
+                                wire:click="removeCover"
+                                wire:loading.attr="disabled"
+                                class="mt-1.5 w-full rounded-full!"
+                            >
+                                {{ __('Use the source cover') }}
+                            </flux:button>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="min-w-0 flex-1">
+                    <p class="serif-italic text-sm text-zinc-500 dark:text-zinc-400">
                         {{ $series['source']['name'] ?? __('Unknown source') }}
 
                         @if (($series['source']['lang'] ?? null) !== null)
-                            <span class="uppercase">({{ $series['source']['lang'] }})</span>
+                            <span class="uppercase">· {{ $series['source']['lang'] }}</span>
                         @endif
+                    </p>
 
+                    <flux:heading level="1" class="mt-1 font-display text-3xl font-semibold tracking-tight! sm:text-4xl">
+                        {{ $series['title'] }}
+                    </flux:heading>
+
+                    <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
                         @if (($series['status'] ?? null) !== null)
-                            <span class="uppercase">&middot; {{ str_replace('_', ' ', (string) $series['status']) }}</span>
-                        @endif
-                    </p>
-                </div>
-
-                @if (filled($series['author'] ?? null) || filled($series['artist'] ?? null))
-                    <p class="text-sm text-zinc-600 dark:text-zinc-300">
-                        @if (filled($series['author'] ?? null))
-                            {{ $series['author'] }}
+                            <span class="inline-flex items-center gap-1.5 rounded-full border border-moss-500/40 bg-moss-500/10 px-2.5 py-0.5 text-xs font-medium text-moss-600 dark:border-moss-400/30 dark:bg-moss-400/10 dark:text-moss-400">
+                                <span class="size-1.5 rounded-full bg-moss-500" aria-hidden="true"></span>
+                                {{ str_replace('_', ' ', (string) $series['status']) }}
+                            </span>
                         @endif
 
-                        @if (filled($series['artist'] ?? null) && $series['artist'] !== ($series['author'] ?? null))
-                            <span class="text-zinc-400">({{ $series['artist'] }})</span>
-                        @endif
-                    </p>
-                @endif
+                        @if (filled($series['author'] ?? null) || filled($series['artist'] ?? null))
+                            <span class="text-zinc-600 dark:text-zinc-300">
+                                @if (filled($series['author'] ?? null))
+                                    {{ $series['author'] }}
+                                @endif
 
-                @if (filled($series['genre'] ?? null))
-                    <div class="flex flex-wrap gap-1">
-                        @foreach (array_slice($series['genre'], 0, 10) as $genre)
-                            <flux:badge size="sm" color="zinc">{{ $genre }}</flux:badge>
-                        @endforeach
+                                @if (filled($series['artist'] ?? null) && $series['artist'] !== ($series['author'] ?? null))
+                                    <span class="text-zinc-400">({{ $series['artist'] }})</span>
+                                @endif
+                            </span>
+                        @endif
                     </div>
-                @endif
 
-                {{-- Actions. The primary one is reading, everything else is state. --}}
-                <div class="flex flex-wrap items-center gap-2">
-                    @if ($resume = $this->resumeChapter)
-                        <flux:button
-                            variant="primary"
-                            icon="book-open"
-                            :href="$this->chapterUrl((int) $resume['id'])"
-                            wire:navigate
-                        >
-                            @if ($this->state->last_read_chapter_id !== null)
-                                {{ __('Continue reading') }}
-                            @else
-                                {{ __('Start reading') }}
-                            @endif
-                        </flux:button>
+                    @if (filled($series['genre'] ?? null))
+                        <div class="mt-3.5 flex flex-wrap gap-1.5">
+                            @foreach (array_slice($series['genre'], 0, 10) as $genre)
+                                <span class="rounded-full border border-zinc-300/80 px-2.5 py-0.5 text-xs font-medium text-zinc-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                                    {{ $genre }}
+                                </span>
+                            @endforeach
+                        </div>
                     @endif
 
-                    <flux:button
-                        :variant="$this->state->in_library ? 'filled' : 'outline'"
-                        icon="bookmark"
-                        wire:click="toggleLibrary"
-                        wire:loading.attr="disabled"
-                    >
-                        {{ $this->state->in_library ? __('In library') : __('Add to library') }}
-                    </flux:button>
+                    {{-- Actions. The primary one is reading, everything else is state. --}}
+                    <div class="mt-5 flex flex-wrap items-center gap-2">
+                        @if ($resume = $this->resumeChapter)
+                            <flux:button
+                                variant="primary"
+                                icon="book-open"
+                                :href="$this->chapterUrl((int) $resume['id'])"
+                                wire:navigate
+                            >
+                                @if ($this->state->last_read_chapter_id !== null)
+                                    {{ __('Continue reading') }}
+                                @else
+                                    {{ __('Start reading') }}
+                                @endif
+                            </flux:button>
+                        @endif
 
-                    <flux:button
-                        :variant="$this->state->favourited_at ? 'filled' : 'outline'"
-                        icon="heart"
-                        wire:click="toggleFavourite"
-                        aria-label="{{ __('Favourite') }}"
-                        aria-pressed="{{ $this->state->favourited_at ? 'true' : 'false' }}"
-                    />
+                        <flux:button
+                            :variant="$this->state->in_library ? 'filled' : 'outline'"
+                            icon="bookmark"
+                            wire:click="toggleLibrary"
+                            wire:loading.attr="disabled"
+                        >
+                            {{ $this->state->in_library ? __('In library') : __('Add to library') }}
+                        </flux:button>
 
-                    <flux:button
-                        :variant="$this->state->read_later_at ? 'filled' : 'outline'"
-                        icon="clock"
-                        wire:click="toggleReadLater"
-                        aria-label="{{ __('Read later') }}"
-                        aria-pressed="{{ $this->state->read_later_at ? 'true' : 'false' }}"
-                    />
+                        <flux:button
+                            :variant="$this->state->favourited_at ? 'filled' : 'outline'"
+                            icon="heart"
+                            wire:click="toggleFavourite"
+                            aria-label="{{ __('Favourite') }}"
+                            aria-pressed="{{ $this->state->favourited_at ? 'true' : 'false' }}"
+                        />
+
+                        <flux:button
+                            :variant="$this->state->read_later_at ? 'filled' : 'outline'"
+                            icon="clock"
+                            wire:click="toggleReadLater"
+                            aria-label="{{ __('Read later') }}"
+                            aria-pressed="{{ $this->state->read_later_at ? 'true' : 'false' }}"
+                        />
+                    </div>
+
+                    @if (filled($series['description'] ?? null))
+                        <details class="group mt-4 max-w-3xl text-sm">
+                            <summary class="inline-flex cursor-pointer list-none items-center gap-1.5 text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+                                {{ __('Description') }}
+                                <flux:icon name="chevron-down" class="size-3.5 transition-transform group-open:rotate-180" />
+                            </summary>
+                            <p class="mt-2 leading-relaxed whitespace-pre-line text-zinc-700 dark:text-zinc-200">
+                                {{ $series['description'] }}
+                            </p>
+                        </details>
+                    @endif
+
+                    @if (filled($series['realUrl'] ?? null))
+                        <a
+                            href="{{ $series['realUrl'] }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="mt-3 inline-flex items-center gap-1 text-sm text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+                        >
+                            {{ __('View on source') }}
+                            <flux:icon name="arrow-top-right-on-square" class="size-3.5" />
+                        </a>
+                    @endif
                 </div>
-
-                @if (filled($series['description'] ?? null))
-                    <details class="text-sm">
-                        <summary class="cursor-pointer text-zinc-500 dark:text-zinc-400">
-                            {{ __('Description') }}
-                        </summary>
-                        <p class="mt-2 leading-relaxed whitespace-pre-line text-zinc-700 dark:text-zinc-200">
-                            {{ $series['description'] }}
-                        </p>
-                    </details>
-                @endif
-
-                @if (filled($series['realUrl'] ?? null))
-                    <a
-                        href="{{ $series['realUrl'] }}"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-1 text-sm text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-                    >
-                        {{ __('View on source') }}
-                        <flux:icon name="arrow-top-right-on-square" class="size-3.5" />
-                    </a>
-                @endif
             </div>
-        </div>
+        </section>
 
         {{-- Chapters ------------------------------------------------------- --}}
         <section class="space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
                 <div class="flex items-baseline gap-3">
-                    <flux:heading level="2">{{ __('Chapters') }}</flux:heading>
+                    <flux:heading level="2" class="font-display font-semibold tracking-tight">{{ __('Chapters') }}</flux:heading>
 
-                    <span class="text-sm text-zinc-500 tabular-nums dark:text-zinc-400">
+                    <span class="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 tabular-nums dark:bg-white/[0.06] dark:text-zinc-300">
                         {{ Number::format($this->readCount) }} / {{ Number::format($this->visibleCount) }}
                     </span>
                 </div>
@@ -976,7 +1001,7 @@ new #[Title('Series')] class extends Component {
                     --}}
                     <flux:button.group>
                         <flux:button
-                            :variant="$this->readingSettings['mode'] === 'vertical' ? 'primary' : 'outline'"
+                            :variant="$this->readingSettings['mode'] === 'vertical' ? 'primary' : 'ghost'"
                             wire:click="setReadingMode('vertical')"
                             size="sm"
                             icon="bars-3-bottom-left"
@@ -984,7 +1009,7 @@ new #[Title('Series')] class extends Component {
                             {{ __('Scroll') }}
                         </flux:button>
                         <flux:button
-                            :variant="$this->readingSettings['mode'] === 'paged' ? 'primary' : 'outline'"
+                            :variant="$this->readingSettings['mode'] === 'paged' ? 'primary' : 'ghost'"
                             wire:click="setReadingMode('paged')"
                             size="sm"
                             icon="rectangle-stack"
@@ -995,14 +1020,14 @@ new #[Title('Series')] class extends Component {
 
                     <flux:button.group>
                         <flux:button
-                            :variant="$order === 'asc' ? 'primary' : 'outline'"
+                            :variant="$order === 'asc' ? 'primary' : 'ghost'"
                             wire:click="setOrder('asc')"
                             size="sm"
                         >
                             {{ __('Oldest') }}
                         </flux:button>
                         <flux:button
-                            :variant="$order === 'desc' ? 'primary' : 'outline'"
+                            :variant="$order === 'desc' ? 'primary' : 'ghost'"
                             wire:click="setOrder('desc')"
                             size="sm"
                         >
@@ -1028,11 +1053,11 @@ new #[Title('Series')] class extends Component {
                     >
                         {{ __('Download unread') }}
                         @if ($this->unreadDownloadableCount() > 0)
-                            <span class="ms-1 text-xs opacity-70">{{ $this->unreadDownloadableCount() }}</span>
+                            <span class="ms-1 text-xs opacity-70 tabular-nums">{{ $this->unreadDownloadableCount() }}</span>
                         @endif
                     </flux:button>
 
-                    <flux:button size="sm" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
+                    <flux:button size="sm" variant="outline" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
                         {{ __('Refresh chapters') }}
                     </flux:button>
 
@@ -1103,33 +1128,35 @@ new #[Title('Series')] class extends Component {
                     </p>
                 </flux:callout>
             @else
-                <ul class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-white/10 dark:border-white/10">
+                <ul class="overflow-hidden rounded-2xl border border-zinc-200/90 dark:border-white/[0.07]">
                     @php([$from, $to] = $this->visibleRange())
 
                     @foreach (array_slice($this->chapters, ($page - 1) * self::PER_PAGE, self::PER_PAGE) as $chapter)
                         @php($state = $this->chapterStates[(int) $chapter['id']] ?? null)
 
-                        <li class="flex items-center gap-3 px-4 py-2.5">
+                        <li class="group flex items-center gap-3 border-b border-zinc-200/70 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-zinc-100/60 sm:px-4 dark:border-white/[0.05] dark:hover:bg-white/[0.03]">
                             {{-- read state dot, so a long list is scannable --}}
-                            <flux:icon
-                                @class([
-                                    'text-green-600 dark:text-green-400' => $state?->is_read,
-                                    'text-zinc-300 dark:text-zinc-600' => ! $state?->is_read,
-                                ])
-                                :name="$state?->is_read ? 'check-circle' : 'minus-circle'"
-                            />
+                            <span
+                                class="flex size-5 shrink-0 items-center justify-center rounded-full {{
+                                    $state?->is_read
+                                        ? 'bg-moss-500/15 text-moss-600 dark:text-moss-400'
+                                        : 'bg-zinc-200/70 text-zinc-400 dark:bg-white/[0.06] dark:text-zinc-500'
+                                }}"
+                            >
+                                <flux:icon :name="$state?->is_read ? 'check' : 'minus'" class="size-3.5" />
+                            </span>
 
                             <a
                                 href="{{ $this->chapterUrl((int) $chapter['id']) }}"
                                 wire:navigate
-                                class="min-w-0 flex-1 text-sm hover:underline"
+                                class="min-w-0 flex-1 truncate text-sm transition-colors {{ $state?->is_read ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-zinc-800 hover:text-vermilion-600 dark:text-zinc-100 dark:hover:text-vermilion-400' }}"
                             >
-                                <span @class(['line-through opacity-60' => $state?->is_read])>
+                                <span @class(['line-through decoration-zinc-400/60 opacity-70' => $state?->is_read])>
                                     {{ filled($chapter['name']) ? $chapter['name'] : __('Chapter :number', ['number' => $chapter['chapterNumber'] ?? '?']) }}
                                 </span>
 
                                 @if (filled($chapter['scanlator'] ?? null))
-                                    <span class="ml-2 text-xs text-zinc-500">{{ $chapter['scanlator'] }}</span>
+                                    <span class="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">{{ $chapter['scanlator'] }}</span>
                                 @endif
                             </a>
 
@@ -1162,16 +1189,16 @@ new #[Title('Series')] class extends Component {
                                 wire:click="openNote({{ (int) $chapter['id'] }})"
                                 aria-label="{{ $note !== null ? __('Read your note on this chapter') : __('Add a note on this chapter') }}"
                                 title="{{ $note !== null ? __('Read your note') : __('Add a note') }}"
-                                @class(['text-purple-500 dark:text-purple-400' => $note !== null])
+                                @class(['text-vermilion-500 dark:text-vermilion-400' => $note !== null])
                             ></flux:button>
 
                             @if ($this->isDownloaded((int) $chapter['id']))
                                 <flux:tooltip content="{{ __('Ready without the source') }}">
-                                    <flux:icon name="cloud-arrow-down" class="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                    <flux:icon name="cloud-arrow-down" class="size-4 shrink-0 text-moss-600 dark:text-moss-400" />
                                 </flux:tooltip>
                             @elseif ($this->downloadState((int) $chapter['id']) !== null)
                                 <flux:tooltip content="{{ __('Queued for download') }}">
-                                    <flux:icon name="clock" class="size-4 shrink-0 text-purple-500" />
+                                    <flux:icon name="clock" class="size-4 shrink-0 animate-breathe text-vermilion-500" />
                                 </flux:tooltip>
                             @else
                                 <flux:button
@@ -1181,10 +1208,11 @@ new #[Title('Series')] class extends Component {
                                     wire:click="downloadChapter({{ (int) $chapter['id'] }})"
                                     aria-label="{{ __('Download this chapter') }}"
                                     title="{{ __('Download') }}"
+                                    class="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                 ></flux:button>
                             @endif
 
-                            <span class="shrink-0 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                            <span class="hidden shrink-0 text-xs text-zinc-400 tabular-nums dark:text-zinc-500 sm:block">
                                 @if ($chapter['uploadDate'] !== null)
                                     {{ $chapter['uploadDate']->format('Y-m-d') }}
                                 @endif
@@ -1205,7 +1233,7 @@ new #[Title('Series')] class extends Component {
                             than leaving two of them open.
                         --}}
                         @if ($this->noteEditing === (int) $chapter['id'])
-                            <li class="border-t border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                            <li class="border-b border-zinc-200/70 bg-zinc-50 px-4 py-3.5 last:border-b-0 dark:border-white/[0.05] dark:bg-white/[0.03]">
                                 <div class="flex flex-col gap-2">
                                     <label
                                         for="chapter-note-{{ (int) $chapter['id'] }}"
@@ -1220,7 +1248,7 @@ new #[Title('Series')] class extends Component {
                                         rows="4"
                                         maxlength="10000"
                                         placeholder="{{ __('What do you want to remember about this chapter?') }}"
-                                        class="w-full rounded-lg border border-zinc-300 bg-white p-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                                        class="w-full rounded-xl border border-zinc-300 bg-white p-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-vermilion-500 focus:outline-none focus:ring-2 focus:ring-vermilion-500/30 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100"
                                     ></textarea>
 
                                     <p class="-mt-1 text-xs text-zinc-500 dark:text-zinc-400">

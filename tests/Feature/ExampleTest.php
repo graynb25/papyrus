@@ -13,6 +13,7 @@ class ExampleTest extends TestCase
     {
         $response = $this->get(route('home'));
 
-        $response->assertOk();
+        // Signed out, so the entry point hands the reader to the sign-in screen.
+        $response->assertRedirect(route('login'));
     }
 }

@@ -420,7 +420,14 @@ new #[Title('Search')] class extends Component {
 }; ?>
 
 <div class="w-full space-y-6">
-    <flux:heading level="1" class="sr-only">{{ __('Search every source') }}</flux:heading>
+    <header class="relative">
+        <div class="hero-glow" aria-hidden="true"></div>
+
+        <div class="relative">
+            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Every source, one question.') }}</p>
+            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Search every source') }}</flux:heading>
+        </div>
+    </header>
 
     {{-- Query ------------------------------------------------------------- --}}
     <form wire:submit="search" class="space-y-4">
@@ -475,7 +482,7 @@ new #[Title('Search')] class extends Component {
                 @endif
 
                 @foreach ($this->parsedFilters as $label => $value)
-                    <span class="rounded bg-purple-100 px-1.5 py-0.5 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                    <span class="rounded bg-vermilion-100 px-1.5 py-0.5 text-vermilion-700 dark:bg-vermilion-950/60 dark:text-vermilion-300">
                         {{ $this->filterLabel($label) }}: {{ $value }}
                     </span>
                 @endforeach
@@ -601,7 +608,7 @@ new #[Title('Search')] class extends Component {
                                 aria-valuenow="{{ $progress['answered'] }}"
                             >
                                 <div
-                                    class="h-full rounded-full bg-purple-500 transition-[width] duration-700"
+                                    class="h-full rounded-full bg-vermilion-500 transition-[width] duration-700"
                                     style="width: {{ (int) round(($progress['answered'] / $progress['total']) * 100) }}%"
                                 ></div>
                             </span>
@@ -786,103 +793,108 @@ new #[Title('Search')] class extends Component {
             --}}
             @include('pages.partials.search-skipped', ['run' => $run])
 
-            <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->groups as $group)
-                    <li data-series-card>
-                        <flux:card class="h-full gap-3 p-3">
-                            <div class="flex gap-3">
-                                <div class="size-20 shrink-0 overflow-hidden rounded-md bg-zinc-100 dark:bg-white/5">
-                                    @if ($cover = $group->primary->coverUrl())
-                                        <img
-                                            src="{{ $cover }}"
-                                            alt=""
-                                            loading="lazy"
-                                            class="size-full object-cover"
-                                        />
-                                    @else
-                                        <div class="flex size-full items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                            <flux:icon name="photo" class="size-6" />
-                                        </div>
-                                    @endif
-                                </div>
+                    <li data-series-card class="group relative">
+                        <a
+                            href="{{ route('series', ['manga' => $group->primary->suwayomi_manga_id]) }}"
+                            wire:navigate
+                            class="block"
+                            tabindex="-1"
+                            aria-hidden="true"
+                        >
+                            <div class="cover-frame">
+                                @if ($cover = $group->primary->coverUrl())
+                                    <img
+                                        src="{{ $cover }}"
+                                        alt=""
+                                        loading="lazy"
+                                    />
+                                @else
+                                    <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                        <flux:icon name="photo" class="size-8" />
+                                    </div>
+                                @endif
 
-                                <div class="min-w-0 flex-1">
-                                    <p class="line-clamp-2 font-medium leading-snug">{{ $group->primary->title }}</p>
+                                <div class="cover-scrim" aria-hidden="true"></div>
 
-                                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                        {{ $group->primary->source_name }}
-                                    </p>
-
-                                    {{--
-                                        Whoever made it, when the sources say.
-
-                                        Carried on the result because `author:` is checked
-                                        against this field, and it is worth showing
-                                        regardless: a reader scanning a list of near
-                                        matches is often deciding between them by who
-                                        drew them rather than by which title reads
-                                        closest.
-                                    --}}
-                                    @php($authors = $group->authorNames())
-
-                                    @if ($authors !== [])
-                                        <p
-                                            data-series-author
-                                            class="mt-0.5 truncate text-xs text-zinc-400 dark:text-zinc-500"
-                                        >
-                                            {{ implode(', ', $authors) }}
-                                        </p>
-                                    @endif
-                                </div>
-                            </div>
-
-                            @if ($group->hasAlternatives())
-                                <div class="flex flex-wrap items-center gap-1">
-                                    <flux:badge color="zinc" size="sm">
-                                        +{{ $group->sourceCount() - 1 }} {{ trans_choice('source|sources', $group->sourceCount() - 1) }}
-                                    </flux:badge>
-
-                                    <span class="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                                        {{ implode(', ', array_slice($group->sourceNames(), 1)) }}
+                                @if ($group->hasAlternatives())
+                                    <span class="absolute end-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art">
+                                        +{{ $group->sourceCount() - 1 }}
                                     </span>
-                                </div>
-                            @endif
+                                @endif
 
-                            @if ($group->strictestContentWarning() !== 'SAFE')
-                                <flux:badge color="red" size="sm" icon="exclamation-triangle">
-                                    {{ $group->strictestContentWarning() }}
-                                </flux:badge>
-                            @endif
+                                @if ($group->strictestContentWarning() !== 'SAFE')
+                                    <span class="absolute start-1.5 top-1.5 rounded-md bg-red-500/90 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-white shadow-sm">
+                                        {{ $group->strictestContentWarning() }}
+                                    </span>
+                                @endif
+                            </div>
+                        </a>
 
-                            {{--
-                                 AniList's own rating, beside the source's and never
-                                   instead of it.
+                        <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
+                            <a href="{{ route('series', ['manga' => $group->primary->suwayomi_manga_id]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
+                                {{ $group->primary->title }}
+                            </a>
+                        </flux:heading>
 
-                                   `content_warning` is a rating for the whole source,
-                                   so a source rated SAFE can serve something AniList
-                                   marks adult. Showing both is the honest shape: the
-                                   reader sees the disagreement rather than having one
-                                   of the two silently applied. A badge appears only
-                                   where the two actually differ, because agreeing
-                                   twice is noise.
-                            --}}
-                            @php($anilist = $this->anilistMediaFor($group->primary->title))
+                        <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ $group->primary->source_name }}
+                        </p>
 
-                            @if ($anilist !== null && $anilist->anilist_id > 0)
-                                <flux:tooltip
-                                    content="{{ $anilist->is_adult
-                                        ? __('AniList marks this series as adult, while the source rates it :rating.', ['rating' => $group->strictestContentWarning()])
-                                        : __('AniList does not mark this series as adult. The source rates it :rating.', ['rating' => $group->strictestContentWarning()]) }}"
-                                >
-                                    <flux:badge
-                                        color="{{ $anilist->is_adult && $group->strictestContentWarning() === 'SAFE' ? 'amber' : 'zinc' }}"
-                                        size="sm"
-                                    >
-                                        {{ __('AniList: adult') }}
-                                    </flux:badge>
-                                </flux:tooltip>
-                            @endif
-                        </flux:card>
+                        {{--
+                            Whoever made it, when the sources say.
+
+                            Carried on the result because `author:` is checked
+                            against this field, and it is worth showing
+                            regardless: a reader scanning a list of near
+                            matches is often deciding between them by who
+                            drew them rather than by which title reads
+                            closest.
+                        --}}
+                        @php($authors = $group->authorNames())
+
+                        @if ($authors !== [])
+                            <p
+                                data-series-author
+                                class="mt-0.5 truncate text-xs text-zinc-400 dark:text-zinc-500"
+                            >
+                                {{ implode(', ', $authors) }}
+                            </p>
+                        @endif
+
+                        @if ($group->hasAlternatives())
+                            <p class="mt-1 truncate text-xs text-zinc-400 dark:text-zinc-500">
+                                +{{ $group->sourceCount() - 1 }} {{ trans_choice('source|sources', $group->sourceCount() - 1) }}:
+                                {{ implode(', ', array_slice($group->sourceNames(), 1)) }}
+                            </p>
+                        @endif
+
+                        {{--
+                             AniList's own rating, beside the source's and never
+                               instead of it.
+
+                               `content_warning` is a rating for the whole source,
+                               so a source rated SAFE can serve something AniList
+                               marks adult. Showing both is the honest shape: the
+                               reader sees the disagreement rather than having one
+                               of the two silently applied. A badge appears only
+                               where the two actually differ, because agreeing
+                               twice is noise.
+                        --}}
+                        @php($anilist = $this->anilistMediaFor($group->primary->title))
+
+                        @if ($anilist !== null && $anilist->anilist_id > 0)
+                            <flux:tooltip
+                                content="{{ $anilist->is_adult
+                                    ? __('AniList marks this series as adult, while the source rates it :rating.', ['rating' => $group->strictestContentWarning()])
+                                    : __('AniList does not mark this series as adult. The source rates it :rating.', ['rating' => $group->strictestContentWarning()]) }}"
+                            >
+                                <span class="mt-1.5 inline-flex items-center gap-1 rounded-full border border-amber-400/50 bg-amber-400/10 px-2 py-0.5 text-[0.65rem] font-medium text-amber-600 dark:text-amber-400">
+                                    {{ __('AniList: adult') }}
+                                </span>
+                            </flux:tooltip>
+                        @endif
                     </li>
                 @endforeach
             </ul>

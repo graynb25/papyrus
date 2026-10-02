@@ -8,6 +8,7 @@ use App\Support\ImageUrl;
 use App\Support\ReaderSettings;
 use App\Support\ReadingState;
 use App\Support\SessionOverride;
+use App\Suwayomi\Gateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Contracts\View\View;
@@ -46,6 +47,7 @@ class ReaderController extends Controller
         int $manga,
         int $chapter,
         SeriesGateway $series,
+        Gateway $gateway,
         ReadingState $reading,
     ): View|Response {
         // Opening a chapter moves the series pointer, so "continue reading" is
@@ -86,12 +88,14 @@ class ReaderController extends Controller
             'mangaId' => $manga,
             'chapterId' => $chapter,
 
-            // Rebuilt from the ids rather than trusted from the payload, so only
-            // paths the proxy allowlist accepts can reach an img tag.
-            'pages' => array_values(array_filter(array_map(
-                static fn (int $index): ?string => ImageUrl::page($manga, $chapter, $index, ImageUrl::defaultFormat()),
-                array_keys($pages['pages']),
-            ))),
+            // The server's own paths, reprefixed for the proxy. They are passed
+            // through rather than rebuilt from the chapter id because the page
+            // endpoint addresses chapters by source order, not by id: measured
+            // live, fetchChapterPages for chapter 3178 returned
+            // /api/v1/manga/116/chapter/2/page/0, and the id-shaped URL 404s.
+            // The allowlist still holds: the proxy validates the path it is
+            // asked to stream, so nothing but a matching page URL renders.
+            'pages' => $gateway->resolvePageUrls($pages['pages'], ImageUrl::defaultFormat()),
 
             'pageCount' => $pages['page_count'],
             'resumeAt' => (int) ($chapterState->last_page_read ?? 0),

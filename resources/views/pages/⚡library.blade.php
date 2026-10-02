@@ -630,41 +630,90 @@ new #[Title('Library')] class extends Component {
     }
 }; ?>
 
-<div class="w-full space-y-6">
+<div class="w-full space-y-7">
     {{--
-        Checking.
+        Page hero.
 
-        A pass over everything due, and a summary of what the last ones found. The
-        button is disabled when nothing is due rather than hidden, because a reader
-        who came here to check and finds no control cannot tell the difference between
-        "nothing to do" and "not built yet".
-
-        The count beside it is the whole point of the feature: 6 of 14 series had no
-        chapter list at all, and each of those was showing "Chapters never fetched"
-        because a series added from search has never been read from its source.
+        The check row lives here rather than in a card of its own: it is status
+        information, not content, and it reads best as a quiet line under the
+        title. The button is disabled when nothing is due rather than hidden,
+        because a reader who came here to check and finds no control cannot tell
+        the difference between "nothing to do" and "not built yet".
     --}}
-    @if ($this->totalAll > 0)
-        {{-- A plain row, not flux:section. That component does not exist in Flux 2, and a
-             view:cache run is what proves it rather than the page, which renders the
-             branch only when a library is non-empty. --}}
-        <div class="flex flex-wrap items-center gap-3">
-                <flux:button
-                    wire:click="checkLibrary"
-                    wire:loading.attr="disabled"
-                    wire:target="checkLibrary"
-                    variant="primary"
-                    size="sm"
-                    icon="arrow-path"
-                    :disabled="$this->checkSchedule['due'] === 0"
-                >
-                    {{ trans_choice(
-                        'Check :count series|Check :count series',
-                        $this->checkSchedule['due'],
-                        ['count' => $this->checkSchedule['due']],
-                    ) }}
-                </flux:button>
+    <header class="relative">
+        <div class="hero-glow" aria-hidden="true"></div>
 
-                <span class="text-sm text-zinc-500 dark:text-zinc-400" aria-live="polite">
+        <div class="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+            <div class="min-w-0">
+                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">
+                    {{ __('Good reading.') }}
+                </p>
+
+                <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">
+                    {{ __('Library') }}
+                </flux:heading>
+
+                <flux:text size="sm" class="mt-1.5 text-zinc-600 dark:text-zinc-400">
+                    @if ($this->totalAll === 0)
+                        {{ __('Nothing added yet.') }}
+                    @elseif ($this->shelf !== null)
+                        {{ trans_choice(
+                            ':count series on this shelf|:count series on this shelf',
+                            $this->totalFiltered,
+                            ['count' => $this->totalFiltered]
+                        ) }}
+                    @else
+                        {{ trans_choice(
+                            ':count series, :unread unread|:count series, :unread unread',
+                            $this->totalAll,
+                            ['count' => $this->totalAll, 'unread' => $this->totalUnread]
+                        ) }}
+                    @endif
+                </flux:text>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+                @if ($this->totalAll > 0)
+                    <flux:button
+                        wire:click="checkLibrary"
+                        wire:loading.attr="disabled"
+                        wire:target="checkLibrary"
+                        variant="outline"
+                        size="sm"
+                        icon="arrow-path"
+                        :disabled="$this->checkSchedule['due'] === 0"
+                        class="group/check"
+                    >
+                        {{ trans_choice(
+                            'Check :count series|Check :count series',
+                            $this->checkSchedule['due'],
+                            ['count' => $this->checkSchedule['due']],
+                        ) }}
+                    </flux:button>
+                @endif
+
+                <flux:button variant="primary" href="{{ route('search') }}" icon="plus" wire:navigate>
+                    {{ __('Add series') }}
+                </flux:button>
+            </div>
+        </div>
+
+        {{-- The count beside the check button is the whole point of the feature:
+             6 of 14 series had no chapter list at all, and each of those was
+             showing "Chapters never fetched" because a series added from search
+             has never been read from its source. --}}
+        @if ($this->totalAll > 0)
+            <div class="relative mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+                <span class="inline-flex items-center gap-2" aria-live="polite">
+                    <span
+                        class="inline-block size-1.5 rounded-full {{
+                            $this->checkSchedule['due'] === 0
+                                ? 'bg-moss-500 animate-breathe'
+                                : 'bg-vermilion-500 animate-breathe'
+                        }}"
+                        aria-hidden="true"
+                    ></span>
+
                     @if ($this->checkSchedule['due'] === 0)
                         {{
                             trans_choice(
@@ -695,8 +744,8 @@ new #[Title('Library')] class extends Component {
                     @endif
                 </span>
 
-                <span class="text-xs text-zinc-400 dark:text-zinc-500">
-                    @if ($this->checkSchedule['skipped'] > 0)
+                @if ($this->checkSchedule['skipped'] > 0)
+                    <span class="text-xs text-zinc-400 dark:text-zinc-500">
                         {{
                             trans_choice(
                                 ':skipped checked recently|:skipped checked recently',
@@ -716,38 +765,11 @@ new #[Title('Library')] class extends Component {
                                 )
                             }}
                         @endif
-                    @endif
-                </span>
-        </div>
-    @endif
-
-    {{-- Header ---------------------------------------------------------- --}}
-    <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-            <flux:heading level="1" size="xl">{{ __('Library') }}</flux:heading>
-            <flux:text size="sm" class="mt-1">
-                @if ($this->totalAll === 0)
-                    {{ __('Nothing added yet.') }}
-                @elseif ($this->shelf !== null)
-                    {{ trans_choice(
-                        ':count series on this shelf|:count series on this shelf',
-                        $this->totalFiltered,
-                        ['count' => $this->totalFiltered]
-                    ) }}
-                @else
-                    {{ trans_choice(
-                        ':count series, :unread unread|:count series, :unread unread',
-                        $this->totalAll,
-                        ['count' => $this->totalAll, 'unread' => $this->totalUnread]
-                    ) }}
+                    </span>
                 @endif
-            </flux:text>
-        </div>
-
-        <flux:button variant="primary" href="{{ route('search') }}" icon="plus" wire:navigate>
-            {{ __('Add series') }}
-        </flux:button>
-    </div>
+            </div>
+        @endif
+    </header>
 
     {{--
         Continue reading.
@@ -766,43 +788,62 @@ new #[Title('Library')] class extends Component {
     @if ($this->hasContinueFeed)
         <section aria-labelledby="continue-heading" class="space-y-3">
             <div class="flex items-baseline justify-between gap-3">
-                <flux:heading id="continue-heading" size="sm" level="2">
+                <flux:heading id="continue-heading" size="sm" level="2" class="font-display font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
                     {{ __('Continue reading') }}
                 </flux:heading>
 
-                <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400">
+                <flux:text size="xs" class="hidden text-zinc-400 dark:text-zinc-500 sm:block">
                     {{ __('Your most recent, with the next chapter ready.') }}
                 </flux:text>
             </div>
 
-            <ul class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                @foreach ($this->continueFeed as $entry)
+            {{-- A rail, not a grid: the feed answers "what was I reading", and a
+                 horizontal shelf keeps the answer one glance wide no matter how
+                 many series it holds. The masked edges fade the ends out, and
+                 snap makes one wheel nudge land on the next card. --}}
+            <ul class="rail-scroll -mx-1 flex snap-x gap-3.5 px-1 pb-2 pt-1">
+                @foreach ($this->continueFeed as $index => $entry)
                     @php($where = $entry['continue_at'])
 
-                    <li>
+                    <li class="w-40 shrink-0 sm:w-44" style="animation-delay: {{ $index * 0.06 }}s">
                         <a
                             href="{{ route('reader.show', ['manga' => $entry['manga_id'], 'chapter' => $where['chapter_id']]) }}"
                             wire:navigate
-                            class="group flex h-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white transition hover:border-purple-400 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-purple-500"
+                            class="group flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermilion-500"
                         >
-                            @if ($entry['cover'] !== null)
-                                <img
-                                    src="{{ $entry['cover'] }}"
-                                    alt=""
-                                    loading="lazy"
-                                    width="200"
-                                    height="280"
-                                    class="aspect-[5/7] w-full bg-zinc-100 object-cover dark:bg-zinc-800"
-                                >
-                            @else
-                                {{-- No cover is reported rather than shown as a broken image. --}}
-                                <div class="flex aspect-[5/7] w-full items-center justify-center bg-zinc-100 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                    {{ __('No cover') }}
-                                </div>
-                            @endif
+                            <div class="cover-frame">
+                                @if ($entry['cover'] !== null)
+                                    <img
+                                        src="{{ $entry['cover'] }}"
+                                        alt=""
+                                        loading="lazy"
+                                        width="200"
+                                        height="280"
+                                    >
+                                @else
+                                    {{-- No cover is reported rather than shown as a broken image. --}}
+                                    <div class="cover-placeholder flex items-center justify-center text-xs text-zinc-400 dark:text-zinc-500">
+                                        {{ __('No cover') }}
+                                    </div>
+                                @endif
 
-                            <div class="space-y-1 p-2.5">
-                                <flux:text size="xs" class="line-clamp-2 font-medium leading-tight">
+                                <div class="cover-scrim" aria-hidden="true"></div>
+
+                                <span class="absolute start-2 top-2 rounded-md px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide on-art">
+                                    {{ __('Resume') }}
+                                </span>
+
+                                {{-- Progress hairline. The destination fraction the
+                                     card is about to offer, drawn on the artwork. --}}
+                                @if (($where['total'] ?? 0) > 0)
+                                    <div class="cover-progress" aria-hidden="true">
+                                        <span style="width: {{ min(100, (int) round(($where['read'] / max(1, $where['total'])) * 100)) }}%"></span>
+                                    </div>
+                                @endif
+                            </div>
+
+                            <div class="min-w-0 space-y-0.5 px-0.5 pt-2">
+                                <flux:text size="xs" class="line-clamp-2 font-medium leading-snug text-zinc-800 dark:text-zinc-100">
                                     {{ $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']]) }}
                                 </flux:text>
 
@@ -812,7 +853,7 @@ new #[Title('Library')] class extends Component {
                                     one chapter `Chapter 1` and `Ch. 1`, so the label is
                                     not derivable from the position and is worth showing.
                                 --}}
-                                <flux:text size="xs" class="text-purple-600 dark:text-purple-400">
+                                <flux:text size="xs" class="truncate font-medium text-vermilion-600 dark:text-vermilion-400">
                                     @if ($where['chapter_name'] !== null && $where['chapter_name'] !== '')
                                         {{ $where['chapter_name'] }}
                                     @else
@@ -824,7 +865,7 @@ new #[Title('Library')] class extends Component {
                                     @endif
                                 </flux:text>
 
-                                <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400">
+                                <flux:text size="xs" class="truncate text-zinc-500 dark:text-zinc-400">
                                     {{ trans_choice(
                                         'of :total, :read read|of :total, :read read',
                                         $where['total'],
@@ -839,35 +880,49 @@ new #[Title('Library')] class extends Component {
         </section>
     @endif
 
-    {{-- Shelves --------------------------------------------------------- --}}
-    <flux:card class="p-4">
-        <div class="flex flex-wrap items-center gap-2">
-            <flux:button.group>
+    {{--
+        The control bar.
+
+        Shelves, search and sort are one bar: the reader's three ways of asking
+        "show me less". Shelf chips act as tabs, the active one carries the
+        accent, and everything that manages shelves lives behind the kebab so
+        the bar stays one row tall.
+    --}}
+    <div class="flex flex-wrap items-center gap-2.5">
+        @if ($this->totalAll > 0)
+            <flux:input
+                wire:model.live.debounce.300ms='search'
+                placeholder="{{ __('Search your library') }}"
+                icon="magnifying-glass"
+                class="w-full max-w-64 sm:order-3 sm:w-56"
+            />
+
+            <div class="flex flex-1 flex-wrap items-center gap-1.5 sm:order-1">
                 <flux:button
-                    :variant="$this->shelf === null ? 'primary' : 'outline'"
+                    :variant="$this->shelf === null ? 'primary' : 'ghost'"
                     size="sm"
                     wire:click="$set('shelf', null)"
+                    class="rounded-full! px-3.5!"
                 >
                     {{ __('All') }}
-                    <span class="ms-1 text-xs opacity-70">{{ $this->totalAll }}</span>
+                    <span class="ms-1.5 text-xs opacity-70 tabular-nums">{{ $this->totalAll }}</span>
                 </flux:button>
 
                 @foreach ($this->shelves as $one)
                     <flux:button
-                        :variant="$this->shelf === $one['id'] ? 'primary' : 'outline'"
+                        :variant="$this->shelf === $one['id'] ? 'primary' : 'ghost'"
                         size="sm"
                         wire:click="$set('shelf', {{ $one['id'] }})"
+                        class="rounded-full! px-3.5!"
                     >
                         {{ $one['name'] }}
-                        <span class="ms-1 text-xs opacity-70">{{ $one['count'] }}</span>
+                        <span class="ms-1.5 text-xs opacity-70 tabular-nums">{{ $one['count'] }}</span>
                     </flux:button>
                 @endforeach
-            </flux:button.group>
 
-            <div class="ms-auto flex items-center gap-2">
                 @if ($this->shelves->isNotEmpty())
-                    <flux:dropdown placement="bottom-end">
-                        <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" aria-label="{{ __('Manage shelves') }}"></flux:button>
+                    <flux:dropdown placement="bottom-start">
+                        <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" aria-label="{{ __('Manage shelves') }}" class="rounded-full!"></flux:button>
 
                         <flux:menu>
                             @foreach ($this->shelves as $one)
@@ -879,20 +934,35 @@ new #[Title('Library')] class extends Component {
                     </flux:dropdown>
                 @endif
 
-                <form wire:submit="createShelf" class="flex items-center gap-2">
+                <form wire:submit="createShelf" class="flex items-center gap-1.5">
                     <flux:input
                         wire:model="newShelfName"
                         size="sm"
                         placeholder="{{ __('New shelf') }}"
-                        class="w-40"
+                        class="w-36"
                     />
-                    <flux:button type="submit" variant="outline" size="sm" icon="plus" aria-label="{{ __('Create shelf') }}"></flux:button>
+                    <flux:button type="submit" variant="ghost" size="sm" icon="plus" aria-label="{{ __('Create shelf') }}" class="rounded-full!"></flux:button>
                 </form>
             </div>
-        </div>
+
+            <flux:button.group class="sm:order-2">
+                @foreach ([
+                    'recent' => __('Recent'),
+                    'unread' => __('Unread'),
+                    'added' => __('Date added'),
+                    'title' => __('Title'),
+                ] as $value => $label)
+                    <flux:button
+                        :variant="$this->sort === $value ? 'primary' : 'ghost'"
+                        size="sm"
+                        wire:click="$set('sort', '{{ $value }}')"
+                    >{{ $label }}</flux:button>
+                @endforeach
+            </flux:button.group>
+        @endif
 
         @if ($this->renaming !== [])
-            <div class="mt-3 flex flex-wrap items-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <div class="flex w-full flex-wrap items-end gap-2 border-t border-zinc-200 pt-3 dark:border-white/[0.06]">
                 @foreach ($this->renaming as $shelfId => $draft)
                     <flux:input.group class="w-64">
                         <flux:input wire:model="renaming.{{ $shelfId }}" size="sm" />
@@ -912,34 +982,7 @@ new #[Title('Library')] class extends Component {
                 @endforeach
             </div>
         @endif
-    </flux:card>
-
-    {{-- Filters --------------------------------------------------------- --}}
-    @if ($this->totalAll > 0)
-        <div class="flex flex-wrap items-center gap-3">
-            <flux:input
-                wire:model.live.debounce.300ms='search'
-                placeholder="{{ __('Search your library') }}"
-                icon="magnifying-glass"
-                class="max-w-xs flex-1"
-            />
-
-            <flux:button.group>
-                @foreach ([
-                    'recent' => __('Recent'),
-                    'unread' => __('Unread'),
-                    'added' => __('Date added'),
-                    'title' => __('Title'),
-                ] as $value => $label)
-                    <flux:button
-                        :variant="$this->sort === $value ? 'primary' : 'outline'"
-                        size="sm"
-                        wire:click="$set('sort', '{{ $value }}')"
-                    >{{ $label }}</flux:button>
-                @endforeach
-            </flux:button.group>
-        </div>
-    @endif
+    </div>
 
     {{-- Entries --------------------------------------------------------- --}}
     @if ($this->totalFiltered === 0)
@@ -967,35 +1010,54 @@ new #[Title('Library')] class extends Component {
             @endif
         </flux:callout>
     @else
-        <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             @foreach ($this->visibleEntries as $entry)
                 <li class="group relative">
                     <a
                         href="{{ route('series', ['manga' => $entry['manga_id']]) }}"
                         wire:navigate
                         class="block"
+                        tabindex="-1"
+                        aria-hidden="true"
                     >
-                        {{-- 2/3 held by the wrapper rather than the image, so a
+                        {{-- 2/3 held by the frame rather than the image, so a
                              cover that has not loaded still reserves its space and
                              the grid does not jump as the page fills. --}}
-                        <div class="overflow-hidden rounded-lg bg-zinc-100 ring-1 ring-zinc-900/10 dark:bg-white/5 dark:ring-white/10">
+                        <div class="cover-frame">
                             @if ($entry['cover'] !== null)
                                 <img
                                     src="{{ $entry['cover'] }}"
                                     alt=""
                                     loading="lazy"
-                                    class="aspect-[2/3] w-full object-cover"
                                 >
                             @else
-                                <div class="flex aspect-[2/3] items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
                                     <flux:icon name="photo" class="size-8" />
                                 </div>
+                            @endif
+
+                            <div class="cover-scrim" aria-hidden="true"></div>
+
+                            {{--
+                                Reading progress hairline. The ratio the card's
+                                meta line states, drawn on the artwork, so a wall
+                                of covers shows at a glance which ones have
+                                somewhere to go.
+                            --}}
+                            @if (($entry['total_chapters'] ?? 0) > 0 && ($entry['unread_chapters'] ?? null) !== null)
+                                @php($readRatio = (int) round(($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100))
+
+                                @if ($readRatio > 0)
+                                    <div class="cover-progress" aria-hidden="true">
+                                        <span style="width: {{ min(100, $readRatio) }}%"></span>
+                                    </div>
+                                @endif
                             @endif
                         </div>
                     </a>
 
                     {{--
-                        Unread, and the staleness marker.
+                        Unread, stale, and new-since-check badges.
 
                         Plain spans rather than `flux:badge`, deliberately. A badge
                         carries a translucent surface token tuned for a page
@@ -1004,38 +1066,18 @@ new #[Title('Library')] class extends Component {
                         that is a 15% grey on near-black with dark grey text, which
                         is invisible. A control floating over artwork needs a
                         background chosen for that, not inherited from one.
+
+                        Unread lives top-end, new top-start, stale bottom-start:
+                        three facts that can all be true at once and must never
+                        fight for one corner.
                     --}}
                     @if ($entry['unread_chapters'] !== null && $entry['unread_chapters'] > 0)
                         <span
-                            class="absolute start-1 top-1 rounded-md bg-zinc-950/85 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-zinc-50 shadow-sm ring-1 ring-white/15 backdrop-blur-sm"
+                            class="absolute end-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art"
                             title="{{ trans_choice(':count chapter waiting|:count chapters waiting', $entry['unread_chapters'], ['count' => $entry['unread_chapters']]) }}"
                         >{{ $entry['unread_chapters'] }}</span>
                     @endif
 
-                    @if ($entry['needs_refresh'])
-                        <flux:tooltip content="{{ __('The chapter list has changed since it was last checked.') }}">
-                            <span
-                                class="absolute end-1 top-1 inline-flex items-center gap-0.5 rounded-md bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-amber-950 shadow-sm"
-                            >
-                                <flux:icon name="exclamation-triangle" class="size-3" />
-                                {{ __('Stale') }}
-                            </span>
-                        </flux:tooltip>
-                    @endif
-
-                    {{--
-                        New since the last check.
-
-                        The number a reader opened this page for, and it is the only
-                        place in the app that can say it. The library's own unread
-                        count is total minus read, which is a standing figure; this is
-                        the change since the reader last looked, which is why it earns
-                        the second slot on the cover.
-
-                        Null when the series has never been checked, or the check
-                        predates a stored previous count. Neither is zero, and showing
-                        a zero there would claim a certainty the data does not have.
-                    --}}
                     @php($found = $this->newChapters((int) $entry['manga_id']))
 
                     @if ($found !== null && $found > 0)
@@ -1047,24 +1089,35 @@ new #[Title('Library')] class extends Component {
                             ) }}"
                         >
                             <span
-                                class="absolute end-1 top-1 inline-flex items-center gap-0.5 rounded-md bg-purple-500 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white shadow-sm"
+                                class="absolute start-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-md bg-vermilion-500 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-zinc-950 shadow-sm"
                             >
                                 +{{ $found }}
                             </span>
                         </flux:tooltip>
                     @endif
 
-                    <flux:heading size="sm" class="mt-2 truncate" level="3">
-                        <a href="{{ route('series', ['manga' => $entry['manga_id']]) }}" wire:navigate class="hover:underline">
+                    @if ($entry['needs_refresh'])
+                        <flux:tooltip content="{{ __('The chapter list has changed since it was last checked.') }}">
+                            <span
+                                class="absolute bottom-2.5 start-1.5 inline-flex items-center gap-0.5 rounded-md bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-amber-950 shadow-sm"
+                            >
+                                <flux:icon name="exclamation-triangle" class="size-3" />
+                                {{ __('Stale') }}
+                            </span>
+                        </flux:tooltip>
+                    @endif
+
+                    <flux:heading size="sm" class="mt-2.5 truncate font-display font-semibold" level="3">
+                        <a href="{{ route('series', ['manga' => $entry['manga_id']]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
                             {{ $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']]) }}
                         </a>
                     </flux:heading>
 
-                    <flux:text size="xs" class="truncate">
+                    <flux:text size="xs" class="mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
                         @if (! $entry['has_source_data'])
                             {{ __('Not on the server') }}
                         @elseif (! $entry['has_chapter_list'])
-                            {{-- 
+                            {{--
                                 Honest, and it was the only thing this card could say.
                                 Measured: 6 of 14 series on the dev library were in
                                 this state, because a series added from search has
@@ -1083,14 +1136,14 @@ new #[Title('Library')] class extends Component {
                         @endif
                     </flux:text>
 
-                    <flux:text size="xs" class="truncate opacity-70">
+                    <flux:text size="xs" class="truncate text-zinc-400 dark:text-zinc-500">
                         @if ($entry['has_source_data'])
                             {{ $entry['source_name'] }}@if ($entry['source_lang'] !== null) · {{ strtoupper($entry['source_lang']) }}@endif
                         @endif
                     </flux:text>
 
                     @if ($entry['last_read_at'] !== null)
-                        <flux:text size="xs" class="truncate opacity-70">
+                        <flux:text size="xs" class="truncate text-zinc-400 dark:text-zinc-500">
                             {{ __('Read :when', ['when' => $entry['last_read_at']->diffForHumans()]) }}
                         </flux:text>
                     @endif
@@ -1115,9 +1168,9 @@ new #[Title('Library')] class extends Component {
                             Only when it is due, so a checked series does not carry a
                             button that does nothing. The card's own check runs inline
                             rather than as a job, because one refresh is 361ms to
-                            1617ms measured and a reader watching one card can wait for
-                            that. The floor is bypassed deliberately: pressing it is the
-                            reader asking now.
+                            1617ms measured and a reader watching one card can wait
+                            for that. The floor is bypassed deliberately: pressing it
+                            is the reader asking now.
                         --}}
                         @if ($this->isDue((int) $entry['manga_id']))
                             <flux:button
@@ -1129,6 +1182,7 @@ new #[Title('Library')] class extends Component {
                                 wire:target="tryCheckSeries({{ $entry['manga_id'] }})"
                                 title="{{ __('Check this series for new chapters now') }}"
                                 aria-label="{{ __('Check :title for new chapters now', ['title' => $entry['title']]) }}"
+                                class="rounded-full!"
                             >
                                 {{ __('Check') }}
                             </flux:button>
@@ -1141,10 +1195,11 @@ new #[Title('Library')] class extends Component {
                             @foreach ($filedHere as $one)
                                 <flux:button
                                     size="xs"
-                                    variant="primary"
+                                    variant="ghost"
                                     wire:click="toggleFiling({{ $entry['manga_id'] }}, {{ $one['id'] }})"
                                     title="{{ __('Remove from :name', ['name' => $one['name']]) }}"
                                     aria-label="{{ __('Remove from :name', ['name' => $one['name']]) }}"
+                                    class="rounded-full! border border-zinc-200 dark:border-white/[0.08]"
                                 >
                                     {{ $one['name'] }}
                                 </flux:button>
@@ -1158,6 +1213,7 @@ new #[Title('Library')] class extends Component {
                                         icon="plus"
                                         aria-label="{{ __('Add to a shelf') }}"
                                         title="{{ __('Add to a shelf') }}"
+                                        class="rounded-full! text-zinc-400 dark:text-zinc-500"
                                     ></flux:button>
 
                                     <flux:menu>
@@ -1178,8 +1234,8 @@ new #[Title('Library')] class extends Component {
         </ul>
 
         @if ($this->lastPage > 1)
-            <div class="flex items-center justify-between gap-3">
-                <flux:text size="sm">
+            <div class="flex items-center justify-between gap-3 border-t border-zinc-200/80 pt-5 dark:border-white/[0.06]">
+                <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
                     {{ __('Page :page of :total', ['page' => $this->page, 'total' => $this->lastPage]) }}
                 </flux:text>
 

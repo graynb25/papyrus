@@ -99,8 +99,11 @@ final class DedupeGroup
     {
         $rank = [self::SAFE => 0, self::MIXED => 1, self::NSFW => 2];
 
+        // concat, not push: push mutates the alternatives collection in place,
+        // which grew this group by one on every call and made any count read
+        // after this one wrong. A getter has to leave the group as it found it.
         $strictest = $this->alternatives
-            ->push($this->primary)
+            ->concat([$this->primary])
             ->max(fn (SearchResult $r): int => $rank[$r->content_warning] ?? 0);
 
         return match (true) {
