@@ -143,6 +143,8 @@ Measured, not assumed. Re-verify with the scripts in `..\.tools\suwayomi\`.
 | `chapter_states.read` does not exist | The column is **`is_read`**, mirroring Suwayomi's own `isRead`. A query naming `read` returns every row with the column null and **no error**, so a feature that depends on it silently sees nothing read. |
 | **The page endpoint addresses chapters by source order, not by id** | Measured on v2.4.2366: `fetchChapterPages` for chapter 3178 (`sourceOrder` 2) returns `/api/v1/manga/116/chapter/2/page/0`, and the id-shaped URL answers 404 `text/plain`. `fetchChapterPages` itself takes the id; only the REST page path is positional. Pass the server's own paths through `Gateway::resolvePageUrls()` rather than rebuilding them from ids, which is what `ReaderController` does now. |
 | **`Collection::push` inside a getter mutates the thing it reads** | `DedupeGroup::strictestContentWarning()` pushed the primary row onto `alternatives`, so the group grew by one on every call and any count read after it was wrong by that much. It shipped for months because the one caller read the count before calling it. The fix is `concat`, which returns a new collection. |
+| `UpdateExtensionPatchInput` carries three booleans | `install`, `uninstall` and `update`, verified in the committed v2.4.2366 snapshot. `update: true` pulls the store's current artefact over an installed extension. `ExtensionManager::update()` shipped unused for months: the page drew the "update" badge and no control anywhere acted on it. |
+| **AniList's OAuth issues no refresh token** | The access token lives about 365 days and that is the whole credential. A rejected token cannot be renewed, so the account row is deleted and the reader connects again. The token endpoint takes a form post and both `expires_in` (seconds) and `expires` (epoch) have been seen in responses, so both are read. |
 
 ---
 
@@ -715,6 +717,23 @@ Each of these cost real time. Do not repeat them.
     it mapped the restored series' chapters onto the moved-away ones. Only the browser
     gate's restore step caught it, which is the argument for gates that mutate and then
     put things back rather than asserting nothing.
+123. **An upsert's insert rows must carry the end state.** `upsert()` applies the update
+    column list only to rows that already exist. A new row is written from the insert
+    values alone, so a "mark all read" whose inserted rows omitted `is_read` filled the
+    database default of false into exactly the chapters the feature was pressed for,
+    and the count query reported three rows while every flag was wrong. The first test
+    that counted flags rather than rows caught it.
+124. **A computed read inside its own action caches the pre-write value for the render.**
+    The series page's library button read `$this->state->in_library`, wrote the row, and
+    the re-render showed the old label, because the `#[Computed]` was memoised during the
+    action and the render reused it. This is trap 63's shape, live on a real button: the
+    fix is `unset($this->state)` after the write, and the browser was the only place the
+    wrong label was visible, which is the argument for gate five.
+125. **A Playwright click on a node that is about to be morphed does nothing.** The
+    search grid streams in over several Livewire morphs, and a locator clicked while
+    the count is still growing presses a node the next morph replaces: no request, no
+    error, and the assertion that follows reads the new node with its old state. Wait
+    until the count stops moving before pressing anything.
 
 
 ---
@@ -840,12 +859,15 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **868 tests**, 1,854 assertions, Pint clean across 193 files, PHPStan
+Current standing: **920 tests**, 1,979 assertions, Pint clean across 205 files, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
 `verify-search-anilist.py`, 21 in `verify-library-check.py` and 17 in
-`verify-continue-reading.py`, all of which need a browser that produces frames.
+`verify-continue-reading.py`, all of which need a browser that produces frames. The
+October 2026 feature pass added 21 checks in `verify-october-pass.mjs` over the search
+filters, the result-card library toggle, the read toggles, the updates view and the
+connections page.
 
 ### Running the gates
 
@@ -934,6 +956,7 @@ of a local seed account.
 | `live-anilist-check.php` | Real lookups, the grouping difference they make, and that a failure caches nothing |
 | `undo-migration.php <to> <from>` | Reverses a migration through the app's own mapper and state mover |
 | `reset-migration-state.php` | Clears search rows and migration records so a run starts clean |
+| `verify-october-pass.mjs` | The October 2026 feature pass end to end: named language pills, the result-card library toggle, the read toggles, the updates view, the connections page. A Node port of the `uv`-run convention, because this machine lost its Python toolchain; run with `node verify-october-pass.mjs` from `.tools/suwayomi`, which holds the `playwright` npm package |
 | `probe-downloads.php` | Whether the download queue can be enqueued, watched and dequeued at all |
 | `probe-download-progress.php` | Whether `progress` moves at all, and at what resolution |
 | `live-download-check.php` | That the reconciler chain works when only a queue worker is running |
@@ -1025,6 +1048,10 @@ every existing tab. That is expected, not a fault.
 | 6 | Custom covers | **H5 done, and the storage predates the feature.** Migration 6 made `series_covers` and `SeriesState::cover()` has been declared since: measured **0 rows**. Suwayomi cannot hold a cover at all, `ImageMutation` exposing only `clearCachedImages` and `UpdateMangaPatchInput` only `inLibrary`, so the file and the route are ours. **The 800px bound is measured, not chosen**: source covers are at most 800px on the long edge and weigh 77KB to 193KB, and the grid slot is 173px, so a custom cover resized to match is indistinguishable from a proxied one. **The 12 megapixel ceiling is memory arithmetic**, four bytes a pixel against a 128M `memory_limit`, and it is the guard that matters because 2MB of PNG can be 20000 by 20000. Served by a **Laravel route rather than the public disk**, because covers are per reader and this is multi-tenant from migration 1; and because source covers are *already* served through a Laravel route (`suwayomi.proxy`), so it is no new cost class. Applied on picking a file rather than behind a Save button, since Livewire already shows a real progress bar. 40 tests, 20 checks in `verify-covers.py`. |
 | 6 | Local source | **H15 done, and scoped down to what is true.** Suwayomi has **no upload API at all**: measured, every GET on `/api/v1/...` answers with the 4,484-byte WebUI catch-all and every other method a 404. A drop zone would mean Laravel writing into Suwayomi's data directory, and the folder is shared by every reader because the source cannot scope it. So H15 **reads and rescans** and says why it does not upload. The pairing is the feature: the folder and the server's listing **disagree and stay disagreeing**, because there is **no delete mutation**, so measured manga 2899 is listed while the only file left is its `ComicInfo.xml`. Showing either side alone would be lying about the other. The rescan is `fetchSourceManga(source: "0", type: LATEST)`, measured at 15ms; all three types answer and return the same listing, and LATEST is the one whose meaning is "what is new here". One folder per series is the shape, read from what Suwayomi actually picked up. 31 tests. |
 | 6 | Parity | **H11, H10, H13, H18, H5 and H15 done.** The five layers resolve in order, with the home shelf as the third and the session as the fifth, and a null in any layer falls through rather than erasing what is below. Colour filters (brightness including the sub-1.0 dim range, contrast, hue, invert, grayscale) are **session-scoped by default**, because a reader dimming for a dark room does not want that at a lit desk tomorrow; "remember for this series" is the explicit way to make it durable. **H6 shipped**, with three terms rather than four: measured across all 82 sources, `genre` reaches 77, `status` 74 and `sort` 69. `author:` was cut because only 15 of 82 offer an author filter and, measured over 704 search rows from 76 sources, only 10.4% carry an author while `status` reads `UNKNOWN` on 99%, so there is nothing to check a term against afterwards. A term is pushed where the source has a matching filter and the source is skipped and counted where it does not. 57 tests, 28 checks in `verify-search-syntax.py`. Still open: **H7** bulk actions. **H16 is closed by measurement**: `serveConversions` is not in the live schema and all three formats return byte-identical `image/webp`. |
+| 7 | Search results to library | **Complete.** Every result card carries a library toggle, over the cover's lower corner, with the state batch-loaded for the whole result set in one query and the write going through the same `ReadingState::setInLibrary` path the series page uses. The toggle sits outside the anchor, because a button inside a link navigates instead of toggling. Language filters are pills carrying human names (`Portuguese (Brazil)`, not `pt-BR` (2)), resolved through `App\Support\LanguageName` with an explicit map for every code seen on this box, intl's display name second, and the raw code last, because intl answers a well-formed tag it cannot name with "qq (Unknown Region)". The submit button moved beside the search box, which is where the gesture was anyway. |
+| 7 | Extension updates | **Complete.** The Updates view's rows carry an Update button, and the view header carries Update all, both gated on trust exactly as install is: an update is a new signed artefact about to execute. `updateAll` asks the server for the full out-of-date list rather than trusting the page's fifty rows, and failures are collected per package and rendered inline. Pressing Update had no control anywhere before this, so the only route to the badge was Suwayomi's own WebUI. |
+| 7 | Manual read marking | **Complete.** The dot on each chapter row is a toggle, and the chapter toolbar carries Mark all read and Mark all unread. The bulk path is an upsert whose inserted rows carry the end state (trap 123), and it touches only the read flag, so a page position survives being marked unread and back. Marking read moves the continue-reading pointer forward to the furthest chapter in source order, whatever direction the list is displayed in; Mark all unread clears the pointer with the flags, because a pointer onto an unread chapter would have continue-reading offer the middle of a series the reader says they have not started. |
+| 7 | AniList tracking | **Complete, opt-in by connecting.** A reader who connects at `/settings/connections` hands the app an OAuth token that acts as them on AniList, and from then on a chapter finishing (by reading or by being marked read) pushes that series' progress: the largest chapter number among read chapters, floored, set CURRENT, or COMPLETED when AniList's own chapter count says it is. The join runs on the same title-keyed cache the search dedupe uses, and a title AniList has never heard of is recorded as answered-no and never asked again. The push is a queued job with a per-series pending marker, so a continuous reading session books one job rather than one per progress ping. AniList issues no refresh token, so a rejected token deletes the connection and the reader connects again. The deployer must create their own application at anilist.co/settings/developer and set `ANILIST_OAUTH_CLIENT_ID` / `ANILIST_OAUTH_CLIENT_SECRET`, with a redirect URI matching `anilist.callback` byte for byte; until then the page says what is missing instead of offering a dead button. |
 
 Five pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}`. `/dashboard` redirects to

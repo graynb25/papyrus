@@ -65,6 +65,25 @@ final class DedupeGroup
     }
 
     /**
+     * Distinct names of the sources beyond the primary.
+     *
+     * Separate from slicing {@see sourceNames()}, because a source whose name
+     * equals the primary's disappears from that slice entirely: the card then
+     * read "+1 source:" and named nobody, which measured live on a group whose
+     * second result came from a source sharing the primary's display name.
+     *
+     * @return array<int, string>
+     */
+    public function alternativeNames(): array
+    {
+        return $this->alternatives
+            ->pluck('source_name')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * Distinct author names across the group, primary first.
      *
      * Shown on the card because `author:` is checkable against this field and a reader

@@ -30,6 +30,12 @@ class SourcesPageTest extends TestCase
      */
     private array $nodes = [];
 
+    /**
+     * Whether the update mutation should answer with a failure. A property the
+     * one fake reads, because a second Http::fake() does not replace the first.
+     */
+    private bool $updateShouldFail = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -96,6 +102,10 @@ class SourcesPageTest extends TestCase
             }
 
             if (str_contains($query, 'updateExtension')) {
+                if ($this->updateShouldFail) {
+                    return Http::response(['errors' => [['message' => 'Download failed']]], 200);
+                }
+
                 return Http::response(['data' => ['updateExtension' => ['clientMutationId' => null]]]);
             }
 
@@ -449,5 +459,129 @@ class SourcesPageTest extends TestCase
         $this->store();
 
         $this->page()->call('previousPage')->assertSet('page', 1);
+    }
+
+    // Extension updates ------------------------------------------------------
+
+    /**
+     * The Updates tab drew a badge for months and offered no control anywhere
+     * that acted on it, so the only route was the server's own WebUI. These
+     * tests pin the wiring, including the trust gate, which an update needs
+     * exactly as much as an install does: both execute a new signed artefact.
+     */
+    private function updatableExtension(): array
+    {
+        return array_merge(
+            $this->extension('eu.kanade.tachiyomi.extension.en.example', 'Example', true, true),
+            ['hasUpdate' => true],
+        );
+    }
+
+    public function test_an_installed_extension_with_an_update_offers_update(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $component = $this->page()->assertSee('Update');
+
+        $this->assertStringContainsString(
+            'wire:click="update(',
+            $component->html(),
+            'The badge has a control beside it now.',
+        );
+    }
+
+    public function test_the_update_control_is_hidden_behind_trust(): void
+    {
+        $this->store();
+        // No trust granted.
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $html = $this->page()
+            ->assertSee('Trust this extension’s store before updating it.')
+            ->html();
+
+        $this->assertStringNotContainsString('wire:click="update(', $html);
+    }
+
+    public function test_the_update_action_sends_the_server_s_own_mutation(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $this->page()
+            ->call('update', 'eu.kanade.tachiyomi.extension.en.example')
+            ->assertHasNoErrors();
+
+        Http::assertSent(function (Request $request): bool {
+            $query = $request->data()['query'] ?? '';
+
+            return str_contains((string) $query, 'updateExtension')
+                && str_contains((string) $query, 'update: true');
+        });
+    }
+
+    public function test_update_all_walks_every_out_of_date_extension(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([
+            $this->updatableExtension(),
+            array_merge(
+                $this->extension('eu.kanade.tachiyomi.extension.en.second', 'Second', true, true),
+                ['hasUpdate' => true],
+            ),
+        ]);
+
+        $this->page()
+            ->set('view', 'updates')
+            ->call('updateAll')
+            ->assertHasNoErrors();
+
+        $mutations = count(Http::recorded(fn (Request $request): bool => str_contains(
+            (string) ($request->data()['query'] ?? ''),
+            'update: true',
+        )));
+
+        $this->assertSame(2, $mutations, 'Both out-of-date extensions get their own mutation.');
+    }
+
+    public function test_update_all_with_an_untrusted_store_updates_nothing(): void
+    {
+        $this->store();
+        // Untrusted, so nothing on this page is allowed to execute its code.
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $this->page()->call('updateAll');
+
+        $mutations = count(Http::recorded(fn (Request $request): bool => str_contains(
+            (string) ($request->data()['query'] ?? ''),
+            'update: true',
+        )));
+
+        $this->assertSame(0, $mutations);
+    }
+
+    public function test_a_failed_update_is_named_rather_than_swallowed(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $this->updateShouldFail = true;
+
+        $component = $this->page()
+            ->call('update', 'eu.kanade.tachiyomi.extension.en.example')
+            ->assertHasNoErrors();
+
+        $failures = $component->instance()->failures;
+
+        $this->assertSame(
+            'Download failed',
+            $failures['eu.kanade.tachiyomi.extension.en.example'] ?? null,
+            'A package that did not update is named with its reason.',
+        );
     }
 }

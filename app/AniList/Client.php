@@ -179,6 +179,79 @@ class Client
     }
 
     /**
+     * Run a document as a specific AniList user.
+     *
+     * The tracking write path. Same endpoint as a lookup, different authority:
+     * the reader's token decides whose list `SaveMediaListEntry` touches.
+     *
+     * A rejected token is its own exception and not a refusal. AniList answers
+     * an expired token with HTTP 401, and no amount of retrying or backing off
+     * is ever going to improve it; the caller has to ask the reader to connect
+     * again. A 429 still means wait.
+     *
+     * @param  array<string, mixed>  $variables
+     * @return array<string, mixed> the `data` payload
+     *
+     * @throws AniListTokenRejected when the token is dead
+     * @throws AniListRefusedException on a rate limit or a transport failure
+     */
+    public function forUser(string $accessToken, string $document, array $variables = []): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'User-Agent' => 'Papyrus (self-hosted manga reader)',
+                'Authorization' => 'Bearer '.$accessToken,
+            ])
+                ->timeout((int) config('papyrus.anilist.timeout', 15))
+                ->post($this->endpoint(), [
+                    'query' => $document,
+                    'variables' => (object) $variables,
+                ]);
+        } catch (ConnectionException $e) {
+            throw new AniListRefusedException(
+                'Could not reach AniList: '.$e->getMessage(),
+                $this->retryAfter(0),
+                $e,
+            );
+        }
+
+        if ($response->status() === 401 || $response->status() === 403) {
+            throw new AniListTokenRejected('AniList rejected the saved token.');
+        }
+
+        if ($response->status() === 429 || ! $response->successful()) {
+            throw new AniListRefusedException(
+                'AniList refused the request (HTTP '.$response->status().').',
+                $this->retryAfter((int) $response->header('retry-after')),
+            );
+        }
+
+        $errors = $response->json('errors');
+
+        foreach ((array) $errors as $error) {
+            $message = (string) ($error['message'] ?? '');
+
+            // AniList reports a dead token as a GraphQL error on a 200 in some
+            // deployments, with the 401 reserved for the raw token endpoints.
+            if (str_contains(strtolower($message), 'invalid token') || str_contains(strtolower($message), 'unauthorized')) {
+                throw new AniListTokenRejected('AniList rejected the saved token.');
+            }
+        }
+
+        if (! empty($errors)) {
+            throw new AniListRefusedException(
+                'AniList refused the mutation: '.(string) ($errors[0]['message'] ?? 'unknown error'),
+                $this->retryAfter(0),
+            );
+        }
+
+        $data = $response->json('data');
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
      * Whether an attempt is worth repeating.
      *
      * A 429 and a transport blip are. A 200 is not, and neither is a 400, which would

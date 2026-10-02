@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\AniList\Tracking;
 use App\Support\ReadingState;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,7 +38,19 @@ class ReaderProgressController extends Controller
             return response()->json(['ok' => false, 'reason' => 'no page'], 422);
         }
 
-        $reading->recordProgress($request->user(), $manga, $chapter, $page, $total);
+        $wasRead = (bool) $reading->findChapter($request->user(), $chapter)?->is_read;
+
+        $chapterState = $reading->recordProgress($request->user(), $manga, $chapter, $page, $total);
+
+        /*
+         * A chapter finishing is the one event AniList tracking cares about, and
+         * the transition is the only moment it is worth queueing: the endpoint
+         * fires every few seconds while a chapter scrolls, and pushing per ping
+         * would be one mutation per page for the same answer.
+         */
+        if (! $wasRead && $chapterState->is_read) {
+            app(Tracking::class)->scheduleSync($request->user(), $manga);
+        }
 
         return response()->json(['ok' => true, 'page' => $page]);
     }

@@ -252,4 +252,57 @@ class ReadingStateTest extends TestCase
         // Two calls must not create two rows.
         $this->assertSame(1, SeriesState::forUser($this->alice->id)->count());
     }
+
+    public function test_mark_many_read_creates_rows_for_chapters_that_have_none(): void
+    {
+        // A mass update against rows that do not exist writes nothing, and the
+        // chapters a reader has never opened are exactly those. "Mark all read"
+        // is mostly those.
+        $this->state->markManyRead($this->alice, 76, [11, 12, 13], true);
+
+        $rows = ChapterState::forUser($this->alice->id)->get();
+
+        $this->assertSame(3, $rows->count());
+        $this->assertTrue($rows->every(fn (ChapterState $row): bool => $row->is_read));
+    }
+
+    public function test_mark_many_read_only_touches_the_read_flag_on_existing_rows(): void
+    {
+        $this->state->recordProgress($this->alice, 76, 11, 4, 20);
+
+        $this->state->markManyRead($this->alice, 76, [11], false);
+
+        $row = $this->state->findChapter($this->alice, 11);
+
+        $this->assertFalse((bool) $row->is_read);
+        $this->assertSame(4, (int) $row->last_page_read, 'The page position is not the read flag and must survive it.');
+        $this->assertNotNull($row->last_read_at, 'Genuinely read progress keeps its timestamp.');
+    }
+
+    public function test_mark_many_read_on_an_empty_list_writes_nothing(): void
+    {
+        $this->state->markManyRead($this->alice, 76, [], true);
+
+        $this->assertSame(0, ChapterState::forUser($this->alice->id)->count());
+    }
+
+    public function test_mark_many_read_is_scoped_to_the_named_user(): void
+    {
+        $bob = User::factory()->create();
+
+        $this->state->markManyRead($this->alice, 76, [11], true);
+
+        $this->assertSame(0, ChapterState::forUser($bob->id)->count());
+    }
+
+    public function test_set_pointer_moves_and_clears(): void
+    {
+        $this->state->setPointer($this->alice, 76, 12);
+
+        $this->assertSame(12, $this->state->findSeries($this->alice, 76)->last_read_chapter_id);
+
+        $this->state->setPointer($this->alice, 76, null);
+
+        $this->assertNull($this->state->findSeries($this->alice, 76)->last_read_chapter_id);
+    }
 }

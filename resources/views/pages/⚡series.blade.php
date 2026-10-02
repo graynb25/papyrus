@@ -103,6 +103,11 @@ new #[Title('Series')] class extends Component {
 
         app(ReadingState::class)->setInLibrary(auth()->user(), $this->manga, $inLibrary);
 
+        // The computed was read a moment ago and holds the row as it was, so the
+        // button this render produces would say the opposite of the database
+        // until the next request. Drop it and let the render read fresh.
+        unset($this->state);
+
         Flux::toast(
             text: $inLibrary
                 ? __('Added to your library.')
@@ -117,6 +122,8 @@ new #[Title('Series')] class extends Component {
         $favourite = ! $this->state->favourited_at;
 
         app(ReadingState::class)->setFavourited(auth()->user(), $this->manga, $favourite);
+
+        unset($this->state);
     }
 
     public function toggleReadLater(): void
@@ -124,6 +131,119 @@ new #[Title('Series')] class extends Component {
         $queued = ! $this->state->read_later_at;
 
         app(ReadingState::class)->setReadLater(auth()->user(), $this->manga, $queued);
+
+        unset($this->state);
+    }
+
+    /*
+     * Read state, set by hand.
+     *
+     * A reader coming from another app has read chapters this one has never seen
+     * opened, and the only way to say so used to be to open every chapter and let
+     * the progress endpoint infer it. The dot on each row is now the control.
+     */
+
+    /**
+     * Flip one chapter's read flag.
+     */
+    public function toggleRead(int $chapterId): void
+    {
+        $read = ! (bool) app(ReadingState::class)->findChapter(auth()->user(), $chapterId)?->is_read;
+
+        $this->setChapterRead($chapterId, $read);
+    }
+
+    /**
+     * Mark every chapter of this series read.
+     *
+     * The pointer follows the furthest chapter, because continue-reading should
+     * offer what comes after the list, not chapter one of a series this reader
+     * has just declared finished.
+     */
+    public function markAllRead(): void
+    {
+        $ids = array_map(static fn (array $chapter): int => (int) $chapter['id'], $this->chapters);
+
+        app(ReadingState::class)->markManyRead(auth()->user(), $this->manga, $ids, true);
+
+        // The pointer lands on the furthest chapter in source order, whatever
+        // direction this reader is displaying the list in: "all read" is a
+        // statement about the series, not about the sort.
+        if ($this->allChapters !== []) {
+            $furthest = collect($this->allChapters)
+                ->sortBy(static fn (array $chapter): int => (int) ($chapter['sourceOrder'] ?? 0))
+                ->last();
+
+            app(ReadingState::class)->setPointer(auth()->user(), $this->manga, (int) $furthest['id']);
+        }
+
+        unset($this->state, $this->chapterStates, $this->readCount);
+
+        app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
+
+        Flux::toast(
+            text: trans_choice(':count chapter marked read.|:count chapters marked read.', count($ids), ['count' => count($ids)]),
+            heading: __('Marked read'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Mark every chapter of this series unread.
+     *
+     * The pointer clears with the flags: a pointer onto an unread chapter would
+     * have continue-reading offer a chapter in the middle of a series this reader
+     * says they have not started.
+     */
+    public function markAllUnread(): void
+    {
+        $ids = array_map(static fn (array $chapter): int => (int) $chapter['id'], $this->chapters);
+
+        app(ReadingState::class)->markManyRead(auth()->user(), $this->manga, $ids, false);
+        app(ReadingState::class)->setPointer(auth()->user(), $this->manga, null);
+
+        unset($this->state, $this->chapterStates, $this->readCount);
+
+        Flux::toast(
+            text: trans_choice(':count chapter marked unread.|:count chapters marked unread.', count($ids), ['count' => count($ids)]),
+            heading: __('Marked unread'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Write one chapter's read flag and everything that follows from it.
+     *
+     * Marking read moves the continue-reading pointer forward when this chapter is
+     * past it, so the next "continue" starts after what was just declared read.
+     * Marking unread leaves the pointer alone: clearing one chapter's flag says
+     * nothing about where the reader is.
+     */
+    private function setChapterRead(int $chapterId, bool $read): void
+    {
+        app(ReadingState::class)->markRead(auth()->user(), $this->manga, $chapterId, $read);
+
+        if ($read) {
+            $orderOf = function (int $id): int {
+                foreach ($this->allChapters as $chapter) {
+                    if ((int) $chapter['id'] === $id) {
+                        return (int) ($chapter['sourceOrder'] ?? 0);
+                    }
+                }
+
+                return -1;
+            };
+
+            $pointer = (int) ($this->state->last_read_chapter_id ?? 0);
+
+            if ($pointer === 0 || $orderOf($chapterId) > $orderOf($pointer)) {
+                app(ReadingState::class)->setPointer(auth()->user(), $this->manga, $chapterId);
+            }
+
+            app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
+        }
+
+        unset($this->state, $this->chapterStates, $this->readCount);
     }
 
     public function setOrder(string $order): void
@@ -1057,6 +1177,36 @@ new #[Title('Series')] class extends Component {
                         @endif
                     </flux:button>
 
+                    {{--
+                        Read state, set by hand.
+
+                        A reader arriving from another app has read chapters this one
+                        has never seen opened. The per-chapter toggle is the dot on
+                        each row; these two are the whole-list version of the same
+                        gesture, and the unread one confirms because it clears every
+                        flag on the series in one press.
+                    --}}
+                    <flux:button
+                        size="sm"
+                        variant="outline"
+                        icon="check"
+                        wire:click="markAllRead"
+                        wire:loading.attr="disabled"
+                    >
+                        {{ __('Mark all read') }}
+                    </flux:button>
+
+                    <flux:button
+                        size="sm"
+                        variant="outline"
+                        icon="arrow-uturn-left"
+                        wire:click="markAllUnread"
+                        wire:loading.attr="disabled"
+                        wire:confirm="{{ __('Mark every chapter unread? The read flags on this series clear.') }}"
+                    >
+                        {{ __('Mark all unread') }}
+                    </flux:button>
+
                     <flux:button size="sm" variant="outline" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
                         {{ __('Refresh chapters') }}
                     </flux:button>
@@ -1135,16 +1285,37 @@ new #[Title('Series')] class extends Component {
                         @php($state = $this->chapterStates[(int) $chapter['id']] ?? null)
 
                         <li class="group flex items-center gap-3 border-b border-zinc-200/70 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-zinc-100/60 sm:px-4 dark:border-white/[0.05] dark:hover:bg-white/[0.03]">
-                            {{-- read state dot, so a long list is scannable --}}
-                            <span
+                            {{--
+                                The read flag, as a control.
+
+                                This was a passive dot for as long as read state could
+                                only come from the progress endpoint. A reader carrying
+                                a history from another app needs to state the opposite
+                                of what the app believes, and the dot is where they
+                                look for it.
+                            --}}
+                        @php($chapterName = filled($chapter['name'] ?? null)
+                            ? $chapter['name']
+                            : __('Chapter :number', ['number' => $chapter['chapterNumber'] ?? '?']))
+
+                        <button
+                            type="button"
+                            wire:click="toggleRead({{ (int) $chapter['id'] }})"
+                            wire:loading.attr="disabled"
+                            data-test="read-toggle"
+                            aria-pressed="{{ $state?->is_read ? 'true' : 'false' }}"
+                            aria-label="{{ $state?->is_read
+                                ? __('Mark :name unread', ['name' => $chapterName])
+                                : __('Mark :name read', ['name' => $chapterName]) }}"
+                            title="{{ $state?->is_read ? __('Mark unread') : __('Mark read') }}"
                                 class="flex size-5 shrink-0 items-center justify-center rounded-full {{
                                     $state?->is_read
                                         ? 'bg-moss-500/15 text-moss-600 dark:text-moss-400'
                                         : 'bg-zinc-200/70 text-zinc-400 dark:bg-white/[0.06] dark:text-zinc-500'
-                                }}"
+                                }} transition-colors hover:bg-moss-500/25 dark:hover:bg-moss-500/20"
                             >
                                 <flux:icon :name="$state?->is_read ? 'check' : 'minus'" class="size-3.5" />
-                            </span>
+                            </button>
 
                             <a
                                 href="{{ $this->chapterUrl((int) $chapter['id']) }}"

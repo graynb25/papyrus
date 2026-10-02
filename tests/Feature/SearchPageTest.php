@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\SearchResult;
 use App\Models\SearchRun;
 use App\Models\SearchSourceResult;
+use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -343,5 +344,115 @@ class SearchPageTest extends TestCase
 
         $this->assertSame(['en'], $component->instance()->languages()->pluck('lang')->all());
         $this->assertSame(['ja'], $component->instance()->rareLanguages()->pluck('lang')->all());
+    }
+
+    /**
+     * The pills used to render the raw codes, and `es-419` next to `es` asked a
+     * reader to know the numbering scheme. The name is the interface; the code
+     * is an implementation detail.
+     */
+    public function test_language_pills_carry_human_names(): void
+    {
+        $this->source('English Source');
+        $this->source('Brazilian Source', 1)->update(['lang' => 'pt-BR']);
+
+        $component = Livewire::actingAs($this->user)->test('pages::search');
+
+        $this->assertSame('English', $component->instance()->languageName('en'));
+        $this->assertSame('Portuguese (Brazil)', $component->instance()->languageName('pt-BR'));
+        $this->assertSame('qq-ZZ', $component->instance()->languageName('qq-ZZ'), 'An unknown code falls back to itself rather than to an empty label.');
+    }
+
+    public function test_a_result_card_carries_a_library_toggle(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Alpha Manga');
+
+        $component = Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search');
+
+        $this->assertStringContainsString('data-test="library-toggle"', $component->html());
+    }
+
+    public function test_toggling_a_result_adds_it_to_the_library(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Alpha Manga');
+
+        $component = Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search')
+            ->call('toggleLibrary', 1)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('series_states', [
+            'user_id' => $this->user->id,
+            'suwayomi_manga_id' => 1,
+            'in_library' => true,
+        ]);
+
+        $this->assertTrue($component->instance()->libraryMap()[1]);
+    }
+
+    public function test_toggling_again_removes_it_from_the_library(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Alpha Manga');
+
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search')
+            ->call('toggleLibrary', 1)
+            ->call('toggleLibrary', 1)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('series_states', [
+            'user_id' => $this->user->id,
+            'suwayomi_manga_id' => 1,
+            'in_library' => false,
+        ]);
+    }
+
+    public function test_library_toggles_are_scoped_to_the_signed_in_reader(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $mallory = User::factory()->create();
+        $this->source('Alpha Manga');
+
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search')
+            ->call('toggleLibrary', 1)
+            ->assertHasNoErrors();
+
+        $this->assertSame(0, SeriesState::forUser($mallory->id)->count());
+    }
+
+    /**
+     * Two sources reporting the same display name. The card used to read
+     * "+1 source:" and name nobody, because unique() collapsed the alternative
+     * into the primary's name before the template sliced it off.
+     */
+    public function test_a_group_with_a_same_named_alternative_still_names_it(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Twin Source');
+        $this->source('Twin Source', 1);
+
+        $component = Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search');
+
+        $group = $component->instance()->groups()->first();
+
+        $this->assertSame(2, $group->sourceCount());
+        $this->assertSame(['Twin Source'], $group->alternativeNames());
+        $this->assertSame(['Twin Source'], $group->sourceNames());
     }
 }

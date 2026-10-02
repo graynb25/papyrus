@@ -240,6 +240,76 @@ class ReadingState
     }
 
     /**
+     * Point continue-reading at a chapter, or nowhere.
+     *
+     * A separate write path rather than a model save from the caller, because this
+     * class is the only sanctioned writer of series state and the pointer decides
+     * what the reader is offered next. Null is meaningful: it is how "mark all
+     * unread" says there is nowhere to continue from, rather than leaving the
+     * pointer on a chapter that is now unread.
+     */
+    public function setPointer(User|int $user, int $mangaId, ?int $chapterId): void
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+        $state->last_read_chapter_id = $chapterId;
+
+        if ($chapterId !== null) {
+            $state->last_read_at = now();
+        }
+
+        $state->save();
+    }
+
+    /**
+     * Mark a whole set of chapters read or unread, in one write path.
+     *
+     * Upsert rather than a mass update, because a mass update against rows that do
+     * not exist yet writes nothing: the chapters a reader has never opened have no
+     * `chapter_states` row, and "mark all read" is mostly those. The interface would
+     * report a change that never reached the database.
+     *
+     * Only the read flag and its timestamp are written on existing rows, so a
+     * reader's page position survives being marked unread and back.
+     *
+     * @param  array<int, int>  $chapterIds
+     */
+    public function markManyRead(User|int $user, int $mangaId, array $chapterIds, bool $read = true): void
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $chapterIds))));
+
+        if ($ids === []) {
+            return;
+        }
+
+        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $now = now();
+
+        /*
+         * The inserted rows carry the end state as well as the conflict update,
+         * because for a row that does not exist yet the insert IS the write:
+         * ON CONFLICT never fires, and the database default of is_read = false
+         * would stand for exactly the chapters "mark all read" was pressed for.
+         */
+        $updates = $read
+            ? ['is_read' => true, 'last_read_at' => $now, 'updated_at' => $now]
+            : ['is_read' => false, 'updated_at' => $now];
+
+        $rows = array_map(static fn (int $id): array => [
+            'user_id' => $userId,
+            'suwayomi_chapter_id' => $id,
+            'suwayomi_manga_id' => $mangaId,
+            'is_read' => $read,
+            'last_read_at' => $read ? $now : null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $ids);
+
+        foreach (array_chunk($rows, 200) as $chunk) {
+            ChapterState::query()->upsert($chunk, ['user_id', 'suwayomi_chapter_id'], $updates);
+        }
+    }
+
+    /**
      * Read state for a whole chapter list, keyed by chapter id.
      *
      * One query for the list rather than one per chapter: a 1000 chapter series

@@ -250,6 +250,96 @@ new #[Title('Sources')] class extends Component {
         Flux::toast(text: __('Its source stops being searchable.'), heading: __('Uninstalled'), variant: 'success');
     }
 
+    /**
+     * Update one extension to the version its store ships.
+     *
+     * The badge the page already draws proved nothing more was wired: a reader
+     * seeing "update" had no control anywhere that acted on it, so the only route
+     * was the server's own WebUI. Trust is checked here for the same reason it is
+     * checked before install: an update is a new signed artefact about to run.
+     */
+    public function update(string $pkgName): void
+    {
+        if (! $this->canUpdateName($pkgName)) {
+            return;
+        }
+
+        try {
+            app(ExtensionManager::class)->update($pkgName);
+        } catch (SuwayomiException $e) {
+            // Listed as well as toasted, on the same reasoning as the bulk
+            // failures: the reader is about to wonder whether it moved.
+            $this->failures = [$pkgName => $e->getMessage()];
+
+            Flux::toast(text: $e->getMessage(), variant: 'danger');
+
+            return;
+        }
+
+        $this->failures = [];
+
+        Flux::toast(
+            text: __('Its source now runs the version the store ships.'),
+            heading: __('Updated'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Update every extension the server reports as out of date.
+     *
+     * The list is asked for fresh rather than taken from the page, because the
+     * page shows fifty rows and the update set does not end where a page does.
+     * Failures are collected and rendered inline, on the same reasoning as the
+     * bulk install: "some worked" is not an acceptable answer to how many.
+     */
+    public function updateAll(): void
+    {
+        $targets = app(ExtensionManager::class)
+            ->extensions(['has_update' => true, 'installed' => true], 500, 0)
+            ->filter(fn (array $row): bool => $this->isTrusted($row))
+            ->pluck('pkgName')
+            ->all();
+
+        if ($targets === []) {
+            Flux::toast(
+                text: __('Nothing has an update, or every store behind one is untrusted.'),
+                heading: __('Nothing to update'),
+                variant: 'info',
+            );
+
+            return;
+        }
+
+        $result = app(ExtensionManager::class)->updateMany($targets);
+
+        $this->failures = $result['failed'];
+
+        if ($this->failures !== []) {
+            Flux::toast(
+                text: trans_choice(
+                    '{1} :count updated, :failed failed.|[2,*] :count updated, :failed failed.',
+                    count($result['updated']),
+                    ['count' => count($result['updated']), 'failed' => count($this->failures)],
+                ),
+                heading: __('Some updates failed'),
+                variant: 'danger',
+            );
+
+            return;
+        }
+
+        Flux::toast(
+            text: trans_choice(
+                '{1} :count extension updated.|[2,*] :count extensions updated.',
+                count($result['updated']),
+                ['count' => count($result['updated'])],
+            ),
+            heading: __('Updated'),
+            variant: 'success',
+        );
+    }
+
     public function installSelected(): void
     {
         $allowed = $this->installableFromSelection();
@@ -367,9 +457,8 @@ new #[Title('Sources')] class extends Component {
             text: $result['ok']
                 ? trans_choice(
                     'The server read :count series from the folder.',
-                    'The server read :count series from the folder.',
-                    ['count' => $result['series']],
                     $result['series'],
+                    ['count' => $result['series']],
                 )
                 : $result['message'],
             heading: $result['ok'] ? __('Folder read') : __('The folder was not read'),
@@ -448,6 +537,22 @@ new #[Title('Sources')] class extends Component {
 
         return $row !== null
             && ($row['isInstalled'] ?? false) !== true
+            && $this->isTrusted($row);
+    }
+
+    /**
+     * Whether this installed extension can be updated from here.
+     *
+     * Same three facts the row was rendered from, re-checked in the action: the
+     * list predates the click, so the badge is not evidence.
+     */
+    public function canUpdateName(string $pkgName): bool
+    {
+        $row = $this->extensions->firstWhere('pkgName', $pkgName);
+
+        return $row !== null
+            && ($row['isInstalled'] ?? false) === true
+            && ($row['hasUpdate'] ?? false) === true
             && $this->isTrusted($row);
     }
 
@@ -570,9 +675,8 @@ new #[Title('Sources')] class extends Component {
                     @if ($localSummary['missing'] > 0 || $localSummary['unscanned'] > 0)
                         {{ trans_choice(
                             'The folder and the server disagree about :count series. Both are listed, with what each one knows.',
-                            'The folder and the server disagree about :count series. Both are listed, with what each one knows.',
-                            ['count' => $localSummary['missing'] + $localSummary['unscanned']],
                             $localSummary['missing'] + $localSummary['unscanned'],
+                            ['count' => $localSummary['missing'] + $localSummary['unscanned']],
                         ) }}
                     @endif
 
@@ -815,6 +919,23 @@ new #[Title('Sources')] class extends Component {
                 icon="funnel"
                 class="max-w-xs"
             />
+
+            {{--
+                One press for the whole update set, which is the reason the
+                Updates view exists at all: Keiyoushi ships updates constantly,
+                and forty of them is not a queue a reader should walk.
+            --}}
+            @if ($view === 'updates' && $this->total > 0)
+                <flux:button
+                    size="sm"
+                    variant="primary"
+                    wire:click="updateAll"
+                    wire:loading.attr="disabled"
+                    icon="arrow-path"
+                >
+                    {{ __('Update all') }}
+                </flux:button>
+            @endif
         </div>
 
         @if ($view !== 'installed')
@@ -905,6 +1026,8 @@ new #[Title('Sources')] class extends Component {
                     {{ __('Add a store first, then refresh the catalogue.') }}
                 @elseif ($view === 'installed')
                     {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
+                @elseif ($view === 'updates')
+                    {{ __('Nothing to update. Every installed extension is on the version its store ships.') }}
                 @else
                     {{ __('Nothing matches. Try a shorter name or widen the content filter.') }}
                 @endif
@@ -957,6 +1080,23 @@ new #[Title('Sources')] class extends Component {
 
                         <div class="flex shrink-0 items-center gap-2">
                             @if ($installed)
+                                @if (($extension['hasUpdate'] ?? false) && $this->isTrusted($extension))
+                                    <flux:button
+                                        size="sm"
+                                        variant="primary"
+                                        wire:click="update({{ Illuminate\Support\Js::from($extension['pkgName']) }})"
+                                        wire:loading.attr="disabled"
+                                        icon="arrow-up-circle"
+                                    >
+                                        {{ __('Update') }}
+                                    </flux:button>
+                                @elseif (($extension['hasUpdate'] ?? false))
+                                    {{-- Say why rather than showing a control that cannot work. --}}
+                                    <flux:tooltip :content="__('Trust this extension’s store before updating it.')">
+                                        <flux:icon name="lock-closed" class="text-zinc-400" />
+                                    </flux:tooltip>
+                                @endif
+
                                 <flux:button
                                     size="sm"
                                     wire:click="uninstall({{ Illuminate\Support\Js::from($extension['pkgName']) }})"

@@ -216,6 +216,21 @@ return [
          * window, short enough that a chain does not stall for minutes.
          */
         'max_backoff_seconds' => (int) env('ANILIST_MAX_BACKOFF', 65),
+
+        /*
+         * OAuth, for tracking reading progress on a reader's own account.
+         *
+         * This is a bigger grant than the keyless lookups above: it acts as the
+         * reader on AniList. The id and secret come from an application the
+         * deployer creates at anilist.co/settings/developer, and the redirect
+         * URI registered there must match what this app sends, byte for byte.
+         * By default that is the anilist.callback route on APP_URL; set
+         * ANILIST_OAUTH_REDIRECT_URI when the outside-facing address and the
+         * configured APP_URL disagree.
+         */
+        'oauth_client_id' => env('ANILIST_OAUTH_CLIENT_ID'),
+        'oauth_client_secret' => env('ANILIST_OAUTH_CLIENT_SECRET'),
+        'oauth_redirect_uri' => env('ANILIST_OAUTH_REDIRECT_URI'),
     ],
 
     /*

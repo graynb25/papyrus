@@ -104,6 +104,33 @@ class ExtensionManager
     }
 
     /**
+     * Update several extensions.
+     *
+     * One mutation each, for the same reason installs are one each. A partial
+     * failure is reported rather than swallowed: a reader pressing "update all"
+     * is told exactly which packages did not move.
+     *
+     * @param  array<int, string>  $pkgNames
+     * @return array{updated: array<int, string>, failed: array<string, string>}
+     */
+    public function updateMany(array $pkgNames): array
+    {
+        $updated = [];
+        $failed = [];
+
+        foreach ($pkgNames as $pkgName) {
+            try {
+                $this->update($pkgName);
+                $updated[] = $pkgName;
+            } catch (SuwayomiException $e) {
+                $failed[$pkgName] = $e->getMessage();
+            }
+        }
+
+        return ['updated' => $updated, 'failed' => $failed];
+    }
+
+    /**
      * Install several extensions.
      *
      * Each needs its own mutation, so this is a loop rather than a batch. A

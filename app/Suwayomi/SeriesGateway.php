@@ -331,6 +331,56 @@ class SeriesGateway
     }
 
     /**
+     * The title and the chapter numbers, and nothing else.
+     *
+     * The tracker's only server need: what a series is called, to resolve its
+     * AniList id, and which chapter id is which number, to turn read flags into
+     * a progress value. {@see find()} answers both and drags descriptions,
+     * genres and every chapter's metadata along with it, and a job that runs
+     * once per finished chapter has no use for any of that.
+     *
+     * @return array{title: string, chapters: array<int, float|null>} chapter id to number
+     *
+     * @throws SuwayomiException
+     */
+    public function chapterMap(int $mangaId): ?array
+    {
+        $data = $this->gateway->execute(<<<'GQL'
+            query ChapterMap($id: Int!) {
+                manga(id: $id) {
+                    title
+                    chapters {
+                        nodes { id chapterNumber }
+                    }
+                }
+            }
+            GQL, ['id' => $mangaId]);
+
+        $manga = $data['manga'] ?? null;
+
+        if (! is_array($manga)) {
+            return null;
+        }
+
+        $chapters = [];
+
+        foreach (($manga['chapters']['nodes'] ?? []) as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+
+            $chapters[(int) ($node['id'] ?? 0)] = is_numeric($node['chapterNumber'] ?? null)
+                ? (float) $node['chapterNumber']
+                : null;
+        }
+
+        return [
+            'title' => (string) ($manga['title'] ?? ''),
+            'chapters' => $chapters,
+        ];
+    }
+
+    /**
      * Cast the payload's string ids and mixed-unit timestamps once, so no caller
      * has to remember which fields need it.
      *

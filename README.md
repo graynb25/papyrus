@@ -51,15 +51,15 @@ reader and settings all work.
 
 | Screen | Route | What it does |
 |---|---|---|
-| Search | `/search` | Fans one query out across every eligible source, deduplicates, shows per-source outcomes |
-| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the extension catalogue, 1,396 at the last sync |
+| Search | `/search` | Fans one query out across every eligible source, deduplicates, shows per-source outcomes. Results carry a library toggle, so keeping a series is one click from the card |
+| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the extension catalogue, 1,396 at the last sync. The Updates view offers per-extension and update-all actions |
 | Health | `/health` | Per-site health, grouped because 82 sources are really 15 sites (counted 2026-10-01) |
 | Library | `/library` | Everything you added, filed into shelves, with unread counts |
 | Downloads | `/downloads` | What is queued, downloading or finished, reconciled in two calls a pass |
 | Move to another source | `/migrate/{manga}` | Searches every other source for the same series, ranks the candidates, transfers on confirmation |
-| Series | `/series/{manga}` | Chapters with dates, scanlator filtering, per-series reading mode |
+| Series | `/series/{manga}` | Chapters with dates, scanlator filtering, per-series reading mode. Each chapter's read state is a toggle, with mark-all-read and mark-all-unread beside it |
 | Reader | `/read/{manga}/{chapter}` | Continuous scroll or paged, progress saved per user |
-| Settings | `/settings/profile`, `/settings/appearance`, `/settings/security` | Profile, reader appearance, and password, two-factor and passkeys |
+| Settings | `/settings/profile`, `/settings/connections`, `/settings/appearance`, `/settings/security` | Profile, AniList tracking, reader appearance, and password, two-factor and passkeys |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
 
@@ -97,6 +97,25 @@ term is either pushed or it is not offered, and `author:` is not offered at all.
 
 A label the app does not recognise is searched as text rather than dropped, so a title
 containing a colon still works. The page says when it has done that.
+
+### Tracking on AniList
+
+Optional, per reader, and inert until you connect. Search-time title matching is a
+keyless lookup against AniList's public API and stays off until you switch it on.
+Progress tracking is more than a lookup: it writes to your list under your account, so
+it needs an OAuth token only you can grant.
+
+The switch lives at `/settings/connections`. To offer it, this deployment needs its own
+application registered at anilist.co/settings/developer, with the id and secret in
+`ANILIST_OAUTH_CLIENT_ID` and `ANILIST_OAUTH_CLIENT_SECRET`, and the redirect URI you
+register there matching this app's `anilist.callback` address exactly. Until both are
+set, the page says what is missing instead of drawing a button that cannot work.
+
+Once connected, a chapter finishing (read to the end, or marked read by hand) pushes
+that series' progress to AniList as a queued job. The largest chapter number you have
+read is the number pushed, marked CURRENT, or COMPLETED when AniList's own chapter count
+says you reached the end. AniList issues no refresh token, so when the year-old token
+dies the page shows you disconnected and you connect again.
 
 ### The reader
 
@@ -206,7 +225,7 @@ app/Suwayomi/       Everything that talks to Suwayomi
 app/Search/         Fan-out, dedupe, health, and the filter vocabulary
 app/Library/        Shelve filing, background checks, continue reading, the chapter navigator
 app/Migration/      Finding a series on another source and moving state to it
-app/AniList/        Optional title matching, per reader, off by default
+app/AniList/        Optional title matching and progress tracking, per reader, off by default
 app/Covers/         Reader-supplied cover art, which Suwayomi cannot store
 app/Downloads/      The per-reader ledger against Suwayomi's shared queue
 app/Local/          The local folder source Suwayomi picks up from disk
@@ -268,6 +287,7 @@ registered, the other owns the catalogue and what this user decided to do about 
 | `ChapterNotes` | Per-chapter notes, one per chapter, over a polymorphic table that predates the feature. |
 | `Library` | The library page's data: entries, shelves, filing, unread, staleness. |
 | `ImageUrl` | Builds proxy URLs. Nothing else may build one. |
+| `LanguageName` | Human names for source language codes, which arrive as `pt-BR` and `es-419`. |
 | `Deployment` | Reads the deployment mode. Only its registration rule is wired up. |
 | `Suwayomi\Timestamps` | Reads Suwayomi's epoch values, which are not all in the same unit. |
 

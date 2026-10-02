@@ -9,10 +9,14 @@ use App\Search\FilterVocabulary;
 use App\Search\QueryParser;
 use App\Models\SearchRun;
 use App\Models\SearchSourceResult;
+use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
+use App\Search\DedupeGroup;
 use App\Search\Deduplicator;
 use App\Search\SearchFanout;
+use App\Support\LanguageName;
+use App\Support\ReadingState;
 use App\Support\Deployment;
 use Flux\Flux;
 use Illuminate\Support\Collection;
@@ -251,6 +255,88 @@ new #[Title('Search')] class extends Component {
         $this->reset(['query', 'runId', 'langs']);
     }
 
+    /*
+     * Library membership, from the results.
+     *
+     * A search is how a reader finds a series they then want to keep, and the
+     * only path used to run through each series page in turn. The card carries
+     * its own toggle, so keeping a result is one click where the reader is
+     * already looking.
+     */
+
+    /**
+     * Add or remove one result from this reader's library.
+     *
+     * The current value is read rather than carried, because the map the card
+     * rendered from was built before the click and a stale tick must not
+     * decide the write, the same reasoning as trust on the sources page.
+     */
+    public function toggleLibrary(int $manga): void
+    {
+        $inLibrary = ! (bool) ($this->libraryMap[$manga] ?? false);
+
+        app(ReadingState::class)->setInLibrary(Auth::user(), $manga, $inLibrary);
+
+        unset($this->libraryMap);
+
+        Flux::toast(
+            text: $inLibrary
+                ? __('Added to your library.')
+                : __('Removed from your library.'),
+            heading: $inLibrary ? __('In library') : __('Removed'),
+            variant: $inLibrary ? 'success' : 'info',
+        );
+    }
+
+    /**
+     * Whether each result is already in this reader's library, keyed by manga id.
+     *
+     * One query for the whole result set rather than one per card, which is the
+     * same lesson the library page paid for.
+     *
+     * @return array<int, bool>
+     */
+    #[Computed]
+    public function libraryMap(): array
+    {
+        $ids = $this->groups
+            ->map(fn (DedupeGroup $group): int => (int) $group->primary->suwayomi_manga_id)
+            ->all();
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return SeriesState::forUser(Auth::id())
+            ->whereIn('suwayomi_manga_id', $ids)            ->pluck('in_library', 'suwayomi_manga_id')
+            ->map(fn (mixed $in): bool => (bool) $in)
+            ->all();
+    }
+
+    /**
+     * Add or remove one language from the filter.
+     *
+     * A method rather than `$toggle('langs')` because the pills are buttons
+     * rather than checkboxes: the value and the count render separately, which
+     * the checkbox group cannot do.
+     */
+    public function toggleLang(string $lang): void
+    {
+        if (in_array($lang, $this->langs, true)) {
+            $this->langs = array_values(array_diff($this->langs, [$lang]));
+        } else {
+            $this->langs[] = $lang;
+        }
+    }
+
+    /**
+     * The human name for a language code.
+     */
+    public function languageName(string $lang): string
+    {
+        return LanguageName::name($lang);
+    }
+
     /**
      * A run can only finish if a worker is draining the queue. On a fresh
      * install there may not be one, and the run would sit at zero forever
@@ -432,6 +518,10 @@ new #[Title('Search')] class extends Component {
     {{-- Query ------------------------------------------------------------- --}}
     <form wire:submit="search" class="space-y-4">
         {{--
+            The box and the button sit together: a reader's first gesture is type
+            then press, and sending the button below the filters used to make that
+            gesture a walk down the page and back.
+
             `live` with a debounce, because the chips below show what this box
             currently parses to, and a deferred model would leave them blank until the
             reader had already searched.
@@ -440,14 +530,21 @@ new #[Title('Search')] class extends Component {
             trip per character, and the value of the chips is catching a mistyped label,
             which a half second of typing makes obvious anyway.
         --}}
-        <flux:input
-            wire:model.live.debounce.500ms="query"
-            :label="__('Search')"
-            :placeholder="__('Series title')"
-            icon="magnifying-glass"
-            autofocus
-            required
-        />
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <flux:input
+                wire:model.live.debounce.500ms="query"
+                :label="__('Search')"
+                :placeholder="__('Series title')"
+                icon="magnifying-glass"
+                autofocus
+                required
+                class="flex-1"
+            />
+
+            <flux:button variant="primary" type="submit" icon="magnifying-glass" class="shrink-0">
+                {{ __('Search') }}
+            </flux:button>
+        </div>
 
         {{--
             The syntax, stated. A feature nobody can find is not a feature, and there are
@@ -498,7 +595,12 @@ new #[Title('Search')] class extends Component {
             </div>
         @endif
 
-        <div class="grid gap-4 sm:grid-cols-2">
+        {{--
+            The filters, as one panel. Languages and content are the two axes a
+            reader narrows a fan-out by, and giving each its own column inside one
+            bordered panel keeps them from reading as two unrelated forms.
+        --}}
+        <div class="grid gap-6 rounded-2xl border border-zinc-200/80 p-4 dark:border-white/[0.06] sm:grid-cols-2 sm:p-5">
             <div>
                 <div class="flex items-baseline justify-between gap-2">
                     <flux:label>{{ __('Languages') }}</flux:label>
@@ -518,12 +620,35 @@ new #[Title('Search')] class extends Component {
                     {{ __('Leave empty to search all installed sources.') }}
                 </p>
 
-                <div class="mt-2">
-                    <flux:checkbox.group wire:model="langs" variant="pills">
-                        @foreach ($this->languages as $language)
-                            <flux:checkbox value="{{ $language->lang }}" label="{{ $language->lang }} ({{ $language->total }})" />
-                        @endforeach
-                    </flux:checkbox.group>
+                {{--
+                    Buttons rather than checkboxes, and that is not decoration. The
+                    codes themselves (`es-419`, `zh-Hant`) meant nothing to a reader
+                    choosing between them, and a checkbox label has no room for a
+                    human name beside a count of sources. The pill carries both.
+                --}}
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                    @foreach ($this->languages as $language)
+                        <button
+                            type="button"
+                            wire:click="toggleLang('{{ $language->lang }}')"
+                            aria-pressed="{{ in_array($language->lang, $langs, true) ? 'true' : 'false' }}"
+                            @class([
+                                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                                'border-vermilion-600 bg-vermilion-600 text-white shadow-sm' => in_array($language->lang, $langs, true),
+                                'border-zinc-300 text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.06]' => ! in_array($language->lang, $langs, true),
+                            ])
+                        >
+                            {{ $this->languageName($language->lang) }}
+
+                            <span
+                                @class([
+                                    'rounded-full px-1.5 text-[0.65rem] tabular-nums',
+                                    'bg-white/20' => in_array($language->lang, $langs, true),
+                                    'bg-zinc-100 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400' => ! in_array($language->lang, $langs, true),
+                                ])
+                            >{{ $language->total }}</span>
+                        </button>
+                    @endforeach
                 </div>
 
                 {{--
@@ -541,12 +666,29 @@ new #[Title('Search')] class extends Component {
                             ) }}
                         </summary>
 
-                        <div class="mt-2">
-                            <flux:checkbox.group wire:model="langs" variant="pills">
-                                @foreach ($this->rareLanguages as $language)
-                                    <flux:checkbox value="{{ $language->lang }}" label="{{ $language->lang }}" />
-                                @endforeach
-                            </flux:checkbox.group>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            @foreach ($this->rareLanguages as $language)
+                                <button
+                                    type="button"
+                                    wire:click="toggleLang('{{ $language->lang }}')"
+                                    aria-pressed="{{ in_array($language->lang, $langs, true) ? 'true' : 'false' }}"
+                                    @class([
+                                        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                                        'border-vermilion-600 bg-vermilion-600 text-white shadow-sm' => in_array($language->lang, $langs, true),
+                                        'border-zinc-300 text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.06]' => ! in_array($language->lang, $langs, true),
+                                    ])
+                                >
+                                    {{ $this->languageName($language->lang) }}
+
+                                    <span
+                                        @class([
+                                            'rounded-full px-1.5 text-[0.65rem] tabular-nums',
+                                            'bg-white/20' => in_array($language->lang, $langs, true),
+                                            'bg-zinc-100 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400' => ! in_array($language->lang, $langs, true),
+                                        ])
+                                    >{{ $language->total }}</span>
+                                </button>
+                            @endforeach
                         </div>
                     </details>
                 @endif
@@ -626,14 +768,15 @@ new #[Title('Search')] class extends Component {
             @endif
         </div>
 
+        {{--
+            What the current filters will cost, stated where the button used to be.
+            The button itself moved up beside the box, so this line is what keeps
+            the "no sources match" warning visible at all.
+        --}}
         <div class="flex items-center gap-3">
-            <flux:button variant="primary" type="submit" icon="magnifying-glass">
-                {{ __('Search') }}
-            </flux:button>
-
             @if ($this->eligibleSources > 0)
                 <span class="text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ trans_choice('{1} :count source|[2,*] :count sources', $this->eligibleSources, ['count' => $this->eligibleSources]) }}
+                    {{ trans_choice('{1} Searching :count source|[2,*] Searching :count sources', $this->eligibleSources, ['count' => $this->eligibleSources]) }}
                 </span>
             @else
                 <span class="text-sm text-amber-600 dark:text-amber-400">
@@ -832,6 +975,42 @@ new #[Title('Search')] class extends Component {
                             </div>
                         </a>
 
+                        {{--
+                            The library toggle, on the card.
+
+                            A search is how a reader finds a series they then want to
+                            keep, and the only path to the bookmark used to run through
+                            each series page in turn. It sits outside the anchor: a
+                            button inside a link is invalid HTML, and the click would
+                            navigate instead of toggling wherever browsers forgave it.
+
+                            The state is read from a batch over the whole result set,
+                            one query for the page, which is the same lesson the
+                            library page paid for in round trips.
+                        --}}
+                        @php($inLibrary = (bool) ($this->libraryMap[$group->primary->suwayomi_manga_id] ?? false))
+
+                        <button
+                            type="button"
+                            wire:click="toggleLibrary({{ $group->primary->suwayomi_manga_id }})"
+                            wire:loading.attr="disabled"
+                            data-test="library-toggle"
+                            aria-pressed="{{ $inLibrary ? 'true' : 'false' }}"
+                            aria-label="{{ $inLibrary
+                                ? __('Remove :title from your library', ['title' => $group->primary->title])
+                                : __('Add :title to your library', ['title' => $group->primary->title]) }}"
+                            title="{{ $inLibrary ? __('In library') : __('Add to library') }}"
+                            class="absolute bottom-1.5 end-1.5 z-10 flex size-7 items-center justify-center rounded-full on-art transition-transform hover:scale-110"
+                        >
+                            <flux:icon
+                                name="bookmark"
+                                @class([
+                                    'size-3.5 text-vermilion-400' => $inLibrary,
+                                    'size-3.5 text-zinc-300' => ! $inLibrary,
+                                ])
+                            />
+                        </button>
+
                         <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
                             <a href="{{ route('series', ['manga' => $group->primary->suwayomi_manga_id]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
                                 {{ $group->primary->title }}
@@ -866,7 +1045,7 @@ new #[Title('Search')] class extends Component {
                         @if ($group->hasAlternatives())
                             <p class="mt-1 truncate text-xs text-zinc-400 dark:text-zinc-500">
                                 +{{ $group->sourceCount() - 1 }} {{ trans_choice('source|sources', $group->sourceCount() - 1) }}:
-                                {{ implode(', ', array_slice($group->sourceNames(), 1)) }}
+                                {{ implode(', ', $group->alternativeNames()) }}
                             </p>
                         @endif
 
