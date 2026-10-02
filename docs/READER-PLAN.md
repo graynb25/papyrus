@@ -271,6 +271,35 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 ---
 
+## Where the build stands
+
+Every phase below is a checklist. **59 shipped, 18 open**, and the open ones
+name the reason rather than just the item, because most of them are a deliberate
+scoping decision or an API that does not exist rather than an oversight.
+
+| Phase | Shipped | Open |
+|---|---|---|
+| Phase 0: Foundation | 13 | 0 |
+| Phase 1: Discovery | 9 | 0 |
+| Phase 2: Read path | 13 | 1 |
+| Phase 3: Library & personal data | 5 | 4 |
+| Phase 4: Downloads & offline | 5 | 4 |
+| Phase 5: Health, migration, resilience | 10 | 0 |
+| Phase 6: Parity & polish | 4 | 9 |
+| **Total** | **59** | **18** |
+
+The two items most likely to be mistaken for oversights:
+
+- **Bulk actions (H7)** is the one H-tier item still genuinely open.
+- **Local source upload (H15)** was scoped out on purpose. Suwayomi has no upload
+  API at all, so a drop zone would mean this app writing into the server's data
+  directory, which is shared by every reader because the source cannot scope it.
+
+Section 14 of the engineering notes lists the places where a document here and the
+code disagree, including several claims in this file.
+
+---
+
 ## 6. Phases
 
 ### Phase 0: Foundation *(invisible; everything depends on it)*
@@ -286,12 +315,14 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] 77 tests green, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **868 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
 - [x] **Keiyoushi store added via `index.pb`:** 1,379 extensions, 4 installed, live fetches returning real results
-- [ ] Configure `serveConversions` to WebP with a `default` entry
+- [x] **`serveConversions` investigated and deliberately left off.** Measured: `webp`, `avif`
+      and `jpg` all return byte-identical `image/webp`, so there is no bandwidth win. The
+      setting does exist and is writable, which this file previously said it did not
 
 **Acceptance:** `php artisan test` green against fixtures; `suwayomi:check` reports version, auth mode and stores; a committed schema snapshot exists; no table lacks `user_id`.
 
@@ -314,8 +345,8 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 - [x] **Health ledger** (H2 groundwork): ok / empty / failed tracked separately, dead + silent detection
 - [x] Filter position↔name translation incl. nested `GroupFilter` (S7, engine side)
 - [x] `sources:sync` and `search:fanout` commands
-- [ ] Livewire UI: source browser, search page, store manager, trust flow, health dashboard
-- [ ] Extension install / uninstall UI
+- [x] Livewire UI: search page, store manager with the trust flow, health dashboard, source manager
+- [x] Extension install / uninstall UI
 
 **Verified live:** 6 sources fanned out in 2.9s → 25 raw hits → 20 deduplicated, 4 multi-source series collapsed, per-source outcomes recorded, health ledger populated. "BERSERK", "Berserk Gaiden" and "Berserk Princess" correctly stayed distinct.
 
@@ -333,78 +364,131 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 **Goal:** open a series and read a chapter end-to-end. The product exists after this.
 
-- Series page: metadata, cover, genres, chapter list with filters/sort, missing-chapter detection (S9, C8)
-- Chapter list: read/unread/bookmark, per-chapter progress bar, dedupe toggle
-- **Reader v1** (S10): continuous vertical + webtoon. Custom canvas, zero deps. Fit-width / fit-height / original, gap control, side padding, tap zones, page-error + per-page retry
-- Keyboard control (H8) and colour filters (H10) ship *with* the reader, not later, since they're ~1 day total and they're the differentiator
-- Accessibility baseline (H9): alt text, focus on page change, `aria-live` for chapter changes, `prefers-reduced-motion`
-- Progress (S11): per-user, debounced, with `?updateProgress` as a no-JS fallback path (C17)
-- Reader settings profile resolution (H11), reading mode per series persisted (S5)
+- [x] Series page: metadata, cover, genres, chapter list with filters and sort (S9, C8)
+- [x] Missing-chapter detection on the series page
+- [x] Chapter list: read and unread state, per-chapter progress bar
+- [x] Chapter navigator with boundary ticks and cross-chapter seek (H13)
+- [x] Per-chapter notes, one per chapter, from the reader and the series page (H18)
+- [x] **Reader v1** (S10): continuous vertical and webtoon, custom canvas, zero deps
+- [x] Fit-width, fit-height and original, gap control, side padding, tap zones
+- [x] Per-page error state with retry in place, no position lost
+- [x] Full keyboard control (H8)
+- [ ] Accessibility baseline (H9). `prefers-reduced-motion` is in `resources/css/app.css`;
+      there is no `aria-live` for chapter changes anywhere, and focus management on page
+      change is not built
+- [x] Progress per user, debounced, with `?updateProgress` as a no-JS fallback (S11, C17)
+- [x] Reader settings resolution across five layers (H11): defaults, profile, home shelf,
+      series, session
+- [x] Reading mode persisted per series (S5)
+- [x] Colour filters including the sub-1.0 dim range (H10)
 
-**Acceptance:** a full chapter reads smoothly with keyboard only; progress survives a reload; a failed page retries in place without losing position.
+**Acceptance:** met. A full chapter reads with the keyboard, progress survives a reload,
+and a failed page retries in place without losing position.
 
-**Defer:** paged mode, spreads (Phase 6 / L1).
-
+**Defer:** spreads (Phase 6 / L1). Paged mode was not deferred in the end; it shares one
+document with the vertical mode, so switching costs no request.
 ---
 
 ### Phase 3: Library & personal data
 
 **Goal:** the app becomes *yours*, not a browser.
 
-- Categories (drag-reorder, multi-membership, per-category sort/display) + tags + favourites + read later + ratings (H4)
-- Custom covers: upload, delete, **set from reader page** (H5)
-- Bulk actions with range select (H7)
-- **Library search query language** (H6): port Mihon's `LibrarySearchLexer`/`Parser`/`Ast` (`title:`, `author:`, `src:`, `unread>5`, `genre:""`, `&&`/`||`/`-`/parens
-- History and continue-reading feed (H20)
-- Incognito (H17): suppress all writes, hide configured categories
-- Multi-user demonstrated: two accounts, genuinely separate libraries (H19)
+- [x] Shelves, many-to-many with series, reorderable, one home shelf (H4)
+- [ ] Tags, favourites, read later and ratings (H4). The columns exist on `series_states`
+      and nothing writes them. There is no control for any of the four
+- [x] Custom covers: upload and delete, resized and stored per reader (H5)
+- [ ] **Set cover from the reader page** (H5). `series_covers.source_page` exists and nothing
+      writes it, and the reader has no cover control at all
+- [ ] **Bulk actions with range select** (H7). The one H-tier item still open
+- [x] Search query language (H6), **in a reduced form**: three best-effort terms,
+      `label:value`, rather than Mihon's lexer, parser and AST. No `&&`, `||`, parentheses
+      or `unread>5`. An unrecognised label is searched as text rather than dropped, which
+      is what a title containing a colon needs
+- [x] Continue-reading feed (H20), a section on `/library` over the batch the page already
+      fetches, so it costs a local join rather than a request
+- [ ] Incognito (H17). `user_sources.incognito` exists as a column and a fillable field,
+      and no write path reads it, so nothing is suppressed and nothing is hidden
+- [x] Multi-user demonstrated (H19): the tenancy tests prove two users on one database see
+      disjoint rows
 
-**Acceptance:** `unread>5 && src:mangadex -title:"raw"` works; two users see disjoint libraries on one instance; incognito leaves zero trace.
-
+**Acceptance:** partly met. Two users do see disjoint libraries. `unread>5 && src:mangadex
+-title:"raw"` does not exist, and incognito leaves more than zero trace because it was
+never built.
 ---
 
 ### Phase 4: Downloads & offline
 
 **Goal:** remove the network from the read loop.
 
-- Download centre (H3): wrap Suwayomi's queue, add the error text it doesn't give us (C5), compute throughput/ETA from our own progress samples, retry with backoff, group by source→series→chapter
-- Bulk and policy downloads: whole series, unread up to N, per-category auto-download on add (M7)
-- Delete policies: after read, keep N most recent, never delete bookmarked
-- CBZ export to browser, size-guarded (C12) or zipped from the known on-disk layout
-- Local source web UI (H15): upload CBZ/EPUB/folder, parse ComicInfo.xml, natural-order chapter sort
-- WebP/AVIF (H16) verified end-to-end and measured
+- [x] Download centre (H3): wraps Suwayomi's queue and reconciles a per-reader ledger in
+      two calls a pass
+- [x] Error text captured, retry with backoff, grouped by source then series then chapter
+- [x] The downloader is never exposed as a switch: enqueueing starts it and it stops when
+      the queue empties
+- [ ] Bulk and policy downloads: whole series, unread up to N, per-category auto-download
+      (M7). No policy layer exists
+- [ ] Delete policies: after read, keep N most recent, never delete bookmarked
+- [ ] CBZ export to browser, size-guarded. `downloads.cbz_export_max_bytes` is a config key
+      nothing reads, and Suwayomi's own download endpoint builds the whole archive in
+      memory, so the proxy refuses that path rather than guarding it
+- [x] Local source: browse the folder and rescan (H15), pairing the folder against the
+      server's listing, which disagree and stay disagreeing because there is no delete
+      mutation
+- [ ] **Local source upload** (H15). Suwayomi has no upload API at all: every GET on
+      `/api/v1/...` answers the 4,484-byte WebUI catch-all and every other method a 404. This
+      is scoped out deliberately and the sources page says why
+- [x] WebP and AVIF (H16) verified end-to-end and measured. **Closed as a non-finding**: no
+      bandwidth win is available, all three formats return byte-identical `image/webp`
 
-**Acceptance:** a failed download shows *why* and retries; a series downloads fully unattended; a locally-uploaded CBZ reads identically to a remote one.
-
+**Acceptance:** partly met. A failed download shows why and retries, and a series downloads
+unattended. A locally read CBZ matches a remote one because local files are read through
+Suwayomi itself. Uploading one was never built.
 ---
 
 ### Phase 5: Health, migration, resilience
 
 **Goal:** the system survives a bad week.
 
-- **Source health dashboard** (H2): per-source success rate, last success, last error, consecutive failures, dead-source toggle; feed it into search and browse to suppress known-dead sources
-- Dead-source handling: a dead source's already-downloaded chapters stay readable (server #2269 makes the API refuse, so this is our workaround)
-- **Migration wizard** (H12): single + mass, `MigrationFlag` semantics, regular vs deep search, manual URL override, cover diff before committing
-- Duplicate-entry management (M8)
-- Library update scheduling in Laravel (M14), preferring Suwayomi's engine but owning the policy
-- Hardening: 30s budget everywhere, partial-result UX, retry surfaces, health-driven source suppression
+- [x] **Source health dashboard** (H2): grouped by site because 82 sources are really 15
+      (counted 2026-10-01), with drill-down to language variants
+- [x] Per-source success rate, last success, last error, consecutive failures
+- [x] Dead sources skipped by default so they cannot burn the timeout on every run
+- [x] Per-user skip wired into the fan-out
+- [x] **Migration wizard** (H12): per series and library-wide, always confirmed, candidates
+      ranked, read state transferred and alignment reported
+- [x] Regular and deep search, manual URL override
+- [x] Duplicate-entry workflow through the same wizard (M8)
+- [x] Library check scheduling owned by Laravel (M14), in time-bounded slices, with a
+      per-series interval and a floor
+- [x] An inline per-card check as well as the scheduled job, both through one code path
+- [x] Hardening: 30s budget on every call, partial-result UX, health-driven suppression
 
-**Acceptance:** kill a source mid-operation and the UI degrades visibly rather than hanging; a migration moves read state, categories, and covers and leaves nothing behind.
-
+**Acceptance:** met. Kill a source and the UI degrades visibly rather than hanging; a
+migration moves read state, shelves and covers and leaves the old downloads on disk.
 ---
 
 ### Phase 6: Parity & polish
 
 **Goal:** close the remaining Mihon gap and make it presentable.
 
-- Stats dashboard (M1) · release prediction + Upcoming calendar (M2) · trackers via Suwayomi proxy (M3) · PWA (M4)
-- Recommended surfaces (M5) · chapter filters (M6) · auto-scroll (M9) · chapter separators (M10)
-- Web Push digests (M11) · server config surface (M12) · CSV export (M13)
-- Paged reader mode, only now, once vertical is genuinely excellent
-- L-tier items as time allows
+- [ ] Stats dashboard (M1)
+- [ ] Release prediction and an Upcoming calendar (M2)
+- [ ] Tracker integration through Suwayomi's proxy (M3)
+- [ ] PWA, installable with an offline shell (M4)
+- [ ] Recommended surfaces from popular, latest and genre (M5). `SourceSearcher::browse()` is
+      written and has **no caller**, so the whole browse path is unreachable
+- [x] Chapter filters (M6): scanlator exclusion, read and unread ranges
+- [ ] Auto-scroll and scroll-driven page advance (M9)
+- [x] Chapter separators in the navigator (M10), as boundary ticks and a read map
+- [ ] Web Push new-chapter digests (M11)
+- [ ] Server config management surface over `setSettings` (M12)
+- [ ] CSV library export (M13)
+- [x] Paged reader mode, sharing one document with the vertical one
+- [x] L3 reader profiles as named sets
 
-**Acceptance:** feature parity with Mihon on the read loop, plus the things Mihon *cannot* do (cross-device sync, multi-user, dedupe, health).
-
+**Acceptance:** not met, and this phase is mostly open. The read-loop parity that matters
+did land: two reader modes, a navigator, notes, colour filters and a settings hierarchy.
+The surfaces around it did not.
 ---
 
 ## 7. Risks & open questions
