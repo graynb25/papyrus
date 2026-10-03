@@ -57,6 +57,24 @@ new #[Title('Browse')] class extends Component
      */
     public array $shelfFilings = [];
 
+    /**
+     * A search term, or empty while the reader is browsing the source's own listings.
+     *
+     * In the URL so a search can be shared and survives a reload, like the tab and the scroll
+     * position.
+     */
+    #[Url(as: 'q', keep: false)]
+    public string $query = '';
+
+    /**
+     * The term that produced what is on screen.
+     *
+     * Separate from the input, because the two legitimately disagree: while a reader is typing,
+     * `$query` holds letters that have not been searched for yet. Only this one decides which
+     * call fetches rows, so the grid never flickers on the way to a real search.
+     */
+    public string $activeQuery = '';
+
     public bool $hasNextPage = false;
 
     public bool $loadingMore = false;
@@ -85,6 +103,7 @@ new #[Title('Browse')] class extends Component
         $this->source = $source;
         $this->type = strtoupper($this->type) === 'LATEST' ? 'LATEST' : 'POPULAR';
         $this->loadedThrough = max(1, min($this->loadedThrough, self::MOUNT_PAGE_LIMIT));
+        $this->activeQuery = trim($this->query);
 
         for ($page = 1; $page <= $this->loadedThrough; $page++) {
             if (! $this->appendPage($page)) {
@@ -108,7 +127,14 @@ new #[Title('Browse')] class extends Component
      */
     private function appendPage(int $page): bool
     {
-        $outcome = app(SourceSearcher::class)->browsePage($this->source, $this->type, $page);
+        /*
+         * One call site for both modes, so the scroll, the prefetch and the end-of-list message
+         * cannot drift apart between browsing and searching. They are the same request with a
+         * different type and a query.
+         */
+        $outcome = $this->activeQuery === ''
+            ? app(SourceSearcher::class)->browsePage($this->source, $this->type, $page)
+            : app(SourceSearcher::class)->searchPage($this->source, $this->activeQuery, $page);
 
         if ($outcome->hasError()) {
             // A link that asked for page 5 of a source that failed on page 1 should say so
@@ -203,6 +229,71 @@ new #[Title('Browse')] class extends Component
     }
 
     /**
+     * Search this source, and replace the grid with the answers.
+     *
+     * Fires on submit rather than per keystroke, measured: on Asura Scans a term that matches
+     * answers in 211ms and a term that matches nothing takes 1,673ms. Typing "regres" one letter
+     * at a time would pay the second cost five times before the reader had finished the word.
+     *
+     * Returns to page one, because page three of a search for "solo" has nothing to do with page
+     * three of the source's popular list.
+     */
+    public function runSearch(): void
+    {
+        $term = trim($this->query);
+
+        $this->resetGrid();
+
+        if ($term === '') {
+            $this->query = '';
+            $this->activeQuery = '';
+
+            $this->appendPage(1);
+
+            return;
+        }
+
+        $this->query = $term;
+        $this->activeQuery = $term;
+
+        $this->appendPage(1);
+    }
+
+    /**
+     * Leave the search and go back to the source's own listings.
+     */
+    public function clearSearch(): void
+    {
+        $this->query = '';
+        $this->activeQuery = '';
+        $this->resetGrid();
+        $this->appendPage(1);
+    }
+
+    /**
+     * Empty the grid and its reader state, so the next fetch starts from nothing.
+     */
+    private function resetGrid(): void
+    {
+        $this->rows = [];
+        $this->libraryStates = [];
+        $this->shelfFilings = [];
+        $this->loadError = null;
+        $this->hasNextPage = false;
+        $this->lastLoadedPage = 0;
+        $this->loadedThrough = 1;
+    }
+
+    /**
+     * Whether a search is what is on screen.
+     */
+    #[Computed]
+    public function searching(): bool
+    {
+        return $this->activeQuery !== '';
+    }
+
+    /**
      * Switch between Popular and Latest, back to the first page.
      *
      * Page one rather than the page they had scrolled to, because page seven of Popular and page
@@ -211,14 +302,8 @@ new #[Title('Browse')] class extends Component
     public function setType(string $type): void
     {
         $this->type = strtoupper($type) === 'LATEST' ? 'LATEST' : 'POPULAR';
-        $this->rows = [];
-        $this->libraryStates = [];
-        $this->shelfFilings = [];
-        $this->loadError = null;
-        $this->hasNextPage = false;
-        $this->lastLoadedPage = 0;
-        $this->loadedThrough = 1;
 
+        $this->resetGrid();
         $this->appendPage(1);
     }
 
@@ -242,11 +327,6 @@ new #[Title('Browse')] class extends Component
     /**
      * Why the grid is empty, when it is.
      *
-     * Only one reason remains. The "no latest chapters" case used to live here too, but the
-     * Latest tab is hidden for a source that has none, and `browsePage()` refuses the request
-     * outright, so a hand-edited `?type=LATEST` lands on the load error that says exactly why
-     * rather than on a silent empty grid.
-     *
      * @return array{0: string, 1: string}|null
      */
     #[Computed]
@@ -254,6 +334,13 @@ new #[Title('Browse')] class extends Component
     {
         if ($this->rows !== [] || $this->loadError !== null) {
             return null;
+        }
+
+        if ($this->searching()) {
+            return [
+                __('Nothing matched'),
+                __('This source has nothing for “:term”.', ['term' => $this->activeQuery]),
+            ];
         }
 
         return [
@@ -391,37 +478,87 @@ new #[Title('Browse')] class extends Component
     </header>
 
     {{--
-        Popular and Latest. The tab is hidden rather than disabled when a source has no latest
-        listing, because a control that cannot do anything is noise, and 81 of the 82 sources on
-        this box do offer one so the hidden case is rare.
+        Search, then the tabs.
+
+        A reader who opens Asura Scans because they know it carries a title wants that source
+        searched, not a fan-out across 82 of them: the global search covers 40 chosen by a
+        round robin, so four sites including MangaFire, MangaTaro, Thunder Scans and Weeb
+        Central are not in it at all, and even those in it are drowned by MangaDex's 61
+        language variants. Searching where they already are answers the question they asked.
+
+        On submit rather than per keystroke, measured on Asura Scans: a term that matches
+        answers in 211ms and a term that matches nothing takes 1,673ms, so typing one letter at
+        a time would pay the miss cost five times before the word was finished.
+
+        The tabs sit below and step aside while a search is on screen. Popular and Latest answer a
+        different question, and leaving them under a result grid invites the reader to think the
+        grid is one of them.
     --}}
-    <div class="flex flex-wrap items-center gap-2">
-        <flux:button
+    <form wire:submit="runSearch" class="flex flex-wrap items-center gap-2">
+        <flux:input
+            name="query"
+            wire:model="query"
+            type="search"
             size="sm"
-            :variant="$type === 'POPULAR' ? 'primary' : 'outline'"
-            wire:click="setType('POPULAR')"
-            aria-pressed="{{ $type === 'POPULAR' ? 'true' : 'false' }}"
-        >
-            {{ __('Popular') }}
+            class="min-w-56 flex-1"
+            placeholder="{{ __('Search this source') }}"
+            aria-label="{{ __('Search this source') }}"
+            data-test="source-search"
+        />
+
+        <flux:button type="submit" size="sm" variant="primary" data-test="search-submit">
+            {{ __('Search') }}
         </flux:button>
 
-        @if ($source->supports_latest)
-            <flux:button
-                size="sm"
-                :variant="$type === 'LATEST' ? 'primary' : 'outline'"
-                wire:click="setType('LATEST')"
-                aria-pressed="{{ $type === 'LATEST' ? 'true' : 'false' }}"
-            >
-                {{ __('Latest') }}
+        @if ($this->searching)
+            <flux:button size="sm" variant="ghost" type="button" wire:click="clearSearch" data-test="search-clear">
+                {{ __('Clear') }}
             </flux:button>
         @endif
+    </form>
 
-        @if ($type === 'LATEST')
-            <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ __('Newest chapters first.') }}
-            </span>
-        @endif
-    </div>
+    @if ($this->searching)
+        <p class="text-sm text-zinc-500 dark:text-zinc-400" data-test="search-summary">
+            {{ trans_choice(
+                ':count title on this source matches “:term”.|:count titles on this source match “:term”.',
+                count($rows),
+                ['count' => number_format(count($rows)), 'term' => $activeQuery],
+            ) }}
+        </p>
+    @else
+        {{--
+            Popular and Latest. The tab is hidden rather than disabled when a source has no
+            latest listing, because a control that cannot do anything is noise, and 81 of the 82
+            sources on this box do offer one so the hidden case is rare.
+        --}}
+        <div class="flex flex-wrap items-center gap-2">
+            <flux:button
+                size="sm"
+                :variant="$type === 'POPULAR' ? 'primary' : 'outline'"
+                wire:click="setType('POPULAR')"
+                aria-pressed="{{ $type === 'POPULAR' ? 'true' : 'false' }}"
+            >
+                {{ __('Popular') }}
+            </flux:button>
+
+            @if ($source->supports_latest)
+                <flux:button
+                    size="sm"
+                    :variant="$type === 'LATEST' ? 'primary' : 'outline'"
+                    wire:click="setType('LATEST')"
+                    aria-pressed="{{ $type === 'LATEST' ? 'true' : 'false' }}"
+                >
+                    {{ __('Latest') }}
+                </flux:button>
+            @endif
+
+            @if ($type === 'LATEST')
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('Newest chapters first.') }}
+                </span>
+            @endif
+        </div>
+    @endif
 
     @if ($loadError !== null && $rows === [])
         <flux:callout variant="secondary" icon="exclamation-circle">
@@ -574,7 +711,9 @@ new #[Title('Browse')] class extends Component
                 </div>
             @elseif (! $hasNextPage)
                 <p class="pb-2 text-xs text-zinc-400 dark:text-zinc-500">
-                    {{ __('That is everything this source listed.') }}
+                    {{ $this->searching()
+                        ? __('That is everything this source has for that search.')
+                        : __('That is everything this source listed.') }}
                 </p>
             @endif
         </div>

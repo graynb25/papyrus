@@ -90,6 +90,67 @@ class SourceSearcher
     }
 
     /**
+     * One page of one source's search results.
+     *
+     * Separate from {@see search()} for the same reason {@see browsePage()} is separate from
+     * `browse()`: `search()` returns a `SourceSearchOutcome`, which the health ledger reads for
+     * its ok/empty/error split and which slices to `results_per_source` because that bounds a
+     * fan-out. A search bar on the browse page wants neither: it wants the rows, and it wants the
+     * scroll that is already there to keep working.
+     *
+     * Measured on Asura Scans, which is where the request came from: "regression" returns 8 rows
+     * in 737ms with `hasNextPage` false, "solo level" 2 rows in 211ms, a nonsense term 0 rows in
+     * 1,673ms, and the broadest term seen returns 20. So a single source's search is small and
+     * usually one page, which means the scroll stops on its own rather than needing a cutoff, and
+     * the 15-row slice would have been hiding a fifth of the broadest results.
+     *
+     * The nonsense term is worth keeping in mind: it cost 1,673ms against 211ms for a real one.
+     * A search box that fires on every keystroke would spend that on typos, so the page waits to
+     * be asked rather than reacting per character.
+     *
+     * @param  array<string, mixed>  $filterValues
+     */
+    public function searchPage(Source $source, string $query, int $page = 1, array $filterValues = []): BrowsePage
+    {
+        $term = trim($query);
+
+        if ($term === '') {
+            return BrowsePage::of([], false);
+        }
+
+        try {
+            $filters = $this->filtersFor($source);
+            $changes = $filterValues === [] ? [] : $this->translator->toChanges($filters, $filterValues);
+
+            $data = $this->gateway->execute(<<<'GQL'
+                mutation Find($source: LongString!, $page: Int!, $query: String!, $filters: [FilterChangeInput!]) {
+                    fetchSourceManga(input: {source: $source, type: SEARCH, page: $page, query: $query, filters: $filters}) {
+                        hasNextPage
+                        mangas {
+                            id title url thumbnailUrl
+                            source { id name }
+                        }
+                    }
+                }
+                GQL, [
+                'source' => (string) $source->suwayomi_source_id,
+                'page' => $page,
+                'query' => $term,
+                'filters' => $changes,
+            ], (int) config('papyrus.search.per_source_timeout', 20));
+
+            return BrowsePage::of(
+                $data['fetchSourceManga']['mangas'] ?? [],
+                (bool) ($data['fetchSourceManga']['hasNextPage'] ?? false),
+            );
+        } catch (SuwayomiException $e) {
+            return BrowsePage::failed(
+                $e->isTimeout() ? 'Exceeded the per-source time budget.' : $e->getMessage(),
+            );
+        }
+    }
+
+    /**
      * One page of a source's POPULAR or LATEST listing.
      *
      * LATEST is checked against supportsLatest first: the server answers an unsupported request
