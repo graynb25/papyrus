@@ -100,22 +100,42 @@ containing a colon still works. The page says when it has done that.
 
 ### Tracking on AniList
 
-Optional, per reader, and inert until you connect. Search-time title matching is a
-keyless lookup against AniList's public API and stays off until you switch it on.
-Progress tracking is more than a lookup: it writes to your list under your account, so
-it needs an OAuth token only you can grant.
+Per reader, and inert until you connect. Reading AniList's public API needs no key, so
+the search-page dedupe is a keyless lookup that stays off until you switch it on at
+`/search`. Writing progress is a different thing: it writes to your list under your
+account, so it needs an OAuth token only you can grant.
 
-The switch lives at `/settings/connections`. To offer it, this deployment needs its own
-application registered at anilist.co/settings/developer, with the id and secret in
-`ANILIST_OAUTH_CLIENT_ID` and `ANILIST_OAUTH_CLIENT_SECRET`, and the redirect URI you
-register there matching this app's `anilist.callback` address exactly. Until both are
-set, the page says what is missing instead of drawing a button that cannot work.
+**Connecting is the consent, not the search-page switch.** A reader who connects and
+never touches that switch still has their library series' titles sent to AniList, because
+the push and the import both resolve a title directly and neither asks
+`App\AniList\Preference` first. `App\AniList\Tracking` gives that as the reason where it
+makes the lookup.
+
+Four things use AniList now: search dedupe, progress pushed when a chapter finishes,
+progress pulled back by an import, and the connect and disconnect buttons.
+
+Connect and disconnect live at `/settings/connections`. To offer them, this deployment
+needs its own application registered at anilist.co/settings/developer, with the id and
+secret in `ANILIST_OAUTH_CLIENT_ID` and `ANILIST_OAUTH_CLIENT_SECRET`, and the redirect
+URI registered there set to `/anilist/callback` on your `APP_URL`, byte for byte. Until
+both are set, the page says what is missing instead of drawing a button that cannot work.
+That route is behind `auth` and `verified`, so you must still be signed in when AniList
+redirects back or the state check fails and the connect is thrown away.
 
 Once connected, a chapter finishing (read to the end, or marked read by hand) pushes
 that series' progress to AniList as a queued job. The largest chapter number you have
 read is the number pushed, marked CURRENT, or COMPLETED when AniList's own chapter count
-says you reached the end. AniList issues no refresh token, so when the year-old token
-dies the page shows you disconnected and you connect again.
+says you reached the end.
+
+The import runs the other way and rewrites your local read state from AniList's. It only
+touches series already in your library, nothing is ever marked unread, and it never adds
+a series. A series AniList has no entry for is left exactly as it is and listed as
+unmatched when the run finishes. A series AniList knows but that is not on your list counts
+as matched with nothing to pull, so a finished run can legitimately report zero updated.
+If your library is empty the page says so rather than reporting a tally of nothing.
+
+AniList issues no refresh token, so when the year-old token dies the page shows you
+disconnected and you connect again.
 
 ### The reader
 
@@ -166,6 +186,12 @@ Generate the password rather than reusing one. Suwayomi's REST endpoints answer 
 without a token, and it holds the credentials for every manga account you configure in it,
 so it is worth treating as a secret even on a loopback address. See
 [`docs/SECURITY.md`](docs/SECURITY.md) for the deployment notes.
+
+AniList tracking needs `ANILIST_OAUTH_CLIENT_ID` and `ANILIST_OAUTH_CLIENT_SECRET` in
+`.env`, plus a redirect URI of `/anilist/callback` registered at
+anilist.co/settings/developer, and `ANILIST_OAUTH_REDIRECT_URI` when that is not the
+address on `APP_URL`. Without them `/settings/connections` says what is missing. See
+[Tracking on AniList](#tracking-on-anilist).
 
 Register a store and mirror the catalogue:
 
@@ -225,11 +251,11 @@ app/Suwayomi/       Everything that talks to Suwayomi
 app/Search/         Fan-out, dedupe, health, and the filter vocabulary
 app/Library/        Shelve filing, background checks, continue reading, the chapter navigator
 app/Migration/      Finding a series on another source and moving state to it
-app/AniList/        Optional title matching and progress tracking, per reader, off by default
+app/AniList/        Title matching, the OAuth flow, progress push and import, per reader
 app/Covers/         Reader-supplied cover art, which Suwayomi cannot store
 app/Downloads/      The per-reader ledger against Suwayomi's shared queue
 app/Local/          The local folder source Suwayomi picks up from disk
-app/Jobs/           Five queued jobs, three of which re-book themselves
+app/Jobs/           Seven queued jobs, four of which re-book themselves
 app/Http/           The reader, the cover route, and the image proxy
 app/Models/         Side tables, all user-scoped or all global
 app/Console/        Artisan commands
@@ -237,7 +263,7 @@ resources/views/pages/   Livewire pages, one file each
 config/papyrus.php  Timeouts, thresholds, and the measured numbers
 ```
 
-Six of the 47 keys in `config/papyrus.php` are read by nothing. They are listed, with the
+Five of the 41 keys in `config/papyrus.php` are read by nothing. They are listed, with the
 rest, in [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) section 14, along with
 the public methods nothing calls and the claims in these documents that the code does not
 back up.
@@ -387,7 +413,7 @@ something to monetise.
 | Document | What is in it |
 |---|---|
 | [`docs/SETUP-SUWAYOMI.md`](docs/SETUP-SUWAYOMI.md) | Installing and configuring Suwayomi, including why it runs as a JAR rather than a Windows Service |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the two secrets in it |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) | The working agreement. Every measurement taken, every trap found, every decision and its reasoning |
 | [`docs/READER-PLAN.md`](docs/READER-PLAN.md) | The original reader design and what changed from it |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Local setup and the gate sequence |
