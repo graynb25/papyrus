@@ -90,25 +90,28 @@ class SourceSearcher
     }
 
     /**
-     * Browse a source's POPULAR or LATEST listing.
+     * One page of a source's POPULAR or LATEST listing.
      *
-     * LATEST is checked against supportsLatest first: the server answers an
-     * unsupported request with a bare java.lang.Exception and a full stack
-     * trace, which is both noisy and slower than simply not asking.
+     * LATEST is checked against supportsLatest first: the server answers an unsupported request
+     * with a bare java.lang.Exception and a full stack trace, which is both noisy and slower
+     * than simply not asking.
+     *
+     * Rows are returned whole. This used to slice to `results_per_source`, which is a
+     * fan-out bound rather than a page size, and measured against a browse page it discarded
+     * 35 of MangaFire's 50 rows, 41 of Manga Demon's 56 and 25 of Atsumaru's 40.
+     *
+     * Measured cost, since page one blocks the render and later pages are the prefetch:
+     * Asura Scans 709ms then 225ms, MangaFire 431ms then 420ms, Atsumaru 335ms then 169ms,
+     * Weeb Central 867ms then 2,083ms, Manga Demon 543ms then 294ms. Nothing here justifies
+     * a job, and the initial page is unavoidable either way because it is all there is to
+     * show.
      *
      * @param  array<string, mixed>  $filterValues
      */
-    public function browse(Source $source, string $type, int $page = 1, array $filterValues = []): SourceSearchOutcome
+    public function browsePage(Source $source, string $type, int $page = 1, array $filterValues = []): BrowsePage
     {
-        $started = microtime(true);
-        $timeout = (int) config('papyrus.search.per_source_timeout', 20);
-        $limit = (int) config('papyrus.search.results_per_source', 15);
-
         if ($type === 'LATEST' && ! $source->supports_latest) {
-            return SourceSearchOutcome::error(
-                'This source does not provide a latest-chapters listing.',
-                0,
-            );
+            return BrowsePage::failed('This source does not provide a latest-chapters listing.');
         }
 
         try {
@@ -120,8 +123,7 @@ class SourceSearcher
                     fetchSourceManga(input: {source: $source, type: $type, page: $page, filters: $filters}) {
                         hasNextPage
                         mangas {
-                            id title url thumbnailUrl status
-                            genre
+                            id title url thumbnailUrl
                             source { id name }
                         }
                     }
@@ -131,20 +133,16 @@ class SourceSearcher
                 'type' => $type,
                 'page' => $page,
                 'filters' => $changes,
-            ], $timeout);
+            ], (int) config('papyrus.search.per_source_timeout', 20));
 
-            $mangas = $data['fetchSourceManga']['mangas'] ?? [];
-
-            return SourceSearchOutcome::ok(
-                array_slice($mangas, 0, $limit),
-                (int) ((microtime(true) - $started) * 1000),
+            return BrowsePage::of(
+                $data['fetchSourceManga']['mangas'] ?? [],
+                (bool) ($data['fetchSourceManga']['hasNextPage'] ?? false),
             );
         } catch (SuwayomiException $e) {
-            $duration = (int) ((microtime(true) - $started) * 1000);
-
-            return $e->isTimeout()
-                ? SourceSearchOutcome::timeout($duration)
-                : SourceSearchOutcome::error($e->getMessage(), $duration);
+            return BrowsePage::failed(
+                $e->isTimeout() ? 'Exceeded the per-source time budget.' : $e->getMessage(),
+            );
         }
     }
 

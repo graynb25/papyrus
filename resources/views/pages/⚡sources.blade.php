@@ -727,7 +727,21 @@ new #[Title('Sources')] class extends Component
             <ul class="space-y-2">
                 @foreach ($this->browseSites as $group)
                     <li class="rounded-lg border border-zinc-200 dark:border-white/10">
-                        <details @if ($loop->first) open @endif>
+                        {{--
+                            Every group starts closed.
+
+                            The first version opened the largest one, which put MangaDex's 61
+                            language variants on screen as the first thing a reader saw, on top of
+                            a page that already lists 16 extensions and a stores table. The
+                            reader asked for this closed, and they are right twice over: a reader
+                            who wants MangaDex is reaching for a language in the first four pills
+                            anyway, and one who wants all 61 can open it deliberately.
+
+                            The summary row stays the way in, so closing a group costs nothing.
+                            A single-language site already shows its one source as a pill and never
+                            needs expanding at all.
+                        --}}
+                        <details>
                             <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
                                 <span class="font-medium">{{ $group['site'] }}</span>
 
@@ -742,10 +756,10 @@ new #[Title('Sources')] class extends Component
                                 </flux:badge>
 
                                 {{--
-                                    MangaDex carries 61 language variants, which would put
-                                    61 pills on one row and swamp every other site. Past a
-                                    handful the languages collapse behind a count and the
-                                    first few stay reachable.
+                                    MangaDex carries 61 language variants, which would put 61
+                                    pills on one row and swamp every other site. Past a handful
+                                    the languages collapse behind a count and the first few
+                                    stay reachable without expanding anything.
                                 --}}
                                 <span class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                                     @foreach (array_slice($group['sources'], 0, 4) as $one)
