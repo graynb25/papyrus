@@ -861,7 +861,18 @@ class SearchSyntaxTest extends TestCase
     {
         Livewire::test('pages::search')
             ->assertOk()
-            ->assertSee('Add label:value to narrow it.');
+            ->assertSee('Add a filter term.');
+
+        /*
+         * `FilterVocabulary::termsHint()` opens with "label:value, where label is one
+         * of: ...". The template used to prefix that with "Add label:value to narrow
+         * it. Terms: ", so the syntax was named twice in one sentence and the page read
+         * "Add label:value to narrow it. Terms: label:value, where label is one of:
+         * Genre, Status, Sort." The prefix introduces the term list instead, which is
+         * what it was always trying to do.
+         */
+        Livewire::test('pages::search')
+            ->assertDontSee('Add label:value to narrow it.');
     }
 
     public function test_the_page_names_every_term(): void

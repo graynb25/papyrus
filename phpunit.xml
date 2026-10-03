@@ -19,6 +19,12 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!--
+            The suite outgrew the CLI default of 128M. Parallel workers are
+            separate processes, so -d on the parent never reaches them; set
+            here so every worker inherits it.
+        -->
+        <ini name="memory_limit" value="1G"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>

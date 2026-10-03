@@ -8,12 +8,16 @@ use App\Models\SearchSourceResult;
 use App\Models\Source;
 use App\Search\FilterVocabulary;
 use App\Search\HealthRecorder;
+use App\Search\SearchFanout;
 use App\Search\SourceSearcher;
 use App\Search\TitleNormalizer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Searches one source on behalf of one run, and records what happened.
@@ -52,7 +56,63 @@ class SearchSourceJob implements ShouldQueue
         $run = SearchRun::forAllUsers()->find($this->runId);
         $source = Source::find($this->sourceId);
 
-        if ($run === null || $source === null) {
+        if ($run === null) {
+            /*
+             * The run row is gone, so nothing here can be recorded, and there is
+             * nothing to finalise. The batch is still live though, and every
+             * source pending behind this job would wait on a slot that is never
+             * freed. Roll the window on: each drained job lands here too and
+             * hands on in turn, so the batch finishes instead of hanging.
+             */
+            $this->feedNextSource();
+
+            return;
+        }
+
+        /*
+         * A retry re-enters this method. The first attempt already committed its
+         * outcome inside its own transaction, and what threw afterwards was the
+         * batch's bookkeeping rather than the search, so recording a second time
+         * would push `sources_done` past `sources_total` and stamp a run that
+         * returned every result as `partial`. The result row is the record of
+         * whether this source reported, which is the same guard `failed()` uses
+         * and for the same reason.
+         */
+        if ($this->alreadyRecorded($run, $source)) {
+            $this->feedNextSource();
+            $this->finishIfDone($run);
+
+            return;
+        }
+
+        if ($source === null) {
+            /*
+             * A source row deleted mid-run is not a reason to strand every source
+             * still pending behind it, and it is not a failure either. Counted the
+             * way a skip is counted, so the run's denominator still balances: the
+             * old code fed the next source and returned, leaving `sources_done`
+             * one short of `sources_total` for ever, which is the hang
+             * `finishIfDone()` exists to prevent.
+             */
+            DB::transaction(function () use ($run): void {
+                SearchSourceResult::createFor($this->userId, [
+                    'search_run_id' => $run->id,
+                    'suwayomi_source_id' => 0,
+                    'source_name' => 'Unknown',
+                    'status' => SearchSourceResult::SKIPPED,
+                    'result_count' => 0,
+                    'duration_ms' => 0,
+                    'error' => 'The source was removed while this run was in flight.',
+                ]);
+
+                $run->sources_done++;
+                $run->sources_skipped++;
+                $run->save();
+            });
+
+            $this->feedNextSource();
+            $this->finishIfDone($run);
+
             return;
         }
 
@@ -95,6 +155,8 @@ class SearchSourceJob implements ShouldQueue
                 $run->sources_skipped++;
                 $run->save();
             });
+
+            $this->feedNextSource();
 
             $this->finishIfDone($run);
 
@@ -165,6 +227,151 @@ class SearchSourceJob implements ShouldQueue
             $health->record($source, $outcome);
         });
 
+        $this->feedNextSource();
+
+        $this->finishIfDone($run);
+    }
+
+    /**
+     * Has this source already reported against this run?
+     *
+     * Two callers need it and they need it for the same reason. `handle()` re-enters
+     * on a retry, when the first attempt already committed. `failed()` reaches a job
+     * that may have thrown after committing too, and must not record twice. Both
+     * guard on the row rather than on how the code got there, because "how it got
+     * there" is exactly what a retry makes unknowable.
+     *
+     * Scoped explicitly to this job's reader, and that detail is the whole reason the
+     * guard works. `SearchSourceResult` is an `OwnedModel`, so a bare `::query()`
+     * still carries `OwnedByUser`, which resolves against `auth()`. A queue job has no
+     * authenticated user, so the scope matched nothing and the guard always
+     * said "not recorded". Written as a plain `::query()` it was silently inert, both
+     * here and in `failed()`, which is why a retry still counted its source twice.
+     */
+    private function alreadyRecorded(SearchRun $run, ?Source $source): bool
+    {
+        return SearchSourceResult::forUser($this->userId)
+            ->where('search_run_id', $run->id)
+            ->where('suwayomi_source_id', $source === null ? 0 : $source->suwayomi_source_id)
+            ->exists();
+    }
+
+    /**
+     * Dispatch the next pending source, keeping the run's window full.
+     *
+     * The fan-out's cap is this method: a batch queues everything it is given,
+     * so {@see SearchFanout} dispatches only the first window and
+     * every job that finishes hands the next pending source to the batch. The
+     * pop is under a lock because two workers can finish two sources at the
+     * same moment, and both must not take the same pending row.
+     *
+     * A feed that cannot run is logged and swallowed, never thrown: the job
+     * has already recorded its source's outcome by then, and a throw here would
+     * land in failed() and record it twice.
+     *
+     * It is not simply swallowed, because a swallowed feed is a hang. The pop never
+     * happened, so the source is still pending but no job will ever claim it, and if
+     * this was the last job to finish then `sources_done` can never reach
+     * `sources_total` and the run sits at "39 of 40" for ever. So a feed that cannot
+     * take the lock spends its own slot instead: the run is told a source went
+     * undispatched, the shortfall is visible rather than silent, and the run
+     * terminates. Blocking longer is the cheaper half of the answer and comes first.
+     */
+    private function feedNextSource(): void
+    {
+        $batch = $this->batch();
+
+        if ($batch === null || $batch->cancelled()) {
+            return;
+        }
+
+        $key = SearchFanout::pendingKey($this->runId);
+
+        try {
+            $sourceId = Cache::lock("search:run:{$this->runId}:feed", 30)->block(30, function () use ($key): ?int {
+                $pending = Cache::get($key, []);
+
+                if ($pending === []) {
+                    return null;
+                }
+
+                $next = (int) array_shift($pending);
+
+                if ($pending === []) {
+                    Cache::forget($key);
+                } else {
+                    Cache::put($key, $pending, now()->addHours(6));
+                }
+
+                return $next;
+            });
+
+            if ($sourceId === null) {
+                return;
+            }
+
+            $batch->add(new self(
+                runId: $this->runId,
+                userId: $this->userId,
+                sourceId: $sourceId,
+                query: $this->query,
+                filterValues: $this->filterValues,
+            ));
+
+            return;
+        } catch (Throwable $e) {
+            Log::warning('Search fan-out could not dispatch the next pending source.', [
+                'run' => $this->runId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        /*
+         * The feed failed. Rather than leave the run short a source for ever, record
+         * the shortfall against it and drop what is left, so the counter balances and
+         * the run finalises. The cost is that a source can go unsearched in a lock
+         * storm. The alternative was worse: a run that never finishes, which is what
+         * the reader actually sees.
+         */
+        $this->recordUndispatched();
+    }
+
+    /**
+     * Account for a source that could not be dispatched, and let the run finish.
+     */
+    private function recordUndispatched(): void
+    {
+        $run = SearchRun::forAllUsers()->find($this->runId);
+
+        if ($run === null || $run->sources_done >= $run->sources_total) {
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($run): void {
+                SearchSourceResult::createFor($this->userId, [
+                    'search_run_id' => $run->id,
+                    'suwayomi_source_id' => 0,
+                    'source_name' => 'Fan-out',
+                    'status' => SearchSourceResult::SKIPPED,
+                    'result_count' => 0,
+                    'duration_ms' => 0,
+                    'error' => 'Not dispatched: the fan-out could not hand on the next source.',
+                ]);
+
+                $run->sources_done++;
+                $run->sources_skipped++;
+                $run->save();
+            });
+        } catch (Throwable $e) {
+            Log::warning('Search fan-out could not record an undispatched source.', [
+                'run' => $this->runId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
         $this->finishIfDone($run);
     }
 
@@ -184,7 +391,7 @@ class SearchSourceJob implements ShouldQueue
         }
     }
 
-    public function failed(?\Throwable $exception): void
+    public function failed(?Throwable $exception): void
     {
         // Only reachable if the job itself blew up, which is a bug rather than
         // a source failure. Record it so the run still completes.
@@ -196,21 +403,28 @@ class SearchSourceJob implements ShouldQueue
 
         $source = Source::find($this->sourceId);
 
-        SearchSourceResult::createFor($this->userId, [
-            'search_run_id' => $run->id,
-            'suwayomi_source_id' => $source === null ? 0 : $source->suwayomi_source_id,
-            'source_name' => $source?->label() ?? 'Unknown',
-            'status' => SearchSourceResult::ERROR,
-            'result_count' => 0,
-            'error' => mb_substr($exception?->getMessage() ?? 'Job failed.', 0, 500),
-        ]);
+        /*
+         * A job that threw after already recording its outcome must not record
+         * twice, so the guard is on the row rather than on how it got here.
+         * Either way the window rolls on: a job that died is a slot that freed.
+         */
+        if (! $this->alreadyRecorded($run, $source)) {
+            SearchSourceResult::createFor($this->userId, [
+                'search_run_id' => $run->id,
+                'suwayomi_source_id' => $source === null ? 0 : $source->suwayomi_source_id,
+                'source_name' => $source?->label() ?? 'Unknown',
+                'status' => SearchSourceResult::ERROR,
+                'result_count' => 0,
+                'error' => mb_substr($exception?->getMessage() ?? 'Job failed.', 0, 500),
+            ]);
 
-        $run->sources_done++;
-        $run->sources_failed++;
-        $run->save();
-
-        if ($run->sources_done >= $run->sources_total) {
-            $run->finalise();
+            $run->sources_done++;
+            $run->sources_failed++;
+            $run->save();
         }
+
+        $this->feedNextSource();
+
+        $this->finishIfDone($run);
     }
 }

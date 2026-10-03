@@ -559,7 +559,7 @@ new #[Title('Search')] class extends Component {
             author at 18% of sources is not offered. rating and year are not either.
         --}}
         <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            {{ __('Add label:value to narrow it. Terms: :terms', ['terms' => $this->filterHint]) }}
+            {{ __('Add a filter term. :terms', ['terms' => $this->filterHint]) }}
         </p>
 
         {{--
