@@ -3,6 +3,7 @@
 use App\Downloads\DownloadLedger;
 use App\Jobs\FetchSeriesChapters;
 use App\Models\Download;
+use App\Models\Source;
 use App\Support\ChapterNotes;
 use App\Support\ImageUrl;
 use App\Support\ReadingState;
@@ -131,6 +132,31 @@ new #[Title('Series')] class extends Component
     public function needsChapters(): bool
     {
         return $this->chapterCount === 0;
+    }
+
+    /**
+     * This series' source in our mirror, or null when we do not hold it.
+     *
+     * The lookup is on Suwayomi's own id rather than the name, because names repeat across
+     * language variants: 61 of the 82 sources are named "MangaDex (...)", so a name lookup lands
+     * on an arbitrary one of them. The mirror's `suwayomi_source_id` is the join.
+     *
+     * Null is a real answer rather than a failure. A source can be uninstalled from Suwayomi while
+     * the series it produced is still in the cache, and a link to a page that 404s is worse than
+     * a name with nothing on it.
+     */
+    #[Computed]
+    public function sourceMirror(): ?Source
+    {
+        $suwayomiId = $this->series()['source']['id'] ?? null;
+
+        if ($suwayomiId === null || $suwayomiId === '') {
+            return null;
+        }
+
+        return Source::query()
+            ->where('suwayomi_source_id', (int) $suwayomiId)
+            ->first();
     }
 
     /**
@@ -1111,8 +1137,34 @@ new #[Title('Series')] class extends Component
                 </div>
 
                 <div class="min-w-0 flex-1">
+                    {{--
+                        The source name, linked to that source's own catalogue.
+
+                        A reader who came here from a source, or who wants more from the same one,
+                        has nowhere to go: the name was plain text. Search covers 40 of the 82
+                        sources and this one may not be among them, so the source page is the only
+                        reliable way back to everything that site lists.
+
+                        Resolved through the mirror rather than taken from the payload, because the
+                        browse route is keyed on the mirror's own id and the payload carries
+                        Suwayomi's. A series whose source is not in the mirror renders plain text,
+                        which is the honest fallback: the link would 404 otherwise.
+                    --}}
+                    @php($sourceMirror = $this->sourceMirror())
+
                     <p class="serif-italic text-sm text-zinc-500 dark:text-zinc-400">
-                        {{ $series['source']['name'] ?? __('Unknown source') }}
+                        @if ($sourceMirror !== null)
+                            <a
+                                href="{{ route('browse', ['source' => $sourceMirror->id]) }}"
+                                wire:navigate
+                                data-test="source-link"
+                                class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400"
+                            >
+                                {{ $series['source']['name'] ?? $sourceMirror->display_name }}
+                            </a>
+                        @else
+                            {{ $series['source']['name'] ?? __('Unknown source') }}
+                        @endif
 
                         @if (($series['source']['lang'] ?? null) !== null)
                             <span class="uppercase">· {{ $series['source']['lang'] }}</span>
