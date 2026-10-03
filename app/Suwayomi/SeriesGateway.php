@@ -160,6 +160,65 @@ class SeriesGateway
     }
 
     /**
+     * Re-read a series' metadata without touching its chapter list.
+     *
+     * ## Why this exists, and it is not a nicety
+     *
+     * `fetchSourceManga`, which is what every listing call uses, **writes the manga records it
+     * returns**, and the status it writes is UNKNOWN because a listing carries no status. Measured
+     * on MangaFire: five series fetched to ONGOING, ONGOING, ONGOING, COMPLETED and ONGOING, then
+     * one browse of the source, and all five read UNKNOWN again with their chapter counts intact.
+     *
+     * So browsing a source invalidates the metadata of every manga it lists. A reader who browses
+     * and then opens a series arrives at a missing status every single time, which is exactly what
+     * was reported. It also explains why a listing reports UNKNOWN on every row: it has just
+     * written that itself.
+     *
+     * ## Why not `refresh()` for this
+     *
+     * Because `refresh()` re-reads the chapter list too, and that cost scales with the chapter
+     * count while this does not. Measured on MangaFire:
+     *
+     *     One Piece         2,440 chapters   304ms here,  7,142ms through refresh
+     *     The Devil Butler  1,521 chapters   186ms here,  4,723ms through refresh
+     *     Seolgyesa           457 chapters   348ms here,  2,031ms through refresh
+     *     Blue Lock           716 chapters   555ms here,  2,418ms through refresh
+     *
+     * Flat at a few hundred milliseconds against one to seven seconds, and it recovers statuses a
+     * listing never could: Seolgyesa reads COMPLETED, which no listing has ever reported.
+     *
+     * Deliberately does not touch the ledger. The chapter count and fingerprint {@see CheckLedger}
+     * records are about the chapter list, and this call does not change the chapter list, so
+     * writing them from here would mark a series as re-checked on the strength of a call that
+     * never looked at chapters.
+     *
+     * @return array{series: array<string, mixed>|null, error: string|null}
+     */
+    public function refreshMetadata(int $mangaId): array
+    {
+        try {
+            $data = $this->gateway->execute(<<<'GQL'
+                mutation Metadata($id: Int!) {
+                    fetchManga(input: {id: $id}) {
+                        manga { id title status author artist genre description initialized }
+                    }
+                }
+                GQL, ['id' => $mangaId], (int) config('papyrus.search.per_source_timeout', 20));
+        } catch (SuwayomiException $e) {
+            return ['series' => null, 'error' => $e->getMessage()];
+        }
+
+        $manga = $data['fetchManga']['manga'] ?? null;
+
+        // The caller still reads through find(), so this returns the series only for symmetry
+        // with refresh() and to say plainly whether the mutation reached the source.
+        return [
+            'series' => is_array($manga) ? $this->hydrate($manga) : null,
+            'error' => is_array($manga) ? null : 'The source returned no metadata for this series.',
+        ];
+    }
+
+    /**
      * Many series at once, keyed by manga id.
      *
      * This exists because the library needs it and nothing else does. A library
