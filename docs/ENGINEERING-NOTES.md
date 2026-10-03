@@ -412,6 +412,42 @@ Each of these cost real time. Do not repeat them.
     (`.gitattributes`: `* text=auto eol=lf`). A Blade file edited that way comes out entirely
     CRLF, which breaks every later multi-line `.Replace()` against it. Pint hides this for
     `.php` and leaves it visible in Blade. Check with a byte scan, not by eye.
+68. **`?->` is for object method calls, not for invoking a nullable callable.** A
+    progress callback written `$onProgress?.($n, $total)` is a parse error at the `?.`,
+    and PHP points at the `.` rather than at the intent. Bind a guarded closure once
+    instead: the callback runs per source, which is 82 times for a full sweep.
+69. **A Flux component's `size` and `variant` take a sealed set of values, and an
+    unhandled one throws from inside the component.** `size="default"` does not exist;
+    the values are `base`, `sm`, `xs`, `lg`. The error is "Unhandled match case
+    'default'", raised in a compiled vendor view, which reads like a Blade problem and
+    is not one.
+70. **A queued job carries `failOnTimeout: false` by default, so a job that exceeds
+    the worker's `--timeout` is deleted with no record at all.** Measured: four
+    consecutive live runs of the migration search each left a row saying `searching`
+    and nothing in `jobs` or `failed_jobs` to show a job had ever started. Set
+    `public bool $failOnTimeout = true;` on any job whose runtime is uncertain, and
+    remember the worker's own `--timeout` is what actually kills it regardless of what
+    the job asks for.
+71. **A closure that captures its own throttle timestamp by value never throttles.**
+    `use ($lastWrite)` captured the moment the sweep began and never moved, so the
+    comparison was always against the start and the closure wrote **at most once**. The
+    row therefore sat at its initial value for the whole run while the page polled it.
+    It needs `use (&$lastWrite)`.
+72. **A probe that prints "dispatched" without calling `dispatch()` is
+    indistinguishable from a broken worker.** This one cost three rounds of worker
+    forensics: the row never moved, the queue was empty, the worker's log was empty,
+    and every reading pointed at the worker. The script had never dispatched anything.
+    **Assert that the queue depth went up immediately after dispatching, and stop the
+    probe there if it did not.** One assertion turns a three-hour mystery into an
+    instant one.
+73. **A closure variable needs a variable to be passed by reference, so `end(file($p))`
+    is a fatal rather than a call.** And a `use` statement after executable code is a
+    parse error, which is what a here-string edit tends to produce.
+74. **A map built in the wrong direction is still a valid-looking map.** The migration
+    undo script reported "41 of 41 chapters map back" and then moved nothing, because
+    it mapped the restored series' chapters onto the moved-away ones. Only the browser
+    gate's restore step caught it, which is the argument for gates that mutate and then
+    put things back rather than asserting nothing.
 75. **Blade only strips `{{-- --}}`. The spaced `{{ -- -- }}` form compiles to an
     echo.** The comment text lands in the output as PHP and the view fails with
     "syntax error, unexpected identifier", naming a word from the comment rather than
@@ -423,6 +459,24 @@ Each of these cost real time. Do not repeat them.
 77. **A CSS attribute selector cannot hold an unescaped colon, so
     `[wire:model*="x"]` is a syntax error in the browser.** Quoting the value does not
     help. Locate by accessible name instead, which is what a screen reader offers anyway.
+78. **`foreach ($map as $id)` on an id-keyed map gives `true`, not the id.** In a
+    `Http::fake` that builds a batch response from `$libraryIds[$mangaId] = true`, the
+    loop then emits a series numbered `1` for everything asked for, so every assertion
+    about the response silently reads the wrong series. `array_keys()` first.
+79. **`Flux::error()` does not exist in Flux 2.** `FluxManager` has no such method and
+    the call raises "Call to undefined method Flux\FluxManager::error()". The app's
+    convention is a `danger` toast. The one pre-existing `Flux::error` was on a catch
+    branch no test reached, which is why it survived.
+80. **`flux:section` does not exist in Flux 2 either.** A view that uses it compiles
+    under `view:cache` only if the branch is unrendered at build time, so a page that
+    renders it in a rarely-taken branch can pass every test and fail the cache.
+81. **`updateOrCreate()` on an `OwnedModel` raises `MissingOwnerException`.** `user_id`
+    is deliberately not mass-assignable, so a queued job with no authenticated user
+    finds no owner to fall back to. Use `createFor($userId, $attrs)` and update the
+    existing row by hand.
+82. **`$request->data()` decodes JSON into nested `stdClass`, not arrays.** So
+    `$request->data()['variables']['id']` raises "Cannot use object of type stdClass as
+    array". `data_get($request->data(), 'variables.id')` is the form that works.
 83. **Chapter ids are not derivable from a manga id.** Manga 2's chapters are 720, 721,
     722, not `mangaId * 100 + n`. A live check that guessed them marked chapters that do
     not exist, the code correctly ignored them, and the output claimed the feature was
@@ -654,69 +708,6 @@ Each of these cost real time. Do not repeat them.
      and a console command that must set a privileged field should do so where it is
      visible. Then read the column back and assert it, because the alternative is a flag
      that does nothing.
-123. **A right answer for the wrong reason still has to be corrected.** H16 concluded there
-     was no image-conversion setting, citing `serveConversions` being absent from the
-     schema. It is present, on four types, and writable through `Mutation.setSettings`. The
-     conclusion that survived is the one that was measured rather than inferred: all three
-     of `webp`, `avif` and `jpg` come back byte-identical `image/webp`, so there is no
-     bandwidth win either way. But a note saying "there is no setting here" reads as "this
-     was tested", and the next person skips the test. The correction is the point, not the
-     tidiness. This one sat in a document for weeks before anybody read the schema it was
-     describing, which is the argument for re-reading a claim whenever the server moves.
-78. **`foreach ($map as $id)` on an id-keyed map gives `true`, not the id.** In a
-    `Http::fake` that builds a batch response from `$libraryIds[$mangaId] = true`, the
-    loop then emits a series numbered `1` for everything asked for, so every assertion
-    about the response silently reads the wrong series. `array_keys()` first.
-79. **`Flux::error()` does not exist in Flux 2.** `FluxManager` has no such method and
-    the call raises "Call to undefined method Flux\FluxManager::error()". The app's
-    convention is a `danger` toast. The one pre-existing `Flux::error` was on a catch
-    branch no test reached, which is why it survived.
-80. **`flux:section` does not exist in Flux 2 either.** A view that uses it compiles
-    under `view:cache` only if the branch is unrendered at build time, so a page that
-    renders it in a rarely-taken branch can pass every test and fail the cache.
-81. **`updateOrCreate()` on an `OwnedModel` raises `MissingOwnerException`.** `user_id`
-    is deliberately not mass-assignable, so a queued job with no authenticated user
-    finds no owner to fall back to. Use `createFor($userId, $attrs)` and update the
-    existing row by hand.
-82. **`$request->data()` decodes JSON into nested `stdClass`, not arrays.** So
-    `$request->data()['variables']['id']` raises "Cannot use object of type stdClass as
-    array". `data_get($request->data(), 'variables.id')` is the form that works.
-68. **`?->` is for object method calls, not for invoking a nullable callable.** A
-    progress callback written `$onProgress?.($n, $total)` is a parse error at the `?.`,
-    and PHP points at the `.` rather than at the intent. Bind a guarded closure once
-    instead: the callback runs per source, which is 82 times for a full sweep.
-69. **A Flux component's `size` and `variant` take a sealed set of values, and an
-    unhandled one throws from inside the component.** `size="default"` does not exist;
-    the values are `base`, `sm`, `xs`, `lg`. The error is "Unhandled match case
-    'default'", raised in a compiled vendor view, which reads like a Blade problem and
-    is not one.
-70. **A queued job carries `failOnTimeout: false` by default, so a job that exceeds
-    the worker's `--timeout` is deleted with no record at all.** Measured: four
-    consecutive live runs of the migration search each left a row saying `searching`
-    and nothing in `jobs` or `failed_jobs` to show a job had ever started. Set
-    `public bool $failOnTimeout = true;` on any job whose runtime is uncertain, and
-    remember the worker's own `--timeout` is what actually kills it regardless of what
-    the job asks for.
-71. **A closure that captures its own throttle timestamp by value never throttles.**
-    `use ($lastWrite)` captured the moment the sweep began and never moved, so the
-    comparison was always against the start and the closure wrote **at most once**. The
-    row therefore sat at its initial value for the whole run while the page polled it.
-    It needs `use (&$lastWrite)`.
-72. **A probe that prints "dispatched" without calling `dispatch()` is
-    indistinguishable from a broken worker.** This one cost three rounds of worker
-    forensics: the row never moved, the queue was empty, the worker's log was empty,
-    and every reading pointed at the worker. The script had never dispatched anything.
-    **Assert that the queue depth went up immediately after dispatching, and stop the
-    probe there if it did not.** One assertion turns a three-hour mystery into an
-    instant one.
-73. **A closure variable needs a variable to be passed by reference, so `end(file($p))`
-    is a fatal rather than a call.** And a `use` statement after executable code is a
-    parse error, which is what a here-string edit tends to produce.
-74. **A map built in the wrong direction is still a valid-looking map.** The migration
-    undo script reported "41 of 41 chapters map back" and then moved nothing, because
-    it mapped the restored series' chapters onto the moved-away ones. Only the browser
-    gate's restore step caught it, which is the argument for gates that mutate and then
-    put things back rather than asserting nothing.
 123. **An upsert's insert rows must carry the end state.** `upsert()` applies the update
     column list only to rows that already exist. A new row is written from the insert
     values alone, so a "mark all read" whose inserted rows omitted `is_read` filled the
@@ -734,8 +725,165 @@ Each of these cost real time. Do not repeat them.
     the count is still growing presses a node the next morph replaces: no request, no
     error, and the assertion that follows reads the new node with its old state. Wait
     until the count stops moving before pressing anything.
+126. **A deferred `wire:model` commits on the next request, and if nothing else ever
+    requests, it never commits.** The library's bulk-selection checkboxes were bound with
+    plain `wire:model`, which writes the browser's copy of `selected` and defers the send.
+    The bulk bar is gated on `count($this->selected) > 0`, evaluated server-side on
+    render, so ticking boxes produced correct client state and no bar at all: measured,
+    three boxes ticked, `$wire.get('selected')` returned `["116"]`, zero POSTs left the
+    browser, and clicking an unrelated sort button flushed the pending model and made the
+    bar appear. The reader's path was "select some series and nothing happens". Fix is
+    `.live`, and the search page already used `wire:model.live.debounce.500ms` for the
+    same reason. Twelve feature tests passed over it, because `Livewire::test()->set(
+    'selected', [...])` bypasses the binding entirely: a test that sets the property is
+    testing the action, not the control. A control is only tested by driving it.
+127. **An `OwnedModel` query inside a queue job reads nothing.** `SearchSourceResult extends
+    OwnedModel`, so a bare `SearchSourceResult::query()` still carries the `OwnedByUser`
+    global scope, which resolves against `auth()`. A queued job has no authenticated user,
+    so the scope matched no rows and the guard it fed always answered "not recorded". The
+    guard's job was to stop a retried job counting its source twice, and it was silently
+    inert: a real fan-out on 2026-10-02 came back `sources_done` 41 against
+    `sources_total` 40, status `partial`, while returning 547 results, because the retry
+    re-recorded a source whose outcome the first attempt had already committed. The fix is
+    `forUser($this->userId)`, which strips the scope and states the reader explicitly.
+    Writes are unaffected, because `createFor()` takes the user as an argument, which is
+    the asymmetry that hid this: every write was correctly attributed and the read beside
+    it saw nothing.
+128. **A lock you cannot take is a different failure from a lock you take too late.**
+    `SearchSourceJob::feedNextSource()` pops the next pending source under
+    `Cache::lock(...)->block(...)`, and the old comment called a timeout "slow". It is not
+    slow, it is a hang: the pop never happened, so the source stays pending and nothing
+    will claim it, and if this was the last job to finish then `sources_done` can never
+    reach `sources_total` and the run sits at "39 of 40" for ever. A swallowed feed has to
+    spend its own slot, recording the shortfall so the counter balances and the run
+    terminates. Same shape as trap 70's depth counter: the cheap fix is not to swallow,
+    it is to make the unwind observable.
+129. **`busy_timeout` does not apply to SQLite's deferred-transaction upgrade, so no value
+    of it can fix a `database is locked` raised by a read-then-write.** Seven
+    `SearchSourceJob` failures carry `SQLSTATE[HY000]: General error: 5 database is locked`,
+    and the stack trace puts the throw inside Laravel's own bookkeeping, at
+    `DatabaseBatchRepository::updateAtomicValues()`. That method is a transaction which
+    reads the batch row and then updates it, and two framework facts make the outcome
+    predictable rather than rare. `SQLiteGrammar::compileLock()` returns `''`, so its
+    `lockForUpdate()` compiles to nothing on SQLite and there is no row lock at all. And
+    the transaction is **deferred**: it opens on the SELECT and has to *upgrade* to a write,
+    and when another connection has committed since that snapshot was taken SQLite returns
+    `SQLITE_BUSY` immediately, without consulting the busy handler. It is the documented
+    reason SQLite advises against upgrading a deferred transaction where a deadlock is
+    possible, with `BEGIN IMMEDIATE` as the usual answer.
 
+    Measured, twelve out of twelve reproductions, slowest after **3 ms**, against
+    `journal_mode = wal` and `busy_timeout = 10000`. A ten second timeout that gives up in
+    three milliseconds is the signature of the upgrade path. That is why adding WAL and a
+    timeout in an earlier pass reduced these failures without removing them: the setting
+    was correct and it was never going to help.
 
+    Laravel already classifies `database is locked` as a concurrency error and will retry
+    it, so the missing piece is only an attempt count. `updateAtomicValues()` calls
+    `transaction($callback)` and the signature defaults `$attempts` to **1**, so the
+    built-in retry never engages.
+
+    **Diagnosed, deliberately untreated.** The cost of leaving it is small, because trap
+    127's guard means a collided job is now a cheap re-entry rather than a lost source. A
+    subclass overriding that one method, bound in place of `Illuminate\Bus\BatchRepository`,
+    was written and then removed: the binding did not take effect, and shipping an override
+    whose effectiveness cannot be demonstrated is worse than documenting the limit. Recorded
+    so the next reader starts from the measurement rather than from seven failed jobs.
+130. **A 404 from AniList's `Media(search:)` means "no match", not "refused", and a fake
+    must be copied from a real response rather than from a tidier one.** Measured
+    2026-10-02 against the live API: a search matching nothing answers **HTTP 404** with
+    `errors[0].message = "Not Found."` and `data.Media` null. Every fake in the suite
+    answered the same case with a 200 carrying `Media: null`, which is a response that
+    endpoint does not produce, so the client read the real 404 as a refusal.
+
+    The consequence was a feature that could not complete. `ImportAniListProgress` backs
+    off and re-books on a refusal, so a library whose first title is not on AniList never
+    got past it: the job released, retried the same title, hit the same 404, and the
+    connections page sat on "Checking 0 of 0 series" for ever. Thirty-two tests were green
+    over it, because the fake was asserting a belief about the API rather than the API.
+    A rate limit is 429 and a dead token is 401; both are still refusals, and `forUser()`
+    still treats 404 as an error because there it is one.
+
+    The wider lesson is trap 131's shape: **a fake is a claim about the world.** When it is
+    easier to write, it will encode what would be convenient, and the suite then defends
+    the convenient thing. Any fake standing in for a third-party response should be pasted
+    from a real one, status code and all, and ideally a test should assert the shape the
+    remote actually returns.
+131. **A test that fakes a third-party response is asserting a claim about that service,
+    not about our code.** This has now cost two features and one production outage, so it
+    is recorded as a rule rather than an anecdote.
+
+    What each fake got wrong, and how it was found:
+
+    | Fake said | Reality | Cost |
+    |---|---|---|
+    | 200 with `Media: null` for no match | 404 with a Not Found error | The import could not complete. Trap 130. |
+    | `Http::fake` for concurrency | Jobs dispatch inline on the sync driver | The cap itself was never asserted; proved only that every source got searched. |
+
+    Neither was visible from the test file. The first needed a live request to notice, and
+    the second needed the mutation check: break the cap, and confirm the test goes red.
+    A fake that is never checked against the real thing is a comment with assertions on it.
+
+    The general test, worth applying before believing any suite: **if a test would still
+    pass if the remote service changed its mind about something, it is testing the fake.**
+    Ask what the real service does, not what is convenient to return, and where it can be
+    checked cheaply, check it.
+132. **A fan-out ordered by name and capped at a number below the source
+    count does not search the sources it leaves out, it silently renames which ones
+    matter.** `SearchFanout::targets()` ends in `orderBy('name')` and the search page
+    passes a limit of 40. With 82 sources installed and 61 of them named "MangaDex (...)",
+    the first 40 by name are ten scanlation sites plus thirty MangaDex languages, so
+    MangaFire's seven sources, MangaTaro, Thunder Scans and Weeb Central are never
+    dispatched at all.
+
+    A reader reported this as "search only seems to hit MangaDex and Atsumaru". It was true,
+    and the obvious explanation was wrong: the same report also turned up the
+    truncated-sync bug that excluded nine sources. Two independent causes, one symptom, and
+    fixing the first did not move the second. Measured after that fix: run 87 queried 40
+    sources and Asura Scans was among them, which made the remaining gap look closed until
+    the 40 were counted.
+
+    The order is the part that makes it look deliberate. Alphabetical is a reasonable
+    default for a list a human reads and a poor one for a truncation a machine applies,
+    because the sources that fall off are the ones that happen to sort late rather than
+    the ones that are slow or broken.
+
+    **Fixed, and measured rather than asserted.** The slice is now taken round robin over
+    `extension_pkg_name`: every site's first source, then every site's second, and so on,
+    capped as before. Run 88 against the same catalogue still dispatched exactly 40 sources,
+    so the cost of a search did not move, but 20 of the 40 were non-MangaDex against 10
+    before, and **15 of the 16 installed packages were reached** rather than 14. MangaFire
+    returned all seven of its sources, Weeb Central, Thunder Scans and MangaTaro one each,
+    every one of them `ok`. The package still missing is Comix, which is dropped as a dead
+    source after five timeouts, which is the exclusion working rather than failing.
+
+    Grouping here is by extension package and is deliberately **not** HealthDashboard's
+    grouping. The dashboard groups for display and collapses MangaDex to a single tile,
+    where dropping a variant loses a script. This grouping exists only to make a cap fair,
+    so it must leave every variant queryable; the two look alike and are opposites. Seven
+    tests in `SearchFanoutInterleaveTest`, three of which fail if the round robin is
+    reverted.
+
+    The limit also stopped being a SQL `LIMIT`, because the interleave cannot happen before
+    the rows exist. A non-positive limit keeps SQL's meaning, which is worth not losing:
+    `LIMIT 0` is no rows and `LIMIT -1` is all of them.
+
+    `/browse/{source}` was built while this was open and is still worth having. It is not the
+    mitigation any more, it is the second door.
+
+    The general shape: **a cap combined with an ordering is a policy, and a policy nobody
+    chose is still a policy.** When a limit and a sort live on opposite sides of a class,
+    the pair decides what gets searched and no single line of code says so.
+
+133. **A right answer for the wrong reason still has to be corrected.** H16 concluded there
+     was no image-conversion setting, citing `serveConversions` being absent from the
+     schema. It is present, on four types, and writable through `Mutation.setSettings`. The
+     conclusion that survived is the one that was measured rather than inferred: all three
+     of `webp`, `avif` and `jpg` come back byte-identical `image/webp`, so there is no
+     bandwidth win either way. But a note saying "there is no setting here" reads as "this
+     was tested", and the next person skips the test. The correction is the point, not the
+     tidiness. This one sat in a document for weeks before anybody read the schema it was
+     describing, which is the argument for re-reading a claim whenever the server moves.
 ---
 
 ## 6. Working philosophy
@@ -859,12 +1007,12 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **920 tests**, 1,979 assertions, Pint clean across 205 files, PHPStan
+Current standing: **993 tests**, 2,191 assertions, Pint clean across 214 files, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
 `verify-search-anilist.py`, 21 in `verify-library-check.py` and 17 in
-`verify-continue-reading.py`, all of which need a browser that produces frames. The
+`verify-continue-reading.py` and 21 in `verify-browse.py`, all of which need a browser that produces frames. The
 October 2026 feature pass added 21 checks in `verify-october-pass.mjs` over the search
 filters, the result-card library toggle, the read toggles, the updates view and the
 connections page.
@@ -925,6 +1073,7 @@ of a local seed account.
 | `verify-library.py` | The library page, including that the grid is actually styled |
 | `verify-downloads.py` | A real download, driven by the queue worker, and the pages reading from disk |
 | `verify-migrate.py` | A real search across 81 sources, the ranking, a real migration, and putting it back |
+| `verify-browse.py` | The `/sources` site picker groups 82 sources into 16, that MangaDex is one group of 61 rather than 61 rows, and that `/browse/{source}` renders covers for both tabs, files to a shelf and pages. Written before the templates, and it is what caught the raw upstream cover URLs and the `Library::attach()` id mismatch |
 | `verify-search-anilist.py` | The opt-in switch, that it starts off, and that it survives a reload |
 | `verify-continue-reading.py` | That a feed card opens the reader at the right chapter, and that reading moves it |
 | `seed-continue-reading.php` | Marks chapters read for the gate, with real ids read out of the batch |
@@ -1052,9 +1201,15 @@ every existing tab. That is expected, not a fault.
 | 7 | Extension updates | **Complete.** The Updates view's rows carry an Update button, and the view header carries Update all, both gated on trust exactly as install is: an update is a new signed artefact about to execute. `updateAll` asks the server for the full out-of-date list rather than trusting the page's fifty rows, and failures are collected per package and rendered inline. Pressing Update had no control anywhere before this, so the only route to the badge was Suwayomi's own WebUI. |
 | 7 | Manual read marking | **Complete.** The dot on each chapter row is a toggle, and the chapter toolbar carries Mark all read and Mark all unread. The bulk path is an upsert whose inserted rows carry the end state (trap 123), and it touches only the read flag, so a page position survives being marked unread and back. Marking read moves the continue-reading pointer forward to the furthest chapter in source order, whatever direction the list is displayed in; Mark all unread clears the pointer with the flags, because a pointer onto an unread chapter would have continue-reading offer the middle of a series the reader says they have not started. |
 | 7 | AniList tracking | **Complete, opt-in by connecting.** A reader who connects at `/settings/connections` hands the app an OAuth token that acts as them on AniList, and from then on a chapter finishing (by reading or by being marked read) pushes that series' progress: the largest chapter number among read chapters, floored, set CURRENT, or COMPLETED when AniList's own chapter count says it is. The join runs on the same title-keyed cache the search dedupe uses, and a title AniList has never heard of is recorded as answered-no and never asked again. The push is a queued job with a per-series pending marker, so a continuous reading session books one job rather than one per progress ping. AniList issues no refresh token, so a rejected token deletes the connection and the reader connects again. The deployer must create their own application at anilist.co/settings/developer and set `ANILIST_OAUTH_CLIENT_ID` / `ANILIST_OAUTH_CLIENT_SECRET`, with a redirect URI matching `anilist.callback` byte for byte; until then the page says what is missing instead of offering a dead button. |
+| 7 | AniList import | **Complete, and verified the hard way.** The other direction: a card on the same page pulls the progress AniList already holds into the series in the library. It marks chapters **read** and never unread, adds nothing to the library, leaves a series AniList does not know alone and lists it as unmatched, and runs ten series a pass as a self-re-booking chain because title lookups are rate-limited to 30 a minute. It shipped broken and 32 green tests sat over it: AniList answers an unmatched search with **HTTP 404**, which the client read as a rate-limit refusal, so a library whose first title is not on AniList never got past it. Trap 130, and trap 131 for why the tests missed it. Verified against the live API afterwards: 20 of 20 series processed, 4 unmatched, 0 marked read, which is the correct answer for a library of isekai and doujinshi titles. |. That is a weaker claim than every other row here, and the seven defects in 14.6 include two in this feature. |
+| 7 | Bulk library actions | **H7 done, after being broken.** Selection mode, shift-click range select, and a fixed bulk bar: file to a shelf, unfile, mark read, mark unread, remove from the library. Shipped unusable, because the checkboxes used a deferred `wire:model` and the bar is gated on a server-side count, so ticking a box committed nothing and the bar never appeared. Twelve tests passed over it; see trap 126 and 14.6. |
+| 1 | Fan-out slice | **Closed, after a policy nobody chose.** The 40-of-82 cap was applied to an alphabetical sort, so MangaFire (7 sources), MangaTaro, Thunder Scans and Weeb Central were never dispatched. The slice is now a round robin over `extension_pkg_name`: every site's first source, then every site's second, capped as before. Run 88 dispatched exactly 40 and reached **15 of the 16 installed packages**, with 20 non-MangaDex against 10. Trap 132. |
+| 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
 
-Five pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
-`/series/{manga}`, plus the reader at `/read/{manga}/{chapter}`. `/dashboard` redirects to
+Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
+`/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at
+`/settings/profile`, `/settings/connections`, `/settings/appearance` and
+`/settings/security`. `/migrate/{manga}` carries the migration wizard. `/dashboard` redirects to
 `/library`: the route name survives because it is in the sidebar and in saved links, and a 404
 for a reader with the app open is worse than a hop. `/` now redirects the same way (library
 when signed in, login when not): the starter kit's Laravel marketing page was the one screen
@@ -1166,7 +1321,7 @@ this repository is trusted further than it has been checked.
 | Deployment mode `shared` enforces **per-user quotas** (README table, section 12) | `Deployment::enforcesQuotas()` and `::quotaFor()`, called from `tests/Unit/DeploymentTest.php` and **nothing else**. `users.storage_quota_bytes` is written by nothing. |
 | Deployment mode `public` exposes **moderation surfaces** (README table, SECURITY.md) | No moderation surface exists. `isShared()` and `isPublic()` are also uncalled, so the only distinction the app makes at runtime is single against not-single. |
 | `suwayomi:schema:diff` is a command (config/papyrus.php:374) | There is no such command. The diff is `suwayomi:schema:dump --dry-run`. |
-| `search.fanout_concurrency = 8` bounds in-flight jobs | Read by nothing. **No concurrency cap is applied to the batch**, which is the opposite of what section 5 of this file says the fan-out does. |
+| `search.fanout_concurrency = 8` bounds in-flight jobs | **Now true.** Closed in this pass. See 14.6 for what it took. |
 | `downloads.cbz_export_max_bytes` size-guards an export | No CBZ export exists. Suwayomi's `/api/v1/chapter/{id}/download` builds the whole archive in memory; the proxy refuses that endpoint rather than guarding it. |
 
 The registration rule is the exception and now holds: `RegistrationMustBeAllowed` 404s
@@ -1176,16 +1331,19 @@ that took as long as it did.
 
 ### 14.2 Config keys no code reads
 
-Six of the 47 keys in `config/papyrus.php` are read by nothing:
+Five of the 41 leaf keys in `config/papyrus.php` are read by nothing. The count was 47 keys and 6 unread before this pass; `search.fanout_concurrency` is the one that stopped being dead.
 
 | Key | Why it is still there |
 |---|---|
 | `suwayomi.jwt_audience` | Intended audience check. `Jwt` reads `exp` only and never verifies, deliberately. |
-| `search.fanout_concurrency` | Never applied. See above. |
 | `downloads.cbz_export_max_bytes` | No export to guard. |
 | `downloads.poll_interval` | The schedule uses `everyTenSeconds()`; the number is written twice, in `SyncDownloads::INTERVAL_SECONDS` and in `routes/console.php`. |
 | `reader.preload_ahead` | The reader does its own preloading in plain JavaScript, reading configuration injected by `@js(...)`. |
 | `reader.preload_behind` | As above. |
+
+`PAPYRUS_SEARCH_CONCURRENCY` was undocumented in `.env.example` while it was dead, which
+was defensible. It is the one knob that decides how hard the reader hits Suwayomi, and it
+is now load-bearing, so it is documented.
 
 Two more are read by the job that shadows them rather than the config:
 `anilist.gap_seconds` and `anilist.pass_budget_seconds` both appear in
@@ -1198,7 +1356,7 @@ Unreachable from production and from tests alike, unless noted:
 
 | Member | Note |
 |---|---|
-| `SourceSearcher::browse()` | The entire POPULAR and LATEST browse path. Nothing calls it, including tests. It is the code a "browse this source" feature would need. |
+| `SourceSearcher::browse()` | **Now called**, by `/browse/{source}`. It was written with the search work and had no caller for as long as it existed, which is why this row existed. |
 | `SearchFanout::filterCache()` | |
 | `SourceFilterTranslator::nameToPosition()` | `addresses()` and `toChanges()` are both live; this is the other half of the same idea. |
 | `DownloadGateway::clear()` | |
@@ -1228,22 +1386,41 @@ through `ReadingState` instead.
   self-re-booking jobs, including `CheckLibrary` whose docblock cites the trap, leave it
   default.
 - **Two orphaned docblocks**, each documenting nothing because another docblock follows it
-  immediately: `ReadingState.php:103` and `SearchSourceJob.php:33`.
+  immediately: `ReadingState.php:103` and `SearchSourceJob.php:34`.
 - **`ReaderSettings::gap` is documented and defaulted inconsistently.** The docblock
   explains why a webtoon needs a non-zero gap; the default is `0`.
-- **The trap list is out of order**: 1 to 67, then 75 to 77, 83 to 122, 78 to 82, 68 to 74.
-  All 122 numbers appear exactly once, so this is a sort defect rather than lost content,
-  but it makes "see trap N" hard to audit.
-- **`.env.example` documents 9 of the 32 env-backed keys.** The rest are discoverable in
+- **`.env.example` documents 12 of the 36 env-backed keys.** The rest are discoverable in
   `config/papyrus.php`, which is where they are commented.
-- **`.env.example` misdescribes `SUWAYOMI_PUBLIC_PATH`** as a path where "page images bypass
-  PHP entirely". They do not: `SuwayomiProxyController` streams every image through PHP, and
-  this file's own AD-3 says so.
 - **`.well-known/passkey-endpoints` carries no middleware at all**, unlike every other route.
 - **The reader is described as carrying no framework**, and its script does not use one, but
   `wire:navigate` is on every chapter-navigator segment, so the rendered document does
   reference Livewire. `ReadPathTest` checks for a snapshot payload rather than for the
   attribute, which is why it passes.
+
+The `.env.example` bullet about `SUWAYOMI_PUBLIC_PATH` misdescribing the image path has been
+**deleted rather than corrected**, because the code was fixed instead: the file now says
+every image streams through a Laravel route and cites AD-3. A gap list that reports a
+resolved gap as open is worse than no gap list, since the next reader cannot tell which
+entries are live.
+
+The trap-numbering bullet has gone the same way, and the detail is worth keeping because the
+disambiguation is not guessable from position. The list ran 1 to 67, then 75 to 77, 83 to 122,
+then 78 to 82 and 68 to 74, then 123 upward, and **123 was used twice**: once for "A right
+answer for the wrong reason still has to be corrected" and once for "An upsert's insert rows
+must carry the end state". The bullet claimed every number appeared exactly once, which was
+false, so a reader auditing it had no way to know whether a citation pointed at the trap they
+meant. The tie is broken by the citation rather than by line order: the one place the document
+cites trap 123 is the manual-read-marking row, and it describes the upsert trap, so that entry
+kept the number and the other became 133 and moved to the end. The 68-to-82 block was
+**re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
+four times, and renumbering to close the gap would have broken a dozen citations to buy
+tidiness. The list is now 1 to 133, each number once, ascending.
+
+The `failOnTimeout` note above is also out of date. Three jobs set it now:
+`FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
+and `SyncDownloads` still leave it default, and `SearchSourceJob` still does, which now
+matters more than it did: `SearchSourceJob` feeds itself through the batch, so it is a
+chained job with an uncertain runtime and no timeout declaration.
 
 ### 14.5 The source catalogue reads absence as an uninstall
 
@@ -1265,3 +1442,50 @@ Two things follow. The source counts in these documents are point-in-time and sh
 read as such. And a source that fails repeatedly can remove itself from the catalogue via
 the path meant to record a reader's decision, which is the wrong direction for a fault to
 push in.
+
+### 14.6 What a browser pass found that the feature tests could not
+
+Three features were in flight and uncommitted: the fan-out rolling window, H7 bulk library
+actions, and the AniList progress import. Two hundred and four tests were green across
+them. **All three turned out to be broken in a browser, and a fourth bug was hiding behind a
+fake that asserted the wrong shape of a third-party response.** This subsection records what
+changed, because the pattern matters more than the individual bugs: **every defect below is
+invisible to a test that sets the property under test.**
+
+| What was wrong | How it was found | Why no test saw it |
+|---|---|---|
+| Bulk bar never appeared when boxes were ticked | Drove the checkboxes: `$wire.get('selected')` was right, zero POSTs left the browser | `Livewire::test()->set('selected', [...])` bypasses `wire:model` entirely. Trap 126. |
+| A retried fan-out job counted its source twice | One real fan-out came back `done=41` against `total=40`, stamped `partial` with 547 results | The retry only happens when the batch's own bookkeeping throws, which the sync driver never does. |
+| A job's "already recorded" guard was silently inert | Chasing the 41 above to its cause | It read through a tenancy scope that a queue job resolves to nothing. Trap 127. |
+| A feed that could not take its lock hung the run | Reading, after the comment calling it "slow" | Needs two processes contending on one cache key. |
+| A source deleted mid-run left the run one short for ever | Reading the branch: it fed and returned without touching a counter | Needs a row to vanish between dispatch and execution. |
+| The import's page said "Checking N of M" for six hours on timeout | Reading: `failOnTimeout` is on and nothing wrote `phase = failed` | The job's `handle()` was never driven by any test. |
+| Two import passes could clobber each other's tally | Reading: `runPass` is a read-modify-write over one cache key | The lock has no test, for a reason recorded below. |
+| The import never got past its first unmatched series | A real run against a live AniList account: the job released and retried the same title for ever | Every fake answered an unmatched search with a 200 carrying `Media: null`. AniList sends a **404**. Trap 130. |
+| The import reported "0 marked updated" for a library it never looked at | Reading the page text after the run | The tally never distinguished an empty library from a finished one. |
+
+Three things are honest gaps rather than fixes:
+
+- **`database is locked` is not fixed.** Seven `SearchSourceJob` failures carry it, three
+  from 2026-10-01 and the newest at 2026-10-02 19:12. WAL and `busy_timeout = 10000` are
+  both confirmed set on the connection, so the timeout is not surviving the contention. The
+  throw lands inside `DatabaseBatchRepository::decrementPendingJobs`, inside the batch's
+  own transaction. The double-count guard makes the symptom harmless, but the lock
+  contention itself is unexplained and untreated.
+- **The import's pass lock is untested.** Both ways to test it were rejected on
+  measurement, and the reasoning is recorded at the top of `tests/Feature/AniListImportTest.php`.
+  Briefly: a held lock is not observable through a second `get()` on this cache store, and
+  holding the lock from the test blocks for the full 300 seconds the real path waits.
+
+The AniList import **was** browser-verified, and that is how the 404 was found. It needed an
+account, which is a setup fact rather than a code one and is worth stating because it cost
+time: the connection had been made against `papyrus@localhost.test`, whose library is empty,
+while the series live under `reader@example.test`. An import that walks an empty queue
+correctly marks nothing, so the page showed a zero tally that looked like a failure. It was
+not until the two accounts were compared that the mismatch showed, and not until the
+connection was moved that the real bug could be reproduced at all.
+
+A related trap, smaller but the same shape: **a report of "it does not work" is a claim about
+the setup until the account, the data and the code have each been checked separately.** Two of
+the three explanations here were not code, and the third was only visible once the first two
+were eliminated.

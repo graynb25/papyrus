@@ -158,6 +158,7 @@ class SourceCatalog
         $data = $this->gateway->execute(<<<'GQL'
             query Sources {
                 sources {
+                    totalCount
                     nodes {
                         id name displayName lang contentWarning homeUrl iconUrl
                         supportsLatest isConfigurable
@@ -167,12 +168,13 @@ class SourceCatalog
             }
             GQL);
 
-        $nodes = $data['sources']['nodes'] ?? [];
+        $listed = $data['sources']['nodes'] ?? [];
+        $expected = $data['sources']['totalCount'] ?? null;
         $seen = [];
 
         $now = now();
 
-        foreach ($nodes as $node) {
+        foreach ($listed as $node) {
             $sourceId = $this->timestamps->toInt($node['id'] ?? null);
 
             if ($sourceId === null) {
@@ -208,7 +210,29 @@ class SourceCatalog
             Source::query()->create(['suwayomi_source_id' => $sourceId, ...$payload]);
         }
 
-        if ($seen !== []) {
+        /*
+         * Absence is only evidence when the catalogue answered completely.
+         *
+         * This is trap 129's neighbour and it cost a reader a search. On 2026-10-01 at
+         * 23:38:11 a truncated response marked nine sources uninstalled, one of them Asura
+         * Scans, and because the fan-out only dispatches to sources the mirror believes
+         * are installed, that source and eight others were never searched again. A reader
+         * searching for a title Asura Scans carries saw results from MangaDex and Atsumaru
+         * only, and reasonably concluded the extension was broken.
+         *
+         * The alternatives do not distinguish the cases either. `Timestamps::toInt()`
+         * rejects 0 of 82 ids, so this was not an id conversion problem, and treating a
+         * short response as an uninstall is indistinguishable from a reader uninstalling an
+         * extension. The server does expose `totalCount`, verified returning 82 alongside
+         * 82 nodes, so completeness is knowable and is now what absence is measured
+         * against.
+         *
+         * A reader who does uninstall an extension still gets the flip, because a complete
+         * response is short by exactly the sources that left.
+         */
+        $complete = is_int($expected) && count($seen) >= $expected;
+
+        if ($complete && $seen !== []) {
             Source::query()
                 ->whereNotIn('suwayomi_source_id', $seen)
                 ->where('is_installed', true)

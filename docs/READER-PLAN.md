@@ -10,7 +10,7 @@ software.
 **Engine:** Suwayomi-Server (JVM), sources only
 **Written:** 2026-09-29
 **Status when written:** Phase 1 shipped, phases 2 to 6 not started. **All six have since
-shipped except H7, bulk actions.** For what exists, read
+shipped, and so has H7.** For what exists, read
 [`ENGINEERING-NOTES.md`](ENGINEERING-NOTES.md) section 11, and section 14 for the list of
 things the code does not actually do.
 
@@ -273,7 +273,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 ## Where the build stands
 
-Every phase below is a checklist. **59 shipped, 18 open**, and the open ones
+Every phase below is a checklist. **61 shipped, 16 open**, and the open ones
 name the reason rather than just the item, because most of them are a deliberate
 scoping decision or an API that does not exist rather than an oversight.
 
@@ -282,15 +282,19 @@ scoping decision or an API that does not exist rather than an oversight.
 | Phase 0: Foundation | 13 | 0 |
 | Phase 1: Discovery | 9 | 0 |
 | Phase 2: Read path | 13 | 1 |
-| Phase 3: Library & personal data | 5 | 4 |
+| Phase 3: Library & personal data | 6 | 3 |
 | Phase 4: Downloads & offline | 5 | 4 |
 | Phase 5: Health, migration, resilience | 10 | 0 |
-| Phase 6: Parity & polish | 4 | 9 |
-| **Total** | **59** | **18** |
+| Phase 6: Parity & polish | 5 | 8 |
+| **Total** | **61** | **16** |
 
-The two items most likely to be mistaken for oversights:
+**No H-tier item is open.** H7 shipped, and shipped broken: the bulk bar's checkboxes
+used a deferred `wire:model` against a server-side gate, so ticking a box committed
+nothing and twelve tests passed over it. It was caught by driving the checkboxes in a
+browser, which is the whole argument for browser gates existing. Trap 126 in the
+engineering notes.
 
-- **Bulk actions (H7)** is the one H-tier item still genuinely open.
+The open items most likely to be mistaken for oversights:
 - **Local source upload (H15)** was scoped out on purpose. Suwayomi has no upload
   API at all, so a drop zone would mean this app writing into the server's data
   directory, which is shared by every reader because the source cannot scope it.
@@ -315,7 +319,7 @@ code disagree, including several claims in this file.
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] Suite green: **868 tests**, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **993 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
@@ -394,12 +398,19 @@ document with the vertical mode, so switching costs no request.
 **Goal:** the app becomes *yours*, not a browser.
 
 - [x] Shelves, many-to-many with series, reorderable, one home shelf (H4)
-- [ ] Tags, favourites, read later and ratings (H4). The columns exist on `series_states`
-      and nothing writes them. There is no control for any of the four
+- [ ] Tags, favourites, read later and ratings (H4). **Two of the four landed since this
+      was written.** Favourites and read later are written by `ReadingState::setFavourited()`
+      and `::setReadLater()` and have heart and clock controls on the series page. Tags and
+      ratings still have no control: both columns exist on `series_states` and nothing writes them
 - [x] Custom covers: upload and delete, resized and stored per reader (H5)
 - [ ] **Set cover from the reader page** (H5). `series_covers.source_page` exists and nothing
       writes it, and the reader has no cover control at all
-- [ ] **Bulk actions with range select** (H7). The one H-tier item still open
+- [x] **Bulk actions with range select** (H7). Selection mode, shift-click range select, and a
+      fixed bulk bar: file to a shelf, unfile, mark read, mark unread, remove from the library.
+      Shipped broken and fixed: the checkboxes used a deferred `wire:model` against a
+      server-side gate, so ticking committed nothing and the bar never appeared. No bulk
+      download, no bulk delete, no mass-migrate from the original spec, and "remove" sets
+      `in_library = false` rather than deleting anything
 - [x] Search query language (H6), **in a reduced form**: three best-effort terms,
       `label:value`, rather than Mihon's lexer, parser and AST. No `&&`, `||`, parentheses
       or `unread>5`. An unrecognised label is searched as text rather than dropped, which
@@ -475,8 +486,13 @@ migration moves read state, shelves and covers and leaves the old downloads on d
 - [ ] Release prediction and an Upcoming calendar (M2)
 - [ ] Tracker integration through Suwayomi's proxy (M3)
 - [ ] PWA, installable with an offline shell (M4)
-- [ ] Recommended surfaces from popular, latest and genre (M5). `SourceSearcher::browse()` is
-      written and has **no caller**, so the whole browse path is unreachable
+- [x] Recommended surfaces from popular and latest (M5). **Partly done, and the reason
+      matters.** `/browse/{source}` browses one source's Popular and Latest with a cover, a
+      library toggle and a shelf picker per card, reached from a picker on `/sources` that
+      groups the 82 sources into 16 sites, because 61 of them are MangaDex language variants.
+      `SourceSearcher::browse()` needed no changes; it had been written with the search work
+      and simply had no caller. **Genre browse is not built**: Suwayomi exposes genre only as
+      a search filter, not as a listing to page through
 - [x] Chapter filters (M6): scanlator exclusion, read and unread ranges
 - [ ] Auto-scroll and scroll-driven page advance (M9)
 - [x] Chapter separators in the navigator (M10), as boundary ticks and a read map
