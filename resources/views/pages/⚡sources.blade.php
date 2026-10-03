@@ -1,9 +1,9 @@
 <?php
 
+use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
 use App\Suwayomi\ExtensionManager;
-use App\Local\LocalLibrary;
 use App\Suwayomi\SourceCatalog;
 use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
@@ -13,7 +13,8 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Sources')] class extends Component {
+new #[Title('Sources')] class extends Component
+{
     public string $storeUrl = '';
 
     /**
@@ -440,6 +441,93 @@ new #[Title('Sources')] class extends Component {
     }
 
     /**
+     * Installed sources grouped by the site they belong to, for the browse picker.
+     *
+     * Grouped by `home_url` for the same reason the health dashboard groups by it: 82
+     * sources are really 16 extensions, and 61 of those 82 are MangaDex language variants.
+     * A flat list would be one scanlation site followed by 61 rows of MangaDex, which is
+     * the problem this grouping exists to solve rather than to describe.
+     *
+     * The group name prefers the site's own name over its host, because "Asura Scans"
+     * reads better than "asurascans.com" and the host is shown underneath for anyone who
+     * wants to know which domain they are about to trust.
+     *
+     * Only installed sources appear. A browse page 404s on an uninstalled one, so listing
+     * it would offer a link that cannot work.
+     *
+     * @return array<int, array{site: string, host: string|null, sources: array<int, array<string, mixed>>}>
+     */
+    #[Computed]
+    public function browseSites(): array
+    {
+        $rows = Source::query()
+            ->installed()
+            ->orderBy('display_name')
+            ->get();
+
+        $sites = [];
+
+        foreach ($rows as $source) {
+            $host = $source->home_url;
+
+            if ($host !== null) {
+                $host = (string) preg_replace('#^https?://#', '', rtrim((string) $host, '/'));
+            }
+
+            // The local source has no host and must still get a group of its own.
+            $key = $host !== null && $host !== '' ? $host : 'local';
+
+            if (! isset($sites[$key])) {
+                $sites[$key] = [
+                    'site' => $key === 'local'
+                        ? (string) __('On this machine')
+                        : $this->siteName($rows, $key),
+                    'host' => $key === 'local' ? null : $key,
+                    'sources' => [],
+                ];
+            }
+
+            $sites[$key]['sources'][] = [
+                'id' => (int) $source->id,
+                'name' => (string) $source->display_name,
+                'lang' => (string) $source->lang,
+                'latest' => (bool) $source->supports_latest,
+            ];
+        }
+
+        // Biggest first, so MangaDex's 61 languages sit last rather than filling the
+        // first screen a reader sees.
+        usort($sites, static fn (array $a, array $b): int => count($b['sources']) <=> count($a['sources']));
+
+        return array_values($sites);
+    }
+
+    /**
+     * The friendliest name for a site, from the source names that share its host.
+     *
+     * A group is keyed by host, so every source on it is the same site and their names
+     * differ only by the language suffix. The suffix is stripped to recover the site name,
+     * which is why MangaDex reads as "MangaDex" rather than "MangaDex (EN)".
+     *
+     * @param  \Illuminate\Support\Collection<int, Source>  $rows
+     */
+    private function siteName(\Illuminate\Support\Collection $rows, string $host): string
+    {
+        $first = $rows->filter(fn (Source $s): bool => $s->home_url !== null && str_contains((string) $s->home_url, $host))->first();
+
+        $name = (string) ($first?->display_name ?? $host);
+        $lang = (string) ($first?->lang ?? '');
+
+        if ($lang !== '' && str_ends_with($name, ' ('.$lang.')')) {
+            return substr($name, 0, -strlen(' ('.$lang.')'));
+        }
+
+        $stripped = (string) preg_replace('/\s*\(([A-Za-z]{2}(?:-[A-Za-z0-9]+)*)\)\s*$/', '', $name);
+
+        return $stripped !== '' ? $stripped : $host;
+    }
+
+    /**
      * Ask Suwayomi to read the local folder again.
      *
      * Reports what came back rather than assuming it worked, because a rescan that found
@@ -605,6 +693,102 @@ new #[Title('Sources')] class extends Component {
             <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Sources') }}</flux:heading>
         </div>
     </header>
+
+    {{--
+        Browse by source.
+
+        This is the door search cannot be. Search fans out to 40 targets out of 82,
+        ordered by name, and 61 of the 82 are MangaDex language variants, so the cut is
+        alphabetical: MangaFire, MangaTaro, Thunder Scans and Weeb Central were never
+        searched at all. A reader who wants one of those has no way in from search.
+
+        Grouped by site because 82 sources are really 16, for the same reason the health
+        dashboard groups by host. Biggest group last, so the 61 MangaDex languages do not
+        fill the first screen.
+    --}}
+    <section class="space-y-3">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <flux:heading level="2" size="lg" class="font-display font-semibold">
+                {{ __('Browse a source') }}
+            </flux:heading>
+
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                {{ __('Popular and latest, straight from one source.') }}
+            </p>
+        </div>
+
+        @if ($this->browseSites === [])
+            <flux:callout>
+                <p class="text-sm">
+                    {{ __('No installed sources yet. Sync the catalogue and they will appear here.') }}
+                </p>
+            </flux:callout>
+        @else
+            <ul class="space-y-2">
+                @foreach ($this->browseSites as $group)
+                    <li class="rounded-lg border border-zinc-200 dark:border-white/10">
+                        <details @if ($loop->first) open @endif>
+                            <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                                <span class="font-medium">{{ $group['site'] }}</span>
+
+                                @if ($group['host'] !== null)
+                                    <span class="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                        {{ $group['host'] }}
+                                    </span>
+                                @endif
+
+                                <flux:badge size="sm" color="zinc">
+                                    {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
+                                </flux:badge>
+
+                                {{--
+                                    MangaDex carries 61 language variants, which would put
+                                    61 pills on one row and swamp every other site. Past a
+                                    handful the languages collapse behind a count and the
+                                    first few stay reachable.
+                                --}}
+                                <span class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                                    @foreach (array_slice($group['sources'], 0, 4) as $one)
+                                        <a
+                                            href="{{ route('browse', ['source' => $one['id']]) }}"
+                                            wire:navigate
+                                            class="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 transition hover:border-vermilion-400 hover:text-vermilion-700 dark:border-white/15 dark:text-zinc-300 dark:hover:border-vermilion-400 dark:hover:text-vermilion-300"
+                                        >
+                                            {{ $one['name'] }}
+                                        </a>
+                                    @endforeach
+
+                                    @if (count($group['sources']) > 4)
+                                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ __('+:count more', ['count' => count($group['sources']) - 4]) }}
+                                        </span>
+                                    @endif
+                                </span>
+                            </summary>
+
+                            <div class="flex flex-wrap gap-1.5 border-t border-zinc-200 px-4 py-3 dark:border-white/10">
+                                @foreach ($group['sources'] as $one)
+                                    <a
+                                        href="{{ route('browse', ['source' => $one['id']]) }}"
+                                        wire:navigate
+                                        class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 transition hover:border-vermilion-400 hover:text-vermilion-700 dark:border-white/15 dark:text-zinc-300 dark:hover:border-vermilion-400 dark:hover:text-vermilion-300"
+                                    >
+                                        {{ $one['name'] }}
+
+                                        @if ($one['latest'])
+                                            <span class="text-[0.625rem] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                                                {{ __('latest') }}
+                                            </span>
+                                        @endif
+                                    </a>
+                                @endforeach
+                            </div>
+                        </details>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+    </section>
 
     <flux:callout variant="secondary" icon="information-circle">
         <div class="space-y-1 text-sm">

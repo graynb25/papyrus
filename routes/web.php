@@ -68,6 +68,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
  */
     Route::livewire('search', 'pages::search')->name('search');
     Route::livewire('sources', 'pages::sources')->name('sources');
+
+    /*
+     * One source's own catalogue: Popular and Latest.
+     *
+     * Search cannot reach every source. It caps at 40 targets, orders by name, and 61
+     * of the 82 sources are named "MangaDex (...)", so the cut is alphabetical and
+     * MangaFire, MangaTaro, Thunder Scans and Weeb Central were never searched at
+     * all. This is the other door: a reader who wants one scanlation site picks it and
+     * sees what it has.
+     *
+     * Bound to the mirror's own id rather than Suwayomi's, because the mirror is what
+     * carries `is_installed` and `supports_latest`, and the page 404s on an uninstalled
+     * source rather than rendering an empty grid.
+     */
+    Route::livewire('browse/{source}', 'pages::browse')->name('browse');
+
     Route::livewire('health', 'pages::health')->name('health');
 
     /*
