@@ -1110,6 +1110,89 @@ Each of these cost real time. Do not repeat them.
      memory twice with Suwayomi and the queue worker evicted, which surfaced as two gates
      reporting "no results" rather than as an out-of-memory error. Free memory is worth reading
      before believing a gate that suddenly finds nothing.
+145. **The picker and the server can disagree with nothing on screen saying so.** The report was
+     "add sources, look at the picker, see the old ones". The picker is built from the local
+     `Source` mirror, and installing an extension only tells the server, so the mirror stayed
+     where it was. Measured on the box: 84 sources installed on the server, 82 in the mirror,
+     the two missing being extensions added at 11:43 and 11:44, and the mirror's newest row
+     timestamped 23:15 the night before.
+
+     The install path toasted "Sync sources to make it searchable", which is honest and
+     useless: it names a button on a different tab, so the reader is told to go and find it.
+     Nothing on the picker itself said it was behind.
+
+     **Mirroring after our own installs is not the whole fix.** Suwayomi has an extension
+     interface of its own and this page's footer tells readers to deal with Suwayomi directly,
+     so an extension installed there produces no event Papyrus ever sees, and no amount of
+     tidying our own install button reaches it. Both halves are needed: mirror on install and
+     uninstall, and say what is missing.
+
+     The second half has to be cheap enough to run on every render, and it nearly was not.
+     Asking the server how many sources it has is one query and costs a measured 185ms median,
+     1,945ms on the first call. Asking which extensions are installed is the same one query for
+     a filtered list of seventeen rows, costs **29.8ms**, and names them, so the notice can
+     say which rather than how many. The extension list the page already fetches for its own
+     tabs, compared against a local `pluck`, is the entire check, and the local side measures
+     0.30ms. `syncSources()` on its own is 125ms against 1,030ms for `syncAll()`, because a
+     store's index has not moved when an extension is installed.
+
+     Two smaller lessons. A failed mirror is reported as its own fact and never as a failed
+     install: the extension **is** installed, and telling a reader it failed sends them
+     looking for a problem that is not there. And the notice is empty when the server cannot
+     be asked, because a banner claiming sources are missing, printed because the server was
+     unreachable, is a lie with a button on it.
+
+     The general shape: **a cache with no invalidation and no staleness signal will be read as
+     the truth.** "Behind" has to be visible where the stale list is displayed, not announced
+     once by the operation that caused it.
+
+146. **Four ways a fake can pass a test that should have failed, all in one helper.** Adding
+     mirroring to the sources page took four attempts to get a green test that meant something,
+     and every failure looked like the production code being broken. None of it was.
+
+     **The branch matched nothing.** The catalogue document is
+     `query Sources { sources { ... extension { pkgName isInstalled } ... } }`, and the branch
+     tested for `query Sources`. It reads correctly and matches, because the operation name is
+     not in the body at all: `Gateway::execute()` sends the document, not the name. The fake
+     fell through to a generic `['ok' => true]`, `syncSources()` read zero nodes, and the test
+     failed on an empty table for a reason that had nothing to do with mirroring. It then had
+     to be matched on `sources {`, and **before** the extension branch, because the catalogue
+     document contains the substring "extension" and anything matching that word first serves
+     the extension list to the catalogue query.
+
+     **`Request::data()` is not arrays.** Nested JSON arrives as `stdClass`, so
+     `['variables']['filter']['and']` is "Cannot use object of type stdClass as array". Read
+     from `json_decode($request->body(), true)` instead, which is the shape the indexes assume.
+
+     **A filter the fake ignores feeds the test a lie.** The real server filters server-side.
+     A fake returning every node regardless handed the drift check every *uninstalled*
+     extension in the catalogue, and the notice would have accused the reader of missing
+     sources they never added.
+
+     **And the two guards before the code under test.** `canInstallName()` refuses to install
+     what is already installed, and `isTrusted()` reads the reader's own trust rows, so an
+     untrusted publisher cannot be installed at all. Both make `install()` return before
+     mirroring. The subtle one is that `trustedIds` and `extensions` are computed: chaining
+     `->call('trust')->call('install')` on one Livewire instance evaluates the trust guard
+     against a cache written *before* the trust, so the test has to use a second instance. And
+     the page opens on the Installed view, where an uninstalled extension is not listed at all,
+     so `canInstallName()` finds nothing and returns false. Both look exactly like a broken
+     mirror.
+
+     Two more, from the same afternoon and the same shape. A computed property is cached for
+     the instance that ran the action: `browseSites()` was rendered with no sources and would
+     answer with an empty list forever after, so the assertion has to go through a fresh
+     instance, which is what a page load does. And a diagnostic that matches nothing and
+     prints nothing is the same failure as a check that finds nothing and prints nothing: a
+     helper that guessed two short package names instead of the mirror's own
+     `eu.kanade.tachiyomi.extension.*` values reported "marked 0 row(s)" and exited zero, so
+     the gate ran against an unchanged mirror and reported the notice missing. It now exits 2
+     when it changes no rows.
+
+     The general shape: **a fake is a program with its own bugs, and a test that fails for a
+     reason you cannot name is telling you the fake is where to look.** Print what the fake saw
+     rather than reasoning about what it should have seen.
+---
 ---
 
 ## 6. Working philosophy
@@ -1431,7 +1514,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Bulk library actions | **H7 done, after being broken.** Selection mode, shift-click range select, and a fixed bulk bar: file to a shelf, unfile, mark read, mark unread, remove from the library. Shipped unusable, because the checkboxes used a deferred `wire:model` and the bar is gated on a server-side count, so ticking a box committed nothing and the bar never appeared. Twelve tests passed over it; see trap 126 and 14.6. |
 | 1 | Fan-out slice | **Closed, after a policy nobody chose.** The 40-of-82 cap was applied to an alphabetical sort, so MangaFire (7 sources), MangaTaro, Thunder Scans and Weeb Central were never dispatched. The slice is now a round robin over `extension_pkg_name`: every site's first source, then every site's second, capped as before. Run 88 dispatched exactly 40 and reached **15 of the 16 installed packages**, with 20 non-MangaDex against 10. Trap 132. |
 | 7 | Series auto-fetch | **Done, and it was one bug wearing two faces.** `SeriesGateway::find()` reads Suwayomi's cache and `fetchMangaAndChapters` fills it, so a series reached from search or browse had never been fetched: no chapters, status UNKNOWN, and the Refresh button as the only way out, with 19 of 20 titles on a source in that state. The series page now books a fetch on mount and polls while it runs. **Two calls, because the costs differ twentyfold**: `fetchManga` alone for a series whose only gap is its status, a flat 186ms to 555ms measured, and `fetchMangaAndChapters` for one with no chapters, 1,642ms to 7,142ms and scaling with the chapter count. One claim per reader, so a second series never queues behind the first, and nothing prefetches the grid: there is one worker, so a grid prefetch would put twenty requests in front of the series the reader actually clicked. Trap 134. |
-| 7 | Browse infinite scroll | **Done.** An IntersectionObserver keyed on the page counter, firing a viewport-height early so the next page is there before the reader reaches it. `hasNextPage` was already selected in the mutation and thrown away, and it is the only honest end-of-scroll signal: Asura Scans answers true four pages deep and Akaza Scans answers false on its first, so "fewer rows than last time" cannot tell a finished source from an odd one. Rows are no longer sliced to `results_per_source`, which was discarding 35 of MangaFire's 50 and 41 of Manga Demon's 56 on every scroll. Trap 137. |
+| 7 | Browse infinite scroll | **Done.** An IntersectionObserver keyed on the page counter, firing a viewport-height early so the next page is there before the reader reaches it. `hasNextPage` was already selected in the mutation and thrown away, and it is the only honest end-of-scroll signal: Asura Scans answers true four pages deep and Akaza Scans answers false on its first, so "fewer rows than last time" cannot tell a finished source from an odd one. Rows are no longer sliced to `results_per_source`, which was discarding 35 of MangaFire's 50 and 41 of Manga Demon's 56 on every scroll. Trap 137. | **It is kept honest about what it is missing.** The picker reads the local `Source` mirror, and installing an extension only tells the server, so the list was two sources behind after two extensions were added, with nothing on screen saying so. Mirroring now happens after Papyrus's own installs and uninstalls, which is `syncSources()` at a measured 125ms rather than `syncAll()` at 1,030ms because a store's index has not moved. That half cannot reach an extension installed through Suwayomi's own interface, so the page also compares the live installed-extension list it already fetches against the mirror and names what is absent, with the existing sync offered right there: 29.8ms against 185ms for asking the server instead, because the extension list is a filtered seventeen rows and it says which rather than how many. A failed mirror is reported as its own fact and never as a failed install, and the notice is empty when the server cannot be asked. Traps 145 and 146. |
 | 7 | Search within a source | **Done.** `fetchSourceManga` takes a `SEARCH` type, so searching the one source a reader is already in was always available and only the input was missing. A link to the global search would be the wrong door twice over: that search covers 40 of 82 sources chosen by a round robin, so four sites including MangaFire, MangaTaro, Thunder Scans and Weeb Central are not in it at all. Fires on submit rather than per keystroke, measured on Asura Scans: a term that matches answers in 211ms and one that matches nothing in 1,673ms. Reuses the browse scroll, so a search that is one page simply stops. |
 | 7 | Source name links to its catalogue | **Done.** The series page showed the source as plain text with the id in the payload and no way to get back to everything that site lists. Resolved through the mirror on Suwayomi's id rather than on the name, because 61 of the 82 sources are named "MangaDex (...)" and a name lookup lands on an arbitrary one of them. Falls back to plain text when the source is not in the mirror, which happens when an extension is uninstalled while its series is still cached. |
 | 7 | Downloads name their series | **Done.** The row read `Chapter {suwayomi_chapter_id}`, a database id, so a finished download read "Chapter 14430" and gave a reader nothing to recognise it by. The row already carried `suwayomi_manga_id`. Titles and chapter names come out of one batched `fetchMany()`, which the library page already uses and whose payload **already** carried `chapters { nodes { id name } }`: 200 rows at one `manga(id:)` each is about 15ms times 200 measured, and the batch is 246ms for 300 ids. The whole row is now the link, stretched with an `::after`, because a link that only covers its own words fails four times out of five clicks. |

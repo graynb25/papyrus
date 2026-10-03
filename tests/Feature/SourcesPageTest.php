@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ExtensionStore;
+use App\Models\Source;
 use App\Models\User;
 use App\Suwayomi\ExtensionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,6 +37,23 @@ class SourcesPageTest extends TestCase
      */
     private bool $updateShouldFail = false;
 
+    /**
+     * The sources the catalogue query will serve, for the mirroring tests.
+     *
+     * Empty by default so the tests that predate mirroring are unaffected: with no nodes and
+     * a `totalCount` of zero, `SourceCatalog::syncSources()` takes its incomplete branch and
+     * marks nothing uninstalled, because the guard requires a non-empty result as well as a
+     * matching count.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    private array $sourceNodes = [];
+
+    /**
+     * Whether the catalogue query should fail, to prove a failed mirror is survivable.
+     */
+    private bool $catalogShouldFail = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,9 +70,104 @@ class SourcesPageTest extends TestCase
      *
      * @param  array<int, array<string, mixed>>  $nodes
      */
+    /**
+     * The nodes the fake will serve, honouring an `isInstalled` filter.
+     *
+     * The real server filters server-side, and the drift notice asks for the installed ones
+     * only. A fake that ignored the filter would hand the notice every uninstalled extension
+     * in the catalogue and it would accuse the reader of missing sources they never added.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function filteredNodes(Request $request): array
+    {
+        /*
+         * Decoded from the raw body rather than read off `Request::data()`.
+         *
+         * `data()` hands back stdClass for nested JSON, so `['variables']['filter']['and']`
+         * is "Cannot use object of type stdClass as array". json_decode with assoc makes the
+         * whole shape arrays, which is what the indexes below assume.
+         *
+         * The filter is not read at all when the body will not decode, so a stub that cannot
+         * see the filter serves the unfiltered list exactly as it did before this existed.
+         */
+        $variables = $this->requestVariables($request);
+
+        foreach ($variables['filter']['and'] ?? [] as $clause) {
+            $field = $clause['isInstalled'] ?? null;
+
+            if (! is_array($field)) {
+                continue;
+            }
+
+            $wanted = (bool) ($field['equalTo'] ?? false);
+
+            return array_values(array_filter(
+                $this->nodes,
+                fn (array $n): bool => (bool) ($n['isInstalled'] ?? false) === $wanted,
+            ));
+        }
+
+        return $this->nodes;
+    }
+
+    /**
+     * A request's GraphQL variables as plain arrays.
+     *
+     * @return array<string, mixed>
+     */
+    private function requestVariables(Request $request): array
+    {
+        $body = $request->body();
+
+        if (! is_string($body) || $body === '') {
+            return [];
+        }
+
+        $decoded = json_decode($body, true);
+
+        return is_array($decoded) ? ($decoded['variables'] ?? []) : [];
+    }
+
+    /**
+     * Choose what the catalogue endpoint returns for the rest of the test.
+     *
+     * @param  array<int, array<string, mixed>>  $nodes
+     */
     private function serveExtensions(array $nodes): void
     {
         $this->nodes = $nodes !== [] ? $nodes : $this->defaultNodes();
+    }
+
+    /**
+     * Choose what the source catalogue endpoint returns.
+     *
+     * @param  array<int, array<string, mixed>>  $nodes
+     */
+    private function serveSources(array $nodes): void
+    {
+        $this->sourceNodes = $nodes;
+    }
+
+    /**
+     * One row of the server's source catalogue.
+     *
+     * @return array<string, mixed>
+     */
+    private function source(int $id, string $pkg, string $name): array
+    {
+        return [
+            'id' => (string) $id,
+            'name' => $name,
+            'displayName' => $name,
+            'lang' => 'en',
+            'contentWarning' => 'SAFE',
+            'homeUrl' => 'https://example.test',
+            'iconUrl' => null,
+            'supportsLatest' => true,
+            'isConfigurable' => false,
+            'extension' => ['pkgName' => $pkg, 'isInstalled' => true],
+        ];
     }
 
     /**
@@ -94,10 +207,33 @@ class SourcesPageTest extends TestCase
                 ]]]]]);
             }
 
+            /*
+             * Order matters and it is not the obvious order.
+             *
+             * The catalogue document is `query Sources { sources { ... extension { pkgName
+             * isInstalled } ... } }`, which contains the substring "extension" and so would
+             * be caught by a branch testing for that. Anything that looks for the word first
+             * silently serves the extension list to the catalogue query, and the mirror then
+             * reads zero nodes from a payload with no `sources` key at all.
+             *
+             * So the catalogue is matched first, on `sources {`, which no extension query
+             * contains.
+             */
+            if (str_contains($query, 'sources {')) {
+                if ($this->catalogShouldFail) {
+                    return Http::response(['errors' => [['message' => 'The server is not answering']]], 200);
+                }
+
+                return Http::response(['data' => ['sources' => [
+                    'totalCount' => count($this->sourceNodes),
+                    'nodes' => $this->sourceNodes,
+                ]]]);
+            }
+
             if (str_contains($query, 'extensions(')) {
                 return Http::response(['data' => ['extensions' => [
-                    'totalCount' => count($this->nodes),
-                    'nodes' => $this->nodes,
+                    'totalCount' => count($this->filteredNodes($request)),
+                    'nodes' => $this->filteredNodes($request),
                 ]]]);
             }
 
@@ -583,5 +719,270 @@ class SourcesPageTest extends TestCase
             $failures['eu.kanade.tachiyomi.extension.en.example'] ?? null,
             'A package that did not update is named with its reason.',
         );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * The picker was stale after an install
+     *
+     * The report: add sources, look at the picker, see the old ones. The picker is built
+     * from the local `Source` mirror, and installing an extension only tells the server, so
+     * the mirror stayed where it was until somebody pressed Sync sources on another tab.
+     * Measured on the box: 84 sources installed on the server, 82 in the mirror, the two
+     * missing being extensions added at 11:43 and 11:44, and the mirror's newest row
+     * timestamped 23:15 the night before.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_installing_an_extension_mirrors_its_source(): void
+    {
+        $store = $this->store();
+
+        $pkg = 'eu.kanade.tachiyomi.extension.en.fresh';
+
+        // Two preconditions, both of which make `install()` return before it reaches the
+        // mirror, so both are visible here rather than as a puzzling empty table.
+        //
+        // Not installed: `canInstallName()` refuses to install what is already installed.
+        // Trusted store: `isTrusted()` reads the reader's own trust rows, so an extension
+        // whose publisher has not been trusted cannot be installed at all, which is the gate
+        // `test_installing_from_an_untrusted_store_is_refused_even_if_called_directly` locks
+        // down.
+        $this->serveExtensions([$this->extension($pkg, 'Fresh Scan', false, true)]);
+        $this->serveSources([$this->source(4242, $pkg, 'Fresh Scan (EN)')]);
+
+        $component = $this->page();
+
+        $component->call('trust', $store->id);
+
+        /*
+         * A second test instance on purpose.
+         *
+         * Trust is written by the first call, and `trustedIds` is a computed the first
+         * instance cached from before that write. Chaining `->call('trust')->call('install')`
+         * on one instance therefore evaluates `canInstallName()` against a cache that predates
+         * the trust, gets false, and returns before mirroring anything.
+         *
+         * That is a Livewire caching fact, not a bug in the page: in a browser the reader
+         * trusts a store, the page re-renders, and the next click reads fresh state.
+         */
+        /*
+         * Three preconditions, each of which makes `install()` return before it reaches the
+         * mirror, so each is visible here rather than as a puzzling empty table.
+         *
+         * The store has to be trusted, because `isTrusted()` reads this reader's trust rows.
+         * The extension has to be listed, and the page opens on the Installed view, so an
+         * extension that is not yet installed is only present in the Available one. And it has
+         * to actually not be installed, since `canInstallName()` refuses to install what is
+         * already there.
+         *
+         * The second of those is the subtle one: `canInstallName()` looks the package up in
+         * `$this->extensions`, which is filtered server-side by the current view. On the
+         * Installed view the list has nothing to find and the guard returns false, which looks
+         * exactly like a mirroring failure and is not one at all.
+         */
+        $component = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg)
+            ->assertHasNoErrors();
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'sources {'),
+        );
+
+        $this->assertSame(
+            1,
+            Source::query()->where('suwayomi_source_id', 4242)->count(),
+            'The catalogue query has to have been sent, so the fake answered with a source.',
+        );
+
+        /*
+         * Without the mirror step this is the whole bug: the install succeeded, the server
+         * has the source, and the picker cannot show it because nothing copied it across.
+         */
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4242,
+            'extension_pkg_name' => $pkg,
+            'is_installed' => true,
+        ]);
+    }
+
+    public function test_installing_makes_the_new_source_browsable_without_a_second_press(): void
+    {
+        $store = $this->store();
+
+        $pkg = 'eu.kanade.tachiyomi.extension.en.fresh';
+
+        $this->serveExtensions([$this->extension($pkg, 'Fresh Scan', false, true)]);
+        $this->serveSources([$this->source(4242, $pkg, 'Fresh Scan (EN)')]);
+
+        // A fresh instance after the trust write, and on the Available view where an
+        // uninstalled extension is actually listed. Both reasons are given above.
+        $this->page()->call('trust', $store->id);
+
+        $page = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg);
+
+        /*
+         * Read through a third instance, and this is the load-bearing part.
+         *
+         * `browseSites()` is a computed, and the instance that ran `install()` cached it
+         * before the mirror was written: it was rendered with no sources and would answer
+         * with an empty list forever after. Asserting on the same instance therefore proves
+         * nothing about the picker, and asserting on the rendered HTML would fail for the
+         * same reason.
+         *
+         * In a browser this is invisible, because the response to the click is a fresh render
+         * and the dialog of computed values is cleared between requests. The test has to
+         * reproduce that by asking a new instance, which is what a page load does.
+         */
+        $sites = $this->page()->instance()->browseSites();
+
+        $this->assertNotSame([], $sites, 'A freshly installed source has to reach the picker.');
+
+        $names = array_column($sites, 'sources');
+
+        $this->assertNotSame(
+            [],
+            array_filter(array_merge(...$names), fn (array $s): bool => $s['name'] === 'Fresh Scan (EN)'),
+            'The source the reader just installed has to be one of the picker entries.',
+        );
+    }
+
+    public function test_uninstalling_an_extension_mirrors_its_source_away(): void
+    {
+        $this->store();
+
+        $staying = 'eu.kanade.tachiyomi.extension.en.staying';
+        $leaving = 'eu.kanade.tachiyomi.extension.en.leaving';
+
+        Source::query()->create([
+            'suwayomi_source_id' => 1,
+            'name' => 'Staying',
+            'display_name' => 'Staying (EN)',
+            'extension_pkg_name' => $staying,
+            'lang' => 'en',
+            'is_installed' => true,
+        ]);
+
+        Source::query()->create([
+            'suwayomi_source_id' => 2,
+            'name' => 'Leaving',
+            'display_name' => 'Leaving (EN)',
+            'extension_pkg_name' => $leaving,
+            'lang' => 'en',
+            'is_installed' => true,
+        ]);
+
+        $this->serveExtensions([$this->extension($leaving, 'Leaving', true, true)]);
+        $this->serveSources([$this->source(1, $staying, 'Staying (EN)')]);
+
+        $this->page()
+            ->call('uninstall', $leaving)
+            ->assertHasNoErrors();
+
+        /*
+         * Mirrored on the way out too.
+         *
+         * A source left installed in the mirror is a browse link that 404s, which is the one
+         * failure the picker is supposed to be structurally unable to have.
+         */
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 2,
+            'is_installed' => false,
+        ]);
+    }
+
+    public function test_the_picker_says_nothing_when_the_mirror_agrees(): void
+    {
+        $this->store();
+
+        $pkg = 'eu.kanade.tachiyomi.extension.en.known';
+
+        Source::query()->create([
+            'suwayomi_source_id' => 7,
+            'name' => 'Known',
+            'display_name' => 'Known (EN)',
+            'extension_pkg_name' => $pkg,
+            'lang' => 'en',
+            'is_installed' => true,
+        ]);
+
+        $this->serveExtensions([$this->extension($pkg, 'Known', true, true)]);
+        $this->serveSources([$this->source(7, $pkg, 'Known (EN)')]);
+
+        $this->page()
+            ->assertDontSee('data-test="mirror-drift"', false);
+    }
+
+    public function test_the_picker_names_extensions_the_mirror_has_not_caught_up_with(): void
+    {
+        $this->store();
+
+        // Installed on the server, with no row in the mirror at all. This is the shape an
+        // install performed through Suwayomi's own interface leaves behind, and the one half
+        // that mirroring after our own installs cannot reach.
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.added', 'Added Scan', true, true),
+        ]);
+        $this->serveSources([$this->source(9, 'eu.kanade.tachiyomi.extension.en.added', 'Added Scan (EN)')]);
+
+        $html = $this->page()
+            ->assertSee('data-test="mirror-drift"', false)
+            ->html();
+
+        $this->assertStringContainsString(
+            'Added Scan',
+            $html,
+            'The notice names the extension. "1 source is missing" leaves the reader to guess which.',
+        );
+
+        $this->assertStringContainsString('data-test="mirror-drift-sync"', $html);
+    }
+
+    public function test_the_picker_does_not_claim_drift_it_cannot_see(): void
+    {
+        $this->store();
+
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.added', 'Added Scan', true, true),
+        ]);
+        $this->serveSources([$this->source(9, 'eu.kanade.tachiyomi.extension.en.added', 'Added Scan (EN)')]);
+
+        // In the mirror now, so nothing is missing.
+        Source::query()->create([
+            'suwayomi_source_id' => 9,
+            'name' => 'Added Scan',
+            'display_name' => 'Added Scan (EN)',
+            'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.added',
+            'lang' => 'en',
+            'is_installed' => true,
+        ]);
+
+        $page = $this->page();
+
+        $this->assertSame([], $page->instance()->unmirroredExtensions());
+        $page->assertDontSee('data-test="mirror-drift"', false);
+    }
+
+    public function test_a_failed_mirror_still_reports_the_install_as_done(): void
+    {
+        $this->store();
+
+        $pkg = 'eu.kanade.tachiyomi.extension.en.brokenmirror';
+
+        $this->serveExtensions([$this->extension($pkg, 'Broken Mirror', true, true)]);
+        $this->catalogShouldFail = true;
+
+        /*
+         * The install succeeded. Reporting that as a failure would send a reader looking for
+         * a problem with an extension that is installed and working, and the actual fault is
+         * one button press away and named in the toast.
+         */
+        $this->page()
+            ->call('install', $pkg)
+            ->assertHasNoErrors()
+            ->assertSee('Sync sources');
     }
 }

@@ -217,6 +217,36 @@ new #[Title('Sources')] class extends Component
         );
     }
 
+    /**
+     * Re-mirror the source catalogue after changing what is installed.
+     *
+     * Installing an extension changes what the server offers and not what we know about,
+     * and the browse picker is built from the mirror. Left to a second manual press the
+     * picker stayed behind for as long as the reader did not know to press it, which is
+     * what happened: two extensions installed at 11:43 and 11:44, and the mirror's newest
+     * row was still from 23:15 the night before, so the picker showed 82 sources where
+     * the server had 84.
+     *
+     * Returns whether the mirror now agrees. The install itself has already succeeded by
+     * the time this runs, so the caller reports the two facts separately rather than
+     * reporting a failed install. Swallowing the failure would leave a working extension
+     * that the picker will not show, with nothing on screen to explain why.
+     *
+     * `syncSources()` rather than `syncAll()`, because a store's index has not moved.
+     * Measured at 125ms against 1030ms for the pair, and an install is an action the
+     * reader has already waited seconds for.
+     */
+    private function mirrorSources(): bool
+    {
+        try {
+            app(SourceCatalog::class)->syncSources();
+        } catch (SuwayomiException) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function install(string $pkgName): void
     {
         if (! $this->canInstallName($pkgName)) {
@@ -233,7 +263,15 @@ new #[Title('Sources')] class extends Component
 
         $this->failures = [];
 
-        Flux::toast(text: __('Sync sources to make it searchable.'), heading: __('Installed'), variant: 'success');
+        $mirrored = $this->mirrorSources();
+
+        Flux::toast(
+            text: $mirrored
+                ? __('It is browsable now.')
+                : __('Installed, but the source list could not be refreshed. Press Sync sources.'),
+            heading: __('Installed'),
+            variant: $mirrored ? 'success' : 'info',
+        );
     }
 
     public function uninstall(string $pkgName): void
@@ -248,7 +286,21 @@ new #[Title('Sources')] class extends Component
 
         $this->failures = [];
 
-        Flux::toast(text: __('Its source stops being searchable.'), heading: __('Uninstalled'), variant: 'success');
+        /*
+         * Mirrored on the way out as well as on the way in.
+         *
+         * An uninstall that leaves the source in the mirror offers a browse link that 404s,
+         * which is the failure the picker is supposed to be impossible to have.
+         */
+        $mirrored = $this->mirrorSources();
+
+        Flux::toast(
+            text: $mirrored
+                ? __('Its source is gone from the list.')
+                : __('Uninstalled, but the source list could not be refreshed. Press Sync sources.'),
+            heading: __('Uninstalled'),
+            variant: $mirrored ? 'success' : 'info',
+        );
     }
 
     /**
@@ -368,12 +420,28 @@ new #[Title('Sources')] class extends Component
             return;
         }
 
+        /*
+         * Once, into a variable. The first version of this called the helper inside the toast
+         * text and again for the variant, which is two extra full catalogue writes on every
+         * bulk install and a toast whose wording and colour could disagree.
+         */
+        $mirrored = $this->mirrorSources();
+        $added = count($result['installed']);
+
         Flux::toast(
-            text: __(':count extensions added. Sync sources to start searching them.', [
-                'count' => count($result['installed']),
-            ]),
+            text: $mirrored
+                ? trans_choice(
+                    '{1} :count extension added and browsable.|[2,*] :count extensions added and browsable.',
+                    $added,
+                    ['count' => $added],
+                )
+                : trans_choice(
+                    '{1} :count extension added, but the source list could not be refreshed. Press Sync sources.|[2,*] :count extensions added, but the source list could not be refreshed. Press Sync sources.',
+                    $added,
+                    ['count' => $added],
+                ),
             heading: __('Installed'),
-            variant: 'success',
+            variant: $mirrored ? 'success' : 'info',
         );
     }
 
@@ -438,6 +506,61 @@ new #[Title('Sources')] class extends Component
     public function localSummary(): array
     {
         return app(LocalLibrary::class)->summary();
+    }
+
+    /**
+     * Installed extensions whose sources are not in the mirror yet.
+     *
+     * The picker is built from the local `Source` table, and nothing else on this page
+     * reads the server's source list, so a source can be installed and browsable while the
+     * picker cannot show it. Mirroring after Papyrus's own installs closes the common case,
+     * but not the one that actually produced the report: Suwayomi has an extension
+     * interface of its own, this page's footer tells readers to deal with Suwayomi
+     * directly, and an extension installed there produces no event Papyrus ever sees.
+     *
+     * So the page also says what it knows is missing, which is the only half that can catch
+     * an install Papyrus did not perform.
+     *
+     * Asked of the extension list rather than of the source count on purpose. Both are one
+     * query, but `sources { totalCount }` measured a 185ms median against 29.8ms for the
+     * filtered extension list, and the extension list names the extensions, so the notice
+     * can say which ones rather than how many.
+     *
+     * Empty when the server cannot be asked. A notice claiming sources are missing, printed
+     * because the server was unreachable, is a lie with a button on it.
+     *
+     * @return array<int, array{name: string, pkg: string}>
+     */
+    #[Computed]
+    public function unmirroredExtensions(): array
+    {
+        try {
+            $installed = app(ExtensionManager::class)->extensions(['installed' => true], 200, 0);
+        } catch (SuwayomiException) {
+            return [];
+        }
+
+        if ($installed->isEmpty()) {
+            return [];
+        }
+
+        $mirrored = Source::query()
+            ->installed()
+            ->pluck('extension_pkg_name')
+            ->filter()
+            ->all();
+
+        $missing = [];
+
+        foreach ($installed as $extension) {
+            $pkg = (string) ($extension['pkgName'] ?? '');
+
+            if ($pkg !== '' && ! in_array($pkg, $mirrored, true)) {
+                $missing[] = ['name' => (string) ($extension['name'] ?? $pkg), 'pkg' => $pkg];
+            }
+        }
+
+        return $missing;
     }
 
     /**
@@ -716,6 +839,50 @@ new #[Title('Sources')] class extends Component
                 {{ __('Popular and latest, straight from one source.') }}
             </p>
         </div>
+
+        @if ($this->unmirroredExtensions !== [])
+            {{--
+                The picker is about to be wrong, so say so above it rather than in a toast.
+
+                Named extensions rather than a count, because "2 sources are missing" leaves
+                the reader to guess which and a toast has already gone by the time they look
+                for it. The button is the existing sync, not a new action: the difference is
+                that it is now offered where the stale list is, instead of on another tab
+                with a label that has to be understood first.
+            --}}
+            <flux:callout variant="secondary" icon="arrow-path" data-test="mirror-drift">
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+                    @php($driftNames = implode(', ', array_column($this->unmirroredExtensions, 'name')))
+
+                    <p class="text-sm">
+                        {{
+                            /*
+                             * One string, pipe separated, then the count.
+                             *
+                             * trans_choice is ($key, $number, $replace), so a second message
+                             * string lands in $replace and fails on an int. The plural form
+                             * is the part after the pipe, which is how the rest of this page
+                             * writes it.
+                             */
+                            trans_choice(
+                                ':name is installed but not in the list below yet.|:names are installed but not in the list below yet.',
+                                count($this->unmirroredExtensions),
+                                ['name' => $driftNames, 'names' => $driftNames],
+                            )
+                        }}
+                    </p>
+
+                    <flux:button
+                        size="sm"
+                        wire:click="syncSources"
+                        wire:loading.attr="disabled"
+                        data-test="mirror-drift-sync"
+                    >
+                        {{ __('Sync sources') }}
+                    </flux:button>
+                </div>
+            </flux:callout>
+        @endif
 
         @if ($this->browseSites === [])
             <flux:callout>
