@@ -1078,6 +1078,38 @@ Each of these cost real time. Do not repeat them.
      a gate that has stopped existing without saying so. `verify-october-pass.mjs` carries a
      comment saying it is a Node port of the Python original for exactly this reason, which is
      the only reason the pattern was known.
+
+144. **A dev server that is up can still be serving a stylesheet missing utilities.** The search
+     grid rendered one card per row at 1541px wide inside a 1440px window. Every card was a
+     grid item with `min-width: auto` and a long `truncate`d line inside it, and `display: grid`
+     computed to `grid-template-columns: none`, so the container was already too wide to divide
+     and the grid had a single auto track.
+
+     That reads as a markup bug and it is very nearly impossible to blame on the CSS from the
+     outside. Two things had to be ruled out before the real cause appeared: the custom
+     `.stagger-enter` rules (animation only, harmless) and a regression from the change under
+     test (`git stash`, re-probe, identical). The change was innocent, which is the useful part:
+     a stash-and-re-probe is the only cheap way to separate "I broke it" from "it was like
+     that".
+
+     The cause was `@tailwindcss/vite` serving a module it had not regenerated. `grid-cols-2`
+     was absent from the stylesheet entirely, proved by putting a fresh `<div class="grid
+     grid-cols-2">` in the page and reading its computed `grid-template-columns`: `none`. And
+     `npm run build` generated all four classes correctly, which is what located the fault in
+     the dev server rather than in Tailwind or the markup.
+
+     The general shape: **an up process is not a correct process.** The existing note on Vite
+     covers it being *down*, which is loud. Being up and serving a stale module is silent, looks
+     exactly like a code defect, and sends you into the wrong file. When computed styles
+     contradict markup that is obviously right, test the utility on a bare element before
+     reading any application code.
+
+     Two smaller lessons from the same afternoon. A browser gate must close its browser in a
+     `finally`: one that throws partway leaves Chromium resident, and on a box with under a
+     gigabyte free that is what kills the JVM the next check needs. And this machine ran out of
+     memory twice with Suwayomi and the queue worker evicted, which surfaced as two gates
+     reporting "no results" rather than as an out-of-memory error. Free memory is worth reading
+     before believing a gate that suddenly finds nothing.
 ---
 
 ## 6. Working philosophy
@@ -1404,7 +1436,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Source name links to its catalogue | **Done.** The series page showed the source as plain text with the id in the payload and no way to get back to everything that site lists. Resolved through the mirror on Suwayomi's id rather than on the name, because 61 of the 82 sources are named "MangaDex (...)" and a name lookup lands on an arbitrary one of them. Falls back to plain text when the source is not in the mirror, which happens when an extension is uninstalled while its series is still cached. |
 | 7 | Downloads name their series | **Done.** The row read `Chapter {suwayomi_chapter_id}`, a database id, so a finished download read "Chapter 14430" and gave a reader nothing to recognise it by. The row already carried `suwayomi_manga_id`. Titles and chapter names come out of one batched `fetchMany()`, which the library page already uses and whose payload **already** carried `chapters { nodes { id name } }`: 200 rows at one `manga(id:)` each is about 15ms times 200 measured, and the batch is 246ms for 300 ids. The whole row is now the link, stretched with an `::after`, because a link that only covers its own words fails four times out of five clicks. |
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
-| 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. |
+| 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. **The cover's bookmark was then taken off these cards entirely.** It used to sit on every card filing the primary, which put two bookmarks on one picture answering two different questions: one silently picked a source the reader had not chosen and never named, and the one in the chooser filed whichever source it sat beside. A reader who wanted Asura Scans and pressed the bookmark on the cover got Manga Demon, and nothing on screen said so. A card that needs a decision has no shortcut past the decision. Single-source cards keep theirs, because a button that files the only candidate is not a guess. The card's "+N sources" line is now the only thing telling the reader a choice exists, so it has to stay: a check that reads it off the button rather than the card passes on a card that has lost every name it had. The choice is not remembered between searches, since a stored preference needs a per-group key and group identity shifts as sources answer, so the key would have to be the manga id picked rather than anything about the group. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at

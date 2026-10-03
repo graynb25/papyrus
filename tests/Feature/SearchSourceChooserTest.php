@@ -379,6 +379,84 @@ class SearchSourceChooserTest extends TestCase
         );
     }
 
+    public function test_a_multi_source_card_has_no_bookmark_of_its_own(): void
+    {
+        $runId = $this->givenResults([
+            [1, 'Manga Demon (EN)', 'Eternally Regressing Knight'],
+            [2, 'Asura Scans (EN)', 'Eternally Regressing Knight'],
+        ]);
+
+        /*
+         * It used to sit on every card, filing the primary.
+         *
+         * That put two bookmarks on one card answering two different questions. This one
+         * picked a source the reader had not chosen and never named, and the one inside the
+         * chooser filed whichever source it sat beside. A reader who wanted Asura Scans and
+         * pressed the bookmark on the cover got Manga Demon, and nothing on screen said so.
+         *
+         * So a card that needs a decision has no shortcut past the decision.
+         */
+        Livewire::actingAs($this->user)
+            ->test('pages::search')
+            ->set('runId', $runId)
+            ->assertDontSee('data-test="library-toggle"', false);
+    }
+
+    public function test_a_single_source_card_keeps_its_bookmark(): void
+    {
+        $runId = $this->givenResults([
+            [1, 'Manga Demon (EN)', 'Only Here'],
+            [2, 'Asura Scans (EN)', 'Something Else Entirely'],
+        ]);
+
+        // A button that files the only candidate is not a guess, so it stays.
+        Livewire::actingAs($this->user)
+            ->test('pages::search')
+            ->set('runId', $runId)
+            ->assertSee('data-test="library-toggle"', false);
+    }
+
+    public function test_the_card_bookmark_acts_on_the_only_source_there_is(): void
+    {
+        $runId = $this->givenResults([
+            [1, 'Manga Demon (EN)', 'Only Here'],
+            [2, 'Asura Scans (EN)', 'Something Else Entirely'],
+        ]);
+
+        Livewire::actingAs($this->user)
+            ->test('pages::search')
+            ->set('runId', $runId)
+            ->call('toggleLibrary', 1);
+
+        $this->assertDatabaseHas('series_states', [
+            'user_id' => $this->user->id,
+            'suwayomi_manga_id' => 1,
+            'in_library' => true,
+        ]);
+    }
+
+    public function test_a_multi_source_card_still_names_its_other_sources(): void
+    {
+        $runId = $this->givenResults([
+            [1, 'Manga Demon (EN)', 'Eternally Regressing Knight'],
+            [2, 'Asura Scans (EN)', 'Eternally Regressing Knight'],
+            [3, 'Lagoon Scans (EN)', 'Eternally Regressing Knight'],
+        ]);
+
+        /*
+         * Taking the bookmark off the card must not take the names with it.
+         *
+         * The card is now the way to see what the choice is, so the "+2 sources" line is the
+         * only thing telling the reader there is something to choose. Losing it would leave a
+         * card that opens a dialog for no visible reason.
+         */
+        Livewire::actingAs($this->user)
+            ->test('pages::search')
+            ->set('runId', $runId)
+            ->assertSee('Asura Scans (EN)')
+            ->assertSee('Lagoon Scans (EN)');
+    }
+
     public function test_the_choice_is_not_carried_in_the_url(): void
     {
         $blade = (string) file_get_contents(

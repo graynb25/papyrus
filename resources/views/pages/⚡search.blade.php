@@ -1153,7 +1153,8 @@ new #[Title('Search')] class extends Component
                         @endif
 
                         {{--
-                            The library toggle, on the card.
+                            The library toggle, on the card, and only where there is
+                            nothing to choose.
 
                             A search is how a reader finds a series they then want to
                             keep, and the only path to the bookmark used to run through
@@ -1164,29 +1165,47 @@ new #[Title('Search')] class extends Component
                             The state is read from a batch over the whole result set,
                             one query for the page, which is the same lesson the
                             library page paid for in round trips.
-                        --}}
-                        @php($inLibrary = (bool) ($this->libraryMap[$group->primary->suwayomi_manga_id] ?? false))
 
-                        <button
-                            type="button"
-                            wire:click="toggleLibrary({{ $group->primary->suwayomi_manga_id }})"
-                            wire:loading.attr="disabled"
-                            data-test="library-toggle"
-                            aria-pressed="{{ $inLibrary ? 'true' : 'false' }}"
-                            aria-label="{{ $inLibrary
-                                ? __('Remove :title from your library', ['title' => $group->primary->title])
-                                : __('Add :title to your library', ['title' => $group->primary->title]) }}"
-                            title="{{ $inLibrary ? __('In library') : __('Add to library') }}"
-                            class="absolute bottom-1.5 end-1.5 z-10 flex size-7 items-center justify-center rounded-full on-art transition-transform hover:scale-110"
-                        >
-                            <flux:icon
-                                name="bookmark"
-                                @class([
-                                    'size-3.5 text-vermilion-400' => $inLibrary,
-                                    'size-3.5 text-zinc-300' => ! $inLibrary,
-                                ])
-                            />
-                        </button>
+                            It is deliberately absent when the group turned up on more
+                            than one source. It used to sit there anyway, filing the
+                            primary, which put two bookmarks on one card answering two
+                            different questions: this one silently picked a source the
+                            reader had not chosen and never named, and the one inside the
+                            chooser filed whichever source it sat beside. A reader who
+                            wanted Asura Scans and pressed the bookmark on the cover got
+                            Manga Demon, with no way to tell from anything on screen.
+
+                            So a card that needs a decision has no shortcut past the
+                            decision. The chooser names every source and gives each one
+                            its own bookmark, which is the only place the reader can see
+                            what they are choosing between. Single-source cards keep the
+                            toggle, because a button that files the only candidate is not
+                            a guess.
+                        --}}
+                        @if (! $group->hasAlternatives())
+                            @php($inLibrary = (bool) ($this->libraryMap[$primaryId] ?? false))
+
+                            <button
+                                type="button"
+                                wire:click="toggleLibrary({{ $primaryId }})"
+                                wire:loading.attr="disabled"
+                                data-test="library-toggle"
+                                aria-pressed="{{ $inLibrary ? 'true' : 'false' }}"
+                                aria-label="{{ $inLibrary
+                                    ? __('Remove :title from your library', ['title' => $group->primary->title])
+                                    : __('Add :title to your library', ['title' => $group->primary->title]) }}"
+                                title="{{ $inLibrary ? __('In library') : __('Add to library') }}"
+                                class="absolute bottom-1.5 end-1.5 z-10 flex size-7 items-center justify-center rounded-full on-art transition-transform hover:scale-110"
+                            >
+                                <flux:icon
+                                    name="bookmark"
+                                    @class([
+                                        'size-3.5 text-vermilion-400' => $inLibrary,
+                                        'size-3.5 text-zinc-300' => ! $inLibrary,
+                                    ])
+                                />
+                            </button>
+                        @endif
 
                         @if (! $group->hasAlternatives())
                             {{-- Single source: the title is the way in, so it is a link like the cover was. --}}
