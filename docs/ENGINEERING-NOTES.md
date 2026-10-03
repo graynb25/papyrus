@@ -884,6 +884,92 @@ Each of these cost real time. Do not repeat them.
      was tested", and the next person skips the test. The correction is the point, not the
      tidiness. This one sat in a document for weeks before anybody read the schema it was
      describing, which is the argument for re-reading a claim whenever the server moves.
+
+134. **A listing call is a write, and what it writes can be worse than what it read.**
+    `fetchSourceManga` returns manga rows and Suwayomi persists them, so a browse does not read
+    the catalogue, it overwrites it. The status it writes is UNKNOWN, because a listing carries no
+    status, so **browsing a source resets the metadata of every manga it lists**.
+
+    Measured, MangaFire, five series, twice through:
+
+        after fetch:   One Piece ONGOING · Devil Butler ONGOING · God Slayer ONGOING
+                       Seolgyesa COMPLETED · Blue Lock ONGOING
+        after browse:  One Piece UNKNOWN · Devil Butler UNKNOWN · God Slayer UNKNOWN
+                       Seolgyesa UNKNOWN · Blue Lock UNKNOWN
+
+    Chapter counts survived untouched, 2,440 and 1,521 and the rest, so nothing looked broken. A
+    reader reported exactly this and phrased it better than the code had: they fetched a series,
+    the chapters arrived, and **it still said UNKNOWN**. They were right, and the reason was that
+    the browse had just written UNKNOWN over the answer a moment earlier.
+
+    This is why a listing reports UNKNOWN on every row, measured across 122 rows from five
+    sources. It is not that the sources do not know their own ongoing and completed titles. It is
+    that the listing wrote the ignorance itself.
+
+    It also invalidates a measurement that had looked clean. "3 of 3 listed UNKNOWN, 3 of 3 real
+    after fetch" was true, and useless, because the next browse undid it. **A fix that re-reads
+    what another read is about to overwrite is not a fix**, and the only way to notice is to
+    perform the sequence the reader performs rather than the one that proves the point.
+
+    The repair is two calls, because the costs differ by twenty times. `fetchManga` alone, for a
+    series whose only gap is its status, measured a flat 186ms to 555ms whatever the chapter
+    count. `fetchMangaAndChapters`, for a series with no chapters at all, measured 1,642ms to
+    7,142ms and scales with the chapter count. Booking the thorough one to fix a missing word
+    would re-read 2,440 chapters on somebody else's server to change a badge.
+
+    The general shape: **an API that returns records is not thereby a read.** If the server keeps
+    them, every listing is a write wearing a query's clothes, and anything another caller wrote
+    first is now gone.
+
+135. **A `#[Computed]` read as a property is not the computed.** `$this->series` and
+    `$this->series()` are not the same thing, and the difference is not a warning. Read as a
+    property it evaluates to null, so `if ($this->series === null) return;` is **always true**,
+    the guard silently disabled the code beneath it, and the symptom was a job that was never
+    dispatched. The same component already used `$this->series` correctly in its markup, which is
+    what made it look right.
+
+    The general shape: **a guard written against the wrong accessor is not a guard.** It reads as
+    protection and behaves as an early return, and the test that should have caught it asserts on
+    the outcome rather than on the call.
+
+136. **`ReadingState::series()` and `loadOrCreate()` do not save.** `series()` returns an
+    unsaved model and `loadOrCreate()` returns an existing row or that unsaved model, so neither
+    persists anything. A caller that read either one and assumed a row now existed went on to ask
+    something that requires one, and `CheckLedger::check()` throws `InvalidArgumentException`
+    for exactly that. The fetch job caught the throw and reported it, so the failure mode was a
+    silent "no chapters" for every series a reader had never added.
+
+    The name is the hazard. `loadOrCreate` is a promise, and the only way to know whether it keeps
+    it is to read it, which is what everyone does once. `setInLibrary()` and `save()` are the
+    two calls that actually write, and they are separate.
+
+137. **Alpine's `x-init` is one expression, and `requestAnimationFrame(fn)` calls `fn` unbound.**
+    Three shapes of the same infinite-scroll sentinel failed in a row, and two of them logged
+    nothing worth reading. A method on `x-data` reached through `requestAnimationFrame(observe)`
+    has `this` as the window, not the Alpine scope, so `this.$el` is undefined and
+    IntersectionObserver rejects its argument. Wrapping in an arrow to keep `this` does not help,
+    because Alpine evaluates `x-init` inside `return (expr)`, so a statement list fails with
+    `Unexpected token 'const'`.
+
+    What works is a single IIFE, because it is one expression and captures `$el` and `$wire`
+    lexically:
+
+        (() => {
+            const el = $el
+            const io = new IntersectionObserver((entries) => {
+                if (! entries.some((e) => e.isIntersecting)) return
+                io.disconnect()
+                $wire.loadMore()
+            }, { rootMargin: '900px 0px' })
+            io.observe(el)
+        })()
+
+    A third failure came first and is the one worth remembering: `if (! this.$wire) return` at the
+    top of the setup is a race, because at `x-init` on a page that has just hydrated `$wire` is
+    not attached yet. The observer was never created, the sentinel sat below the grid doing nothing,
+    and scrolling to the bottom changed nothing with no error anywhere. **An observer that was
+    never built and a scroll handler that is not wired look identical from the outside**, so a
+    verification that only counts rows cannot tell them apart.
 ---
 
 ## 6. Working philosophy
@@ -1007,7 +1093,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **993 tests**, 2,191 assertions, Pint clean across 214 files, PHPStan
+Current standing: **1023 tests**, 2,246 assertions, Pint clean across 218 files, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1204,6 +1290,8 @@ every existing tab. That is expected, not a fault.
 | 7 | AniList import | **Complete, and verified the hard way.** The other direction: a card on the same page pulls the progress AniList already holds into the series in the library. It marks chapters **read** and never unread, adds nothing to the library, leaves a series AniList does not know alone and lists it as unmatched, and runs ten series a pass as a self-re-booking chain because title lookups are rate-limited to 30 a minute. It shipped broken and 32 green tests sat over it: AniList answers an unmatched search with **HTTP 404**, which the client read as a rate-limit refusal, so a library whose first title is not on AniList never got past it. Trap 130, and trap 131 for why the tests missed it. Verified against the live API afterwards: 20 of 20 series processed, 4 unmatched, 0 marked read, which is the correct answer for a library of isekai and doujinshi titles. |. That is a weaker claim than every other row here, and the seven defects in 14.6 include two in this feature. |
 | 7 | Bulk library actions | **H7 done, after being broken.** Selection mode, shift-click range select, and a fixed bulk bar: file to a shelf, unfile, mark read, mark unread, remove from the library. Shipped unusable, because the checkboxes used a deferred `wire:model` and the bar is gated on a server-side count, so ticking a box committed nothing and the bar never appeared. Twelve tests passed over it; see trap 126 and 14.6. |
 | 1 | Fan-out slice | **Closed, after a policy nobody chose.** The 40-of-82 cap was applied to an alphabetical sort, so MangaFire (7 sources), MangaTaro, Thunder Scans and Weeb Central were never dispatched. The slice is now a round robin over `extension_pkg_name`: every site's first source, then every site's second, capped as before. Run 88 dispatched exactly 40 and reached **15 of the 16 installed packages**, with 20 non-MangaDex against 10. Trap 132. |
+| 7 | Series auto-fetch | **Done, and it was one bug wearing two faces.** `SeriesGateway::find()` reads Suwayomi's cache and `fetchMangaAndChapters` fills it, so a series reached from search or browse had never been fetched: no chapters, status UNKNOWN, and the Refresh button as the only way out, with 19 of 20 titles on a source in that state. The series page now books a fetch on mount and polls while it runs. **Two calls, because the costs differ twentyfold**: `fetchManga` alone for a series whose only gap is its status, a flat 186ms to 555ms measured, and `fetchMangaAndChapters` for one with no chapters, 1,642ms to 7,142ms and scaling with the chapter count. One claim per reader, so a second series never queues behind the first, and nothing prefetches the grid: there is one worker, so a grid prefetch would put twenty requests in front of the series the reader actually clicked. Trap 134. |
+| 7 | Browse infinite scroll | **Done.** An IntersectionObserver keyed on the page counter, firing a viewport-height early so the next page is there before the reader reaches it. `hasNextPage` was already selected in the mutation and thrown away, and it is the only honest end-of-scroll signal: Asura Scans answers true four pages deep and Akaza Scans answers false on its first, so "fewer rows than last time" cannot tell a finished source from an odd one. Rows are no longer sliced to `results_per_source`, which was discarding 35 of MangaFire's 50 and 41 of Manga Demon's 56 on every scroll. Trap 137. |
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
@@ -1356,7 +1444,7 @@ Unreachable from production and from tests alike, unless noted:
 
 | Member | Note |
 |---|---|
-| `SourceSearcher::browse()` | **Now called**, by `/browse/{source}`. It was written with the search work and had no caller for as long as it existed, which is why this row existed. |
+| `SourceSearcher::browsePage()` | **Called**, by `/browse/{source}`. Renamed from `browse()` and retyped: it used to return a `SourceSearchOutcome`, which is a *search* answer whose `ok`/`empty`/`error` split the health ledger depends on, and which slices to `results_per_source` because that bounds a fan-out. Applied to a browse page that slice discarded most of every one. |
 | `SearchFanout::filterCache()` | |
 | `SourceFilterTranslator::nameToPosition()` | `addresses()` and `toChanges()` are both live; this is the other half of the same idea. |
 | `DownloadGateway::clear()` | |
