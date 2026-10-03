@@ -992,6 +992,92 @@ Each of these cost real time. Do not repeat them.
      The general shape: **a check that reports "nothing to see" must prove it looked.** The count
      of things examined belongs in the output next to the conclusion, and a zero deserves a
      sentence saying why zero is the right number rather than a silent pass.
+
+139. **A dialog opened by the click renders the state the click has not delivered yet.** The
+     source chooser was a `<button>` carrying both `wire:click` and an Alpine
+     `$dispatch('modal-show')`, because that is how `<flux:modal.trigger>` works: the wrapper
+     div's whole job is to dispatch on click, so there was no obvious way to do it any other
+     way. The dispatch runs the instant the button is pressed. The Livewire round trip carrying
+     which sources to list has not come back. So the dialog opened showing a heading and
+     nothing under it, then filled in a moment later.
+
+     It passed a feature test and failed in the browser, because a feature test drives the
+     method and then reads the rendered output, and the rendered output is correct. Only a real
+     click has the two events racing.
+
+     The fix inverts the direction: the button only asks (`chooseSource`), and the action
+     dispatches `open-source-chooser` after its own response has been applied, which is when
+     the list is genuinely in the component. One `x-on:open-source-chooser.window` on the page
+     root turns that into Flux's `modal-show`. It costs the reader the round trip before the
+     dialog appears, and that is the right trade: an empty dialog reads as broken and a slow
+     one does not.
+
+     The general shape: **an imperative client-side open is a race with the server round trip
+     that fills it, and the race is invisible to any test that calls the method directly.**
+
+140. **A lookup keyed on a value the page recomputes fails exactly when the page recomputes
+     it.** The chooser remembered which group the reader clicked by the group's *primary*
+     manga id, and found the group again with "which group's primary is this id". A search
+     streams: results arrive one source at a time and the deduplicator regroups from scratch on
+     every render, so which result is a group's primary is a ranking, and the ranking moves.
+     A source answering after the click is enough to make the reader's id an alternative, and
+     the lookup then found no group at all and returned an empty chooser.
+
+     Measured, and the growth is the tell: the chooser's list went from two entries to nine
+     while it was open, because more sources kept answering.
+
+     `DedupeGroup::hasManga()` asks whether an id is one of the group's own. The ids inside a
+     group do not move as results stream in, so membership survives the regrouping that
+     primacy does not. The general shape: **an identifier chosen out of a recomputed structure
+     is a ranking, not an identity.** Reach for something inside the thing rather than
+     something about it.
+
+141. **A state map that excludes the row a button acts on shows the wrong state.** `libraryMap()`
+     on the search page was keyed on group *primaries*, which was correct while a card could
+     only act on its primary. Letting the reader bookmark an alternative made that wrong: an
+     alternative the reader already held had no entry, so the button offered to add a series
+     that was already on the shelf. Adding is a no-op, so the button looks broken.
+
+     The failure is quieter than a wrong link, because the common case still works. It only
+     shows for a reader who already has one copy of a title on a second source, which is
+     exactly the reader the feature is for.
+
+     One query either way, so extending the `whereIn` to every result in every group costs
+     nothing measurable. The general shape: **widening what a control can act on means
+     widening the state it reads, in the same commit.** The two are the same list and one of
+     them will be forgotten.
+
+142. **A gate that dies before its cleanup leaves its button presses behind.** The chooser gate
+     presses a real bookmark against a real account, which is the only honest way to check one.
+     A run that crashed on a locator timeout never reached its revert click, and the reader's
+     library kept the series. Two rows were added this way over two runs, and one of them was
+     still there a full working session later.
+
+     The cleanup script now deletes only rows a gate *created today*, and leaves
+     `in_library=false` rows alone, because those are what `setInLibrary` itself writes for a
+     series a reader looked at and declined. Guarding on `created_at` rather than on a hard
+     coded id list is what makes it safe to run against an account that is not a fixture.
+
+     `probe-chooser-cleanup.php --fix`, and it prints what it would remove before it removes
+     it. The general shape: **a check that writes to real state must be able to fail between
+     the write and the undo**, so the undo needs to be a command rather than a line at the end
+     of the script.
+
+143. **Nineteen of the twenty browser gates cannot be run on this box.** They are Python, and
+     no Python on this machine has `playwright` any more. The uv-managed interpreters under
+     `.local\bin` are all clean, and the Windows Store Python was never the one that ran them.
+
+     The browsers themselves are still installed, under `%LOCALAPPDATA%\ms-playwright`, and the
+     npm `playwright` in `.tools/suwayomi` drives them, which is how `verify-october-pass.mjs`
+     and `verify-source-chooser.mjs` work. So the gates are not obsolete, they are
+     misfiled: nineteen scripts need porting before they can check anything again.
+
+     The trap is not that they fail, it is that **`import playwright` failing at the top of a
+     script is indistinguishable from a gate that passed**, because `python script.py` on this
+     box prints "Python was not found" and exits 1, and a gate whose exit code nobody reads is
+     a gate that has stopped existing without saying so. `verify-october-pass.mjs` carries a
+     comment saying it is a Node port of the Python original for exactly this reason, which is
+     the only reason the pattern was known.
 ---
 
 ## 6. Working philosophy
@@ -1318,6 +1404,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Source name links to its catalogue | **Done.** The series page showed the source as plain text with the id in the payload and no way to get back to everything that site lists. Resolved through the mirror on Suwayomi's id rather than on the name, because 61 of the 82 sources are named "MangaDex (...)" and a name lookup lands on an arbitrary one of them. Falls back to plain text when the source is not in the mirror, which happens when an extension is uninstalled while its series is still cached. |
 | 7 | Downloads name their series | **Done.** The row read `Chapter {suwayomi_chapter_id}`, a database id, so a finished download read "Chapter 14430" and gave a reader nothing to recognise it by. The row already carried `suwayomi_manga_id`. Titles and chapter names come out of one batched `fetchMany()`, which the library page already uses and whose payload **already** carried `chapters { nodes { id name } }`: 200 rows at one `manga(id:)` each is about 15ms times 200 measured, and the batch is 246ms for 300 ids. The whole row is now the link, stretched with an `::after`, because a link that only covers its own words fails four times out of five clicks. |
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
+| 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at

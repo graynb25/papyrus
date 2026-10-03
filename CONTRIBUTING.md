@@ -1,7 +1,7 @@
 # Working on Papyrus
 
 The house style, and the traps. [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) has
-the full agreement and **138 recorded traps**; this is the short version you need before
+the full agreement and **143 recorded traps**; this is the short version you need before
 your first commit. Section 14 of the notes also lists what the code does not do, which is
 worth reading before you trust a claim in any of these documents.
 

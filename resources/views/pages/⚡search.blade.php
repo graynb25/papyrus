@@ -5,8 +5,6 @@ use App\AniList\TitleResolver;
 use App\Jobs\ResolveAniListTitles;
 use App\Models\AniListMedia;
 use App\Models\SearchResult;
-use App\Search\FilterVocabulary;
-use App\Search\QueryParser;
 use App\Models\SearchRun;
 use App\Models\SearchSourceResult;
 use App\Models\SeriesState;
@@ -14,10 +12,12 @@ use App\Models\Source;
 use App\Models\User;
 use App\Search\DedupeGroup;
 use App\Search\Deduplicator;
+use App\Search\FilterVocabulary;
+use App\Search\QueryParser;
 use App\Search\SearchFanout;
+use App\Support\Deployment;
 use App\Support\LanguageName;
 use App\Support\ReadingState;
-use App\Support\Deployment;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -25,7 +25,8 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Search')] class extends Component {
+new #[Title('Search')] class extends Component
+{
     public string $query = '';
 
     /**
@@ -61,6 +62,14 @@ new #[Title('Search')] class extends Component {
     #[Url(as: 'anilist', except: false)]
     public bool $anilistOn = false;
 
+    /**
+     * The manga id of the group whose sources are being chosen between, or null.
+     *
+     * Not in the URL. It is a transient question rather than a place, and putting it there
+     * would make a reader's back button close a modal they did not open but were sent.
+     */
+    public ?int $chosenManga = null;
+
     public function mount(): void
     {
         $this->anilistOn = app(AniListPreference::class)->enabled(Auth::user());
@@ -87,6 +96,7 @@ new #[Title('Search')] class extends Component {
             variant: $enabled ? 'success' : 'info',
         );
     }
+
     /**
      * The terms a reader can type, for the hint under the box.
      */
@@ -299,8 +309,26 @@ new #[Title('Search')] class extends Component {
     #[Computed]
     public function libraryMap(): array
     {
+        /*
+         * Every result in every group, not only the primaries.
+         *
+         * It used to map the primaries alone, because the primary was the only one a card
+         * could act on. A reader can now choose a source, which means the chooser acts on the
+         * alternatives too, and a toggle that shows the wrong state is worse than no toggle:
+         * a source the reader already has would offer "add", and adding it again is a no-op
+         * that reads as a broken button.
+         *
+         * Still one query for the page. A search returns up to 15 rows per source across 40
+         * sources, so this can be several hundred ids in a single `whereIn`, which is the
+         * trade the library page made for the same reason.
+         */
         $ids = $this->groups
-            ->map(fn (DedupeGroup $group): int => (int) $group->primary->suwayomi_manga_id)
+            ->flatMap(fn (DedupeGroup $group): array => [
+                (int) $group->primary->suwayomi_manga_id,
+                ...$group->alternatives->map(fn (SearchResult $row): int => (int) $row->suwayomi_manga_id)->all(),
+            ])
+            ->unique()
+            ->values()
             ->all();
 
         if ($ids === []) {
@@ -308,9 +336,93 @@ new #[Title('Search')] class extends Component {
         }
 
         return SeriesState::forUser(Auth::id())
-            ->whereIn('suwayomi_manga_id', $ids)            ->pluck('in_library', 'suwayomi_manga_id')
+            ->whereIn('suwayomi_manga_id', $ids)->pluck('in_library', 'suwayomi_manga_id')
             ->map(fn (mixed $in): bool => (bool) $in)
             ->all();
+    }
+
+    /**
+     * Open the source chooser for one group.
+     *
+     * The modal is opened from the response rather than from the click, because the click is
+     * two events racing: Alpine's `modal-show` dispatch runs immediately and the Livewire
+     * round trip that carries the choice has not come back yet. Opening on the click shows a
+     * dialog with a heading and nothing under it, which reads as broken, and a reader who
+     * reacts to that by clicking again gets nowhere.
+     *
+     * So the button only asks, and the answer opens the dialog once the list is in it.
+     */
+    public function chooseSource(int $manga): void
+    {
+        $this->chosenManga = $manga;
+
+        unset($this->chosenSources);
+
+        $this->dispatch('open-source-chooser');
+    }
+
+    public function closeSourceChooser(): void
+    {
+        $this->chosenManga = null;
+
+        unset($this->chosenSources);
+    }
+
+    /**
+     * Every source the chosen group turned up on, primary first.
+     *
+     * The group is looked up again rather than remembered, so what the chooser lists is what
+     * the card is showing and not a copy taken when the click was handled. Looked up by
+     * membership, because a search is still streaming when a reader clicks: see
+     * {@see DedupeGroup::hasManga()}.
+     *
+     * @return array<int, array{manga: int, source: string, title: string, inLibrary: bool, cover: ?string}>
+     */
+    #[Computed]
+    public function chosenSources(): array
+    {
+        if ($this->chosenManga === null) {
+            return [];
+        }
+
+        $group = $this->groups->first(
+            fn (DedupeGroup $g): bool => $g->hasManga($this->chosenManga)
+        );
+
+        if ($group === null) {
+            return [];
+        }
+
+        $library = $this->libraryMap;
+
+        $rows = [];
+
+        foreach ([$group->primary, ...$group->alternatives->all()] as $row) {
+            if (! $row instanceof SearchResult) {
+                continue;
+            }
+
+            $mangaId = (int) $row->suwayomi_manga_id;
+
+            $rows[] = [
+                'manga' => $mangaId,
+                'source' => (string) $row->source_name,
+                'title' => (string) $row->title,
+                'inLibrary' => (bool) ($library[$mangaId] ?? false),
+                'cover' => $row->coverUrl(),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The title of the series being chosen between, for the chooser's heading.
+     */
+    #[Computed]
+    public function chosenTitle(): ?string
+    {
+        return $this->chosenSources()[0]['title'] ?? null;
     }
 
     /**
@@ -505,7 +617,18 @@ new #[Title('Search')] class extends Component {
     }
 }; ?>
 
-<div class="w-full space-y-6">
+<div
+    class="w-full space-y-6"
+    {{--
+        The chooser is opened from the server's answer rather than from the click.
+
+        `chooseSource()` dispatches this once its response, which carries the sources, has been
+        applied. The card cannot open it by itself: Alpine would show the dialog before the
+        round trip carrying the list had come back, and a heading over an empty list reads as a
+        broken dialog rather than a slow one.
+    --}}
+    x-on:open-source-chooser.window="$dispatch('modal-show', { name: 'source-chooser' })"
+>
     <header class="relative">
         <div class="hero-glow" aria-hidden="true"></div>
 
@@ -938,42 +1061,96 @@ new #[Title('Search')] class extends Component {
 
             <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->groups as $group)
+                    @php($primaryId = (int) $group->primary->suwayomi_manga_id)
                     <li data-series-card class="group relative">
-                        <a
-                            href="{{ route('series', ['manga' => $group->primary->suwayomi_manga_id]) }}"
-                            wire:navigate
-                            class="block"
-                            tabindex="-1"
-                            aria-hidden="true"
-                        >
-                            <div class="cover-frame">
-                                @if ($cover = $group->primary->coverUrl())
-                                    <img
-                                        src="{{ $cover }}"
-                                        alt=""
-                                        loading="lazy"
-                                    />
-                                @else
-                                    <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                        <flux:icon name="photo" class="size-8" />
-                                    </div>
-                                @endif
+                        {{--
+                            A group with more than one source opens a chooser instead of
+                            navigating, because the card was already telling the reader there
+                            were others and then ignoring them.
 
-                                <div class="cover-scrim" aria-hidden="true"></div>
+                            It named them in the line under the title and made both the cover and
+                            the title link to whichever source the deduplicator ranked first.
+                            Which one that is has no relation to which the reader wants: the
+                            primary is the closest title match, not the site they trust or the
+                            language they read. A reader who is shown "+2 sources" and then
+                            lands on one of them has been given a choice and had it taken away.
 
-                                @if ($group->hasAlternatives())
+                            So the cover and the title become buttons, and the chooser lists
+                            every source with its own link and its own bookmark. A group with
+                            one source keeps the link, because a chooser over a single entry is
+                            a dialog that can only be dismissed.
+                        --}}
+                        @if ($group->hasAlternatives())
+                            <button
+                                type="button"
+                                class="block w-full text-start"
+                                data-test="choose-source"
+                                wire:click="chooseSource({{ $primaryId }})"
+                                aria-label="{{ __('Choose a source for :title', ['title' => $group->primary->title]) }}"
+                            >
+                                <div class="cover-frame">
+                                    @if ($cover = $group->primary->coverUrl())
+                                        <img
+                                            src="{{ $cover }}"
+                                            alt=""
+                                            loading="lazy"
+                                        />
+                                    @else
+                                        <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                            <flux:icon name="photo" class="size-8" />
+                                        </div>
+                                    @endif
+
+                                    <div class="cover-scrim" aria-hidden="true"></div>
+
                                     <span class="absolute end-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art">
                                         +{{ $group->sourceCount() - 1 }}
                                     </span>
-                                @endif
 
-                                @if ($group->strictestContentWarning() !== 'SAFE')
-                                    <span class="absolute start-1.5 top-1.5 rounded-md bg-red-500/90 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-white shadow-sm">
-                                        {{ $group->strictestContentWarning() }}
+                                    @if ($group->strictestContentWarning() !== 'SAFE')
+                                        <span class="absolute start-1.5 top-1.5 rounded-md bg-red-500/90 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-white shadow-sm">
+                                            {{ $group->strictestContentWarning() }}
+                                        </span>
+                                    @endif
+                                </div>
+
+                                <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
+                                    <span class="transition-colors group-hover:text-vermilion-600 dark:group-hover:text-vermilion-400">
+                                        {{ $group->primary->title }}
                                     </span>
-                                @endif
-                            </div>
-                        </a>
+                                </flux:heading>
+                            </button>
+                        @else
+                            <a
+                                href="{{ route('series', ['manga' => $primaryId]) }}"
+                                wire:navigate
+                                class="block"
+                                tabindex="-1"
+                                aria-hidden="true"
+                            >
+                                <div class="cover-frame">
+                                    @if ($cover = $group->primary->coverUrl())
+                                        <img
+                                            src="{{ $cover }}"
+                                            alt=""
+                                            loading="lazy"
+                                        />
+                                    @else
+                                        <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                            <flux:icon name="photo" class="size-8" />
+                                        </div>
+                                    @endif
+
+                                    <div class="cover-scrim" aria-hidden="true"></div>
+
+                                    @if ($group->strictestContentWarning() !== 'SAFE')
+                                        <span class="absolute start-1.5 top-1.5 rounded-md bg-red-500/90 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-white shadow-sm">
+                                            {{ $group->strictestContentWarning() }}
+                                        </span>
+                                    @endif
+                                </div>
+                            </a>
+                        @endif
 
                         {{--
                             The library toggle, on the card.
@@ -1011,11 +1188,14 @@ new #[Title('Search')] class extends Component {
                             />
                         </button>
 
-                        <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
-                            <a href="{{ route('series', ['manga' => $group->primary->suwayomi_manga_id]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
-                                {{ $group->primary->title }}
-                            </a>
-                        </flux:heading>
+                        @if (! $group->hasAlternatives())
+                            {{-- Single source: the title is the way in, so it is a link like the cover was. --}}
+                            <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
+                                <a href="{{ route('series', ['manga' => $primaryId]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
+                                    {{ $group->primary->title }}
+                                </a>
+                            </flux:heading>
+                        @endif
 
                         <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
                             {{ $group->primary->source_name }}
@@ -1079,4 +1259,116 @@ new #[Title('Search')] class extends Component {
             </ul>
         @endif
     @endif
+
+    {{--
+        The source chooser.
+
+        One modal for the whole page rather than one per card. A wide search returns hundreds
+        of groups and dozens carry alternatives, so a modal per card would be dozens of dialogs
+        in the document, each with its own state, for something a reader opens once.
+
+        Opened by dispatching Flux's own `modal-show` event, which is what
+        `<flux:modal.trigger>` does internally. Going through the trigger component would mean
+        wrapping each card's cover in a div that renders a button, and the cover is already a
+        button for this case, so the event is dispatched by hand instead.
+
+        Every source carries its own link and its own bookmark, because the two answers are
+        different: a reader may want to read the one they trust most and keep the one their
+        shelf is already on.
+    --}}
+    <flux:modal
+        name="source-chooser"
+        class="max-w-lg md:min-w-lg"
+        @close="closeSourceChooser"
+    >
+        <div class="space-y-4">
+            <div>
+                <flux:heading size="sm">{{ __('Choose a source') }}</flux:heading>
+
+                @if ($this->chosenTitle !== null)
+                    <flux:text size="xs" class="mt-0.5">{{ $this->chosenTitle }}</flux:text>
+                @endif
+            </div>
+
+            <ul class="space-y-2" data-test="source-chooser-list">
+                @forelse ($this->chosenSources as $one)
+                    <li class="flex items-center gap-3 rounded-lg border border-zinc-200 p-2 dark:border-white/10">
+                        @if ($one['cover'] !== null)
+                            <img
+                                src="{{ $one['cover'] }}"
+                                alt=""
+                                loading="lazy"
+                                class="size-12 shrink-0 rounded object-cover"
+                            />
+                        @else
+                            <div class="cover-placeholder flex size-12 shrink-0 items-center justify-center text-zinc-300 dark:text-zinc-600">
+                                <flux:icon name="photo" class="size-5" />
+                            </div>
+                        @endif
+
+                        <div class="min-w-0 flex-1">
+                            <flux:text size="sm" class="truncate font-medium">{{ $one['source'] }}</flux:text>
+
+                            <flux:text size="xs" class="truncate">
+                                @if ($one['inLibrary'])
+                                    {{ __('In your library') }}
+                                @else
+                                    {{ $one['title'] }}
+                                @endif
+                            </flux:text>
+                        </div>
+
+                        {{-- The bookmark, outside the link for the same reason it is outside the card's. --}}
+                        <button
+                            type="button"
+                            wire:click="toggleLibrary({{ $one['manga'] }})"
+                            wire:loading.attr="disabled"
+                            data-test="source-chooser-bookmark"
+                            aria-pressed="{{ $one['inLibrary'] ? 'true' : 'false' }}"
+                            aria-label="{{ $one['inLibrary']
+                                ? __('Remove :title from your library', ['title' => $one['title']])
+                                : __('Add :title to your library', ['title' => $one['title']]) }}"
+                            title="{{ $one['inLibrary'] ? __('In library') : __('Add to library') }}"
+                            class="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
+                        >
+                            <flux:icon
+                                name="bookmark"
+                                @class([
+                                    'size-4 text-vermilion-500' => $one['inLibrary'],
+                                    'size-4 text-zinc-400' => ! $one['inLibrary'],
+                                ])
+                            />
+                        </button>
+
+                        <flux:button
+                            size="sm"
+                            variant="outline"
+                            href="{{ route('series', ['manga' => $one['manga']]) }}"
+                            wire:navigate
+                            data-test="source-chooser-open"
+                        >
+                            {{ __('Open') }}
+                        </flux:button>
+                    </li>
+                @empty
+                    {{--
+                        Said out loud rather than left blank.
+
+                        A heading over an empty list is a dialog that looks broken. This can
+                        happen legitimately: a search streams results in, so the group the
+                        reader clicked can be regrouped by a source that answered after their
+                        click. The membership lookup in {@see DedupeGroup::hasManga()} stops
+                        that losing the group, but a run that was cleared or a filter that
+                        changed can still leave the id in no group at all, and that is worth
+                        a sentence rather than a blank.
+                    --}}
+                    <li>
+                        <flux:text size="sm">
+                            {{ __('This result is no longer on the page. Run the search again.') }}
+                        </flux:text>
+                    </li>
+                @endforelse
+            </ul>
+        </div>
+    </flux:modal>
 </div>

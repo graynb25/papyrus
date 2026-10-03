@@ -50,6 +50,30 @@ final class DedupeGroup
     }
 
     /**
+     * Whether one of this group's results is this manga, primary or not.
+     *
+     * Membership rather than "is this the primary", because a group is recomputed from
+     * scratch every time the page renders and the primary is a ranking, not an identity.
+     * A search streams: the reader clicks a card while nine sources have answered, a tenth
+     * arrives, the deduplicator ranks it above the one the reader clicked, and that result
+     * is now an alternative. A lookup keyed on the primary then finds nothing at all, and
+     * the chooser the reader just opened comes back empty.
+     *
+     * The manga ids in a group do not change as results stream in, so asking "is this id
+     * one of ours" survives the regrouping that asking "is this our primary" does not.
+     */
+    public function hasManga(int $mangaId): bool
+    {
+        if ($this->primary->suwayomi_manga_id === $mangaId) {
+            return true;
+        }
+
+        return $this->alternatives->contains(
+            fn (SearchResult $row): bool => $row->suwayomi_manga_id === $mangaId
+        );
+    }
+
+    /**
      * Distinct source names, primary first.
      *
      * @return array<int, string>
