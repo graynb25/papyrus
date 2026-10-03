@@ -970,6 +970,28 @@ Each of these cost real time. Do not repeat them.
     and scrolling to the bottom changed nothing with no error anywhere. **An observer that was
     never built and a scroll handler that is not wired look identical from the outside**, so a
     verification that only counts rows cannot tell them apart.
+
+138. **A verification that cannot reach its subject reports success.** The finished download a
+     reader was looking at belongs to `papyrus@localhost.test`, not to the account the browser
+     checks sign in as. A check signed in, found the downloads page empty, printed "no download
+     rows on this account" and exited cleanly.
+
+     That is the dangerous shape: **an empty result from a check that could not run is
+     indistinguishable from a pass.** The count it printed was true and the conclusion it drew
+     was wrong, and a green run said nothing about the feature.
+
+     Two accounts both called "Reader" is what made it possible, so the sidebar could not say
+     which one a screenshot came from either. A reader looking at a page and a check looking at
+     the same URL are not looking at the same data, and nothing on the screen says so.
+
+     The fix is to seed the subject rather than reach for a password nobody wrote down: create
+     the row for the account the check can reach, check it, delete it. Then the check depends on
+     no credential, and the row it examines is one it put there and knows the provenance of.
+     The alternative, using the reader's real row, would have required guessing their password.
+
+     The general shape: **a check that reports "nothing to see" must prove it looked.** The count
+     of things examined belongs in the output next to the conclusion, and a zero deserves a
+     sentence saying why zero is the right number rather than a silent pass.
 ---
 
 ## 6. Working philosophy
@@ -1093,7 +1115,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1023 tests**, 2,246 assertions, Pint clean across 218 files, PHPStan
+Current standing: **1034 tests**, 2,268 assertions, Pint clean across 219 files, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1292,6 +1314,9 @@ every existing tab. That is expected, not a fault.
 | 1 | Fan-out slice | **Closed, after a policy nobody chose.** The 40-of-82 cap was applied to an alphabetical sort, so MangaFire (7 sources), MangaTaro, Thunder Scans and Weeb Central were never dispatched. The slice is now a round robin over `extension_pkg_name`: every site's first source, then every site's second, capped as before. Run 88 dispatched exactly 40 and reached **15 of the 16 installed packages**, with 20 non-MangaDex against 10. Trap 132. |
 | 7 | Series auto-fetch | **Done, and it was one bug wearing two faces.** `SeriesGateway::find()` reads Suwayomi's cache and `fetchMangaAndChapters` fills it, so a series reached from search or browse had never been fetched: no chapters, status UNKNOWN, and the Refresh button as the only way out, with 19 of 20 titles on a source in that state. The series page now books a fetch on mount and polls while it runs. **Two calls, because the costs differ twentyfold**: `fetchManga` alone for a series whose only gap is its status, a flat 186ms to 555ms measured, and `fetchMangaAndChapters` for one with no chapters, 1,642ms to 7,142ms and scaling with the chapter count. One claim per reader, so a second series never queues behind the first, and nothing prefetches the grid: there is one worker, so a grid prefetch would put twenty requests in front of the series the reader actually clicked. Trap 134. |
 | 7 | Browse infinite scroll | **Done.** An IntersectionObserver keyed on the page counter, firing a viewport-height early so the next page is there before the reader reaches it. `hasNextPage` was already selected in the mutation and thrown away, and it is the only honest end-of-scroll signal: Asura Scans answers true four pages deep and Akaza Scans answers false on its first, so "fewer rows than last time" cannot tell a finished source from an odd one. Rows are no longer sliced to `results_per_source`, which was discarding 35 of MangaFire's 50 and 41 of Manga Demon's 56 on every scroll. Trap 137. |
+| 7 | Search within a source | **Done.** `fetchSourceManga` takes a `SEARCH` type, so searching the one source a reader is already in was always available and only the input was missing. A link to the global search would be the wrong door twice over: that search covers 40 of 82 sources chosen by a round robin, so four sites including MangaFire, MangaTaro, Thunder Scans and Weeb Central are not in it at all. Fires on submit rather than per keystroke, measured on Asura Scans: a term that matches answers in 211ms and one that matches nothing in 1,673ms. Reuses the browse scroll, so a search that is one page simply stops. |
+| 7 | Source name links to its catalogue | **Done.** The series page showed the source as plain text with the id in the payload and no way to get back to everything that site lists. Resolved through the mirror on Suwayomi's id rather than on the name, because 61 of the 82 sources are named "MangaDex (...)" and a name lookup lands on an arbitrary one of them. Falls back to plain text when the source is not in the mirror, which happens when an extension is uninstalled while its series is still cached. |
+| 7 | Downloads name their series | **Done.** The row read `Chapter {suwayomi_chapter_id}`, a database id, so a finished download read "Chapter 14430" and gave a reader nothing to recognise it by. The row already carried `suwayomi_manga_id`. Titles and chapter names come out of one batched `fetchMany()`, which the library page already uses and whose payload **already** carried `chapters { nodes { id name } }`: 200 rows at one `manga(id:)` each is about 15ms times 200 measured, and the batch is 246ms for 300 ids. The whole row is now the link, stretched with an `::after`, because a link that only covers its own words fails four times out of five clicks. |
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and

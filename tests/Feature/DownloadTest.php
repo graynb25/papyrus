@@ -152,6 +152,11 @@ class DownloadTest extends TestCase
                             'totalCount' => count($this->downloadedChapters),
                             'nodes' => array_map(fn (int $id): array => [
                                 'id' => (string) $id,
+                                // The name rides along because the downloads page now reads
+                                // it to label a row, and a chapter's name is not derivable from
+                                // its number: measured across sources, one labels a chapter
+                                // `Chapter 1` and another `Ch. 1`.
+                                'name' => 'Chapter '.$id,
                                 'isDownloaded' => in_array($id, $this->downloadedChapters, true),
                             ], $this->seriesChapters),
                         ],

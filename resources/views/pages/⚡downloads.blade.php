@@ -2,13 +2,15 @@
 
 use App\Downloads\DownloadLedger;
 use App\Models\Download;
+use App\Suwayomi\SeriesGateway;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Downloads')] class extends Component {
+new #[Title('Downloads')] class extends Component
+{
     /**
      * How often the page asks for fresh numbers, in milliseconds.
      *
@@ -40,6 +42,82 @@ new #[Title('Downloads')] class extends Component {
     public function downloads(): Collection
     {
         return app(DownloadLedger::class)->forUser(auth()->user());
+    }
+
+    /**
+     * What each downloaded chapter belongs to, keyed by chapter id.
+     *
+     * The rows used to render `Chapter {suwayomi_chapter_id}`, which is a database id rather than
+     * a chapter number, so the page read "Chapter 14430" and gave the reader nothing to recognise
+     * it by. The row already carried `suwayomi_manga_id`, so the series was known all along and
+     * simply was not being read.
+     *
+     * ## Why this is one call and not two per row
+     *
+     * The page holds up to 200 rows, and a title is one `manga(id:)` each, measured at about
+     * 15ms against the live server, so 200 of them is three seconds of serial waiting to render a
+     * list. `SeriesGateway::fetchMany()` is the batched call the library page already uses for
+     * this exact problem, measured at 246ms for 300 ids, and its payload **already includes
+     * `chapters { nodes { id name } }`**. So the titles and the chapter names come out of one
+     * request the shape was carrying anyway, rather than two extra requests per row.
+     *
+     * A chapter's name is not derivable from its number: measured across sources, one labels a
+     * chapter `Chapter 1` and another `Ch. 1`, and some carry a volume or a scanlator suffix. The
+     * number is the fallback when the name is empty.
+     *
+     * @return array<int, array{series: string, chapter: string, manga: int}>
+     */
+    #[Computed]
+    public function labels(): array
+    {
+        $rows = $this->downloads;
+
+        $mangaIds = $rows
+            ->map(fn (Download $row): int => (int) $row->suwayomi_manga_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($mangaIds === []) {
+            return [];
+        }
+
+        $series = app(SeriesGateway::class)->fetchMany($mangaIds);
+
+        $labels = [];
+
+        foreach ($rows as $row) {
+            $mangaId = (int) $row->suwayomi_manga_id;
+            $chapterId = (int) $row->suwayomi_chapter_id;
+
+            $node = $series[$mangaId] ?? null;
+            $title = trim((string) ($node['title'] ?? ''));
+
+            $chapter = __('Chapter :id', ['id' => $chapterId]);
+
+            foreach ($node['chapters']['nodes'] ?? [] as $candidate) {
+                if ((int) ($candidate['id'] ?? 0) !== $chapterId) {
+                    continue;
+                }
+
+                $name = trim((string) ($candidate['name'] ?? ''));
+
+                if ($name !== '') {
+                    $chapter = $name;
+                }
+
+                break;
+            }
+
+            $labels[$chapterId] = [
+                'series' => $title !== '' ? $title : __('Unknown series'),
+                'chapter' => $chapter,
+                'manga' => $mangaId,
+            ];
+        }
+
+        return $labels;
     }
 
     /** @return array{pending: int, finished: int, failed: int, pages: int} */
@@ -92,7 +170,7 @@ new #[Title('Downloads')] class extends Component {
      */
     public function with(): array
     {
-        return ['poll' => self::REFRESH_MS . 'ms'];
+        return ['poll' => self::REFRESH_MS.'ms'];
     }
 
     /**
@@ -312,16 +390,39 @@ new #[Title('Downloads')] class extends Component {
         {{-- Rows ---------------------------------------------------------- --}}
         <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
             @foreach ($this->downloads as $row)
-                <div class="flex flex-wrap items-center gap-3 p-4">
+                @php($label = $this->labels[(int) $row->suwayomi_chapter_id] ?? null)
+                @php($seriesTitle = $label['series'] ?? __('Unknown series'))
+                @php($chapterLabel = $label['chapter'] ?? __('Chapter :id', ['id' => $row->suwayomi_chapter_id]))
+                @php($mangaId = $label['manga'] ?? (int) $row->suwayomi_manga_id)
+
+                {{--
+                    The whole row is the link, not just the text.
+
+                    The reader asked for the click to go to the series, and it did, but only if
+                    they hit the one word of text that was a link. A row that looks like a link and
+                    is not, over its other four fifths, is worse than no link. The anchor is
+                    stretched over the row with an `::after`, which keeps the row's own buttons
+                    working because they sit above it.
+
+                    What it says is the series first and the chapter second, because the series is
+                    what a reader recognises and the chapter is what they are looking for inside it.
+                --}}
+                <div class="relative flex flex-wrap items-center gap-3 p-4">
                     <div class="min-w-0 flex-1">
                         <flux:heading size="sm" level="3" class="truncate">
-                            <a href="{{ route('series', ['manga' => $row->suwayomi_manga_id]) }}" wire:navigate class="hover:underline">
-                                {{ __('Chapter :id', ['id' => $row->suwayomi_chapter_id]) }}
+                            <a
+                                href="{{ route('series', ['manga' => $mangaId]) }}"
+                                wire:navigate
+                                id="download-series-link"
+                                class="transition-colors after:absolute after:inset-0 hover:underline"
+                            >
+                                {{ $seriesTitle }}
                             </a>
                         </flux:heading>
 
                         <flux:text size="xs" class="truncate">
-                            {{ $this->stateLabel($row->state) }}
+                            <span data-test="download-chapter-label">{{ $chapterLabel }}</span>
+                            &middot; {{ $this->stateLabel($row->state) }}
                             @if ($row->page_count !== null)
                                 &middot; {{ trans_choice(':count page|:count pages', $row->page_count, ['count' => $row->page_count]) }}
                             @endif
@@ -343,7 +444,7 @@ new #[Title('Downloads')] class extends Component {
                         28 page chapter. A smooth bar would be a nicer lie.
                     --}}
                     @if ($this->isPending($row))
-                        <div class="w-full max-w-40">
+                        <div class="relative z-10 w-full max-w-40">
                             <div
                                 class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
                                 role="progressbar"
@@ -361,21 +462,21 @@ new #[Title('Downloads')] class extends Component {
                             </flux:text>
                         </div>
 
-                        <flux:button size="xs" variant="ghost" icon="x-mark"
+                        <flux:button size="xs" variant="ghost" icon="x-mark" class="relative z-10"
                             wire:click="cancel({{ $row->suwayomi_chapter_id }})"
                             aria-label="{{ __('Stop this download') }}"
                             title="{{ __('Stop') }}"
                         ></flux:button>
                     @else
                         @if ($row->state === \App\Models\Download::FINISHED)
-                            <flux:button size="xs" variant="ghost" icon="trash"
+                            <flux:button size="xs" variant="ghost" icon="trash" class="relative z-10"
                                 wire:click="forget({{ $row->suwayomi_chapter_id }})"
                                 wire:confirm="{{ __('Delete these pages from disk? Reading the chapter will fetch them again.') }}"
                                 aria-label="{{ __('Delete from disk') }}"
                                 title="{{ __('Delete from disk') }}"
                             ></flux:button>
                         @elseif ($this->stateIsProblem($row->state))
-                            <flux:button size="xs" variant="ghost" icon="arrow-path"
+                            <flux:button size="xs" variant="ghost" icon="arrow-path" class="relative z-10"
                                 wire:click="retry({{ $row->suwayomi_chapter_id }})"
                                 aria-label="{{ __('Try again') }}"
                                 title="{{ __('Try again') }}"

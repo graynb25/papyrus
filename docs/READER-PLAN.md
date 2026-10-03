@@ -319,7 +319,7 @@ code disagree, including several claims in this file.
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] Suite green: **1023 tests**, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **1034 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
