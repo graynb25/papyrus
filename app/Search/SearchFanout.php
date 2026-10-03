@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\UserSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Starts a cross-source search.
@@ -24,9 +25,10 @@ use Illuminate\Support\Facades\Bus;
  *    slow upstream cannot consume the whole run.
  *  - Sources the ledger has marked dead are skipped by default. A dead source
  *    is not merely slow, it will spend its full timeout every single run.
- *  - Concurrency is bounded, because fanning out to 1,379 sources at once would
- *    take Suwayomi down - its own subscription layer already documents that it
- *    goes unresponsive under concurrent load.
+ *  - Concurrency is bounded by a rolling window of `search.fanout_concurrency`
+ *    jobs, because fanning out to 1,379 sources at once would take Suwayomi
+ *    down - its own subscription layer already documents that it goes
+ *    unresponsive under concurrent load.
  */
 class SearchFanout
 {
@@ -81,6 +83,21 @@ class SearchFanout
             return $run;
         }
 
+        /*
+         * A rolling window, and it has to be built here rather than trusted from
+         * the batch. Bus::batch queues every job it is given and a worker pulls
+         * them as fast as it can, so a 40 source run handed to a batch is 40
+         * jobs in flight the moment a second worker exists, and the fan-out
+         * spent months carrying a comment that claimed otherwise while
+         * `search.fanout_concurrency` sat in config read by nobody.
+         *
+         * The first window goes out now. Each job that finishes dispatches the
+         * next pending source ({@see SearchSourceJob::feedNextSource()}), so
+         * in-flight work never exceeds the cap whatever the worker count, and
+         * no source waits on the slowest member of a wave.
+         */
+        $cap = max(1, (int) config('papyrus.search.fanout_concurrency', 8));
+
         $jobs = $sources->map(fn (Source $source): SearchSourceJob => new SearchSourceJob(
             runId: $run->id,
             userId: $user->id,
@@ -92,9 +109,13 @@ class SearchFanout
             filterValues: $filters,
         ));
 
-        // Bus::batch caps in-flight jobs; withChains would serialise them,
-        // which is not what a fan-out is for.
-        Bus::batch($jobs)
+        $pending = $sources->slice($cap)->pluck('id')->values()->all();
+
+        if ($pending !== []) {
+            Cache::put(self::pendingKey($run->id), $pending, now()->addHours(6));
+        }
+
+        Bus::batch($jobs->take($cap)->values()->all())
             ->allowFailures()
             ->dispatch();
 
@@ -102,19 +123,41 @@ class SearchFanout
     }
 
     /**
+     * Where a run keeps the sources it has not dispatched yet.
+     *
+     * Public because the job feeds from it, and the key shape is part of the
+     * contract between the two.
+     */
+    public static function pendingKey(int $runId): string
+    {
+        return "search:run:{$runId}:pending_sources";
+    }
+
+    /**
      * Decide which sources this run should hit.
      *
-     * Every eligible source is targeted, including all 61 MangaDex language
-     * variants, and that is deliberate. Those variants look like 61 requests for one
-     * answer and they are not: measured on a "one piece" run they return the same 51
-     * manga in different scripts, EN giving 15 Latin titles against JA's 6 Latin and
-     * 9 Japanese. Collapsing to one variant per site keeps 64% of results and throws
-     * away every non-Latin one. Set cover says 25 variants reach the full union, but
-     * which 25 are redundant is a fact about one query rather than about the
-     * catalogue, so nothing is dropped.
+     * Every eligible source is *candidates*, including all 61 MangaDex language variants,
+     * and that is deliberate. Those variants look like 61 requests for one answer and they
+     * are not: measured on a "one piece" run they return the same 51 manga in different
+     * scripts, EN giving 15 Latin titles against JA's 6 Latin and 9 Japanese. Collapsing to
+     * one variant per site keeps 64% of results and throws away every non-Latin one.
      *
-     * {@see HealthDashboard} groups by site, and that is a display concern. Do not
-     * copy the grouping here.
+     * What the cap may remove is a *slice*, and the slice is now taken round robin over
+     * extension packages. This is a correction, not an optimisation. Ordered by name and cut
+     * at 40 against 82 sources with 61 of them named "MangaDex (...)", the surviving 40 were
+     * ten scanlation sites plus thirty MangaDex languages, so MangaFire (7 sources),
+     * MangaTaro, Thunder Scans and Weeb Central were never searched at all. A reader
+     * reported that as "search only seems to hit MangaDex and Atsumaru", and the cause was
+     * not a bug: nothing was broken, a limit was simply applied to a sort nobody chose.
+     *
+     * The round robin guarantees every site's first source a slot before any site is asked
+     * for a second language, so the sites a reader names are the sites they reach. Which
+     * variants fill the later rounds depends on health and on nothing else, which is the
+     * honest version of "every variant gets a turn".
+     *
+     * Grouping here is by extension package and deliberately is not HealthDashboard's
+     * grouping. The dashboard groups for display and collapses MangaDex to one tile; this
+     * grouping exists only to make the cap fair and must leave every variant queryable.
      *
      * @param  array<string, mixed>  $options
      * @return Collection<int, Source>
@@ -158,7 +201,75 @@ class SearchFanout
 
         $limit = (int) ($options['limit'] ?? 60);
 
-        return $query->limit($limit)->get();
+        /*
+         * Fetched in full and cut here rather than with a SQL LIMIT, because the round robin
+         * needs every site's first row before it can decide what the first row of the result
+         * is. The eligible set is the installed catalogue, measured at 82 rows, so the extra
+         * rows cost nothing next to the requests this method exists to schedule.
+         *
+         * The ordering comes from the builder above, which is what makes interleave()
+         * deterministic: it depends on each bucket arriving in name order, which in turn
+         * means two runs over the same catalogue pick the same sources.
+         */
+        $eligible = $query->get();
+
+        // SQL reads a negative LIMIT as unlimited and 0 as no rows. Keep that meaning rather
+        // than letting take() reinterpret a negative as "all but the last".
+        if ($limit < 0) {
+            return $eligible;
+        }
+
+        if ($limit === 0) {
+            return $eligible->take(0);
+        }
+
+        return $this->interleave($eligible)->take($limit);
+    }
+
+    /**
+     * Round robin the sources by extension package.
+     *
+     * Every package's first source, then every package's second, and so on. Packages keep
+     * the order their first source appeared in, and the query already orders by name, so two
+     * runs over the same catalogue pick the same sources.
+     *
+     * A source with no package gets a bucket of its own rather than being folded into a
+     * shared one. The local source is the case that matters: it has no extension, and giving
+     * it a bucket keyed on the empty string would be harmless only until a second source
+     * arrived without a package.
+     *
+     * @param  Collection<int, Source>  $sources  already ordered by name
+     * @return Collection<int, Source>
+     */
+    private function interleave(Collection $sources): Collection
+    {
+        /** @var array<string, array<int, Source>> $buckets */
+        $buckets = [];
+
+        foreach ($sources as $source) {
+            $key = $source->extension_pkg_name !== '' ? $source->extension_pkg_name : 'local';
+
+            $buckets[$key][] = $source;
+        }
+
+        $ordered = new Collection;
+        $depth = 0;
+        $more = true;
+
+        while ($more) {
+            $more = false;
+
+            foreach ($buckets as $bucket) {
+                if (isset($bucket[$depth])) {
+                    $ordered->push($bucket[$depth]);
+                    $more = true;
+                }
+            }
+
+            $depth++;
+        }
+
+        return $ordered;
     }
 
     /**
