@@ -148,6 +148,28 @@ class Client
             );
         }
 
+        if ($response->status() === 404) {
+            /*
+             * Not a refusal, and only here. Measured on 2026-10-02 against the live API: a
+             * search that matches nothing answers HTTP 404 with a "Not Found." error and
+             * Media null. A title AniList has never heard of is the ordinary case, not an
+             * error, and reading it as a refusal makes the caller retry a question that has
+             * already been answered.
+             *
+             * It was worse than a wasted retry. `ImportAniListProgress` backs off and
+             * re-books on a refusal, so a library whose first title is not on AniList never
+             * got past it: the job released, retried, hit the same 404, and the page sat on
+             * "Checking 0 of 0 series" for ever. The rate limit is 429 and a dead token is
+             * 401, both handled below, and `forUser()` keeps treating 404 as an error
+             * because a 404 there really is one.
+             *
+             * The tests never caught it because the fakes answer an unmatched search with a
+             * 200 carrying Media null, which is a shape this endpoint does not produce. A
+             * fake has to be copied from a real response, not from what would be tidier.
+             */
+            return null;
+        }
+
         if ($response->status() === 429 || ! $response->successful()) {
             throw new AniListRefusedException(
                 'AniList refused the request (HTTP '.$response->status().').',

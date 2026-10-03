@@ -305,7 +305,13 @@ class AniListTrackingTest extends TestCase
             }
 
             if (str_contains($url, 'graphql.anilist.co')) {
-                return Http::response(['data' => ['Media' => null]]);
+                // The real shape for an unmatched search is a 404 with a Not Found
+                // error. Measured 2026-10-02, and the 200-with-null-Media this used to
+                // fake is a response this endpoint does not produce.
+                return Http::response([
+                    'errors' => [['message' => 'Not Found.', 'status' => 404]],
+                    'data' => ['Media' => null],
+                ], 404);
             }
 
             return Http::response(['data' => []]);

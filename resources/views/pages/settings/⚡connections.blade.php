@@ -55,6 +55,41 @@ new #[Title('Connection settings')] class extends Component {
         );
     }
 
+    /**
+     * Begin pulling AniList progress into the library.
+     */
+    public function startImport(): void
+    {
+        $started = app(\App\AniList\Import::class)->start(auth()->user());
+
+        if (! $started) {
+            Flux::toast(
+                text: __('An import is already running, or there is no connection to import with.'),
+                heading: __('Nothing started'),
+                variant: 'info',
+            );
+
+            return;
+        }
+
+        Flux::toast(
+            text: __('Progress arrives series by series. This page shows the tally as it goes.'),
+            heading: __('Import started'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * The import's tally, polled while it runs.
+     *
+     * @return array<string, mixed>|null
+     */
+    #[Computed]
+    public function importState(): ?array
+    {
+        return app(\App\AniList\Import::class)->state((int) auth()->id());
+    }
+
     #[Computed]
     public function account(): ?\App\Models\AniListAccount
     {
@@ -136,6 +171,98 @@ new #[Title('Connection settings')] class extends Component {
                 </div>
 
                 @if ($this->account !== null)
+                    @php($import = $this->importState)
+
+                    {{--
+                        The import, the other direction.
+
+                        The limits are stated here rather than left to be
+                        discovered: nothing is added to the library, nothing is
+                        ever marked unread, and a series AniList does not know
+                        is left alone.
+                    --}}
+                    <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-white/10">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="max-w-md">
+                                <flux:heading level="3">{{ __('Import from AniList') }}</flux:heading>
+
+                                <p class="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                                    {{ __('Pull the progress AniList already holds into the series in your library. It marks chapters read, never unread, and it never adds series.') }}
+                                </p>
+                            </div>
+
+                            <flux:button
+                                wire:click="startImport"
+                                wire:loading.attr="disabled"
+                                :disabled="$import !== null && $import['phase'] === 'running'"
+                            >
+                                {{ __('Import progress') }}
+                            </flux:button>
+                        </div>
+
+                        @if ($import !== null)
+                            <div @if ($import['phase'] === 'running') wire:poll.3s @endif>
+                                @if ($import['phase'] === 'running')
+                                    {{--
+                                        Two states, not one.
+
+                                        `total` is only assigned once the AniList list has
+                                        come back, so while it reads 0 the pass has not
+                                        worked out how much there is to do yet. Saying
+                                        "Checking 0 of 0 series" in that window reports a
+                                        total the code does not have, and a reader with a
+                                        full library sees it on every single run. It is
+                                        also exactly what a reader with an empty library
+                                        sees forever, which is how an import that correctly
+                                        does nothing comes to look broken.
+                                    --}}
+                                    <p class="text-sm text-vermilion-600 dark:text-vermilion-400" aria-live="polite">
+                                        @if ($import['total'] === 0)
+                                            {{ __('Reading your AniList list...') }}
+                                        @else
+                                            {{ __('Checking :processed of :total series...', ['processed' => $import['processed'], 'total' => $import['total']]) }}
+                                        @endif
+                                    </p>
+                                @elseif ($import['phase'] === 'done')
+                                    <p class="text-sm text-zinc-500 dark:text-zinc-400" aria-live="polite">
+                                        @if ($import['total'] === 0)
+                                            {{ __('Nothing to import: your library holds no series. Import pulls AniList progress into series you already have, and it never adds series.') }}
+                                        @else
+                                            {{ __('Checked :total series: :marked updated, :chapters chapters marked read, :unmatched not on AniList.', [
+                                                'total' => $import['total'],
+                                                'marked' => $import['series_marked'],
+                                                'chapters' => $import['chapters_marked'],
+                                                'unmatched' => count($import['unmatched']),
+                                            ]) }}
+                                        @endif
+                                    </p>
+                                @elseif ($import['phase'] === 'failed')
+                                    <p class="text-sm text-red-600 dark:text-red-400" aria-live="polite">
+                                        {{ $import['error'] ?? __('The import did not finish.') }}
+                                    </p>
+                                @endif
+
+                                @if ($import['unmatched'] !== [] && $import['phase'] !== 'running')
+                                    <details class="mt-2">
+                                        <summary class="cursor-pointer text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ trans_choice(
+                                                '{1} :count series had no AniList entry|[2,*] :count series had no AniList entry',
+                                                count($import['unmatched']),
+                                                ['count' => count($import['unmatched'])],
+                                            ) }}
+                                        </summary>
+
+                                        <ul class="mt-1 space-y-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                                            @foreach (array_slice($import['unmatched'], 0, 15) as $title)
+                                                <li>{{ $title }}</li>
+                                            @endforeach
+                                        </ul>
+                                    </details>
+                                @endif
+                            </div>
+                        @endif
+                    </div>
+
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
                         @if ($this->account->token_expires_at !== null)
                             {{ __('The token AniList issued expires :when, and there is no refresh: when it dies, connect again.', ['when' => $this->account->token_expires_at->format('M j, Y')]) }}
