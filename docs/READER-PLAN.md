@@ -273,7 +273,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 ## Where the build stands
 
-Every phase below is a checklist. **61 shipped, 16 open**, and the open ones
+Every phase below is a checklist. **62 shipped, 15 open**, and the open ones
 name the reason rather than just the item, because most of them are a deliberate
 scoping decision or an API that does not exist rather than an oversight.
 
@@ -282,11 +282,11 @@ scoping decision or an API that does not exist rather than an oversight.
 | Phase 0: Foundation | 13 | 0 |
 | Phase 1: Discovery | 9 | 0 |
 | Phase 2: Read path | 13 | 1 |
-| Phase 3: Library & personal data | 6 | 3 |
+| Phase 3: Library & personal data | 7 | 2 |
 | Phase 4: Downloads & offline | 5 | 4 |
 | Phase 5: Health, migration, resilience | 10 | 0 |
 | Phase 6: Parity & polish | 5 | 8 |
-| **Total** | **61** | **16** |
+| **Total** | **62** | **15** |
 
 **No H-tier item is open.** H7 shipped, and shipped broken: the bulk bar's checkboxes
 used a deferred `wire:model` against a server-side gate, so ticking a box committed
@@ -319,7 +319,7 @@ code disagree, including several claims in this file.
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] Suite green: **1034 tests**, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **1099 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
@@ -417,14 +417,19 @@ document with the vertical mode, so switching costs no request.
       is what a title containing a colon needs
 - [x] Continue-reading feed (H20), a section on `/library` over the batch the page already
       fetches, so it costs a local join rather than a request
-- [ ] Incognito (H17). `user_sources.incognito` exists as a column and a fillable field,
-      and no write path reads it, so nothing is suppressed and nothing is hidden
+- [x] Incognito (H17). Per source, on the health page beside the existing Skip control. Read
+      state only: opening a chapter writes no `last_read_at`, no page position, no read flag, no
+      read seconds, and pushes nothing to AniList. Deliberately narrower than Mihon's, which
+      also hides the source from listings, because `user_sources.disabled` already owns search
+      suppression and two preferences meaning one thing is how a preference stops being trusted.
+      Library, shelves, favourites, read later, notes and covers are untouched. 16 tests through
+      real routes, plus 14 checks in `verify-incognito.mjs`. Trap 152
 - [x] Multi-user demonstrated (H19): the tenancy tests prove two users on one database see
       disjoint rows
 
 **Acceptance:** partly met. Two users do see disjoint libraries. `unread>5 && src:mangadex
--title:"raw"` does not exist, and incognito leaves more than zero trace because it was
-never built.
+-title:"raw"` does not exist, and the reduced search syntax is three terms rather than a
+lexer and a parser.
 ---
 
 ### Phase 4: Downloads & offline

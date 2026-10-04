@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Http\Controllers\ReaderController;
 use App\Models\CategorySeries;
 use App\Models\ChapterState;
 use App\Models\SeriesState;
@@ -36,9 +37,38 @@ use Illuminate\Support\Facades\DB;
  * fetched, which is all of them until the reader opens one. So progress here is
  * recorded as *pages read*, never as a fraction of a count we do not have. A
  * percentage computed from -1 is either 0% or a division by zero, and both lie.
+ *
+ * ## Incognito sources write nothing
+ *
+ * `openChapter()`, `recordProgress()` and `addReadSeconds()` all return without writing when
+ * the series' source is incognito for this reader. The gate lives here rather than at each
+ * call site because these three are the only things that record a reader having read, and a
+ * guard that has to be remembered at every future caller is a guard that will be forgotten.
+ * {@see Incognito} answers the question; this class asks it.
+ *
+ * Everything else still writes. Library membership, shelves, favourites, read later, notes and
+ * covers are the reader making a decision about a series, which is not the same gesture as
+ * opening it and is not what incognito suppresses. The plan scoped this deliberately: read
+ * state only, because `user_sources.disabled` already owns search suppression and two
+ * preferences meaning one thing is how a preference stops being trusted.
  */
 class ReadingState
 {
+    public function __construct(
+        private readonly Incognito $incognito,
+    ) {}
+
+    /**
+     * Whether this reader's incognito settings say not to record reading this series.
+     *
+     * Public because {@see ReaderController} needs the same answer to
+     * decide whether to pass the source along at all, and one answer should serve both.
+     */
+    public function suppresses(User|int $user, int $mangaId): bool
+    {
+        return $this->incognito->suppresses($user, $mangaId);
+    }
+
     /**
      * The user's row for a series, unsaved, ready for the caller to fill in.
      *
@@ -161,6 +191,22 @@ class ReadingState
     {
         $userId = $user instanceof User ? $user->getKey() : $user;
 
+        /*
+         * Incognito, and this is the write that would leave the most behind: it stamps
+         * `last_read_at` on the chapter and on the series and moves the continue-reading
+         * pointer, so a reader with the source on incognito would otherwise appear in their own
+         * history having read a chapter they chose not to record.
+         *
+         * An unsaved model is returned rather than a saved one, and that is deliberate rather
+         * than convenient. Callers read `last_page_read` off the result, which is correctly
+         * null for a chapter this reader has never recorded, so the reader opens at page one as
+         * it should. Returning a model rather than null keeps every existing caller working,
+         * which is the difference between a feature and a rewrite.
+         */
+        if ($this->suppresses($userId, $mangaId)) {
+            return $this->chapter($userId, $mangaId, $chapterId);
+        }
+
         return ChapterState::query()->getConnection()->transaction(function () use ($userId, $mangaId, $chapterId): ChapterState {
             $chapter = $this->chapter($userId, $mangaId, $chapterId);
             $chapter->last_read_at = now();
@@ -183,6 +229,15 @@ class ReadingState
      */
     public function recordProgress(User|int $user, int $mangaId, int $chapterId, int $page, ?int $totalPages = null): ChapterState
     {
+        /*
+         * Incognito. This is the endpoint the browser pings every few seconds, so it is the
+         * write a reader would leave the most of, and returning an unsaved model means the
+         * endpoint still answers with a page number rather than 500ing on a null.
+         */
+        if ($this->suppresses($user, $mangaId)) {
+            return $this->chapter($user, $mangaId, $chapterId);
+        }
+
         $chapter = $this->chapter($user, $mangaId, $chapterId);
 
         $chapter->last_page_read = max((int) $chapter->last_page_read, $page);
@@ -208,6 +263,17 @@ class ReadingState
             return;
         }
 
+        /*
+         * Read time is read state by any reading of the phrase: it is a measurement of having
+         * read, not something the reader decided. It takes a manga id of 0 because the caller
+         * has only a chapter id, which means there is nothing here to resolve the source from.
+         *
+         * The existing row's own `suwayomi_manga_id` is the series, so that is what this asks
+         * about. Nothing calls this method today (measured: one declaration, no callers), and
+         * the signature is why: it is the one read-state writer that cannot answer the
+         * incognito question from its own arguments. Fixing that is a caller-side change and
+         * is recorded rather than guessed at.
+         */
         $chapter = $this->chapter($user, 0, $chapterId);
 
         if ($chapter->exists) {

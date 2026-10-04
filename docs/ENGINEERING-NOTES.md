@@ -1376,6 +1376,80 @@ Each of these cost real time. Do not repeat them.
      the first thing that makes the symptom go away.** Moving the counter made the 500 vanish
      and the limit vanish with it, and only the second measurement caught that. The check that
      caught it is the one nobody writes: after changing a limiter, ask for more than it allows.
+
+152. **A gate that resolves its remote dependency before checking its local one turns every
+     caller into a network caller.** Incognito is a per-source preference, and every write path
+     that answers "should this record?" knows a Suwayomi manga id and nothing else, so the
+     first version resolved manga to source with `manga(id:)` and only then asked the local
+     `user_sources` table whether that source was incognito.
+
+     Seven `ReadingStateTest` tests died on `Incorrect username or password`. That test
+     registers **no `Http::fake()`**, so the call went to the real server on port 4567 with the
+     real credentials from `.env`. The suite had been hermetic for `ReadingState` and this
+     change is what broke that, and it is trap 131 in the direction nobody checks: not a fake
+     that lies, but the absence of one, so the real world answered.
+
+     The order is the whole design and it was obvious in hindsight:
+
+     ```
+     no incognito sources for this reader   -> false, one local indexed query, no network
+     has incognito sources                  -> resolve manga to source, then compare
+     ```
+
+     Nobody has turned incognito on on a fresh install, so the first branch is the only one
+     that runs until somebody opts in. Asking the cheap question first makes the feature free
+     when unused and reachable by the unit tests; asking the expensive one first makes it a
+     dependency whether or not anyone wants it. **When a decision needs a local fact and a
+     remote fact, find the order in which the local fact makes the remote one unnecessary.**
+
+     Five more from the same pass, all of them costs that were paid in guesses first.
+
+     **Counting a library by source is trap 52 wearing a new hat.** The incognito control shows
+     how many of a reader's library sits on a site before it is pressed, and the obvious
+     implementation resolves each series. Measured:
+
+     ```
+     one manga(id:) per series   1,379ms for 20 series   (69ms a series)
+     one fetchMany batch           350ms for 20 series   (20 returned)
+     agreement                     20 of 20
+     ```
+
+     Extrapolated to the 300-series library this app is designed for, the naive form is over
+     twenty seconds of rendering one page. It agreed with the batch on every id, so the batch
+     is what ships and the agreement is what justifies it.
+
+     **A comment saying you were careful is not a mechanism.** The test class documents trap
+     116, that a second `Http::fake()` does not replace the first, and then installs one in
+     `setUp` and three more inside tests. The `setUp` fake answered every case, so three tests
+     passed or failed for reasons that had nothing to do with what they set up. The fix was to
+     make the fake read properties (`$knownSeries`, `$knownMany`, `$manyFails`) rather than
+     being reinstalled, which makes a per-test stub impossible to write by accident.
+
+     **`#[Computed]` resolves through `__get`, which returns a value and not a reference.** A
+     per-site memo written as `$this->counts[$key] ??= ...` on a computed property is silently
+     discarded: *"Indirect modification of overloaded property has no effect"*. Nothing warns,
+     the memo does not memoise, and the only symptom is the query the memo existed to avoid.
+     The drill-down test caught it because it asserts on a count and the count came back wrong.
+
+     **A control that changes a preference is a destructive gate, and needs its own undo.**
+     `verify-incognito.mjs` presses it, reads a chapter, and presses the reverse in a
+     `finally`, because trap 142's failure mode here is a reader whose preferences the test
+     suite changed. `probe-incognito-state.php` answers the question that leaves behind: is
+     anything actually suppressed. It reported 0 of 1 rows incognito, and zero is the only
+     acceptable answer.
+
+     **A selector that misses its subject reports a failure that does not exist**, for the
+     third time in this file. The gate asked whether `body.innerText` contained "Back to
+     chapter list" and concluded a working reader was unusable, because the back link is an
+     icon whose only text is an `aria-label`. Reading the accessible name fixed it. Trap 138
+     with a CSS class, trap 151 with an `aria-label`.
+
+     And one placement finding worth recording, because it is a property of the feature rather
+     than a bug in it: **the health page's site rollup joins `source_healths` to `sources`, so
+     the incognito control only renders for a site that has been asked about at least once.** A
+     reader who has never searched sees no sign that the feature exists. That is a consequence
+     of putting the control in the drill-down, which is where Skip already lives and where one
+     button can retire 61 MangaDex variants. Correct, and still worth knowing.
 ---
 ---
 
@@ -1500,7 +1574,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,082 tests**, 2,376 assertions, Pint clean, PHPStan
+Current standing: **1,099 tests**, 2,425 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1516,6 +1590,13 @@ shared and a reveal can break on one of them without breaking the others: it ask
 whether it is `complete`, whether it has `naturalWidth`, and whether it carries `is-loaded`,
 and fails on any image that has artwork and no reveal. Ten is not the point. The point is that
 the count is compared against what the page rendered, so an empty result cannot pass.
+
+`verify-incognito.mjs` is the gate for trap 152, and the only one that is destructive. It
+presses the control, reads a chapter, and presses the reverse in a `finally`, because a gate
+that dies between the write and the undo leaves the reader's preferences changed and every
+later gate then measures a box it did not set up. `probe-incognito-state.php` exists to answer
+the question that leaves behind: is anything actually suppressed right now. It reported zero,
+which is the only acceptable answer.
 
 ### Running the gates
 
@@ -1850,9 +1931,11 @@ and it is not something to monetise.
 ## 14. Known gaps between the documents and the code
 
 Found by reading all 94 files under `app/` and tracing every public method to a caller.
-Nothing in this section is fixed, because the brief for that pass was documentation only.
-It is written down so the next person does not have to rediscover it, and so no document in
-this repository is trusted further than it has been checked.
+The pass that found them was documentation only, so nothing here was fixed at the time and
+every entry was a live gap. Entries that later passes closed are marked **closed**, because a
+gap list that reports a resolved gap as open is worse than no gap list. What remains is
+written down so the next person does not have to rediscover it, and so no document in this
+repository is trusted further than it has been checked.
 
 ### 14.1 Documented as working, not implemented
 
@@ -1915,6 +1998,23 @@ Dead columns and unread relations: `users.last_seen_at` is written by nothing;
 `::defaultCategory()` are declared but never traversed, because the series page goes
 through `ReadingState` instead.
 
+Three of those four were closed by the incognito pass and one was not, so the list is worth
+reading as the shape of a half-built column rather than as a to-do list.
+`user_sources.incognito` **was** on it, as a fillable field with no reader. It is now read by
+`Incognito::suppresses()` and written by `Incognito::setFor()`, gated at all three read-state
+writers, and has a control on the health page. Still open: `series_states.rating` and
+`::tags` have no control and nothing writes them, `series_covers.source_page` is unwritten
+and the reader has no cover control at all, and `user_sources.incognito` has one caller that
+cannot use it.
+
+That last one is the interesting half. `ReadingState::addReadSeconds()` is declared and has
+**no callers**, measured: one declaration, nothing else in `app/`. It is the only read-state
+writer that cannot answer the incognito question from its own arguments, because it takes a
+chapter id and a manga id of `0`, so there is nothing to resolve a source from. It is left
+unwired on purpose and the docblock says why. The general lesson is trap 121's, in a new
+place: **a method with no callers is not yet a feature, and the signature it grew is the
+thing to check before wiring it up.**
+
 ### 14.4 Smaller inconsistencies worth knowing
 
 - **`Deduplicator` has two construction paths.** `AppServiceProvider` binds it as a
@@ -1954,7 +2054,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 150, each number once, ascending.
+tidiness. The list is now 1 to 152, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`

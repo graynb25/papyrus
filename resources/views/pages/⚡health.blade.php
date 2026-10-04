@@ -2,6 +2,7 @@
 
 use App\Models\Source;
 use App\Models\UserSource;
+use App\Support\Incognito;
 use App\Search\HealthDashboard;
 use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -141,6 +142,35 @@ new #[Title('Health')] class extends Component {
         return app(HealthDashboard::class)->disabledSourceIds(auth()->id());
     }
 
+    /**
+     * The sources this reader has put on incognito, as Suwayomi ids.
+     *
+     * One query for the whole page rather than one per site row, for the same reason
+     * `skipped()` is one query: the dashboard renders one row per site and a row that asked
+     * its own question would be sixteen queries for a page that is otherwise flat in its size.
+     *
+     * @return array<int, int>
+     */
+    #[Computed]
+    public function incognitoSites(): array
+    {
+        return app(Incognito::class)->incognitoIds((int) auth()->id());
+    }
+
+    /**
+     * Per-site library counts, memoised for the length of the request.
+     *
+     * A plain property rather than a `#[Computed]`, because `seriesCountFor()` writes into it.
+     * Livewire's computed properties resolve through `__get`, which returns a value rather than
+     * a reference, so assigning to an offset of one is silently discarded: "Indirect
+     * modification of overloaded property has no effect". The number is then recomputed on
+     * every call, which is the exact cost the memo was for. The health page hit this the first
+     * time and the drill-down test caught it.
+     *
+     * @var array<string, int>
+     */
+    private array $incognitoCounts = [];
+
     public function stateLabel(string $state): string
     {
         return app(HealthDashboard::class)->stateLabel($state);
@@ -155,6 +185,105 @@ new #[Title('Health')] class extends Component {
         }
 
         return $this->variantIds((string) $row->site, intersect: true) !== [];
+    }
+
+    /**
+     * Leave no read history on this site, without touching search.
+     *
+     * Separate from skip(), and deliberately not the same thing. Skip answers "do not ask
+     * this source again", which `user_sources.disabled` already owns and which is what the
+     * health page's existing control is for. Incognito answers "do not record that I read
+     * this", which is a different promise and a different column, and a reader who conflates
+     * the two loses either the searches or the history they meant to keep.
+     *
+     * Read state only, and that is the whole scope: opening a chapter writes no
+     * `last_read_at`, no page position, no read flag and no read seconds, and pushes nothing
+     * to AniList. Library, shelves, favourites, read later, notes and covers are untouched,
+     * because a reader deciding to keep a series is not the same gesture as reading it and
+     * refusing one would be refusing the other.
+     *
+     * Per-user on the same reasoning as skip(): the health ledger is global because a dead
+     * upstream is dead for everyone, but what a reader records is nobody else's business.
+     */
+    public function incognito(string $site): void
+    {
+        $ids = $this->variantIds($site);
+
+        if ($ids === []) {
+            return;
+        }
+
+        $series = $this->seriesCountFor($site);
+
+        Incognito::setFor(auth()->id(), $ids, true);
+
+        unset($this->incognitoSites);
+        Flux::toast(
+            text: $series === 0
+                ? __('Reading here will leave no history, and nothing is recorded either way today.')
+                : trans_choice(
+                    'Reading here will leave no history. :count series stays in your library.|Reading here will leave no history. :count series stay in your library.',
+                    $series,
+                    ['count' => Number::format($series)],
+                ),
+            heading: __('Incognito from now on'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Record read state here again.
+     *
+     * Restoring does not retroactively write what was suppressed while it was on: the pages
+     * were never fetched and the chapters were never marked, so there is nothing to recover.
+     * The toast says so rather than implying the reader's history came back.
+     */
+    public function reveal(string $site): void
+    {
+        Incognito::setFor(auth()->id(), $this->variantIds($site), false);
+
+        unset($this->incognitoSites);
+        Flux::toast(
+            text: __('Reading here is recorded again. What was read while it was hidden was not kept.'),
+            heading: __('History is back on'),
+            variant: 'info',
+        );
+    }
+
+    /**
+     * Whether every variant of this site is incognito for this reader.
+     *
+     * All of them, not any. Partial state across 61 language variants of one site is not a
+     * state a reader can act on, and reporting it as off while some variants still suppress
+     * would be a badge that lies about half the rows behind it.
+     */
+    public function isIncognito(object $row): bool
+    {
+        $site = (string) $row->site;
+        $incognito = $this->incognitoSites;
+
+        if ($incognito === []) {
+            return false;
+        }
+
+        $ids = $this->variantIds($site);
+
+        return $ids !== [] && count(array_intersect($ids, $incognito)) === count($ids);
+    }
+
+    /**
+     * How many of this reader's library series sit on this site.
+     *
+     * Only shown on the incognito control, because it is the number that decides whether
+     * pressing it is a good idea: a reader who keeps twenty series from a scanlation site
+     * wants to know the trace stops before they turn it on, not after.
+     */
+    public function seriesCountFor(string $site): int
+    {
+        $key = (string) $site;
+
+        return $this->incognitoCounts[$key] ??= app(Incognito::class)
+            ->seriesCountFor((int) auth()->id(), $this->variantIds($site));
     }
 
     /**
@@ -378,6 +507,47 @@ new #[Title('Health')] class extends Component {
                                     >
                                         <flux:button size="sm" icon="eye-slash">
                                             {{ trans_choice('Skip this variant|[2,*] Skip all :count variants', $row->variants, ['count' => Number::format($row->variants)]) }}
+                                        </flux:button>
+                                    </x-confirm>
+                                @endif
+
+                                {{--
+                                    Incognito, beside Skip and phrased as its own question, because
+                                    it is one. Skip is about what the app asks for; incognito is
+                                    about what it keeps. Putting the two next to each other
+                                    without that distinction would let a reader turn off the
+                                    wrong one, and the two have separate columns because they
+                                    answer separate questions.
+
+                                    Its own confirm, naming what it does and does not do. The
+                                    library count is in the body rather than after the press,
+                                    because "20 series stay in your library" is the fact that
+                                    decides whether someone wants this, and it is only knowable
+                                    before.
+                                --}}
+                                @if ($this->isIncognito($row))
+                                    <flux:button size="sm" wire:click="reveal('{{ $row->site }}')" icon="eye">
+                                        {{ __('Record my reading here') }}
+                                    </flux:button>
+                                @else
+                                    @php($libraryHere = $this->seriesCountFor($row->site))
+                                    @php($incognitoAction = 'incognito('.Illuminate\Support\Js::from($row->site)->toHtml().')')
+
+                                    <x-confirm
+                                        :action="$incognitoAction"
+                                        :title="__('Read here without leaving a trace?')"
+                                        :body="$libraryHere > 0
+                                            ? trans_choice(
+                                                'Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stays in your library.',
+                                                'Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stay in your library.',
+                                                ['count' => Number::format($libraryHere)],
+                                                $libraryHere,
+                                            )
+                                            : __('Reading from this site will not be recorded: no history, no page position, nothing sent to AniList.')"
+                                        :confirm="__('Go incognito')"
+                                    >
+                                        <flux:button size="sm" icon="eye-slash">
+                                            {{ trans_choice('Read without history|[2,*] Read all :count variants without history', $row->variants, ['count' => Number::format($row->variants)]) }}
                                         </flux:button>
                                     </x-confirm>
                                 @endif

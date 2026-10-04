@@ -47,8 +47,14 @@ class ReaderProgressController extends Controller
          * the transition is the only moment it is worth queueing: the endpoint
          * fires every few seconds while a chapter scrolls, and pushing per ping
          * would be one mutation per page for the same answer.
+         *
+         * Incognito is checked here rather than relied on to have stopped the write. When the
+         * source is incognito `recordProgress()` returns an unsaved model, so `is_read` is
+         * null and the condition is already false, but a guard that works by accident is a
+         * guard that breaks the moment the model changes. A push to a third party is the one
+         * thing in this class that leaves the machine, so it asks the question directly.
          */
-        if (! $wasRead && $chapterState->is_read) {
+        if (! $wasRead && $chapterState->is_read && ! $reading->suppresses($request->user(), $manga)) {
             app(Tracking::class)->scheduleSync($request->user(), $manga);
         }
 
