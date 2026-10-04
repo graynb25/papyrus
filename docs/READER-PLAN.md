@@ -273,7 +273,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 ## Where the build stands
 
-Every phase below is a checklist. **62 shipped, 15 open**, and the open ones
+Every phase below is a checklist. **63 shipped, 14 open**, and the open ones
 name the reason rather than just the item, because most of them are a deliberate
 scoping decision or an API that does not exist rather than an oversight.
 
@@ -282,11 +282,11 @@ scoping decision or an API that does not exist rather than an oversight.
 | Phase 0: Foundation | 13 | 0 |
 | Phase 1: Discovery | 9 | 0 |
 | Phase 2: Read path | 13 | 1 |
-| Phase 3: Library & personal data | 7 | 2 |
+| Phase 3: Library & personal data | 8 | 1 |
 | Phase 4: Downloads & offline | 5 | 4 |
 | Phase 5: Health, migration, resilience | 10 | 0 |
 | Phase 6: Parity & polish | 5 | 8 |
-| **Total** | **62** | **15** |
+| **Total** | **63** | **14** |
 
 **No H-tier item is open.** H7 shipped, and shipped broken: the bulk bar's checkboxes
 used a deferred `wire:model` against a server-side gate, so ticking a box committed
@@ -319,7 +319,7 @@ code disagree, including several claims in this file.
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] Suite green: **1099 tests**, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **1125 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
@@ -398,10 +398,17 @@ document with the vertical mode, so switching costs no request.
 **Goal:** the app becomes *yours*, not a browser.
 
 - [x] Shelves, many-to-many with series, reorderable, one home shelf (H4)
-- [ ] Tags, favourites, read later and ratings (H4). **Two of the four landed since this
-      was written.** Favourites and read later are written by `ReadingState::setFavourited()`
-      and `::setReadLater()` and have heart and clock controls on the series page. Tags and
-      ratings still have no control: both columns exist on `series_states` and nothing writes them
+- [x] Tags, favourites, read later and ratings (H4), **all four landed since this was
+      written.** Favourites and read later by `ReadingState::setFavourited()` and
+      `::setReadLater()`. Ratings and tags by `::setRating()`, `::setTags()`, `::addTag()` and
+      `::removeTag()`, with a five-star radiogroup and a tag editor on the series page.
+      Ratings are one to five whole stars or `null`, refused rather than clamped out of range,
+      and clearing is both "press the lit star again" and an explicit button. Tags are
+      normalised in one place: trimmed, whitespace collapsed, deduped case-insensitively,
+      truncated at 40 characters, capped at 20, sorted. Ratings and tags are **local and never
+      sent to AniList**, which the editor says, because AD-5 gives Laravel 100% of user-facing
+      state and the sync writes only progress and status. 26 tests, plus 33 checks in
+      `verify-rating-tags.mjs`. Traps 152 and 153
 - [x] Custom covers: upload and delete, resized and stored per reader (H5)
 - [ ] **Set cover from the reader page** (H5). `series_covers.source_page` exists and nothing
       writes it, and the reader has no cover control at all

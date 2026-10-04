@@ -566,6 +566,117 @@
         background-size: 200% 100%;
     }
 
+    /* A rating, as a radiogroup of star toggles.
+
+       Two weights of one glyph rather than two icons: an outline star sits behind a solid one
+       and the solid one is clipped to a width, so the pair is one shape at two fills and the
+       clip is what carries the value. `--index` is the star's own position and `--shown` is
+       what the reader is pointing at, which is the rating normally and the hovered or focused
+       star while there is one.
+
+       The clip is `min(--index, --shown)` of the star's own width, so it is all the way or
+       none of the way, and no intermediate widths are reachable. That matters: a partial star
+       would imply half ratings, and half ratings are not what the column stores.
+
+       Hover and focus preview are `:has()` rules rather than script, five of them, which is
+       what makes this work with no JavaScript at all on the pointer path. They read the
+       hovered child and publish its number, so the CSS has the value the script would have
+       written. The script in behaviours.blade.php only handles arrow keys, which CSS cannot.
+
+       `--rating` and `--max` are written by the component rather than defaulted here, because
+       `ReadingState::RATING_MAX` is the only definition of what a rating is and a second copy
+       of `5` in a stylesheet is a second answer to the same question.
+
+       Vermilion is the filled weight because it is the app's one saturated voice and a rating
+       is a state, not decoration. The outline weight is a neutral so an unrated series shows
+       no colour at all. */
+    .rating {
+        --shown: var(--rating);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.0625rem;
+        color: var(--color-zinc-300);
+    }
+
+    :where(.dark, .dark *) .rating {
+        color: var(--color-zinc-600);
+    }
+
+    .rating:has([data-rating-star]:nth-child(1):hover),
+    .rating:has([data-rating-star]:nth-child(1):focus-visible) { --shown: 1; }
+
+    .rating:has([data-rating-star]:nth-child(2):hover),
+    .rating:has([data-rating-star]:nth-child(2):focus-visible) { --shown: 2; }
+
+    .rating:has([data-rating-star]:nth-child(3):hover),
+    .rating:has([data-rating-star]:nth-child(3):focus-visible) { --shown: 3; }
+
+    .rating:has([data-rating-star]:nth-child(4):hover),
+    .rating:has([data-rating-star]:nth-child(4):focus-visible) { --shown: 4; }
+
+    .rating:has([data-rating-star]:nth-child(5):hover),
+    .rating:has([data-rating-star]:nth-child(5):focus-visible) { --shown: 5; }
+
+    .rating-star {
+        position: relative;
+        display: inline-flex;
+        inline-size: 1.375rem;
+        block-size: 1.375rem;
+        cursor: pointer;
+        border-radius: 0.25rem;
+        transition: transform 120ms var(--ease-out, ease-out);
+    }
+
+    /* Press feedback matches `.press` elsewhere rather than inventing a second one: the star
+       dips a little, the way a cover tilts, so the whole app presses the same amount. */
+    .rating-star:active {
+        transform: scale(0.9);
+    }
+
+    .rating-star:focus-visible {
+        outline: 2px solid var(--color-vermilion-500);
+        outline-offset: 1px;
+    }
+
+    .rating-star > svg {
+        position: absolute;
+        inset: 0;
+        inline-size: 100%;
+        block-size: 100%;
+    }
+
+    /* The clip, and the whole value.
+
+       `inset(0 X% 0 0)` cuts X% off the right, so the star shows `(100 - X)%` of itself. A
+       star that should read as full wants `X = 0` and one that should read as empty wants
+       `X = 100`, with nothing in between: a partially filled star implies a half rating, and
+       half ratings are not what this column stores.
+
+       So the only question is "is this star at or below the shown value", and CSS cannot ask
+       it. What it can do is turn the comparison into arithmetic and clamp it. `index -
+       shown` is 0 or less for a star that should be full, and 1 or more for one that should
+       be empty; scaling by 1000 puts the two cases at or below 0 and well past 100, and
+       `clamp()` collapses each to the end it wants.
+
+       The first version used `(max - min(index, shown)) / max * 100`, which is smooth across
+       the row and wrong at every star: on a four-star rating it produced 80, 60, 40, 20, 20,
+       so no star was ever full and the fifth was more filled than the fourth. A formula that
+       varies continuously where the answer is binary is the wrong shape entirely.
+
+       One element at one size, clipped. A narrower wrapper with `overflow: hidden` would need
+       the star's width repeated, and that second copy of `1.375rem` would silently drift the
+       moment the star resizes. */
+    .rating-star > .rating-star--on {
+        color: var(--color-vermilion-500);
+        clip-path: inset(0 calc(clamp(0, (var(--index) - var(--shown)) * 1000, 100) * 1%) 0 0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .rating-star {
+            transition: none;
+        }
+    }
+
     /* Editorial serif moment. */
     .serif-italic {
         font-family: var(--font-serif);

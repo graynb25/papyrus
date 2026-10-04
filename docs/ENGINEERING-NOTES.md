@@ -1450,6 +1450,76 @@ Each of these cost real time. Do not repeat them.
      reader who has never searched sees no sign that the feature exists. That is a consequence
      of putting the control in the drill-down, which is where Skip already lives and where one
      button can retire 61 MangaDex variants. Correct, and still worth knowing.
+
+153. **`@open` is not a Blade directive, and an unregistered directive is not an error.**
+     The tags panel on the series page was written `<details @open($this->tags !== [])>`,
+     which reads like it should work and looks like the idiomatic way to conditionally open a
+     disclosure. Measured on **Laravel 13.34.0**: it is not a registered directive.
+
+     ```
+     Blade::compileString('<details @open(true)>')       ->  '<details @open(true)>'   (unchanged)
+     array_key_exists('open', Blade::getCustomDirectives())  ->  false, 21 directives registered
+     ```
+
+     The compiler leaves it alone, it reaches the browser as a literal `@open(...)` attribute,
+     and the HTML parser ignores an attribute it does not recognise. The details element is
+     simply never open. No exception, no log line, no rendered comment: the feature looks
+     switched off. The fix is `{{ $condition ? 'open' : '' }}`, which compiles to an `echo`
+     and works.
+
+     **An unregistered Blade directive is a silent no-op**, and it is the mirror image of a
+     registered one that no longer exists. The compiler cannot warn about something it does not
+     recognise as a directive attempt, so the only detection is behavioural.
+
+     It was caught by a browser assertion on `details.open` that ran *before* the gate clicked
+     anything, which is the general lesson: **assert the state the server was supposed to
+     produce before the gate does anything to the page.** A check that runs after a click
+     reports what the click did.
+
+     And the probe almost lied about it. `probe-blade-open-directive.php` prints
+     `renders open: yes` for `@open(true)`, because its own regex looks for `\bopen\b` in the
+     output and matches the literal text `@open(true)`. **A probe can be fooled by the very
+     thing it is measuring**, which is why the probe asserts on the compiled string and the
+     directive registry as well as on the rendered markup. Three readings, one of which is
+     about the probe.
+
+     Four smaller ones from the same pass.
+
+     **A formula that varies continuously where the answer is binary is the wrong shape.** The
+     filled star is a solid glyph behind an outline one, clipped with `inset(0 X% 0 0)`, so a
+     filled star wants `X = 0` and an empty one wants `X = 100` with nothing between. The first
+     version was `(max - min(index, shown)) / max * 100`, which is smooth across the row and
+     wrong at every star: on a four-star rating it produced `80, 60, 40, 20, 20`, so no star
+     was ever full and the fifth was fuller than the fourth. CSS cannot ask "is this at or
+     below that", but it can turn the comparison into arithmetic and clamp it:
+     `clamp(0, (index - shown) * 1000, 100)`. **When the only two right answers are 0 and 100,
+     a formula producing everything between is a formula that is wrong everywhere.**
+
+     **`every()` on an empty array is `true`.** The first run of `verify-rating-tags.mjs`
+     reported three passing checks against zero stars, because the component's root was missing
+     the `class="rating"` its stylesheet keys on and every star-counted assertion was vacuous.
+     Trap 151 said "an empty result cannot pass"; that was about comparing a count to what
+     rendered, and this is the same failure with the check itself having nothing to iterate.
+     The gate now fails loudly before any per-item assertion runs.
+
+     **A disclosure is a toggle, not an open button.** Once the server-side open worked, the
+     gate's unconditional click on the summary *closed* the panel, and two checks then failed
+     for the opposite reason to the run before. The gate now reads `details.open` first and
+     only clicks when it is shut, and the assertion about the server's open state has to run
+     before that click or it can only ever report what the click did.
+
+     **Locate a summary by what it contains, not by the text it shows.** The summary reads
+     "Tags" with no tags and "1 tag" with one, so a gate searching for the word "Tags" works
+     exactly once and then times out for ever. It failed on a page that plainly said "1 tag"
+     beside a working editor. A containment selector or a `data-` attribute survives the text
+     changing; text does not.
+
+     And **a cleanup that reports what it could not undo is not a cleanup.** The first version
+     walked a snapshot of the chips taken before the first click, with a `.catch(() => {})`
+     around each removal, and left one tag behind while reporting every check green. The
+     `.catch` that keeps a cleanup from throwing is the same thing that hides a cleanup that
+     failed. It now re-reads, retries to a bound, and counts a leftover as a gate failure,
+     because a gate that leaves a reader's library in a state it chose cannot be re-run safely.
 ---
 ---
 
@@ -1574,7 +1644,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,099 tests**, 2,425 assertions, Pint clean, PHPStan
+Current standing: **1,125 tests**, 2,460 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1597,6 +1667,14 @@ that dies between the write and the undo leaves the reader's preferences changed
 later gate then measures a box it did not set up. `probe-incognito-state.php` exists to answer
 the question that leaves behind: is anything actually suppressed right now. It reported zero,
 which is the only acceptable answer.
+
+`verify-rating-tags.mjs` is the gate for trap 153, 33 checks, and destructive in the same way.
+It asserts the star fill by reading each star's computed `clip-path` rather than by looking at
+it, because a screenshot of a star row says the colour is vermilion and nothing about how much
+of each star is filled. Two checks exist only because the first version of the gate could pass
+on nothing: `mustReadStars()` fails loudly when the row is absent, because `every()` over an
+empty array is `true`. It also reports what its own cleanup could not undo, and counts that as
+a failure.
 
 ### Running the gates
 
@@ -2002,10 +2080,23 @@ Three of those four were closed by the incognito pass and one was not, so the li
 reading as the shape of a half-built column rather than as a to-do list.
 `user_sources.incognito` **was** on it, as a fillable field with no reader. It is now read by
 `Incognito::suppresses()` and written by `Incognito::setFor()`, gated at all three read-state
-writers, and has a control on the health page. Still open: `series_states.rating` and
-`::tags` have no control and nothing writes them, `series_covers.source_page` is unwritten
-and the reader has no cover control at all, and `user_sources.incognito` has one caller that
-cannot use it.
+writers, and has a control on the health page.
+
+The ratings and tags pass closed two more of the same kind, and the shape held exactly:
+
+| Column | Before | After |
+|---|---|
+| `series_states.rating` | exists, nothing writes it | `ReadingState::setRating()`, one to five or `null`, with a star radiogroup on the series page |
+| `series_states.tags` | exists, nothing writes it | `setTags()`, `addTag()`, `removeTag()`, normalised in one place, with a tag editor on the series page |
+
+`series_states.rating` and `::tags` no longer belong on this list, which is the fourth time a
+"column with no writer" turned out to be a missing feature rather than a schema mistake. The
+lesson is the same each time and it is about reading: **a column, a fillable entry and a cast
+are not a feature.** Nothing about `series_states.rating` distinguished it from `::users.
+last_seen_at`, which is on the same list and still is.
+
+Still open: `series_covers.source_page` is unwritten and the reader has no cover control at
+all, and `ReadingState::addReadSeconds()` has one caller that cannot use the gate.
 
 That last one is the interesting half. `ReadingState::addReadSeconds()` is declared and has
 **no callers**, measured: one declaration, nothing else in `app/`. It is the only read-state
@@ -2054,7 +2145,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 152, each number once, ascending.
+tidiness. The list is now 1 to 153, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`

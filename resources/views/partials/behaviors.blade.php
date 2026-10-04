@@ -95,4 +95,146 @@
             }
         });
     })();
+
+    {{-- Rating: a radiogroup that moves with the arrow keys.
+
+         The stars are `role="radio"`, which means a group of them should be one tab stop
+         with the arrow keys moving within it. Without that a keyboard reader tabs five times
+         to reach a five-star control, and five tab stops inside a radiogroup is the one
+         arrangement a screen reader will call wrong.
+
+         `sync()` is the same shape as the blur-up settle pass above, for the same reason: the
+         server renders `tabindex` once, and a morph replaces it with whatever the new markup
+         said. Rating three stars and tabbing away has to leave the third star as the tab
+         stop, and only a pass after the morph can arrange that.
+
+         It prefers the star that currently holds focus, because arrowing to the fourth star
+         and then tabbing away should come back to the fourth, not jump back to the rated
+         one. Focus is checked before the checked star for exactly that reason. --}}
+    (function () {
+        'use strict';
+
+        function starsOf(group) {
+            return group.querySelectorAll('[data-rating-star]');
+        }
+
+        function sync(root) {
+            var scope = root || document;
+            var groups = [];
+
+            /*
+             * `root` may be the rating group itself rather than something containing one.
+             * The arrow-key handler has the group in hand and passes it straight here, and a
+             * descendant-only search finds nothing inside it, so the sync silently did
+             * nothing and the tab stop snapped back to the rated star the moment a reader
+             * arrowed away from it. Measured: arrowing from star four to star five left star
+             * four at tabindex 0.
+             */
+            if (scope.matches && scope.matches('[data-rating]')) {
+                groups.push(scope);
+            }
+
+            var found = scope.querySelectorAll('[data-rating]');
+
+            for (var f = 0; f < found.length; f++) {
+                groups.push(found[f]);
+            }
+
+            for (var g = 0; g < groups.length; g++) {
+                var group = groups[g];
+                var stars = starsOf(group);
+
+                if (!stars.length) {
+                    continue;
+                }
+
+                var target = null;
+                var active = document.activeElement;
+
+                // Whichever of the three is the star to land on: where the reader is now,
+                // else the rated one, else the first.
+                if (active && active.hasAttribute && active.hasAttribute('data-rating-star')
+                    && group.contains(active)) {
+                    target = active;
+                } else {
+                    for (var i = 0; i < stars.length; i++) {
+                        if (stars[i].getAttribute('aria-checked') === 'true') {
+                            target = stars[i];
+                            break;
+                        }
+                    }
+                }
+
+                if (!target) {
+                    target = stars[0];
+                }
+
+                for (var s = 0; s < stars.length; s++) {
+                    stars[s].tabIndex = stars[s] === target ? 0 : -1;
+                }
+            }
+        }
+
+        document.addEventListener('keydown', function (event) {
+            var star = event.target;
+
+            if (!star || !star.hasAttribute || !star.hasAttribute('data-rating-star')) {
+                return;
+            }
+
+            var group = star.parentNode;
+
+            if (!group || !group.hasAttribute || !group.hasAttribute('data-rating')) {
+                return;
+            }
+
+            var stars = Array.prototype.slice.call(starsOf(group));
+            var index = stars.indexOf(star);
+
+            if (index === -1) {
+                return;
+            }
+
+            var target = null;
+
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                target = stars[(index + 1) % stars.length];
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                target = stars[(index - 1 + stars.length) % stars.length];
+            } else if (event.key === 'Home') {
+                target = stars[0];
+            } else if (event.key === 'End') {
+                target = stars[stars.length - 1];
+            }
+
+            if (!target) {
+                return;
+            }
+
+            // Moving the focus is the whole interaction. Selecting on arrow would mean a
+            // reader cannot inspect what they are about to set without setting it, and a
+            // radiogroup that commits on arrow is not what the role promises.
+            event.preventDefault();
+            target.focus();
+            sync(group);
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            sync();
+        });
+
+        document.addEventListener('livewire:navigated', function () {
+            sync();
+        });
+
+        document.addEventListener('livewire:init', function () {
+            if (typeof Livewire === 'undefined' || typeof Livewire.hook !== 'function') {
+                return;
+            }
+
+            Livewire.hook('morphed', function (payload) {
+                sync(payload && payload.el);
+            });
+        });
+    })();
 </script>

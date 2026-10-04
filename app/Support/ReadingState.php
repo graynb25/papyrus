@@ -181,6 +181,255 @@ class ReadingState
     }
 
     /**
+     * How many stars a series can carry, and the floor.
+     *
+     * Five and one, and the floor matters as much as the ceiling: a rating of zero is not a
+     * low rating, it is the absence of one, and it is stored as `null` so that "unrated" and
+     * "rated zero" cannot be confused by a query written later by someone who has forgotten.
+     *
+     * The column is `decimal(3, 1)`, which permits 3.5. Nothing writes a half. The extra
+     * precision is left in the schema because narrowing a column is a migration and widening
+     * a rating later would then need one, so the cheap half of the decision was taken up
+     * front and the expensive half was not.
+     */
+    public const RATING_MIN = 1;
+
+    public const RATING_MAX = 5;
+
+    /**
+     * Set or clear a rating.
+     *
+     * `null` clears rather than storing a zero, so the column's own null is the only way to
+     * say "unrated". That means the list of rated series is a `whereNotNull('rating')` with no
+     * numeric comparison to get wrong.
+     *
+     * ## Out-of-range values are refused, not clamped
+     *
+     * A rating of 9 or of -3 comes from a caller, not from a reader: the five buttons are the
+     * only path the UI offers. Clamping would store 5 for an input of 9, which means a bug
+     * upstream shows up as a plausible rating rather than as an exception, and a bug that
+     * looks like a working feature is the expensive kind. Refusing leaves the write unissued
+     * and the caller has to decide what a 9 means.
+     *
+     * @throws \InvalidArgumentException on a value outside RATING_MIN to RATING_MAX
+     */
+    public function setRating(User|int $user, int $mangaId, ?int $rating): SeriesState
+    {
+        if ($rating !== null && ($rating < self::RATING_MIN || $rating > self::RATING_MAX)) {
+            throw new \InvalidArgumentException(
+                'A rating must be between '.self::RATING_MIN.' and '.self::RATING_MAX
+                .', or null to clear it. Got '.var_export($rating, true).'.'
+            );
+        }
+
+        $state = $this->loadOrCreate($user, $mangaId);
+
+        /*
+         * Written as a string because that is what the column holds.
+         *
+         * `decimal:1` casts through `BigDecimal::of(...)->toScale(1, HalfUp)`, which returns a
+         * string, and the model declares `string|null`. Assigning the int works at runtime
+         * because the cast stringifies it on the way in, but it is the wrong type to hand the
+         * attribute, and an int here would mean a different value depending on which path set
+         * the row: `4` from this line and `"4.0"` from anything that read and wrote it back.
+         *
+         * "4" in, "4.0" stored. The one decimal place is the cast's job, not this method's.
+         */
+        $state->rating = $rating === null ? null : (string) $rating;
+        $state->save();
+
+        return $state;
+    }
+
+    /**
+     * Replace a series' tags with a normalised set.
+     *
+     * The whole set rather than an add or a remove, because the reader's own view of their
+     * tags is the set and a component holding a stale copy of it is the bug this avoids. Two
+     * quick edits in a row each read the current row, so neither loses the other's work.
+     *
+     * Normalisation lives here rather than in the component for the same reason the incognito
+     * gate does: every future caller would otherwise have to remember it, and the cost of
+     * forgetting is a column holding `'action  '` and `'Action'` and `'ACTION'` as three
+     * distinct tags. See {@see normaliseTags()} for what it guarantees.
+     *
+     * An empty set is stored as `null` rather than `[]`, matching every other "nothing here"
+     * in this class. `whereNotNull('tags')` then means "has tags" with no emptiness test.
+     *
+     * @param  array<int, mixed>  $tags  passed through {@see normaliseTags()}, which drops
+     *                                   anything that is not a string
+     */
+    public function setTags(User|int $user, int $mangaId, array $tags): SeriesState
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+        $normalised = $this->normaliseTags($tags);
+
+        $state->tags = $normalised === [] ? null : $normalised;
+        $state->save();
+
+        return $state;
+    }
+
+    /**
+     * Add one tag, keeping the rest.
+     *
+     * A separate method because "the reader typed a new label" is not a set replacement, and
+     * making the component read-modify-write would put a read and a write on a round trip
+     * that already has one.
+     *
+     * The row is re-read inside the transaction and locked, so two tabs adding two tags at the
+     * same moment cannot lose one. That is trap 52's shape one level down: an unlocked
+     * read-modify-write on a row two people are editing at once.
+     */
+    public function addTag(User|int $user, int $mangaId, string $tag): SeriesState
+    {
+        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+
+        return SeriesState::query()->getConnection()->transaction(function () use ($userId, $mangaId, $tag): SeriesState {
+            $state = SeriesState::query()
+                ->forUser($userId)
+                ->where('suwayomi_manga_id', $mangaId)
+                ->lockForUpdate()
+                ->first();
+
+            // Missing rather than absent: loadOrCreate() would insert inside this transaction
+            // and then the update below would be a second statement for no reason.
+            if ($state === null) {
+                $state = SeriesState::createFor($userId, ['suwayomi_manga_id' => $mangaId]);
+            }
+
+            $state->tags = $this->normaliseTags([...($state->tags ?? []), $tag]) ?: null;
+            $state->save();
+
+            return $state;
+        });
+    }
+
+    /**
+     * Remove one tag, keeping the rest.
+     *
+     * Removes case-insensitively, because {@see normaliseTags()} dedupes that way and a
+     * reader who typed `Action` and then typed `action` has two tags that are one tag.
+     */
+    public function removeTag(User|int $user, int $mangaId, string $tag): SeriesState
+    {
+        $state = $this->loadOrCreate($user, $mangaId);
+
+        $needle = $this->foldTag($tag);
+        $state->tags = $this->normaliseTags(
+            array_values(array_filter(
+                $state->tags ?? [],
+                fn (string $existing): bool => $this->foldTag($existing) !== $needle,
+            ))
+        ) ?: null;
+
+        $state->save();
+
+        return $state;
+    }
+
+    /**
+     * How long a tag may be, in characters.
+     *
+     * 40, which is long enough for "reading order: official" and short enough that a row of
+     * chips stays on one line in the sidebar this app is built for. Counted in characters
+     * rather than bytes because the limit is about layout.
+     */
+    public const TAG_MAX_LENGTH = 40;
+
+    /**
+     * How many tags one series may carry.
+     *
+     * 20, measured against the same constraint: at the chip size used on the series page this
+     * is about four rows, which is the point where a set stops being scannable. Beyond it a
+     * reader is filing rather than labelling, and a shelf is the right tool for that.
+     *
+     * The excess is dropped silently rather than refused, and that is a deliberate asymmetry
+     * with {@see setRating()}: a rating of 9 is a malformed value, while a seventeenth tag is
+     * a real tag the reader wants. Truncation loses the tail of a long list, so the caller
+     * tells the reader it happened rather than letting it look like the tags were saved.
+     */
+    public const TAG_MAX_COUNT = 20;
+
+    /**
+     * The guarantees a stored tag list holds to.
+     *
+     * In order:
+     *
+     *  - trimmed, with internal runs of whitespace collapsed to one space, so `'  slow burn '`
+     *    and `'slow burn'` are one tag rather than two that differ invisibly
+     *  - non-empty, so a list of blanks never becomes a set of empty strings
+     *  - deduped case-insensitively keeping the first spelling, so `Action` and `action`
+     *    collapse but the reader's own capitalisation survives
+     *  - no longer than {@see TAG_MAX_LENGTH}, truncated rather than rejected
+     *  - at most {@see TAG_MAX_COUNT} entries
+     *  - sorted case-insensitively, so the rendered order does not depend on the order things
+     *    happened to be typed
+     *
+     * The sort is the one choice here that could go the other way. Insertion order would
+     * preserve a grouping the reader made by typing, and nothing in the UI lets them reorder
+     * afterwards, so that grouping would become invisible the moment they reloaded. Alphabetical
+     * is predictable and has no hidden state.
+     *
+     * @param  array<int, mixed>  $tags
+     * @return array<int, string>
+     */
+    public function normaliseTags(array $tags): array
+    {
+        $seen = [];
+        $out = [];
+
+        foreach ($tags as $tag) {
+            /*
+             * Not defensive noise, and that is why the parameter is `mixed` rather than
+             * `string`. A tag arrives from a Livewire action, so it arrives from a request body,
+             * and a caller sending `{"tags":{"0":{"a":1}}}` would put an array into the column's
+             * JSON without this line. Typing the input as trustworthy strings would only move
+             * that failure somewhere less visible.
+             */
+            if (! is_string($tag)) {
+                continue;
+            }
+
+            $clean = trim((string) preg_replace('/\s+/u', ' ', $tag));
+
+            if ($clean === '') {
+                continue;
+            }
+
+            $clean = mb_substr($clean, 0, self::TAG_MAX_LENGTH);
+
+            $fold = $this->foldTag($clean);
+
+            if (isset($seen[$fold])) {
+                continue;
+            }
+
+            $seen[$fold] = true;
+            $out[] = $clean;
+
+            if (count($out) >= self::TAG_MAX_COUNT) {
+                break;
+            }
+        }
+
+        usort($out, fn (string $a, string $b): int => strcasecmp($a, $b));
+
+        return $out;
+    }
+
+    /**
+     * The case-insensitive key two spellings of one tag share.
+     *
+     * Private because nothing outside should be inventing its own comparison, and the one
+     * thing that must not happen is a removal that misses a tag because the casing differed.
+     */
+    private function foldTag(string $tag): string
+    {
+        return mb_strtolower(trim($tag));
+    }
+
+    /**
      * Record that a chapter was opened, and move the series pointer with it.
      *
      * Both writes go in one transaction because a chapter marked read with no

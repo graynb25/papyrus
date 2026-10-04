@@ -299,6 +299,169 @@ new #[Title('Series')] class extends Component
         unset($this->state);
     }
 
+    /**
+     * Rate this series, or unrate it by rating it again.
+     *
+     * Pressing the star that is already lit clears the rating rather than being a no-op. A
+     * control with no way back to unrated is a control a reader can get stuck on, and the only
+     * alternative would be a separate clear button sitting next to five stars to say the
+     * obvious thing.
+     *
+     * There is no separate saved rating on the page to keep in step, which is the reason this
+     * is safe: the star row reads `$this->state->rating` and the write updates that same row,
+     * so there is no second copy of the value that could disagree with the first.
+     */
+    public function rate(int $stars): void
+    {
+        $current = $this->state->rating === null ? null : (int) $this->state->rating;
+
+        app(ReadingState::class)->setRating(
+            auth()->user(),
+            $this->manga,
+            $current === $stars ? null : $stars,
+        );
+
+        unset($this->state);
+    }
+
+    /**
+     * Unrate this series.
+     *
+     * A separate method rather than `rate(0)`, because `setRating()` refuses anything outside
+     * one to five and that refusal is the right behaviour: a zero is not a rating this app
+     * offers, it is the absence of one, and it is stored as `null`. Overloading `rate()` with
+     * a magic zero would mean the method that validates also has to special-case, which is how
+     * a range check stops being a range check.
+     */
+    public function clearRating(): void
+    {
+        app(ReadingState::class)->setRating(auth()->user(), $this->manga, null);
+
+        unset($this->state);
+    }
+
+    /**
+     * The tag being typed, held between keystrokes and read on submit.
+     *
+     * A public property because that is what `wire:model` binds to. It is deliberately not
+     * part of the computed `$state`: a draft is what the reader has typed, not what is stored,
+     * and folding the two together would mean a half-typed tag appearing as a real one.
+     */
+    public string $tagDraft = '';
+
+    /**
+     * File this series under a label the reader invents.
+     *
+     * The draft is emptied whatever happens, because a tag that was refused should not sit in
+     * the box waiting to be pressed again. The rejection itself is reported, so nothing is
+     * silently dropped: normalisation truncates at 40 characters and the set caps at 20, and a
+     * reader who has lost a tag to either deserves to be told rather than left to wonder
+     * whether it saved.
+     */
+    public function addTag(): void
+    {
+        $draft = trim($this->tagDraft);
+
+        $this->tagDraft = '';
+
+        if ($draft === '') {
+            return;
+        }
+
+        $reading = app(ReadingState::class);
+        $existing = $this->state->tags ?? [];
+
+        if (mb_strlen($draft) > ReadingState::TAG_MAX_LENGTH) {
+            Flux::toast(
+                text: trans_choice(
+                    'That tag is :max characters and was cut to fit. One series may carry :count.|That tag is :max characters and was cut to fit. One series may carry :count.',
+                    ReadingState::TAG_MAX_COUNT,
+                    ['max' => ReadingState::TAG_MAX_LENGTH, 'count' => ReadingState::TAG_MAX_COUNT],
+                ),
+                heading: __('Tag shortened'),
+                variant: 'warning',
+            );
+        }
+
+        if (count($existing) >= ReadingState::TAG_MAX_COUNT) {
+            Flux::toast(
+                text: trans_choice(
+                    'This series already has :count tag. Remove one to add another.|This series already has :count tags. Remove one to add another.',
+                    ReadingState::TAG_MAX_COUNT,
+                    ['count' => ReadingState::TAG_MAX_COUNT],
+                ),
+                heading: __('No room for another tag'),
+                variant: 'warning',
+            );
+
+            return;
+        }
+
+        // A tag the reader already has is a no-op rather than an error, and worth saying so:
+        // pressing the same idea twice should feel like the app noticed, not like it broke.
+        if (in_array(mb_strtolower($draft), array_map(mb_strtolower(...), $existing), true)) {
+            Flux::toast(
+                text: __('That tag is already on this series.'),
+                heading: __('Already tagged'),
+                variant: 'info',
+            );
+
+            return;
+        }
+
+        $reading->addTag(auth()->user(), $this->manga, $draft);
+
+        unset($this->state);
+
+        /*
+         * No toast on success. The chip appearing in the list is the confirmation, and a toast
+         * saying "Tagged" on top of it makes the reader look for something that changed when
+         * the thing they were looking at already did. The two warnings above exist because
+         * those are the cases where the reader asked for one thing and got another.
+         */
+    }
+
+    /**
+     * Take a label off this series.
+     *
+     * No confirmation. Removing a tag is the operation the reader asked for by pressing the
+     * cross on that tag, it is reversible by typing the word again, and a dialog asking
+     * "are you sure?" about undoing a two-character edit is the kind of thing that teaches
+     * people to dismiss dialogs without reading them.
+     */
+    public function removeTag(string $tag): void
+    {
+        app(ReadingState::class)->removeTag(auth()->user(), $this->manga, $tag);
+
+        unset($this->state);
+    }
+
+    /**
+     * This series' tags, for the editor.
+     *
+     * A computed rather than read inline so the component receives an array and not a model's
+     * cast, and so the empty case is an empty array rather than null reaching a `@foreach`.
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function tags(): array
+    {
+        return array_values($this->state->tags ?? []);
+    }
+
+    /**
+     * The rating as the star row should draw it.
+     *
+     * Null rather than zero for unrated, because zero is not a rating this app offers and
+     * drawing five lit stars for "no opinion" would be a lie about a state that exists.
+     */
+    #[Computed]
+    public function rating(): ?int
+    {
+        return $this->state->rating === null ? null : (int) $this->state->rating;
+    }
+
     /*
      * Read state, set by hand.
      *
@@ -1352,6 +1515,38 @@ new #[Title('Series')] class extends Component
                             aria-label="{{ __('Read later') }}"
                             aria-pressed="{{ $this->state->read_later_at ? 'true' : 'false' }}"
                         />
+
+                        {{-- The rating, in the same row as the two binary preferences beside it
+                             and for the same reason: they are the three things a reader
+                             decides about a series before deciding to keep it.
+
+                             It is a star row rather than a dropdown because a rating is an
+                             absolute judgement and a dropdown hides the scale until it is
+                             open. There are five possible answers and all five are worth
+                             seeing at once. --}}
+                        <div class="flex items-center">
+                            <x-rating.stars :value="$this->rating" />
+
+                            @if ($this->rating !== null)
+                                {{-- Clear, as its own control.
+
+                                     Tapping the lit star again does clear it, and that is the
+                                     fastest way to do it. But "press the same star twice" is
+                                     not something a reader discovers from the shape of five
+                                     stars, and a rating they cannot see how to remove is a
+                                     rating they may not want to have set at all. The button
+                                     costs one icon. --}}
+                                <flux:button
+                                    size="xs"
+                                    variant="ghost"
+                                    wire:click="clearRating"
+                                    aria-label="{{ __('Clear your rating') }}"
+                                    class="-ml-1"
+                                >
+                                    <flux:icon name="x-mark" class="size-3.5" />
+                                </flux:button>
+                            @endif
+                        </div>
                     </div>
 
                     @if (filled($series['description'] ?? null))
@@ -1365,6 +1560,39 @@ new #[Title('Series')] class extends Component
                             </p>
                         </details>
                     @endif
+
+                    {{-- Tags, folded away.
+
+                         Under a disclosure rather than in the action row, because a tag is a
+                         label rather than one of the three decisions and a row of chips plus
+                         an input would outrank the favourite button on a page whose hero is
+                         cover, title and actions.
+
+                         Open when there is already something in it, and closed when there is
+                         not: an empty editor nobody asked for is noise, and a reader who has
+                         already tagged something can see the count in the summary without
+                         opening anything to learn it.
+
+                         The condition is a plain ternary and NOT `@open(...)`, which looks
+                         like it should work. Measured on Laravel 13.34.0: `@open` is not a
+                         registered Blade directive, so the compiler leaves it untouched, it
+                         reaches the browser as a junk attribute, and the details element stays
+                         closed. No error, no warning, and the reader simply finds the panel
+                         shut. Trap 153. --}}
+                    <details class="group mt-3 max-w-3xl text-sm" {{ $this->tags !== [] ? 'open' : '' }}>
+                        <summary class="inline-flex cursor-pointer list-none items-center gap-1.5 text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+                            @if ($this->tags === [])
+                                {{ __('Tags') }}
+                            @else
+                                {{ trans_choice(':count tag|[2,*] :count tags', count($this->tags), ['count' => count($this->tags)]) }}
+                            @endif
+                            <flux:icon name="chevron-down" class="size-3.5 transition-transform group-open:rotate-180" />
+                        </summary>
+
+                        <div class="mt-2">
+                            <x-tags.editor :tags="$this->tags" />
+                        </div>
+                    </details>
 
                     @if (filled($series['realUrl'] ?? null))
                         <a
