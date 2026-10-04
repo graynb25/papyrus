@@ -1644,7 +1644,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,125 tests**, 2,460 assertions, Pint clean, PHPStan
+Current standing: **1,148 tests**, 2,540 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1675,6 +1675,14 @@ of each star is filled. Two checks exist only because the first version of the g
 on nothing: `mustReadStars()` fails loudly when the row is absent, because `every()` over an
 empty array is `true`. It also reports what its own cleanup could not undo, and counts that as
 a failure.
+
+`verify-cbz-export.mjs` is the gate for trap 154, 17 checks. It reads the central directory
+of the archive **the browser downloaded**, with a reader written inside the gate that shares
+no code with the writer, so the check is not the server agreeing with itself. It also stops
+outright if it cannot seed its own finished download, which it can: the first version printed
+that failure and then passed every remaining check on a row a manual run had left behind.
+Seeding goes through `shell: true` because Node refuses to spawn a `.bat` directly, which is
+the same Windows detail as the Python launcher.
 
 ### Running the gates
 
@@ -2023,7 +2031,7 @@ repository is trusted further than it has been checked.
 | Deployment mode `public` exposes **moderation surfaces** (README table, SECURITY.md) | No moderation surface exists. `isShared()` and `isPublic()` are also uncalled, so the only distinction the app makes at runtime is single against not-single. |
 | `suwayomi:schema:diff` is a command (config/papyrus.php:374) | There is no such command. The diff is `suwayomi:schema:dump --dry-run`. |
 | `search.fanout_concurrency = 8` bounds in-flight jobs | **Now true.** Closed in this pass. See 14.6 for what it took. |
-| `downloads.cbz_export_max_bytes` size-guards an export | No CBZ export exists. Suwayomi's `/api/v1/chapter/{id}/download` builds the whole archive in memory; the proxy refuses that endpoint rather than guarding it. |
+| `downloads.cbz_export_max_bytes` size-guards an export | **Now true.** Closed by the CBZ export. Suwayomi's `/api/v1/chapter/{id}/download` still builds the whole archive in memory and the proxy still refuses it; the archive is assembled in this app instead, and the cap is enforced against a running total as the pages are written. See 14.6 for what it cost to find that the cap could not be a pre-flight. |
 
 The registration rule is the exception and now holds: `RegistrationMustBeAllowed` 404s
 `register` and `register.store` when the mode disallows it, and
@@ -2032,12 +2040,11 @@ that took as long as it did.
 
 ### 14.2 Config keys no code reads
 
-Five of the 41 leaf keys in `config/papyrus.php` are read by nothing. The count was 47 keys and 6 unread before this pass; `search.fanout_concurrency` is the one that stopped being dead.
+Four of the 41 leaf keys in `config/papyrus.php` are read by nothing. The count was 47 keys and 6 unread before this pass; `search.fanout_concurrency` stopped being dead then, and `downloads.cbz_export_max_bytes` stopped being dead with the CBZ export.
 
 | Key | Why it is still there |
 |---|---|
 | `suwayomi.jwt_audience` | Intended audience check. `Jwt` reads `exp` only and never verifies, deliberately. |
-| `downloads.cbz_export_max_bytes` | No export to guard. |
 | `downloads.poll_interval` | The schedule uses `everyTenSeconds()`; the number is written twice, in `SyncDownloads::INTERVAL_SECONDS` and in `routes/console.php`. |
 | `reader.preload_ahead` | The reader does its own preloading in plain JavaScript, reading configuration injected by `@js(...)`. |
 | `reader.preload_behind` | As above. |
@@ -2145,7 +2152,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 153, each number once, ascending.
+tidiness. The list is now 1 to 154, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2220,3 +2227,67 @@ A related trap, smaller but the same shape: **a report of "it does not work" is 
 the setup until the account, the data and the code have each been checked separately.** Two of
 the three explanations here were not code, and the third was only visible once the first two
 were eliminated.
+154. **`Content-Length` is the obvious way to size a download before sending it, and Suwayomi
+     does not send it for page images.** The CBZ export's size guard was built on it: ask each
+     page for its length, add them up, refuse before the response starts. That is the right
+     shape, because a guard that fires after the first byte hands the reader a truncated archive
+     their unzip tool calls corrupt, which is indistinguishable from a bad download.
+
+     Measured against v2.4.2366 on a live page, none of the three ways of asking work:
+
+     ```
+     HEAD               200, Content-Type text/plain, no length, no Accept-Ranges
+     Range: bytes=0-0   200, no Content-Range
+     GET                Server, Date, Content-Type, Cache-Control, Connection
+     ```
+
+     Jetty answers page images with chunked transfer encoding. So every page reads as unknown,
+     the guard could only ever refuse, and the pre-flight that established this cost **20.5s**
+     against **1.9s** for the whole export. Twenty-two of twenty-two pages reported no length.
+
+     What ships instead: build the archive into a temp file, check the running total as it
+     goes, delete and refuse on overflow, otherwise rewind and send. Memory stays flat at one
+     chunk per page, the reader never receives a truncated archive, and the response now
+     carries a real `Content-Length` rather than an estimate. Measured: 22 pages, 19.3 MB,
+     1.4s to build, **peak memory 32 MB**.
+
+     **A guard whose premise is false is not a conservative guard, it is a feature that does
+     not work**, and it refuses every single time rather than failing sometimes, which is
+     exactly what makes it easy to believe. The general shape: before sizing something you are
+     about to send, measure whether the source will tell you. Every content-length in this
+     file is worth checking against the server that serves it rather than assumed, because
+     that code only reads it when it happens to be there.
+
+     Five smaller ones from the same feature, all of them found by running it.
+
+     **`pack('V', "\x50\x4b\x03\x04")` writes four zero bytes.** The ZIP record signatures were
+     written as 4-byte strings and handed to `pack('V')`, which takes an integer, and a string
+     converts to 0. Every header in the archive began `00 00 00 00` and `ZipArchive` refused it
+     with error 19. **A signature is not a number**, and the difference is invisible until a
+     reader looks.
+
+     **CRC-32 is "invert, shift eight times per byte, invert", and PHP removed the incremental
+     form.** `crc32()` takes exactly one argument in PHP 8, so a chunk-by-chunk stream has to
+     fold its own. The first version ran the register from zero with no inversion at either
+     end, which is the one's complement of the checksum: it wrote `0xEAAEB7DE` for a payload
+     whose CRC is `0x3B15CE19`. Both errors were invisible to the size checks and would have
+     shipped as archives readers call corrupt, which looks exactly like a truncated download.
+
+     **A `finally` that closes a reader replaces the assertion failure with its own error.** The
+     round-trip test called `$zip->close()` in a `finally`, and closing an archive that failed
+     to open throws, so *every* failure in that file was reported as "Invalid or uninitialized
+     Zip object" instead of what actually went wrong. Two genuine bugs hid behind that one
+     line. **A cleanup step must not be able to raise, or it hides the thing it cleans up
+     after.**
+
+     **A streamed response has no body until it is read.** `getContent()` returns an empty
+     string for a `StreamedResponse`; the assertion is `streamedContent()`. Four failures came
+     from that at once, all reporting an archive with zero entries and a `Content-Length` of
+     zero, on an endpoint that had just answered 200 with a working archive.
+
+     And **`setCallback` is the wrong place to delete a scratch file.** It fires when the
+     response has been sent, which is exactly the moment a reader who cancels stops listening,
+     so the one case most worth cleaning up is the one it is least likely to reach. A
+     `finally` around the send runs on that path too, and it is the only version a test can
+     see: `setCallback` never fires under a test, so a test asserting "nothing was left behind"
+     would have passed against a build that leaks on every export.

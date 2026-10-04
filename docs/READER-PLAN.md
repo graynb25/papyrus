@@ -273,7 +273,7 @@ L1 dual-page/spread mode (blocked on C13) · L2 scrub thumbnails · L3 reader pr
 
 ## Where the build stands
 
-Every phase below is a checklist. **63 shipped, 14 open**, and the open ones
+Every phase below is a checklist. **64 shipped, 13 open**, and the open ones
 name the reason rather than just the item, because most of them are a deliberate
 scoping decision or an API that does not exist rather than an oversight.
 
@@ -283,10 +283,10 @@ scoping decision or an API that does not exist rather than an oversight.
 | Phase 1: Discovery | 9 | 0 |
 | Phase 2: Read path | 13 | 1 |
 | Phase 3: Library & personal data | 8 | 1 |
-| Phase 4: Downloads & offline | 5 | 4 |
+| Phase 4: Downloads & offline | 6 | 3 |
 | Phase 5: Health, migration, resilience | 10 | 0 |
 | Phase 6: Parity & polish | 5 | 8 |
-| **Total** | **63** | **14** |
+| **Total** | **64** | **13** |
 
 **No H-tier item is open.** H7 shipped, and shipped broken: the bulk bar's checkboxes
 used a deferred `wire:model` against a server-side gate, so ticking a box committed
@@ -319,7 +319,7 @@ code disagree, including several claims in this file.
 - [x] `Timestamps` handling epoch-seconds vs milliseconds and LongString coercion
 - [x] Same-origin streaming image proxy with allowlists (H14)
 - [x] `suwayomi:check` and `suwayomi:schema:dump` commands
-- [x] Suite green: **1125 tests**, Pint clean, PHPStan level 7 clean
+- [x] Suite green: **1148 tests**, Pint clean, PHPStan level 7 clean
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
@@ -451,7 +451,15 @@ lexer and a parser.
 - [ ] Bulk and policy downloads: whole series, unread up to N, per-category auto-download
       (M7). No policy layer exists
 - [ ] Delete policies: after read, keep N most recent, never delete bookmarked
-- [ ] CBZ export to browser, size-guarded. `downloads.cbz_export_max_bytes` is a config key
+- [x] **CBZ export to browser, size-guarded.** `downloads.cbz_export_max_bytes` now guards
+      something. Suwayomi's own `/api/v1/chapter/{id}/download` is refused by the proxy because
+      it builds the whole archive in memory server-side (Suwayomi-Server#2353), so the archive
+      is assembled here instead: a streaming ZIP writer that never holds more than one 64 KiB
+      chunk, a per-page running total checked against the cap, and a temp file deleted on both
+      the success and the refusal path. **No `Content-Length` pre-flight, because Suwayomi
+      sends none for page images** (measured: Jetty, chunked, 22 of 22 pages unknown), so the
+      archive is built first and sent second. 23 tests, plus 17 checks in
+      `verify-cbz-export.mjs`. Trap 154
       nothing reads, and Suwayomi's own download endpoint builds the whole archive in
       memory, so the proxy refuses that path rather than guarding it
 - [x] Local source: browse the folder and rescan (H15), pairing the folder against the

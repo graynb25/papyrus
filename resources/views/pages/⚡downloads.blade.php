@@ -70,6 +70,45 @@ new #[Title('Downloads')] class extends Component
     #[Computed]
     public function labels(): array
     {
+        return $this->buildLabels();
+    }
+
+    /**
+     * The name a CBZ export should be saved under, from what the labels already resolved.
+     *
+     * "Series - Chapter" rather than either alone. A downloads folder with forty files named
+     * `chapter-1.cbz` is not a downloads folder anyone can use, and the series title is what
+     * makes a file recognisable in it. The labels are already on the page for the row labels,
+     * so this costs nothing rather than a second lookup per row.
+     *
+     * Falls back to the chapter id when the gateway could not name the series, which is what
+     * the row itself shows, so the filename never invents a title the page did not have.
+     */
+    public function exportName(Download $row): string
+    {
+        $label = $this->labels[(int) $row->suwayomi_chapter_id] ?? null;
+
+        $series = trim((string) ($label['series'] ?? ''));
+        $chapter = trim((string) ($label['chapter'] ?? ''));
+
+        if ($series === '' && $chapter === '') {
+            return 'chapter-'.(int) $row->suwayomi_chapter_id;
+        }
+
+        if ($series === '') {
+            return $chapter;
+        }
+
+        if ($chapter === '') {
+            return $series;
+        }
+
+        return $series.' - '.$chapter;
+    }
+
+    #[Computed]
+    private function buildLabels(): array
+    {
         $rows = $this->downloads;
 
         $mangaIds = $rows
@@ -336,6 +375,13 @@ new #[Title('Downloads')] class extends Component
         </x-slot:actions>
     </x-page.header>
 
+    {{-- A refused export, which is a redirect back here rather than a response. --}}
+    @if (session('cbzRefusal'))
+        <flux:callout variant="warning" icon="exclamation-triangle" data-test="cbz-refused">
+            {{ session('cbzRefusal') }}
+        </flux:callout>
+    @endif
+
     {{--
         The shared queue.
 
@@ -478,6 +524,27 @@ new #[Title('Downloads')] class extends Component
                         ></flux:button>
                     @else
                         @if ($row->state === \App\Models\Download::FINISHED)
+                            {{--
+                                Export as CBZ, beside delete rather than on the series page.
+
+                                It belongs next to delete because it is the other thing a reader
+                                does with a chapter that is on disk: either keep it or hand it
+                                to something else. On the series page it would be a fifth
+                                control competing with four that are about reading.
+
+                                A plain link, not a Livewire action. The response is a file, so
+                                the browser has to navigate to it, and a `wire:click` would
+                                receive the archive as a Livewire payload and try to diff it.
+                            --}}
+                            <a
+                                href="{{ route('downloads.cbz', ['chapter' => $row->suwayomi_chapter_id]) }}?name={{ rawurlencode($this->exportName($row)) }}"
+                                class="relative z-10 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:outline-none dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white"
+                                aria-label="{{ __('Export this chapter as a CBZ') }}"
+                                title="{{ __('Export as CBZ') }}"
+                            >
+                                <flux:icon name="arrow-down-tray" class="size-4" />
+                            </a>
+
                             <x-confirm
                                 action="forget({{ $row->suwayomi_chapter_id }})"
                                 :title="__('Delete these pages from disk?')"

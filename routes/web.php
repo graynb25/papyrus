@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CbzExportController;
 use App\Http\Controllers\CoverController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReaderProgressController;
@@ -76,6 +77,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
      * server for download state; it polls its own rows. See App\Downloads.
      */
     Route::livewire('downloads', 'pages::downloads')->name('downloads');
+
+    /*
+     * The CBZ export.
+     *
+     * A GET, not a POST, and deliberately: it is a download, and a reader should be able to
+     * link to one, put it in a bookmark bar, or open it in a new tab. Nothing it changes is
+     * state on this server, so there is nothing for a POST to protect.
+     *
+     * `name` is a query parameter rather than part of the path so the route stays keyed on the
+     * chapter alone, and the controller sanitises it, because a filename arriving from a URL
+     * ends up in a Content-Disposition header.
+     *
+     * Note what is not here: a permission gate. The route spends real CPU and disk on a
+     * reader's behalf, which is what a toggle would be for, and `can:cbz.export` was tried
+     * first. This app defines no gates, and Laravel denies an undefined ability to everyone,
+     * so the "guard" would have been a 403 on every export. The cap in
+     * `papyrus.downloads.cbz_export_max_bytes` is the guard that exists and is enforced.
+     * A deployment switch is a small addition whenever someone wants one.
+     */
+    Route::get('downloads/chapter/{chapter}/cbz', CbzExportController::class)
+        ->name('downloads.cbz');
 
     /*
      * The migration wizard.
