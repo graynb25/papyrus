@@ -61,6 +61,14 @@ yarn-error.log
 # several of them carry a local seed account's credentials.
 /.openchamber
 /.openchamber/
+/.zcode
+
+# Process logs written by the three services the notes tell you to start by
+# hand. They are per-developer runtime output, and vite.log in particular names
+# the port the dev server happened to pick.
+/queue.log
+/vite.log
+/vite.err.log
 
 # Local environment overrides and editor droppings that Laravel's defaults miss
 /.env.*

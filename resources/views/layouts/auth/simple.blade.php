@@ -5,10 +5,11 @@
     </head>
     <body class="min-h-screen app-backdrop antialiased">
         {{--
-            The auth screen. A reading room, not a form: the left panel is the
-            product statement set in the display faces over a slow ink gradient,
-            and the card holds the one thing a returning reader needs. On a phone
-            the statement steps aside and the form leads.
+            The auth screen for everything that is not the login: register,
+            reset, confirm, two-factor. The same reading-room idea at a calmer
+            volume, since these pages are visited rarely and often under mild
+            stress: the ink gradient and the glow stay, the wall does not come
+            along.
         --}}
         <div class="relative flex min-h-svh">
             <div class="pointer-events-none absolute inset-0" aria-hidden="true">
@@ -20,8 +21,8 @@
             {{-- Statement panel --}}
             <div class="relative hidden w-[46%] flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
                 <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-3" tabindex="-1" aria-hidden="true">
-                    <span class="flex size-10 items-center justify-center rounded-xl bg-vermilion-600 shadow-lg shadow-vermilion-600/30">
-                        <x-app-logo-icon class="size-5 fill-current text-white" />
+                    <span class="seal size-10">
+                        <x-app-logo-icon class="size-5 fill-current" />
                     </span>
                     <span class="font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
                 </a>
@@ -45,18 +46,20 @@
             <div class="relative flex min-w-0 flex-1 items-center justify-center p-6 md:p-10">
                 <div class="w-full max-w-sm animate-rise-in">
                     <div class="mb-8 flex items-center gap-3 lg:hidden">
-                        <span class="flex size-10 items-center justify-center rounded-xl bg-vermilion-600 shadow-lg shadow-vermilion-600/30">
-                            <x-app-logo-icon class="size-5 fill-current text-white" />
+                        <span class="seal size-10">
+                            <x-app-logo-icon class="size-5 fill-current" />
                         </span>
                         <span class="font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
                     </div>
 
-                    <div class="flex flex-col gap-6 rounded-3xl border border-zinc-200/80 bg-white/80 p-7 shadow-xl shadow-zinc-950/5 backdrop-blur-md sm:p-8 dark:border-white/[0.07] dark:bg-zinc-900/70 dark:shadow-black/30">
+                    <div class="glass flex flex-col gap-6 rounded-3xl p-7 sm:p-8">
                         {{ $slot }}
                     </div>
                 </div>
             </div>
         </div>
+
+        @include('partials.behaviors')
 
         @persist('toast')
             <flux:toast.group>

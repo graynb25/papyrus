@@ -145,6 +145,9 @@ Measured, not assumed. Re-verify with the scripts in `..\.tools\suwayomi\`.
 | **`Collection::push` inside a getter mutates the thing it reads** | `DedupeGroup::strictestContentWarning()` pushed the primary row onto `alternatives`, so the group grew by one on every call and any count read after it was wrong by that much. It shipped for months because the one caller read the count before calling it. The fix is `concat`, which returns a new collection. |
 | `UpdateExtensionPatchInput` carries three booleans | `install`, `uninstall` and `update`, verified in the committed v2.4.2366 snapshot. `update: true` pulls the store's current artefact over an installed extension. `ExtensionManager::update()` shipped unused for months: the page drew the "update" badge and no control anywhere acted on it. |
 | **AniList's OAuth issues no refresh token** | The access token lives about 365 days and that is the whole credential. A rejected token cannot be renewed, so the account row is deleted and the reader connects again. The token endpoint takes a form post and both `expires_in` (seconds) and `expires` (epoch) have been seen in responses, so both are read. |
+| **Source thumbnails fail transiently** | Three of eighteen cover requests answered 500 on one page load and 200 on the next, upstream of anything we control. For the login showcase this makes every fetch path into one fact: a cover that cannot be streamed is a 404, whatever was thrown, because an error page in the reader's console for a slot the page hides anyway is noise with no reader in it. |
+| **Suwayomi NPEs on an unregistered source** | `fetchSourceManga` for a source id whose extension is gone answers a bare `java.lang.NullPointerException at SourceMutation.kt:264` (46 occurrences in one log, all the same shape), and `source(id:)` answers a GraphQL field error about its non-null `SourceType` resolving null. Neither names the real problem. The registry query (`sources { nodes { id } }`) is the honest check, and the browse page asks it on the failure path only. |
+| **Extension JARs can vanish while the mirror insists they are installed** | Measured on this box: 6 of 18 extension packages on disk against 84 sources in the mirror, the survivors all stamped Oct 1 and the cause unrecoverable from any log. Suwayomi came up with 73 of 84 sources registered, browse of any missing one died in the NPE above, and the mirror drift notice was the only signal pointing at it. The repair was `ExtensionManager::installMany()` over the mirror's own package list: 11 installs, zero failures, registry back to 84 of 84. A fresh Suwayomi start after a crash is the moment to re-diff `sources { nodes { id } }` against the mirror rather than trusting either side. |
 
 ---
 
@@ -1077,7 +1080,13 @@ Each of these cost real time. Do not repeat them.
      box prints "Python was not found" and exits 1, and a gate whose exit code nobody reads is
      a gate that has stopped existing without saying so. `verify-october-pass.mjs` carries a
      comment saying it is a Node port of the Python original for exactly this reason, which is
-     the only reason the pattern was known.
+     the only reason the pattern was known. The same shape arrived on 2026-10-04 from Node, as
+     `MODULE_NOT_FOUND` with `playwright@1.63.0` installed and `npm ls` clean: the shell's
+     working directory had reset to the workspace root, so `node verify-cover-reveal.mjs` was
+     looked for one level up. **A gate that failed to load is not a gate that ran**, and this
+     one printed a stack trace rather than a summary line, which is the difference between a
+     failure you can read and a green run that says nothing. The fix is an absolute path or a
+     `workdir` that is set on every call, since the harness resets the shell between commands.
 
 144. **A dev server that is up can still be serving a stylesheet missing utilities.** The search
      grid rendered one card per row at 1541px wide inside a 1440px window. Every card was a
@@ -1192,6 +1201,181 @@ Each of these cost real time. Do not repeat them.
      The general shape: **a fake is a program with its own bugs, and a test that fails for a
      reason you cannot name is telling you the fake is where to look.** Print what the fake saw
      rather than reasoning about what it should have seen.
+
+147. **A component attribute written `attr="{{ ... }}"` is escaped text, and the component
+     escapes it again.** The confirm modal's `action` prop was fed `wire:click` targets built
+     at the call site with `Js::from(...)`. `{{ }}` escapes at the call site, the component
+     received the escaped string, and its own `wire:click="{{ $action }}"` escaped it once
+     more: the browser decoded one level and Livewire compiled `uninstall(&#039;...&#039;)`,
+     a SyntaxError at `&`, one per extension on the page, none of them visible in any
+     server-side test. **There is no HTML parser between a Blade call site and the component
+     it renders**, so "the browser decodes attributes" does not apply. Anything carrying
+     quotes goes through the `:prop` binding, which passes the value unescaped. Integer
+     parameters are safe by accident: `e()` has nothing to say about digits.
+
+148. **A positioned sibling paints above a static image.** The cover skeleton underlay sat
+     before the image in the DOM inside the same stacking context, but the underlay was
+     `position: absolute` and the image was static, and positioned elements paint above
+     static ones: every cover in the app rendered under a permanent shimmer veil. Found in
+     the first browser screenshot, where it read as a wash over the whole grid; no test
+     renders pixels. The fix is `position: relative` on the image and nothing else.
+
+149. **An animation with `fill-mode: both` holds its final keyframe forever.** The reading
+     room's rows carry a per-depth blur, and reusing the `blur-in` keyframes for their
+     entrance let the animation's final `filter: blur(0)` override that depth blur
+     permanently, because a filled animation outranks the declared property. An entrance and
+     a resting state that share a property must agree on its final value: the rows got their
+     own opacity-only keyframes.
+
+150. **"Slow, and some never load" was two facts, and neither was the code under change.**
+     The report arrived the day after a design pass, so the redesign was the obvious suspect,
+     and it was innocent in both directions. Measured: `fetchMany` on a live source answered
+     in 117ms and a live browse in 47 to 627ms, while the failing pages were all sources
+     whose extension JARs had vanished from Suwayomi's disk between one session and the next
+     (6 of 18 packages left; the folder was gutted with nothing in any log saying by whom).
+     The server answered those with its own NPE, which the page printed verbatim as a stack
+     trace, and the mirror still listed every source as installed, which is why the picker
+     kept offering them.
+
+     Two lessons. **A redesign is the suspect for anything reported after it, so measure the
+     unchanged path first**: one timing call on a live source cleared the design in a minute
+     and pointed at the server. And **the mirror and the server disagreeing is a fact the
+     page must survive**: the browse page now classifies the failure through the registry
+     query and says the source is gone rather than showing Kotlin, but the deeper fix is that
+     the sources page's drift notice was the only thing pointing at this, and nothing
+     re-checks registration at startup.
+151. **A capture-phase `load` listener cannot hear an image that loaded while it was still
+     detached, and morphdom builds every new node detached.** The cover atom's blur-up holds
+     its image at `opacity: 0` until `is-loaded` is added, and `behaviors.blade.php` added
+     that from a capture-phase `load` listener plus a settle pass on `DOMContentLoaded` and
+     `livewire:navigated`. Both are correct and both miss the same case. Morphdom builds the
+     incoming nodes in a detached container and swaps them in afterwards, so a cover whose
+     bytes are already cached fires its `load` **while detached**, where a listener on
+     `document` cannot reach it. It then arrives already `complete`, and nothing ever resolves
+     it.
+
+     Measured, on `/browse/4` after the Second Pressing pass:
+
+     ```
+     first paint      20 covers   20 revealed   0 complete-but-hidden
+     after one append 40 covers   20 revealed  20 complete-but-hidden
+     manual settle                 40 revealed
+     ```
+
+     So the bytes were there, the network was clean, and 20 of 40 covers were invisible behind
+     the shimmer, and the reader's description was "scroll loads them, then they vanish and we
+     go back to that loading loop". It was not a loop: the grid appends one page per scroll,
+     six scrolls and six `livewire/update` posts, measured. Each append added a fresh screenful
+     of permanently hidden covers, which reads as the loop.
+
+     This arrived with the redesign and could not have arrived before it: the old markup was a
+     plain `<img>` inside `.cover-frame` with no opacity to hold it back, so a missed reveal was
+     invisible. **A reveal that depends on an event is a new failure mode the moment the image
+     gains an initial state.** It was invisible to every one of the 1,076 tests, because a
+     feature test renders HTML and this is `opacity` on an element in a browser.
+
+     The fix is a settle pass on Livewire's own lifecycle, registered through `livewire:init`
+     because `@fluxScripts` comes after this include and `Livewire` is not defined yet at
+     parse time. `verify-cover-reveal.mjs` is the gate, over the login wall, the library grid,
+     the series hero, the browse grid across four scrolls and the search grid while it streams.
+
+     Four smaller lessons from the same pass. **Ask the element what state it is in rather
+     than whether it looks loaded**: the counter that mattered was
+     `complete && naturalWidth > 0 && !is-loaded`, because `is-loaded` is also added on `error`
+     and a broken cover counts as resolved. **An `opacity: 0` start state makes "loaded" and
+     "arrived" different questions**, and only the second one is visible in a screenshot. And
+     **a check whose selector misses its subject reports a failure that does not exist**:
+     the first series probe looked for `.flux-callout`, which matches nothing, defaulted to
+     "still loading at 30s", and reported five healthy pages as broken. Flux renders
+     `data-flux-callout`. That is trap 138 with a CSS class instead of a wrong account.
+
+     The fourth is a measurement artefact that cost an hour of chasing a bug that was not
+     there, and it is the reason `verify-cover-reveal.mjs` asserts on element state rather
+     than on a screenshot. After the fix, every cover reported complete, sized,
+     `opacity: 1`, `filter: none`, on screen, non-zero box: 80 of 80, and **the screenshot
+     still showed a dozen empty frames in exactly the places the page said were fine**.
+     Three separate readings agreed with each other and disagreed with the picture, so the
+     picture was the suspect rather than the other two.
+
+     The cause: `page.screenshot()` captures the compositor surface, and a `loading="lazy"`
+     image that has been decoded but not rasterised is simply absent from it. Asking for
+     `element.screenshot()` forces a paint per element, which is why one disagreed with the
+     other. Walking the grid top to bottom and capturing again rasterises everything, and the
+     second frame is complete:
+
+     ```
+     before the walk   80 of 80 report drawn   a dozen frames empty in the capture
+     after the walk    80 of 80 report drawn   every frame present
+     ```
+
+     **A blank region in a screenshot is a question, not an answer**, and the first thing to
+     ask is whether the browser painted it at all. This is trap 45's shape with the opposite
+     polarity: that one is a browser that delivers no frames, this one is a capture that
+     delivers an incomplete frame, and in both cases the pixels are the least reliable witness
+     in the room. `probe-blank-pixels.mjs` settles it by screenshotting each cover on its own
+     and asking whether the bytes have any variance, which distinguishes "flat fill" from
+     "artwork" without a human looking.
+
+     ### The second half: a page that told the reader the wrong thing
+
+     Trap 151's companion, and it was not in the same file. `CheckLedger::check()` records
+     `ERROR` or `NO_CHAPTERS` with the server's reason, and the series page read none of it:
+     every zero-chapter series rendered one sentence. Measured on the dev library, 8 series had
+     no chapters, 4 of them recorded `Cloudflare bypass currently disabled`, and all 8 were
+     reported as "The source has not listed any chapters for this series". That is not a
+     wording preference. It is a different claim: one says the source has nothing, the other
+     says it was asked and could not answer.
+
+     The retry button was worse, because it had no wording at all. Its catch branch called
+     `Flux::error()`, which trap 79 says does not exist in Flux 2, so pressing the one control
+     that exists for a failing source raised "Call to undefined method
+     Flux\FluxManager::error()" and 500ed the Livewire request. Measured: the browser saw a 500
+     and the gate reported it as **"the series chapter list offers read toggles: 0"**, because
+     the page never came back. The gate was right about the count and wrong about everything
+     else. Trap 79 said the one pre-existing `Flux::error` was "on a catch branch no test
+     reached", and the October pass reached it.
+
+     Fixed in three parts: a `danger` toast carrying the recorded reason, `emptyReason()`
+     reading the ledger row, and the two callouts that printed different sentences for one
+     condition now reading the same computed. The classification is on the message because
+     that is what `CheckLedger` does and because the manual retry writes no ledger row, so
+     there is no state to read.
+
+     And **a gate carrying a fact about the data is trap 102 wearing a series id**.
+     `verify-october-pass.mjs` hardcoded manga 112 with a comment saying it had chapter rows.
+     It sits on a Cloudflare-blocked source, so it cannot have them, and the gate failed on a
+     series behaving exactly as designed. It now reads candidates off `/library` and takes the
+     first with rows: series 116 of 20. **The count belongs in the failure message**, so the
+     next reader can see what it looked at.
+
+     ### A third one, found only because the second was fixed
+     Trap 129's untreated `database is locked` had a user-visible consequence nobody had
+     connected to it. The login wall is eighteen covers at once by design, and every one of
+     them was rate limited, and Laravel's limiter counts by writing: `increment()` on the
+     database store is a transaction that reads the counter and then updates it. On SQLite that
+     is trap 129's deferred-transaction upgrade. Measured: 6 of 72 cover requests answered 500
+     across four browser rounds, and the trace landed inside
+     `DatabaseStore::increment()`. Sixteen ids asked one at a time returned 16 of 16 as 200, and
+     an unthrottled route under the same concurrency did not fail, which is what put the blame
+     on the limiter rather than on Suwayomi or the proxy.
+
+     The obvious fix is to move the counter off SQLite, and it was measured before it was
+     believed. `FileStore::increment()` is a read-modify-write with no lock:
+
+     ```
+     limiter store = file, 140 concurrent requests, limit 120 a minute
+       200 served 140    429 limited 0
+     ```
+
+     **A rate limit that silently stops limiting is worse than a blank cover.** So the covers
+     carry no limit and the payload, which is one request per page load, keeps its own. Measured
+     after: 0 of 19 concurrent cover requests fail, 0 of 72 in the browser, and 130 sequential
+     payload requests give 120 served then 10 limited.
+
+     The general shape, and it is the one worth keeping: **the fix for a concurrency bug is not
+     the first thing that makes the symptom go away.** Moving the counter made the 500 vanish
+     and the limit vanish with it, and only the second measurement caught that. The check that
+     caught it is the one nobody writes: after changing a limiter, ask for more than it allows.
 ---
 ---
 
@@ -1316,7 +1500,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1034 tests**, 2,268 assertions, Pint clean across 219 files, PHPStan
+Current standing: **1,082 tests**, 2,376 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 `verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
 `verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
@@ -1325,6 +1509,13 @@ level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
 October 2026 feature pass added 21 checks in `verify-october-pass.mjs` over the search
 filters, the result-card library toggle, the read toggles, the updates view and the
 connections page.
+
+`verify-cover-reveal.mjs` is the gate for trap 151 and the only one that runs on the **login**
+wall rather than behind a sign-in. Ten checks across five surfaces, because the cover atom is
+shared and a reveal can break on one of them without breaking the others: it asks each image
+whether it is `complete`, whether it has `naturalWidth`, and whether it carries `is-loaded`,
+and fails on any image that has artwork and no reveal. Ten is not the point. The point is that
+the count is compared against what the page rendered, so an empty result cannot pass.
 
 ### Running the gates
 
@@ -1415,6 +1606,25 @@ of a local seed account.
 | `undo-migration.php <to> <from>` | Reverses a migration through the app's own mapper and state mover |
 | `reset-migration-state.php` | Clears search rows and migration records so a run starts clean |
 | `verify-october-pass.mjs` | The October 2026 feature pass end to end: named language pills, the result-card library toggle, the read toggles, the updates view, the connections page. A Node port of the `uv`-run convention, because this machine lost its Python toolchain; run with `node verify-october-pass.mjs` from `.tools/suwayomi`, which holds the `playwright` npm package |
+| `shot-overhaul.mjs` | Full-page screenshots of the design overhaul's surfaces: the Reading Room logged out (desktop and mobile), library, series, search, downloads, health, sources, appearance, the reader and a 404, written to `.tools/suwayomi/shots/`. A screenshot pass, not a gate: it asserts nothing, it is the pixels a design change is judged on |
+| `verify-cover-reveal.mjs` | Every cover on every surface reaches its reveal: the login wall, the library grid, the series hero, the browse grid across four scrolls and the search grid while it streams. Fails on any image with `naturalWidth > 0` and no `is-loaded`, which is the shape trap 151 shipped. Trap 151 |
+| `verify-browse-failure.mjs [sites]` | That a browse of the sites named in the report says what is true instead of printing a JVM stack trace. Art Lapsa answered a non-null `source` field resolving to null and Asura Scans a `SourceMutation.kt:264` NPE; both now go through the registry check, and the gate fails on any callout matching `/kotlin\|NullPointerException/`. Goes back to `/sources` before every lookup, because the first run looked for the second site on the first site's page and reported it missing |
+| `probe-refresh-toast.mjs [manga]` | That pressing Refresh chapters on a series whose source cannot answer produces a rendered sentence rather than a 500, and names any failing request rather than counting console errors. Every 500 the browser saw, by status, resource type and path |
+| `probe-picker-links.mjs` | Every browse link the source picker actually renders, with its text. Written because a gate reported a site missing from the picker and the answer was the gate's own locator |
+| `probe-showcase-concurrent.php [ids...]` | Nineteen showcase covers asked at once with curl_multi, which is what a browser does and what a loop cannot. 1 of 19 failed before the limiter came off the cover route, 0 of 19 after. The loop version returned 16 of 16 and proved nothing |
+| `probe-showcase-load.mjs` | The same thing through a real browser, four rounds with a fresh context each so the cache cannot hide a repeat. Named for the login wall rather than the route, because the wall is what asks for eighteen covers at once |
+| `probe-throttle-still-works.php` | That 130 requests to `/showcase` give 120 served and 10 limited. Written because the fix for a 500 was to move a rate limiter off a write, and a limiter that stops limiting is worse than a blank cover. 140 of 140 served is the shape of that failure |
+| `probe-throttle-cause.php` | Whether a throttled route or an unthrottled one is what fails under concurrency, which is what placed the blame on the limiter rather than on Suwayomi, the token lock or the proxy |
+| `probe-blank-covers.mjs` | Which covers are blank and what the server answered for each, by name. `is-loaded` is added on `error` as well as on `load`, so a failed request counts as resolved and a tally of "hidden" is 0 while a screenshot shows six empty cards |
+| `probe-cache-keys.php` | What is in the cache table and which key is being incremented. The 500's trace named a digest, and neither `suwayomi.tokens` nor its lock hashes to it, which is what ruled out the token path and pointed at the limiter |
+| `probe-blank-vs-hidden.mjs` | Whether the covers are painted, asked two ways: the element state, and two full-page captures of the same scroll position, one before and one after a walk down the grid. It is how the screenshot artefact was told apart from a real defect, and it is why `verify-cover-reveal.mjs` asserts on element state |
+| `probe-blank-pixels.mjs` | Whether a cover's own screenshot has any variance in it, which separates a flat fill from artwork without a human looking. The only check that can settle "the frame is empty" when every DOM reading says otherwise |
+| `probe-painted.mjs` | One cover described fully: `src` against `currentSrc`, natural size, box size, opacity, filter, z-index, and what else lives in the frame to paint over it. The underlay and scrim answers are trap 148's shape asked as a question |
+| `probe-cover-artwork.mjs` | Whether a resolved cover has artwork in it, which `is-loaded` cannot say because it is also added on `error`. Separates resolved-but-blank from resolved-and-drawn, and prints the response status and content type for every image on the page |
+| `probe-series-cost.php` | What one series page actually costs the server: every library series with its chapter count, status and `manga(id:)` latency. The answer is that the read is 13ms to 167ms, so a slow series page is never the read |
+| `probe-series-chapters.php [ids] [--fetch]` | Whether a zero-chapter series is waiting on us or on its source, and what a live `fetchMangaAndChapters` makes of it. `--fetch` is opt-in because it is a write costing 1.6s to 7.1s |
+| `probe-no-chapters-reason.php` | What the ledger recorded for every zero-chapter series, beside what the page tells the reader. This is the gap trap 151's second half closed: 4 of 8 were recorded as `Cloudflare bypass currently disabled` and all 8 were reported as having no chapters |
+| `probe-registry-drift.php` | What the server registers against what the mirror holds, in both directions, writing nothing. The safe way to look while `SourceCatalog::syncSources()` is suspect, since running it marks whatever it did not see as uninstalled. Trap 145 and 14.5 |
 | `probe-downloads.php` | Whether the download queue can be enqueued, watched and dequeued at all |
 | `probe-download-progress.php` | Whether `progress` moves at all, and at what resolution |
 | `live-download-check.php` | That the reconciler chain works when only a queue worker is running |
@@ -1520,6 +1730,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Downloads name their series | **Done.** The row read `Chapter {suwayomi_chapter_id}`, a database id, so a finished download read "Chapter 14430" and gave a reader nothing to recognise it by. The row already carried `suwayomi_manga_id`. Titles and chapter names come out of one batched `fetchMany()`, which the library page already uses and whose payload **already** carried `chapters { nodes { id name } }`: 200 rows at one `manga(id:)` each is about 15ms times 200 measured, and the batch is 246ms for 300 ids. The whole row is now the link, stretched with an `::after`, because a link that only covers its own words fails four times out of five clicks. |
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
 | 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. **The cover's bookmark was then taken off these cards entirely.** It used to sit on every card filing the primary, which put two bookmarks on one picture answering two different questions: one silently picked a source the reader had not chosen and never named, and the one in the chooser filed whichever source it sat beside. A reader who wanted Asura Scans and pressed the bookmark on the cover got Manga Demon, and nothing on screen said so. A card that needs a decision has no shortcut past the decision. Single-source cards keep theirs, because a button that files the only candidate is not a guess. The card's "+N sources" line is now the only thing telling the reader a choice exists, so it has to stay: a check that reads it off the button rather than the card passes on a card that has lost every name it had. The choice is not remembered between searches, since a stored preference needs a per-group key and group identity shifts as sources answer, so the key would have to be the manga id picked rather than anything about the group. |
+| 7 | Design overhaul | **Complete.** "Second Pressing": the cover atom as one `x-cover.art` component with blur-up, glow, tilt and sheen; `x-page-header` on every page; glass material on panels and all Flux modals; a shared-element view transition from grid cover to series hero; `x-confirm` modals replacing the native `confirm()` dialogs whose buttons no test parses; the reader re-tokenised onto the app's oklch values with no architectural change; bento stat tiles on downloads and health; skeleton loading states; the Reading Room login built from the collection itself behind the public, single-mode gated `/showcase` endpoints, with a seeded ink garden on a fresh install; custom 404 and 500 pages. All pins held: 1,076 tests green, the October browser pass green, PHPStan level 7 clean, zero em dashes. Traps 147 to 149. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at
@@ -1538,6 +1749,20 @@ italic for the editorial moments. The cover card (`cover-frame`, `cover-scrim`,
 `cover-progress`), the horizontal rail (`rail-scroll`) and the staggered entry
 (`stagger-enter`) are the shared components every page builds from. The reader keeps its own
 inline styles on purpose and shares only the accent values.
+
+The "Second Pressing" pass (October 2026) deepened the system without replacing it. The cover
+atom became one component, `x-cover.art` (frame, blur-up reveal, scrim, glow, progress), which
+four hand-copied grids now share; page headers became `x-page-header`; a `.glass` material
+covers panels and every Flux modal (`dialog[data-flux-modal]`, styled unlayered on purpose);
+covers tilt, sheen and morph into the series hero through a shared-element view transition
+whose name is applied on click and cleared after navigation. The login page is "The Reading
+Room": a perspective wall built from the collection itself, served by the public, single-mode
+gated `/showcase` endpoints (`ShowcaseController`, `PAPYRUS_SHOWCASE_ENABLED`), with a seeded
+generative ink garden where there is no library to show. The reader was re-tokenised onto the
+same oklch values by copy rather than by import, so it stays a plain document; its test
+constraints (no Alpine, no canvas, no rAF, no IntersectionObserver) were untouched and still
+hold. Destructive `wire:confirm` browser dialogs became `x-confirm` modals except where a test
+parses the button or the button lives inside a menu.
 
 Downloads turned on a second measurement, about what a feature is worth:
 
@@ -1729,7 +1954,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 133, each number once, ascending.
+tidiness. The list is now 1 to 150, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`

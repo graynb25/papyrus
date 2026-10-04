@@ -303,11 +303,15 @@ class DownloadRowLabelTest extends TestCase
 
         // Flux compiles a <flux:button> down to a plain <button>, so the rendered document has
         // no flux:button left in it. Asking for the compiled name is the whole question here.
+        //
+        // The row's delete control opens a confirm modal, so its wire:click moved into that
+        // modal and the trigger is found by its accessible name instead. What the test guards
+        // is unchanged: the control the reader presses sits above the stretched link.
         $buttons = $doc->getElementsByTagName('button');
         $found = null;
 
         foreach ($buttons as $button) {
-            if (str_starts_with((string) $button->getAttribute('wire:click'), 'forget')) {
+            if ($button->getAttribute('aria-label') === __('Delete from disk')) {
                 $found = $button;
                 break;
             }

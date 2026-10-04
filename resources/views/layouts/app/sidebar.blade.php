@@ -100,6 +100,8 @@
 
         {{ $slot }}
 
+        @include('partials.behaviors')
+
         @persist('toast')
             <flux:toast.group>
                 <flux:toast />

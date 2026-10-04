@@ -62,6 +62,12 @@ class BrowsePageTest extends TestCase
      */
     private bool $repeatsFirstPage = false;
 
+    /** Whether the listing mutation fails the way Suwayomi's own NPE does. */
+    private bool $browseFails = false;
+
+    /** Whether the registry the failure classifier probes still holds the source. */
+    private bool $sourceRegistered = true;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -77,6 +83,22 @@ class BrowsePageTest extends TestCase
                     'accessToken' => 'token-1',
                     'refreshToken' => 'r',
                 ]]]);
+            }
+
+            if ($this->browseFails && str_contains($body, 'fetchSourceManga')) {
+                // The real body is a GraphQL field error on HTTP 200, whose message is
+                // Suwayomi's own NullPointerException (trap 147's neighbour). The page
+                // should never show this to a reader when it can name the truth instead.
+                return Http::response([
+                    'errors' => [['message' => 'Exception while fetching data (/fetchSourceManga) : null java.lang.NullPointerException at suwayomi.tachidesk.graphql.mutations.SourceMutation$fetchSourceManga$1']],
+                    'data' => null,
+                ]);
+            }
+
+            if (str_contains($body, 'query Registered')) {
+                $nodes = $this->sourceRegistered ? [['id' => '4242']] : [];
+
+                return Http::response(['data' => ['sources' => ['nodes' => $nodes]]]);
             }
 
             if (str_contains($body, 'fetchSourceManga')) {
@@ -432,6 +454,39 @@ class BrowsePageTest extends TestCase
         Livewire::actingAs($this->user)
             ->test('pages::browse', ['source' => $this->source()])
             ->assertDontSee('UNKNOWN');
+    }
+
+    public function test_a_source_the_server_no_longer_registers_says_so(): void
+    {
+        /*
+         * Suwayomi answers a browse of a source whose extension is gone with its own
+         * NullPointerException, which names a Kotlin file and nothing a reader can act on.
+         * The classifier asks the registry once and reports the truth instead.
+         */
+        $this->browseFails = true;
+        $this->sourceRegistered = false;
+
+        Livewire::actingAs($this->user)
+            ->test('pages::browse', ['source' => $this->source()])
+            ->assertOk()
+            ->assertSee(__('The server no longer has this source. Reinstall its extension from the Sources page.'))
+            ->assertDontSee('NullPointerException');
+    }
+
+    public function test_a_registered_source_that_fails_keeps_the_upstream_error(): void
+    {
+        /*
+         * The classifier only speaks when it knows. A source the server still holds can fail
+         * for a dozen upstream reasons, and replacing those with a reinstall instruction
+         * would send a reader to the wrong page.
+         */
+        $this->browseFails = true;
+        $this->sourceRegistered = true;
+
+        Livewire::actingAs($this->user)
+            ->test('pages::browse', ['source' => $this->source()])
+            ->assertOk()
+            ->assertSee('NullPointerException');
     }
 
     public function test_the_picker_groups_sources_by_site_and_starts_closed(): void

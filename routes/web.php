@@ -3,6 +3,7 @@
 use App\Http\Controllers\CoverController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReaderProgressController;
+use App\Http\Controllers\ShowcaseController;
 use App\Http\Controllers\SuwayomiProxyController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +17,36 @@ Route::get('/', function () {
         ? redirect()->route('library')
         : redirect()->route('login');
 })->name('home');
+
+/*
+ * The Reading Room's showcase: the login screen's cover wall. Public because
+ * the reader it describes is signed out, and single-mode-gated because that
+ * is the one deployment where the collection has one owner. See
+ * ShowcaseController for the full reasoning, and config('papyrus.showcase')
+ * for the off switch.
+ *
+ * The payload is throttled and the covers are not, and the asymmetry is measured rather than
+ * tidier. Every rate-limited request writes: Laravel's limiter counts with `increment()`, and
+ * `DatabaseStore::increment()` is a transaction that reads the counter and then updates it.
+ * On SQLite that is a deferred transaction upgrading to a write, which trap 129 measures at
+ * twelve of twelve reproductions failing in about 3ms, so `busy_timeout` and WAL cannot save
+ * it. The login page asks for eighteen covers at once because that is what the wall is, so
+ * the cover route was answering 6 of 72 as 500 in a browser, with the trace landing inside
+ * `increment()`. Moving the counter to the file store removes the 500 and is worse:
+ * `FileStore::increment()` is a read-modify-write with no lock, so it loses counts silently,
+ * measured at 140 of 140 served against a declared 120.
+ *
+ * So the limit stays where one request per page load can afford a write, and the covers do not
+ * carry one. They are gated to `single` mode, they serve an hour of public cache, and the
+ * expensive thing they reach is a thumbnail on a loopback-bound server the reader owns.
+ */
+Route::get('showcase', ShowcaseController::class)
+    ->middleware('throttle:120,1')
+    ->name('showcase.index');
+
+Route::get('showcase/cover/{manga}', [ShowcaseController::class, 'cover'])
+    ->whereNumber('manga')
+    ->name('showcase.cover');
 
 /*
  * Chapter page images, same origin as the app so the browser never holds a

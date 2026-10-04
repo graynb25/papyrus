@@ -3,6 +3,7 @@
 use App\Downloads\DownloadLedger;
 use App\Jobs\FetchSeriesChapters;
 use App\Models\Download;
+use App\Models\LibraryCheck;
 use App\Models\Source;
 use App\Support\ChapterNotes;
 use App\Support\ImageUrl;
@@ -231,7 +232,21 @@ new #[Title('Series')] class extends Component
         try {
             $result = app(SeriesGateway::class)->refresh($this->manga);
         } catch (SuwayomiException $e) {
-            Flux::error($e->getMessage());
+            /*
+             * A `danger` toast rather than `Flux::error()`, which does not exist in Flux 2:
+             * `FluxManager` has no such method and the call raises "Call to undefined method
+             * Flux\FluxManager::error()", which 500s the Livewire request and leaves the reader
+             * with a spinner and no explanation. Measured 2026-10-04, on the press this button
+             * exists for: the reader whose source answers "Cloudflare bypass currently disabled"
+             * got a 500 and a console error where a sentence would do. Trap 79.
+             */
+            $this->loadError = $e->getMessage();
+
+            Flux::toast(
+                text: $e->getMessage(),
+                heading: __('The chapter list did not load'),
+                variant: 'danger',
+            );
 
             return;
         }
@@ -759,6 +774,80 @@ new #[Title('Series')] class extends Component
         );
     }
 
+    /**
+     * Why there is nothing to read, when there is nothing to read.
+     *
+     * ## Why this exists
+     *
+     * `CheckLedger::check()` records what a fetch produced, and this page read none of it. So
+     * every zero-chapter series rendered one sentence, and a source answering
+     * `Cloudflare bypass currently disabled` was reported as "The source has not listed any
+     * chapters for this series", which is a different and far more hopeful statement.
+     *
+     * Measured on the dev library: 8 series had no chapters and 4 of them had that recorded
+     * error. All 8 were told the same thing, and the 4 were sent to a source that cannot
+     * answer. The 4 that genuinely have none upstream are a fact about the source and keep the
+     * sentence they had, because that sentence is true for them.
+     *
+     * ## Why the recorded text is shown verbatim
+     *
+     * Because it is the server's own words and rewriting them would be inventing a diagnosis.
+     * The heading is ours, because `Cloudflare bypass currently disabled` is not a sentence a
+     * reader can act on and the callout needs one.
+     *
+     * Null while a fetch is still in flight or has never run, which is what keeps the plain
+     * "no chapters yet" wording for the case where we genuinely do not know.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    #[Computed]
+    public function emptyReason(): ?array
+    {
+        if ($this->loadError !== null) {
+            /*
+             * Two different failures arrive on the same property, and `CheckLedger` already
+             * draws the line between them: `No chapters found` is the source answering that it
+             * has nothing, and anything else is the call not completing. Measured, the same
+             * message arrived for a series with no chapters and for a source blocked by
+             * Cloudflare, so "the chapter list did not load" was wrong for one of them.
+             *
+             * Classified on the message rather than on the state, because the manual retry
+             * sets `loadError` directly and never writes a ledger row, so there is no state to
+             * read. It is the same test `CheckLedger` makes, and for the same reason: it is
+             * what the server's message says.
+             */
+            if (str_contains(strtolower((string) $this->loadError), 'no chapters')) {
+                return [
+                    __('The source returned no chapters'),
+                    __('This is an upstream condition: the source answered, and its chapter listing was empty. The series may have moved, or the source may have changed its layout.'),
+                ];
+            }
+
+            return [__('The chapter list did not load'), (string) $this->loadError];
+        }
+
+        $check = LibraryCheck::query()
+            ->forUser((int) auth()->id())
+            ->where('suwayomi_manga_id', $this->manga)
+            ->first();
+
+        if ($check === null) {
+            return null;
+        }
+
+        if ($check->state === LibraryCheck::ERROR) {
+            return [
+                __('This source could not be reached'),
+                (string) ($check->error ?: __('The server could not be reached.')),
+            ];
+        }
+
+        return [
+            __('No chapters yet'),
+            __('The source has not listed any chapters for this series.'),
+        ];
+    }
+
     #[Computed]
     public function lastPage(): int
     {
@@ -1055,19 +1144,19 @@ new #[Title('Series')] class extends Component
 
             <div class="relative flex flex-col gap-7 p-5 sm:flex-row sm:p-7">
                 <div class="flex shrink-0 flex-col gap-2.5">
-                    <div class="cover-frame w-40 sm:w-48 md:w-52" data-test="series-cover">
-                        @if ($cover = $this->coverUrl)
-                            <img
-                                src="{{ $cover }}"
-                                alt=""
-                                loading="lazy"
-                            />
-                        @else
-                            <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                <flux:icon name="photo" class="size-8" />
-                            </div>
-                        @endif
-                    </div>
+                    {{--
+                        The morph destination. A cover pressed in any grid carries
+                        `view-transition-name` here, so the artwork the reader was
+                        just looking at slides into its frame instead of the page
+                        merely fading in.
+                    --}}
+                    <x-cover.art
+                        :src="$this->coverUrl"
+                        :glow="true"
+                        :vt="false"
+                        class="vt-cover-hero w-40 sm:w-48 md:w-52"
+                        data-test="series-cover"
+                    ></x-cover.art>
 
                     {{--
                         The reader's own cover.
@@ -1171,9 +1260,9 @@ new #[Title('Series')] class extends Component
                         @endif
                     </p>
 
-                    <flux:heading level="1" class="mt-1 font-display text-3xl font-semibold tracking-tight! sm:text-4xl">
+                    <h1 class="display-page mt-1 text-zinc-900 dark:text-zinc-50">
                         {{ $series['title'] }}
-                    </flux:heading>
+                    </h1>
 
                     <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
                         {{--
@@ -1421,11 +1510,19 @@ new #[Title('Series')] class extends Component
                 </div>
             </div>
 
-            @if ($this->loadError !== null)
+            {{--
+                This and the empty-chapter callout below are two branches of one condition, and
+                they used to disagree. This one printed a fixed sentence claiming the source
+                answered and its listing was empty, which is true for `No chapters found` and
+                false for every other failure: measured, a source answering
+                `Cloudflare bypass currently disabled` was told here that it had answered.
+                So both read `emptyReason()` and the text is chosen by what the fetch recorded.
+            --}}
+            @if ($loadError !== null)
                 <flux:callout variant="warning" icon="exclamation-triangle">
-                    <flux:heading level="3" class="mb-1">{{ __('The source returned no chapters') }}</flux:heading>
+                    <flux:heading level="3" class="mb-1">{{ $this->emptyReason[0] }}</flux:heading>
                     <p class="text-sm">
-                        {{ __('This is an upstream condition: the source answered, and its chapter listing was empty. The series may have moved, or the source may have changed its layout.') }}
+                        {{ $this->emptyReason[1] }}
                     </p>
                 </flux:callout>
             @endif
@@ -1492,18 +1589,21 @@ new #[Title('Series')] class extends Component
                     earlier version of this told the reader to press Refresh because there was
                     nothing else to press; now the page has already tried on its own, so the
                     button is a retry rather than the first step.
+
+                    The wording comes from `emptyReason()`, which reads what the fetch recorded.
+                    One sentence for every case sent a reader to a source that could not answer
+                    at all: measured, 4 of 8 zero-chapter series on the dev library had
+                    "Cloudflare bypass currently disabled" recorded, and every one of the 8
+                    was reported as having no chapters, which is a different and far more
+                    hopeful claim.
                 --}}
                 <flux:callout variant="secondary" icon="book-open">
                     <flux:heading level="3" class="mb-1">
-                        {{ $loadError === null ? __('No chapters yet') : __('The chapter list did not load') }}
+                        {{ $this->emptyReason[0] ?? __('No chapters yet') }}
                     </flux:heading>
 
                     <p class="text-sm">
-                        @if ($loadError !== null)
-                            {{ $loadError }}
-                        @else
-                            {{ __('The source has not listed any chapters for this series.') }}
-                        @endif
+                        {{ $this->emptyReason[1] ?? __('Asking the source for its chapter list. This can take a few seconds.') }}
                     </p>
 
                     <flux:button class="mt-3" size="sm" wire:click="refresh">

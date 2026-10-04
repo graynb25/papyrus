@@ -808,14 +808,10 @@ new #[Title('Sources')] class extends Component
 }; ?>
 
 <div class="w-full space-y-8">
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
-
-        <div class="relative">
-            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Keiyoushi, on your terms.') }}</p>
-            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Sources') }}</flux:heading>
-        </div>
-    </header>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Keiyoushi, on your terms.') }}</x-slot:eyebrow>
+        <x-slot:title>{{ __('Sources') }}</x-slot:title>
+    </x-page.header>
 
     {{--
         Browse by source.
@@ -1185,14 +1181,18 @@ new #[Title('Sources')] class extends Component
                                         </flux:button>
                                     @endif
 
-                                    <flux:button
-                                        size="sm"
-                                        color="red"
-                                        wire:click="removeStore({{ Illuminate\Support\Js::from($store->index_url) }})"
-                                        wire:confirm="{{ __('Remove this store from the server? Its trust records go too.') }}"
+                                    @php($removeStoreAction = 'removeStore('.Illuminate\Support\Js::from($store->index_url)->toHtml().')')
+
+                                    <x-confirm
+                                        :action="$removeStoreAction"
+                                        :title="__('Remove this store from the server?')"
+                                        :body="__('Its trust records go too.')"
+                                        :confirm="__('Remove')"
                                     >
-                                        {{ __('Remove') }}
-                                    </flux:button>
+                                        <flux:button size="sm" color="red">
+                                            {{ __('Remove') }}
+                                        </flux:button>
+                                    </x-confirm>
                                 </div>
                             </div>
 
@@ -1462,13 +1462,18 @@ new #[Title('Sources')] class extends Component
                                     </flux:tooltip>
                                 @endif
 
-                                <flux:button
-                                    size="sm"
-                                    wire:click="uninstall({{ Illuminate\Support\Js::from($extension['pkgName']) }})"
-                                    wire:confirm="{{ __('Uninstall this extension? Its source stops being searchable.') }}"
+                                @php($uninstallAction = 'uninstall('.Illuminate\Support\Js::from($extension['pkgName'])->toHtml().')')
+
+                                <x-confirm
+                                    :action="$uninstallAction"
+                                    :title="__('Uninstall this extension?')"
+                                    :body="__('Its source stops being searchable.')"
+                                    :confirm="__('Uninstall')"
                                 >
-                                    {{ __('Uninstall') }}
-                                </flux:button>
+                                    <flux:button size="sm">
+                                        {{ __('Uninstall') }}
+                                    </flux:button>
+                                </x-confirm>
                             @elseif ($this->isTrusted($extension))
                                 <flux:button
                                     size="sm"

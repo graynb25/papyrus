@@ -836,63 +836,54 @@ new #[Title('Library')] class extends Component
         because a reader who came here to check and finds no control cannot tell
         the difference between "nothing to do" and "not built yet".
     --}}
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Good reading.') }}</x-slot:eyebrow>
 
-        <div class="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-            <div class="min-w-0">
-                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">
-                    {{ __('Good reading.') }}
-                </p>
+        <x-slot:title>{{ __('Library') }}</x-slot:title>
 
-                <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">
-                    {{ __('Library') }}
-                </flux:heading>
+        <x-slot:meta>
+            @if ($this->totalAll === 0)
+                {{ __('Nothing added yet.') }}
+            @elseif ($this->shelf !== null)
+                {{ trans_choice(
+                    ':count series on this shelf|:count series on this shelf',
+                    $this->totalFiltered,
+                    ['count' => $this->totalFiltered]
+                ) }}
+            @else
+                {{ trans_choice(
+                    ':count series, :unread unread|:count series, :unread unread',
+                    $this->totalAll,
+                    ['count' => $this->totalAll, 'unread' => $this->totalUnread]
+                ) }}
+            @endif
+        </x-slot:meta>
 
-                <flux:text size="sm" class="mt-1.5 text-zinc-600 dark:text-zinc-400">
-                    @if ($this->totalAll === 0)
-                        {{ __('Nothing added yet.') }}
-                    @elseif ($this->shelf !== null)
-                        {{ trans_choice(
-                            ':count series on this shelf|:count series on this shelf',
-                            $this->totalFiltered,
-                            ['count' => $this->totalFiltered]
-                        ) }}
-                    @else
-                        {{ trans_choice(
-                            ':count series, :unread unread|:count series, :unread unread',
-                            $this->totalAll,
-                            ['count' => $this->totalAll, 'unread' => $this->totalUnread]
-                        ) }}
-                    @endif
-                </flux:text>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3">
-                @if ($this->totalAll > 0)
-                    <flux:button
-                        wire:click="checkLibrary"
-                        wire:loading.attr="disabled"
-                        wire:target="checkLibrary"
-                        variant="outline"
-                        size="sm"
-                        icon="arrow-path"
-                        :disabled="$this->checkSchedule['due'] === 0"
-                        class="group/check"
-                    >
-                        {{ trans_choice(
-                            'Check :count series|Check :count series',
-                            $this->checkSchedule['due'],
-                            ['count' => $this->checkSchedule['due']],
-                        ) }}
-                    </flux:button>
-                @endif
-
-                <flux:button variant="primary" href="{{ route('search') }}" icon="plus" wire:navigate>
-                    {{ __('Add series') }}
+        <x-slot:actions>
+            @if ($this->totalAll > 0)
+                <flux:button
+                    wire:click="checkLibrary"
+                    wire:loading.attr="disabled"
+                    wire:target="checkLibrary"
+                    variant="outline"
+                    size="sm"
+                    icon="arrow-path"
+                    :disabled="$this->checkSchedule['due'] === 0"
+                    class="group/check"
+                >
+                    {{ trans_choice(
+                        'Check :count series|Check :count series',
+                        $this->checkSchedule['due'],
+                        ['count' => $this->checkSchedule['due']],
+                    ) }}
                 </flux:button>
-            </div>
-        </div>
+            @endif
+
+            <flux:button variant="primary" href="{{ route('search') }}" icon="plus" wire:navigate>
+                {{ __('Add series') }}
+            </flux:button>
+        </x-slot:actions>
+    </x-page.header>
 
         {{-- The count beside the check button is the whole point of the feature:
              6 of 14 series had no chapter list at all, and each of those was
@@ -965,7 +956,6 @@ new #[Title('Library')] class extends Component
                 @endif
             </div>
         @endif
-    </header>
 
     {{--
         Continue reading.
@@ -1007,36 +997,18 @@ new #[Title('Library')] class extends Component
                             wire:navigate
                             class="group flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermilion-500"
                         >
-                            <div class="cover-frame">
-                                @if ($entry['cover'] !== null)
-                                    <img
-                                        src="{{ $entry['cover'] }}"
-                                        alt=""
-                                        loading="lazy"
-                                        width="200"
-                                        height="280"
-                                    >
-                                @else
-                                    {{-- No cover is reported rather than shown as a broken image. --}}
-                                    <div class="cover-placeholder flex items-center justify-center text-xs text-zinc-400 dark:text-zinc-500">
-                                        {{ __('No cover') }}
-                                    </div>
-                                @endif
-
-                                <div class="cover-scrim" aria-hidden="true"></div>
-
+                            <x-cover.art
+                                :src="$entry['cover']"
+                                :glow="true"
+                                :tilt="true"
+                                :vt="true"
+                                :progress="($where['total'] ?? 0) > 0 ? (int) round(($where['read'] / max(1, $where['total'])) * 100) : null"
+                                class="group"
+                            >
                                 <span class="absolute start-2 top-2 rounded-md px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide on-art">
                                     {{ __('Resume') }}
                                 </span>
-
-                                {{-- Progress hairline. The destination fraction the
-                                     card is about to offer, drawn on the artwork. --}}
-                                @if (($where['total'] ?? 0) > 0)
-                                    <div class="cover-progress" aria-hidden="true">
-                                        <span style="width: {{ min(100, (int) round(($where['read'] / max(1, $where['total'])) * 100)) }}%"></span>
-                                    </div>
-                                @endif
-                            </div>
+                            </x-cover.art>
 
                             <div class="min-w-0 space-y-0.5 px-0.5 pt-2">
                                 <flux:text size="xs" class="line-clamp-2 font-medium leading-snug text-zinc-800 dark:text-zinc-100">
@@ -1192,12 +1164,16 @@ new #[Title('Library')] class extends Component
 
                     <flux:button size="sm" variant="ghost" wire:click="cancelRenaming">{{ __('Cancel') }}</flux:button>
 
-                    <flux:button size="sm" variant="danger" icon="trash"
-                        wire:click="deleteShelf({{ $shelfId }})"
-                        wire:confirm="{{ __('Delete this shelf? Its series stay in your library and become unfiled.') }}"
+                    <x-confirm
+                        action="deleteShelf({{ $shelfId }})"
+                        :title="__('Delete this shelf?')"
+                        :body="__('Its series stay in your library and become unfiled.')"
+                        :confirm="__('Delete shelf')"
                     >
-                        {{ __('Delete shelf') }}
-                    </flux:button>
+                        <flux:button size="sm" variant="danger" icon="trash">
+                            {{ __('Delete shelf') }}
+                        </flux:button>
+                    </x-confirm>
                 @endforeach
             </div>
         @endif
@@ -1205,8 +1181,19 @@ new #[Title('Library')] class extends Component
 
     {{-- Entries --------------------------------------------------------- --}}
     @if ($this->totalFiltered === 0)
-        <flux:callout variant="secondary" icon="book-open">
-            <flux:heading level="2" size="sm" class="mb-1">
+        {{--
+            The empty room. Centered and quiet rather than a callout in the
+            flow: this screen is either a reader's first impression of the
+            whole app or a moment of "where did it go", and both deserve a
+            composed answer. The strings are load-bearing for tests, so they
+            stay exactly as they were; only the room around them changed.
+        --}}
+        <div class="mx-auto max-w-md py-16 text-center sm:py-24">
+            <span class="seal mx-auto size-14" aria-hidden="true">
+                <flux:icon name="book-open" class="size-6" />
+            </span>
+
+            <p class="serif-italic mt-6 text-xl text-zinc-500 dark:text-zinc-400">
                 @if ($this->totalAll === 0)
                     {{ __('Your library is empty') }}
                 @elseif ($this->search !== '')
@@ -1214,20 +1201,22 @@ new #[Title('Library')] class extends Component
                 @else
                     {{ __('This shelf is empty') }}
                 @endif
-            </flux:heading>
-            <p class="text-sm">
+            </p>
+
+            <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
                 @if ($this->totalAll === 0)
                     {{ __('Add something from search and it will show up here with its progress.') }}
                 @else
                     {{ __('Try a different search, or pick another shelf.') }}
                 @endif
             </p>
+
             @if ($this->totalAll === 0)
-                <flux:button class="mt-3" variant="primary" href="{{ route('search') }}" wire:navigate>
+                <flux:button class="mt-6" variant="primary" href="{{ route('search') }}" wire:navigate icon="magnifying-glass">
                     {{ __('Go to search') }}
                 </flux:button>
             @endif
-        </flux:callout>
+        </div>
     @else
         <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" data-bulk-grid>
             @foreach ($this->visibleEntries as $index => $entry)
@@ -1242,37 +1231,13 @@ new #[Title('Library')] class extends Component
                         {{-- 2/3 held by the frame rather than the image, so a
                              cover that has not loaded still reserves its space and
                              the grid does not jump as the page fills. --}}
-                        <div class="cover-frame">
-                            @if ($entry['cover'] !== null)
-                                <img
-                                    src="{{ $entry['cover'] }}"
-                                    alt=""
-                                    loading="lazy"
-                                >
-                            @else
-                                <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                    <flux:icon name="photo" class="size-8" />
-                                </div>
-                            @endif
-
-                            <div class="cover-scrim" aria-hidden="true"></div>
-
-                            {{--
-                                Reading progress hairline. The ratio the card's
-                                meta line states, drawn on the artwork, so a wall
-                                of covers shows at a glance which ones have
-                                somewhere to go.
-                            --}}
-                            @if (($entry['total_chapters'] ?? 0) > 0 && ($entry['unread_chapters'] ?? null) !== null)
-                                @php($readRatio = (int) round(($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100))
-
-                                @if ($readRatio > 0)
-                                    <div class="cover-progress" aria-hidden="true">
-                                        <span style="width: {{ min(100, $readRatio) }}%"></span>
-                                    </div>
-                                @endif
-                            @endif
-                        </div>
+                        <x-cover.art
+                            :src="$entry['cover']"
+                            :glow="true"
+                            :tilt="true"
+                            :vt="true"
+                            :progress="($entry['total_chapters'] ?? 0) > 0 && ($entry['unread_chapters'] ?? null) !== null && (($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100) >= 1 ? (int) round(($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100) : null"
+                        ></x-cover.art>
                     </a>
 
                     {{--
@@ -1507,9 +1472,9 @@ new #[Title('Library')] class extends Component
         it is up.
     --}}
     @if (count($this->selected) > 0)
-        <div class="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-white/10 dark:bg-zinc-950/95">
+        <div class="fixed inset-x-0 bottom-0 z-40 animate-fade-up border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-white/10 dark:bg-zinc-950/95">
             <div class="mx-auto flex w-full flex-wrap items-center justify-center gap-2 px-4 py-3">
-                <span class="text-sm font-medium tabular-nums">
+                <span class="me-1 text-sm font-medium tabular-nums">
                     {{ trans_choice('{1} :count selected|[2,*] :count selected', count($this->selected), ['count' => count($this->selected)]) }}
                 </span>
 
@@ -1541,14 +1506,20 @@ new #[Title('Library')] class extends Component
                     {{ __('Mark unread') }}
                 </flux:button>
 
-                <flux:button
-                    size="sm"
-                    variant="danger"
-                    wire:click="removeSelected"
-                    wire:confirm="{{ __('Remove :count series from the library? Filings and reading history stay.', ['count' => count($this->selected)]) }}"
+                <x-confirm
+                    action="removeSelected"
+                    :title="__('Remove from the library?')"
+                    :body="trans_choice(
+                        'Remove :count series from the library? Filings and reading history stay.',
+                        count($this->selected),
+                        ['count' => count($this->selected)],
+                    )"
+                    :confirm="__('Remove')"
                 >
-                    {{ __('Remove') }}
-                </flux:button>
+                    <flux:button size="sm" variant="danger" icon="trash">
+                        {{ __('Remove') }}
+                    </flux:button>
+                </x-confirm>
 
                 <flux:button size="sm" variant="ghost" wire:click="$set('selected', [])">
                     {{ __('Clear') }}

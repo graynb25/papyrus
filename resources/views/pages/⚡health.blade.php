@@ -175,38 +175,34 @@ new #[Title('Health')] class extends Component {
 }; ?>
 
 <div class="w-full space-y-6">
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
-
-        <div class="relative">
-            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Every source, watched.') }}</p>
-            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Source health') }}</flux:heading>
-        </div>
-    </header>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Every source, watched.') }}</x-slot:eyebrow>
+        <x-slot:title>{{ __('Source health') }}</x-slot:title>
+    </x-page.header>
 
     {{-- Summary tiles ---------------------------------------------------- --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <flux:card class="gap-1 p-4">
+        <flux:card class="card-press gap-1 p-4">
             <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
                 {{ __('Sites') }}
             </p>
-            <p class="text-2xl font-semibold tabular-nums">{{ Number::format($this->tally['sites']) }}</p>
+            <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->tally['sites']) }}</p>
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
                 {{ trans_choice('{1} :count language variant|[2,*] :count language variants', $this->installedSources, ['count' => Number::format($this->installedSources)]) }}
             </p>
         </flux:card>
 
         @foreach ([
-            HealthDashboard::STATE_HEALTHY => 'green',
-            HealthDashboard::STATE_UNOBSERVED => 'zinc',
-            HealthDashboard::STATE_SILENT => 'orange',
-            HealthDashboard::STATE_FAILING => 'red',
-            HealthDashboard::STATE_DEAD => 'red',
-        ] as $key => $colour)
+            HealthDashboard::STATE_HEALTHY => 'bg-moss-500',
+            HealthDashboard::STATE_UNOBSERVED => 'bg-zinc-400 dark:bg-zinc-600',
+            HealthDashboard::STATE_SILENT => 'bg-amber-500',
+            HealthDashboard::STATE_FAILING => 'bg-red-500',
+            HealthDashboard::STATE_DEAD => 'bg-red-700',
+        ] as $key => $dot)
             @php($isActive = $state === $key)
 
             <flux:card
-                class="gap-1 p-4 transition"
+                class="card-press gap-1 p-4 transition"
                 @class([
                     'ring-2 ring-zinc-900 dark:ring-white' => $isActive,
                     'opacity-60' => ! $isActive && $this->tally[$key] === 0,
@@ -218,11 +214,12 @@ new #[Title('Health')] class extends Component {
                     class="w-full text-start"
                     aria-pressed="{{ $isActive ? 'true' : 'false' }}"
                 >
-                    <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+                    <p class="flex items-center gap-1.5 text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+                        <span class="size-1.5 rounded-full {{ $dot }}" aria-hidden="true"></span>
                         {{ $this->stateLabel($key) }}
                     </p>
 
-                    <p class="text-2xl font-semibold tabular-nums">{{ Number::format($this->tally[$key]) }}</p>
+                    <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->tally[$key]) }}</p>
                 </button>
             </flux:card>
         @endforeach
@@ -371,14 +368,18 @@ new #[Title('Health')] class extends Component {
                                         {{ __('Search this site again') }}
                                     </flux:button>
                                 @else
-                                    <flux:button
-                                        size="sm"
-                                        wire:click="skip('{{ $row->site }}')"
-                                        wire:confirm="{{ __('Stop searching this site and all its language variants? It stays installed and can be restored.') }}"
-                                        icon="eye-slash"
+                                    @php($skipAction = 'skip('.Illuminate\Support\Js::from($row->site)->toHtml().')')
+
+                                    <x-confirm
+                                        :action="$skipAction"
+                                        :title="__('Stop searching this site?')"
+                                        :body="__('It stays installed and can be restored.')"
+                                        :confirm="__('Skip')"
                                     >
-                                        {{ trans_choice('Skip this variant|[2,*] Skip all :count variants', $row->variants, ['count' => Number::format($row->variants)]) }}
-                                    </flux:button>
+                                        <flux:button size="sm" icon="eye-slash">
+                                            {{ trans_choice('Skip this variant|[2,*] Skip all :count variants', $row->variants, ['count' => Number::format($row->variants)]) }}
+                                        </flux:button>
+                                    </x-confirm>
                                 @endif
                             </div>
 
@@ -388,7 +389,7 @@ new #[Title('Health')] class extends Component {
                                         <span class="flex items-center gap-2">
                                             <flux:icon
                                                 @class([
-                                                    'text-green-600 dark:text-green-400' => $variant->total_successes > 0 && $variant->consecutive_failures === 0,
+                                                    'text-moss-600 dark:text-moss-400' => $variant->total_successes > 0 && $variant->consecutive_failures === 0,
                                                     'text-amber-600 dark:text-amber-400' => $variant->consecutive_empty > 0,
                                                     'text-red-600 dark:text-red-400' => $variant->consecutive_failures > 0,
                                                 ])

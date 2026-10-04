@@ -6,6 +6,8 @@ use App\Search\SourceSearcher;
 use App\Support\ImageUrl;
 use App\Support\Library;
 use App\Support\ReadingState;
+use App\Suwayomi\Gateway;
+use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -121,6 +123,35 @@ new #[Title('Browse')] class extends Component
     public int $lastLoadedPage = 0;
 
     /**
+     * Why a listing failed, in the reader's language.
+     *
+     * Suwayomi answers a browse of a source it no longer registers with a bare
+     * NullPointerException inside its own mutation, or with its non-null `source`
+     * field resolving to null, both measured on v2.4.2366. Neither names the actual
+     * problem, which is that the extension is gone from the server, and the raw
+     * text reads as our bug. The registry is one cheap query on the failure path
+     * only, and it says what is true instead.
+     */
+    private function explainLoadError(?string $error): string
+    {
+        try {
+            $data = app(Gateway::class)->execute(
+                'query Registered { sources { nodes { id } } }',
+            );
+        } catch (SuwayomiException) {
+            return (string) $error;
+        }
+
+        $registered = collect($data['sources']['nodes'] ?? [])->pluck('id')->all();
+
+        if (! in_array((string) $this->source->suwayomi_source_id, $registered, true)) {
+            return __('The server no longer has this source. Reinstall its extension from the Sources page.');
+        }
+
+        return (string) $error;
+    }
+
+    /**
      * Append one page of the source's listing.
      *
      * @return bool whether the page was appended, so mounting can stop early
@@ -139,7 +170,7 @@ new #[Title('Browse')] class extends Component
         if ($outcome->hasError()) {
             // A link that asked for page 5 of a source that failed on page 1 should say so
             // rather than rendering an empty grid that looks like the end.
-            $this->loadError = $this->loadError ?? $outcome->error;
+            $this->loadError = $this->loadError ?? $this->explainLoadError($outcome->error);
 
             return false;
         }
@@ -448,34 +479,23 @@ new #[Title('Browse')] class extends Component
         heading and serif italic treatment every other page uses, rather than a page-specific
         shape.
     --}}
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Browse a source') }}</x-slot:eyebrow>
+        <x-slot:title>{{ $source->display_name }}</x-slot:title>
 
-        <div class="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-            <div class="min-w-0">
-                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">
-                    {{ __('Browse a source') }}
-                </p>
+        <x-slot:meta>
+            {{ $source->lang }}
+            @if ($source->supports_latest)
+                &middot; {{ __('Latest chapters available') }}
+            @endif
+        </x-slot:meta>
 
-                <h1 class="font-display text-2xl font-medium text-zinc-800 dark:text-white">
-                    {{ $source->display_name }}
-                </h1>
-
-                <p class="mt-1.5 text-xs text-zinc-500 dark:text-white/70">
-                    {{ $source->lang }}
-                    @if ($source->supports_latest)
-                        &middot; {{ __('Latest chapters available') }}
-                    @endif
-                </p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-3">
-                <flux:button variant="outline" size="sm" href="{{ route('sources') }}" wire:navigate>
-                    {{ __('All sources') }}
-                </flux:button>
-            </div>
-        </div>
-    </header>
+        <x-slot:actions>
+            <flux:button variant="outline" size="sm" href="{{ route('sources') }}" wire:navigate>
+                {{ __('All sources') }}
+            </flux:button>
+        </x-slot:actions>
+    </x-page.header>
 
     {{--
         Search, then the tabs.
@@ -603,7 +623,7 @@ new #[Title('Browse')] class extends Component
                     Suwayomi for the thumbnail and streams it back through ImageUrl, which is
                     AD-3 in the engineering notes, so the same builder is used.
                 --}}
-                @php($cover = ImageUrl::thumbnail($mangaId))
+                @php($cover = ImageUrl::thumbnail($mangaId, ImageUrl::defaultFormat()))
 
                 <li class="group relative" wire:key="browse-row-{{ $mangaId }}">
                     <a
@@ -613,17 +633,7 @@ new #[Title('Browse')] class extends Component
                         tabindex="-1"
                         aria-hidden="true"
                     >
-                        <div class="cover-frame">
-                            @if ($cover !== null)
-                                <img src="{{ $cover }}" alt="" loading="lazy">
-                            @else
-                                <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                    <flux:icon name="photo" class="size-8" />
-                                </div>
-                            @endif
-
-                            <div class="cover-scrim" aria-hidden="true"></div>
-                        </div>
+                        <x-cover.art :src="$cover" :glow="true" :tilt="true" :vt="true"></x-cover.art>
                     </a>
 
                     {{--
@@ -697,10 +707,15 @@ new #[Title('Browse')] class extends Component
         --}}
         <div class="flex min-h-16 flex-col items-center justify-center gap-3 pt-2" aria-live="polite">
             @if ($loadingMore)
-                <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    <flux:icon name="arrow-path" class="size-4 animate-spin" />
-                    <span>{{ __('Loading more') }}</span>
+                {{-- Skeleton covers rather than a spinner: the shape that is
+                     coming is known, so show its outline filling in. --}}
+                <div class="grid w-full grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" aria-hidden="true">
+                    @foreach (range(1, 6) as $ghost)
+                        <div class="skeleton aspect-[2/3] rounded-(--radius-card)"></div>
+                    @endforeach
                 </div>
+
+                <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Loading more') }}</span>
             @elseif ($loadError !== null)
                 {{-- A mid-scroll failure keeps what is already on screen and offers a retry. --}}
                 <div class="flex flex-wrap items-center justify-center gap-3 text-sm">

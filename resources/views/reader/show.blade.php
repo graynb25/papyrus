@@ -40,6 +40,34 @@
             --reader-zoom: {{ $settings['zoom'] }};
 
             /*
+             * Ink & Vermilion, mirrored from resources/css/app.css. This document
+             * does not import the app stylesheet, on purpose: the reader is a
+             * plain document with its own surface, and pulling the whole app
+             * bundle for a dozen values is the wrong trade. The values are
+             * copies, and this comment is the promise that they move together.
+             */
+            --ink-50: oklch(0.945 0.004 260);
+            --ink-100: oklch(0.902 0.005 260);
+            --ink-200: oklch(0.822 0.006 260);
+            --ink-300: oklch(0.722 0.007 260);
+            --ink-400: oklch(0.612 0.008 260);
+            --ink-500: oklch(0.502 0.009 260);
+            --ink-700: oklch(0.322 0.008 260);
+            --ink-800: oklch(0.235 0.007 260);
+            --ink-900: oklch(0.185 0.006 260);
+            --ink-950: oklch(0.138 0.005 260);
+            --vermilion-400: oklch(0.778 0.132 34);
+            --vermilion-500: oklch(0.712 0.168 33);
+            --vermilion-600: oklch(0.643 0.188 32);
+            --moss-400: oklch(0.78 0.13 150);
+            --moss-500: oklch(0.70 0.15 150);
+            --red-400: oklch(0.737 0.168 25);
+            --glass-surface: color-mix(in oklab, var(--ink-900) 78%, transparent);
+            --glass-hairline: color-mix(in oklab, white 10%, transparent);
+            --glass-blur: blur(18px) saturate(160%);
+            --ease-swift: cubic-bezier(0.22, 1, 0.36, 1);
+
+            /*
              * The colour filter chain, composed here rather than in the script.
              *
              * Server-rendered so the first paint is already filtered, and composed
@@ -68,7 +96,7 @@
         body {
             margin: 0;
             background: var(--reader-bg);
-            color: #e4e4e7;
+            color: var(--ink-200);
             overscroll-behavior-y: contain;
         }
 
@@ -87,7 +115,8 @@
             block-size: 2px;
             transform-origin: 0 50%;
             transform: scaleX(0);
-            background: linear-gradient(to right, #f76a45, #fb8a63);
+            background: linear-gradient(to right, var(--vermilion-500), var(--vermilion-400));
+            box-shadow: 0 0 10px color-mix(in oklab, var(--vermilion-500) 55%, transparent);
             animation: reader-progress-grow linear both;
             animation-timeline: scroll(root block);
             pointer-events: none;
@@ -183,7 +212,7 @@
             padding: .5rem 1rem;
             font-size: .75rem;
             font-variant-numeric: tabular-nums;
-            color: #a1a1aa;
+            color: var(--ink-400);
             background: linear-gradient(to bottom, var(--reader-bg), transparent);
             pointer-events: none;
             opacity: 0;
@@ -291,15 +320,16 @@
             width: 2.5rem;
             height: 2.5rem;
             border-radius: 9999px;
-            background: rgb(24 24 27 / .82);
-            color: #d4d4d8;
-            backdrop-filter: blur(10px);
-            border: 0;
+            background: var(--glass-surface);
+            color: var(--ink-300);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-hairline);
             cursor: pointer;
             box-shadow:
-                inset 0 0 0 1px rgb(255 255 255 / .09),
+                inset 0 1px 0 rgb(255 255 255 / .08),
                 0 6px 20px -6px rgb(0 0 0 / .5);
-            transition: background .2s, transform .2s;
+            transition: background .2s var(--ease-swift), transform .2s var(--ease-swift), border-color .2s;
         }
 
         .reader-back { inset-inline-end: 1rem; }
@@ -318,7 +348,10 @@
         .reader-back:hover,
         .reader-toggle:hover,
         .reader-settings-toggle:hover,
-        .reader-note-toggle:hover { background: rgb(39 39 42 / .92); }
+        .reader-note-toggle:hover {
+            background: color-mix(in oklab, var(--ink-800) 92%, transparent);
+            border-color: color-mix(in oklab, white 16%, transparent);
+        }
 
         .reader-back:active,
         .reader-toggle:active,
@@ -329,7 +362,7 @@
         .reader-back:focus-visible,
         .reader-toggle:focus-visible,
         .reader-settings-toggle:focus-visible,
-        .reader-note-toggle:focus-visible { outline: 2px solid #f76a45; outline-offset: 2px; }
+        .reader-note-toggle:focus-visible { outline: 2px solid var(--vermilion-500); outline-offset: 2px; }
 
         /*
          * The settings drawer.
@@ -360,9 +393,10 @@
             max-block-size: 80dvh;
             overflow-y: auto;
             overscroll-behavior: contain;
-            background: rgb(20 20 23 / .96);
-            backdrop-filter: blur(14px);
-            border-block-start: 1px solid rgb(255 255 255 / .07);
+            background: color-mix(in oklab, var(--ink-900) 88%, transparent);
+            backdrop-filter: blur(24px) saturate(160%);
+            -webkit-backdrop-filter: blur(24px) saturate(160%);
+            border-block-start: 1px solid var(--glass-hairline);
             padding: 1.25rem 1.25rem 1.5rem;
 
             /*
@@ -394,13 +428,13 @@
 
         .reader-panel legend,
         .reader-panel label > span {
-            color: #a1a1aa;
+            color: var(--ink-400);
             font-size: .75rem;
             text-transform: uppercase;
             letter-spacing: .06em;
         }
 
-        .reader-panel output { color: #e4e4e7; font-variant-numeric: tabular-nums; }
+        .reader-panel output { color: var(--ink-200); font-variant-numeric: tabular-nums; }
         .reader-panel label { display: flex; flex-direction: column; gap: .375rem; }
 
         /*
@@ -422,14 +456,14 @@
             text-transform: none;
             letter-spacing: normal;
             font-size: .8125rem;
-            color: #d4d4d8;
+            color: var(--ink-300);
         }
 
         .reader-panel .reader-slider > output { text-align: end; }
 
         .reader-panel input[type="range"] {
             inline-size: 100%;
-            accent-color: #f76a45;
+            accent-color: var(--vermilion-500);
         }
 
         .reader-segments {
@@ -443,7 +477,7 @@
             border-radius: .375rem;
             border: 1px solid rgb(63 63 70);
             background: transparent;
-            color: #a1a1aa;
+            color: var(--ink-400);
             font-size: .8125rem;
             cursor: pointer;
         }
@@ -452,7 +486,7 @@
         .reader-segments button.is-on {
             background: rgb(63 63 70);
             border-color: rgb(82 82 91);
-            color: #fafafa;
+            color: var(--ink-50);
         }
 
         /*
@@ -460,12 +494,12 @@
          * rather than holds a state, so it is dimmed by default and lit only on hover
          * or focus. Styling it as another toggle would claim a state it does not have.
          */
-        .reader-segments button[data-filter-reset] { color: #71717a; }
+        .reader-segments button[data-filter-reset] { color: var(--ink-500); }
 
         .reader-segments button[data-filter-reset]:hover,
         .reader-segments button[data-filter-reset]:focus-visible {
-            color: #fafafa;
-            border-color: #f76a45;
+            color: var(--ink-50);
+            border-color: var(--vermilion-500);
         }
 
         /* Swatches are sized by their own colour so the control is the swatch. */
@@ -476,7 +510,7 @@
         }
 
         .reader-segments .reader-swatch[aria-pressed="true"] {
-            outline: 2px solid #f76a45;
+            outline: 2px solid var(--vermilion-500);
             outline-offset: 2px;
         }
 
@@ -486,10 +520,10 @@
             gap: .625rem !important;
         }
 
-        .reader-check span { text-transform: none; letter-spacing: normal; font-size: .875rem; color: #d4d4d8; }
-        .reader-check input { accent-color: #f76a45; inline-size: 1rem; block-size: 1rem; }
+        .reader-check span { text-transform: none; letter-spacing: normal; font-size: .875rem; color: var(--ink-300); }
+        .reader-check input { accent-color: var(--vermilion-500); inline-size: 1rem; block-size: 1rem; }
 
-        .reader-panel-note { color: #71717a; font-size: .75rem; }
+        .reader-panel-note { color: var(--ink-500); font-size: .75rem; }
 
 
         /*
@@ -508,7 +542,7 @@
             inline-size: .4375rem;
             block-size: .4375rem;
             border-radius: 9999px;
-            background: #f76a45;
+            background: var(--vermilion-500);
             box-shadow: 0 0 0 2px rgb(9 9 11 / .8);
         }
 
@@ -524,7 +558,7 @@
         .reader-note-label {
             display: block;
             margin-block-end: .375rem;
-            color: #d4d4d8;
+            color: var(--ink-300);
             font-size: .8125rem;
             font-weight: 500;
         }
@@ -535,14 +569,14 @@
             border-radius: .5rem;
             border: 1px solid rgb(63 63 70);
             background: rgb(9 9 11 / .6);
-            color: #e4e4e7;
+            color: var(--ink-200);
             font-size: .875rem;
             line-height: 1.5;
             resize: vertical;
         }
 
         .reader-note-input:focus {
-            outline: 2px solid #f76a45;
+            outline: 2px solid var(--vermilion-500);
             outline-offset: 1px;
             border-color: transparent;
         }
@@ -564,14 +598,14 @@
         }
 
         .reader-note-state { flex: 1 1 auto; min-inline-size: 0; font-size: .75rem; }
-        .reader-note-state[data-tone="saved"] { color: #4ade80; }
-        .reader-note-state[data-tone="error"] { color: #f87171; }
+        .reader-note-state[data-tone="saved"] { color: var(--moss-400); }
+        .reader-note-state[data-tone="error"] { color: var(--red-400); }
 
         .reader-note-count {
             display: inline-flex;
             align-items: baseline;
             gap: .25rem;
-            color: #71717a;
+            color: var(--ink-500);
             font-size: .75rem;
             font-variant-numeric: tabular-nums;
         }
@@ -587,16 +621,16 @@
         .reader-note-save {
             padding: .375rem .75rem;
             border-radius: .375rem;
-            background: #f76a45;
-            color: #18181b;
+            background: var(--vermilion-500);
+            color: var(--ink-950);
             font-size: .8125rem;
             font-weight: 500;
             border: 0;
             cursor: pointer;
         }
 
-        .reader-note-save:hover { background: #fb8a63; }
-        .reader-note-save:focus-visible { outline: 2px solid #fafafa; outline-offset: 2px; }
+        .reader-note-save:hover { background: var(--vermilion-400); }
+        .reader-note-save:focus-visible { outline: 2px solid var(--ink-50); outline-offset: 2px; }
 
         /*
          * Busy, so a second click cannot queue two saves. The panel is opened and
@@ -625,9 +659,10 @@
             inset-block-end: 0;
             z-index: 30;
             padding: .5rem .75rem calc(.5rem + env(safe-area-inset-bottom));
-            background: rgb(9 9 11 / .92);
-            border-block-start: 1px solid rgb(39 39 42);
-            backdrop-filter: blur(8px);
+            background: color-mix(in oklab, var(--ink-950) 88%, transparent);
+            border-block-start: 1px solid var(--glass-hairline);
+            backdrop-filter: blur(16px) saturate(150%);
+            -webkit-backdrop-filter: blur(16px) saturate(150%);
         }
 
         .reader-nav-head {
@@ -640,7 +675,7 @@
         }
 
         .reader-nav-where {
-            color: #a1a1aa;
+            color: var(--ink-400);
             font-size: .75rem;
             font-variant-numeric: tabular-nums;
         }
@@ -649,7 +684,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: .75rem;
-            color: #71717a;
+            color: var(--ink-500);
             font-size: .6875rem;
         }
 
@@ -680,8 +715,8 @@
             border: 1px solid rgb(63 63 70);
         }
 
-        .reader-nav-swatch[data-state="read"] { background: #4ade80; border-color: #4ade80; }
-        .reader-nav-swatch[data-state="partial"] { background: #f76a45; border-color: #f76a45; }
+        .reader-nav-swatch[data-state="read"] { background: var(--moss-400); border-color: var(--moss-400); }
+        .reader-nav-swatch[data-state="partial"] { background: var(--vermilion-500); border-color: var(--vermilion-500); }
         .reader-nav-swatch[data-state="unknown"] { background: transparent; border-style: dashed; }
 
         .reader-nav-strip {
@@ -724,24 +759,24 @@
             inset-block: 0;
             inset-inline-start: 0;
             inline-size: var(--fill, 0%);
-            background: #f76a45;
+            background: var(--vermilion-500);
         }
 
-        .reader-nav-seg[data-state="read"] { border-color: #4ade80; background: rgb(74 222 128 / .2); }
-        .reader-nav-seg[data-state="read"] .reader-nav-fill { background: #4ade80; inline-size: 100%; }
-        .reader-nav-seg[data-state="partial"] { border-color: #f76a45; }
+        .reader-nav-seg[data-state="read"] { border-color: var(--moss-400); background: rgb(74 222 128 / .2); }
+        .reader-nav-seg[data-state="read"] .reader-nav-fill { background: var(--moss-400); inline-size: 100%; }
+        .reader-nav-seg[data-state="partial"] { border-color: var(--vermilion-500); }
 
         /*
          * The current chapter, ringed rather than tinted, so it is distinguishable
          * from a finished one at a glance and from a colour-blind reader.
          */
         .reader-nav-seg[data-current="true"] {
-            outline: 2px solid #fafafa;
+            outline: 2px solid var(--ink-50);
             outline-offset: 1px;
         }
 
-        .reader-nav-seg:hover { border-color: #e4e4e7; }
-        .reader-nav-seg:focus-visible { outline: 2px solid #f76a45; outline-offset: 2px; }
+        .reader-nav-seg:hover { border-color: var(--ink-200); }
+        .reader-nav-seg:focus-visible { outline: 2px solid var(--vermilion-500); outline-offset: 2px; }
 
         /*
          * Room for the bar at the bottom of the page, so the last chapter's final

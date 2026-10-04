@@ -307,38 +307,34 @@ new #[Title('Downloads')] class extends Component
 }; ?>
 <div class="w-full space-y-6">
     {{-- Header ---------------------------------------------------------- --}}
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Reading ahead, quietly.') }}</x-slot:eyebrow>
+        <x-slot:title>{{ __('Downloads') }}</x-slot:title>
 
-        <div class="relative flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Reading ahead, quietly.') }}</p>
-                <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Downloads') }}</flux:heading>
+        <x-slot:meta>
+            @if ($this->counts['pending'] > 0)
+                {{ trans_choice(
+                    ':count downloading|:count downloading',
+                    $this->counts['pending'],
+                    ['count' => $this->counts['pending']]
+                ) }}
+            @elseif ($this->counts['finished'] > 0)
+                {{ trans_choice(
+                    ':count chapter ready offline|:count chapters ready offline',
+                    $this->counts['finished'],
+                    ['count' => $this->counts['finished']]
+                ) }}
+            @else
+                {{ __('Nothing queued.') }}
+            @endif
+        </x-slot:meta>
 
-                <flux:text size="sm" class="mt-1.5">
-                    @if ($this->counts['pending'] > 0)
-                        {{ trans_choice(
-                            ':count downloading|:count downloading',
-                            $this->counts['pending'],
-                            ['count' => $this->counts['pending']]
-                        ) }}
-                    @elseif ($this->counts['finished'] > 0)
-                        {{ trans_choice(
-                            ':count chapter ready offline|:count chapters ready offline',
-                            $this->counts['finished'],
-                            ['count' => $this->counts['finished']]
-                        ) }}
-                    @else
-                        {{ __('Nothing queued.') }}
-                    @endif
-                </flux:text>
-            </div>
-
+        <x-slot:actions>
             <flux:button variant="ghost" size="sm" icon="arrow-path" wire:click="$refresh">
                 {{ __('Refresh') }}
             </flux:button>
-        </div>
-    </header>
+        </x-slot:actions>
+    </x-page.header>
 
     {{--
         The shared queue.
@@ -375,14 +371,27 @@ new #[Title('Downloads')] class extends Component
         {{-- Totals -------------------------------------------------------- --}}
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
             @foreach ([
-                ['label' => __('Downloading'), 'value' => $this->counts['pending'], 'tone' => 'text-vermilion-600 dark:text-vermilion-400'],
-                ['label' => __('Ready offline'), 'value' => $this->counts['finished'], 'tone' => 'text-emerald-600 dark:text-emerald-400'],
-                ['label' => __('Failed or removed'), 'value' => $this->counts['failed'], 'tone' => $this->counts['failed'] > 0 ? 'text-red-600 dark:text-red-400' : ''],
-                ['label' => __('Pages on disk'), 'value' => $this->counts['pages'], 'tone' => ''],
-            ] as $tile)
-                <flux:card class="p-4">
+                ['label' => __('Downloading'), 'value' => $this->counts['pending'], 'tone' => 'text-vermilion-600 dark:text-vermilion-400', 'bar' => 'bg-vermilion-500', 'share' => $this->counts['pending']],
+                ['label' => __('Ready offline'), 'value' => $this->counts['finished'], 'tone' => 'text-moss-600 dark:text-moss-400', 'bar' => 'bg-moss-500', 'share' => $this->counts['finished']],
+                ['label' => __('Failed or removed'), 'value' => $this->counts['failed'], 'tone' => $this->counts['failed'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500 dark:text-zinc-400', 'bar' => 'bg-red-500', 'share' => $this->counts['failed']],
+                ['label' => __('Pages on disk'), 'value' => $this->counts['pages'], 'tone' => 'text-zinc-800 dark:text-zinc-100', 'bar' => 'bg-zinc-400 dark:bg-zinc-600', 'share' => $this->counts['pages']],
+            ] as $index => $tile)
+                <flux:card class="card-press relative overflow-hidden p-4">
                     <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400">{{ $tile['label'] }}</flux:text>
-                    <flux:heading size="lg" class="mt-1 {{ $tile['tone'] }}">{{ number_format($tile['value']) }}</flux:heading>
+
+                    <flux:heading size="lg" class="mt-1 font-display! tabular-nums {{ $tile['tone'] }}">{{ number_format($tile['value']) }}</flux:heading>
+
+                    {{-- A quiet measure of each tile's share of the total,
+                         so the numbers are comparable at a glance without a
+                         second chart anywhere. --}}
+                    @php($total = max(1, $this->counts['pending'] + $this->counts['finished'] + $this->counts['failed'] + $this->counts['pages']))
+
+                    <div class="mt-3 h-0.5 w-full overflow-hidden rounded-full bg-zinc-200/70 dark:bg-white/[0.06]" aria-hidden="true">
+                        <div
+                            class="h-full rounded-full {{ $tile['bar'] }} transition-[width] duration-700"
+                            style="width: {{ (int) round(min(100, $tile['share'] / $total * 100)) }}%"
+                        ></div>
+                    </div>
                 </flux:card>
             @endforeach
         </div>
@@ -469,12 +478,17 @@ new #[Title('Downloads')] class extends Component
                         ></flux:button>
                     @else
                         @if ($row->state === \App\Models\Download::FINISHED)
-                            <flux:button size="xs" variant="ghost" icon="trash" class="relative z-10"
-                                wire:click="forget({{ $row->suwayomi_chapter_id }})"
-                                wire:confirm="{{ __('Delete these pages from disk? Reading the chapter will fetch them again.') }}"
-                                aria-label="{{ __('Delete from disk') }}"
-                                title="{{ __('Delete from disk') }}"
-                            ></flux:button>
+                            <x-confirm
+                                action="forget({{ $row->suwayomi_chapter_id }})"
+                                :title="__('Delete these pages from disk?')"
+                                :body="__('Reading the chapter will fetch them again.')"
+                                :confirm="__('Delete from disk')"
+                            >
+                                <flux:button size="xs" variant="ghost" icon="trash" class="relative z-10"
+                                    aria-label="{{ __('Delete from disk') }}"
+                                    title="{{ __('Delete from disk') }}"
+                                ></flux:button>
+                            </x-confirm>
                         @elseif ($this->stateIsProblem($row->state))
                             <flux:button size="xs" variant="ghost" icon="arrow-path" class="relative z-10"
                                 wire:click="retry({{ $row->suwayomi_chapter_id }})"

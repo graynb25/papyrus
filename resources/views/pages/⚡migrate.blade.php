@@ -276,23 +276,22 @@ new #[Title('Move to another source')] class extends Component {
         </flux:callout>
     @else
         {{-- What is being moved -------------------------------------------- --}}
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div class="min-w-0">
-                <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('A new home for an old friend.') }}</p>
-                <flux:heading level="1" size="xl" class="mt-1 truncate font-display font-semibold tracking-tight">{{ $series['title'] }}</flux:heading>
-                <flux:text size="sm" class="mt-1">
-                    {{ __('On') }} <span class="font-medium">{{ $series['source']['name'] }}</span>
-                    <span class="text-zinc-500">({{ $series['source']['lang'] }})</span>
-                    @if (($series['chapters']['totalCount'] ?? 0) > 0)
-                        &middot; {{ trans_choice(
-                            ':count chapter|:count chapters',
-                            (int) $series['chapters']['totalCount'],
-                            ['count' => (int) $series['chapters']['totalCount']],
-                        ) }}
-                    @endif
-                </flux:text>
-            </div>
-        </div>
+        <x-page.header>
+            <x-slot:eyebrow>{{ __('A new home for an old friend.') }}</x-slot:eyebrow>
+            <x-slot:title>{{ $series['title'] }}</x-slot:title>
+
+            <x-slot:meta>
+                {{ __('On') }} <span class="font-medium">{{ $series['source']['name'] }}</span>
+                <span class="text-zinc-500">({{ $series['source']['lang'] }})</span>
+                @if (($series['chapters']['totalCount'] ?? 0) > 0)
+                    &middot; {{ trans_choice(
+                        ':count chapter|:count chapters',
+                        (int) $series['chapters']['totalCount'],
+                        ['count' => (int) $series['chapters']['totalCount']],
+                    ) }}
+                @endif
+            </x-slot:meta>
+        </x-page.header>
 
         {{--
             A plain explanation, because the wizard moves a series and carries read

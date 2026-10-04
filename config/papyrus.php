@@ -320,6 +320,33 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Login showcase
+    |--------------------------------------------------------------------------
+    |
+    | The login screen builds a drifting wall out of the collection itself,
+    | "The Reading Room". Covers are auth-gated everywhere else, so this needs
+    | a public door, and a public door on a multi-reader install would show a
+    | stranger a library that is not theirs. That is why the whole feature is
+    | gated to `single` deployment mode: with one reader, the collection on the
+    | login screen has one owner. Anything else, or the switch below set to
+    | false, and both endpoints 404 so the page falls back to generative art.
+    |
+    */
+
+    'showcase' => [
+        'enabled' => (bool) env('PAPYRUS_SHOWCASE_ENABLED', true),
+
+        // How many covers the wall holds. One fetchMany batch asks for all of
+        // them, so this is bounded rather than a per-cover cost.
+        'count' => (int) env('PAPYRUS_SHOWCASE_COUNT', 18),
+
+        // The payload cache window. A login-screen refresh costs nothing while
+        // it runs; a newly added series joins the wall when it turns over.
+        'cache_seconds' => (int) env('PAPYRUS_SHOWCASE_CACHE_SECONDS', 300),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Local source
     |--------------------------------------------------------------------------
     |

@@ -12,6 +12,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -478,5 +479,115 @@ class SeriesAutoFetchTest extends TestCase
             FetchSeriesChapters::isClaimed((int) $this->user->id),
             'Otherwise the reader presses the button and watches it do nothing.'
         );
+    }
+
+    /**
+     * Run the fetch the way the page books it, so the ledger row under test was written by the
+     * code rather than seeded by hand.
+     *
+     * @return Testable
+     */
+    private function pageAfterAFailedFetch(string $serverMessage)
+    {
+        $this->fakeSeries([], refreshError: $serverMessage);
+
+        app(ReadingState::class)->series($this->user->id, 76);
+
+        FetchSeriesChapters::claim((int) $this->user->id);
+        (new FetchSeriesChapters((int) $this->user->id, 76))->handle(app(CheckLedger::class));
+
+        $page = Livewire::actingAs($this->user)->test('pages::series', ['manga' => 76]);
+
+        /*
+         * The mount takes the claim, so the first render is the loading panel, and the job has
+         * already finished by now. Releasing and re-rendering is what the reader gets on the
+         * next poll tick, and it is a second request, so nothing computed on the first render
+         * is reused (trap 63).
+         */
+        FetchSeriesChapters::release((int) $this->user->id);
+
+        return $page->call('$refresh');
+    }
+
+    public function test_a_source_that_could_not_be_reached_is_not_reported_as_having_no_chapters(): void
+    {
+        Queue::fake();
+
+        /*
+         * The message is Suwayomi's own, copied from a real answer on this box rather than
+         * tidied up. Every zero-chapter series rendered one sentence, so a source answering
+         * this was reported as "The source has not listed any chapters for this series", which
+         * is a different and far more hopeful claim: it sends a reader to a source that cannot
+         * answer at all, and nothing on the page says which of the two it is.
+         *
+         * Measured on the dev library, 4 of 8 zero-chapter series had this recorded, and all 8
+         * were told the same thing.
+         */
+        $this->pageAfterAFailedFetch('Cloudflare bypass currently disabled')
+            ->assertOk()
+            ->assertSee(__('This source could not be reached'))
+            ->assertSee('Cloudflare bypass currently disabled')
+            ->assertDontSee(__('The source has not listed any chapters for this series.'));
+    }
+
+    public function test_a_source_that_answered_and_had_nothing_still_says_so(): void
+    {
+        Queue::fake();
+
+        /*
+         * The other half, and the reason the first test is not just "show the error". A source
+         * with no chapters today is a fact about the source rather than a fault, so it keeps the
+         * sentence that is true for it and does not get dressed up as a failure.
+         */
+        $this->pageAfterAFailedFetch('java.lang.Exception: No chapters found')
+            ->assertOk()
+            ->assertSee(__('No chapters yet'))
+            ->assertSee(__('The source has not listed any chapters for this series.'))
+            ->assertDontSee(__('This source could not be reached'));
+    }
+
+    public function test_the_retry_does_not_raise_an_undefined_method(): void
+    {
+        /*
+         * The button this feature exists for, on the one series it exists for.
+         *
+         * `Flux::error()` does not exist in Flux 2, so the catch branch in `refresh()` raised
+         * "Call to undefined method Flux\FluxManager::error()", which 500s the Livewire request.
+         * A reader whose source could not answer got a spinner and a console error where a
+         * sentence would do, and the gate reported it as "the series chapter list offers read
+         * toggles: 0" because the page never came back. Trap 79.
+         *
+         * Asserted through the component rather than by checking the method is gone, because
+         * what matters is that the press produces a rendered answer.
+         */
+        $this->fakeSeries([], refreshError: 'Cloudflare bypass currently disabled');
+
+        app(ReadingState::class)->series($this->user->id, 76);
+
+        Livewire::actingAs($this->user)
+            ->test('pages::series', ['manga' => 76])
+            ->call('refresh')
+            ->assertOk()
+            ->assertSee(__('The chapter list did not load'))
+            ->assertSee('Cloudflare bypass currently disabled');
+    }
+
+    public function test_the_retry_separates_an_empty_source_from_a_failed_call(): void
+    {
+        /*
+         * Both arrive on `loadError`, and they are different facts. "No chapters found" is the
+         * source answering that it has nothing, which is an upstream condition; anything else
+         * is the call not completing, which is a fault. One sentence for both was wrong for one
+         * of them, and it is classified on the message for the same reason `CheckLedger` is:
+         * the manual retry writes no ledger row, so there is no state to read.
+         */
+        $this->fakeSeries([], refreshError: 'Exception while fetching data (/fetchChapters) : No chapters found');
+
+        Livewire::actingAs($this->user)
+            ->test('pages::series', ['manga' => 76])
+            ->call('refresh')
+            ->assertOk()
+            ->assertSee(__('The source returned no chapters'))
+            ->assertDontSee(__('The chapter list did not load'));
     }
 }

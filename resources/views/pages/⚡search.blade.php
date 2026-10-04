@@ -629,14 +629,10 @@ new #[Title('Search')] class extends Component
     --}}
     x-on:open-source-chooser.window="$dispatch('modal-show', { name: 'source-chooser' })"
 >
-    <header class="relative">
-        <div class="hero-glow" aria-hidden="true"></div>
-
-        <div class="relative">
-            <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">{{ __('Every source, one question.') }}</p>
-            <flux:heading level="1" size="xl" class="mt-1 font-display font-semibold tracking-tight">{{ __('Search every source') }}</flux:heading>
-        </div>
-    </header>
+    <x-page.header>
+        <x-slot:eyebrow>{{ __('Every source, one question.') }}</x-slot:eyebrow>
+        <x-slot:title>{{ __('Search every source') }}</x-slot:title>
+    </x-page.header>
 
     {{-- Query ------------------------------------------------------------- --}}
     <form wire:submit="search" class="space-y-4">
@@ -723,7 +719,7 @@ new #[Title('Search')] class extends Component
             reader narrows a fan-out by, and giving each its own column inside one
             bordered panel keeps them from reading as two unrelated forms.
         --}}
-        <div class="grid gap-6 rounded-2xl border border-zinc-200/80 p-4 dark:border-white/[0.06] sm:grid-cols-2 sm:p-5">
+        <div class="glass grid gap-6 rounded-2xl p-4 sm:grid-cols-2 sm:p-5">
             <div>
                 <div class="flex items-baseline justify-between gap-2">
                     <flux:label>{{ __('Languages') }}</flux:label>
@@ -927,24 +923,29 @@ new #[Title('Search')] class extends Component
                 which is the same stop condition without needing a bound value.
             --}}
             <div wire:poll.3s>
-                <flux:callout variant="secondary" icon="arrow-path" class="animate-pulse">
+                <div class="glass rounded-2xl p-4">
                     <div class="flex items-center justify-between gap-4">
-                        <span>
+                        <span class="flex items-center gap-2.5 text-sm font-medium">
+                            <span class="relative flex size-2" aria-hidden="true">
+                                <span class="absolute inline-flex size-full animate-ping rounded-full bg-vermilion-500 opacity-60"></span>
+                                <span class="relative inline-flex size-2 rounded-full bg-vermilion-500"></span>
+                            </span>
+
                             {{ __('Searching :count of :total sources', [
                                 'count' => $run->sources_done,
                                 'total' => $run->sources_total,
                             ]) }}
                         </span>
-                        <span class="tabular-nums">{{ $run->progressPercent() }}%</span>
+                        <span class="tabular-nums text-sm text-zinc-500 dark:text-zinc-400">{{ $run->progressPercent() }}%</span>
                     </div>
 
-                    <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                    <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
                         <div
-                            class="h-full rounded-full bg-zinc-900 transition-all duration-300 dark:bg-white"
+                            class="h-full rounded-full bg-linear-to-r from-vermilion-500 to-vermilion-400 shadow-[0_0_10px_color-mix(in_oklab,var(--color-vermilion-500)_55%,transparent)] transition-all duration-300"
                             style="width: {{ $run->progressPercent() }}%"
                         ></div>
                     </div>
-                </flux:callout>
+                </div>
             </div>
         @endif
 
@@ -972,7 +973,7 @@ new #[Title('Search')] class extends Component
                             <span class="flex items-center gap-2">
                                 <flux:icon
                                     @class([
-                                        'text-green-600 dark:text-green-400' => $outcome->status === 'ok',
+                                        'text-moss-600 dark:text-moss-400' => $outcome->status === 'ok',
                                         'text-amber-600 dark:text-amber-400' => $outcome->status === 'empty',
                                         'text-red-600 dark:text-red-400' => in_array($outcome->status, ['error', 'timeout'], true),
                                     ])
@@ -1083,26 +1084,12 @@ new #[Title('Search')] class extends Component
                         @if ($group->hasAlternatives())
                             <button
                                 type="button"
-                                class="block w-full text-start"
+                                class="card-press block w-full text-start"
                                 data-test="choose-source"
                                 wire:click="chooseSource({{ $primaryId }})"
                                 aria-label="{{ __('Choose a source for :title', ['title' => $group->primary->title]) }}"
                             >
-                                <div class="cover-frame">
-                                    @if ($cover = $group->primary->coverUrl())
-                                        <img
-                                            src="{{ $cover }}"
-                                            alt=""
-                                            loading="lazy"
-                                        />
-                                    @else
-                                        <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                            <flux:icon name="photo" class="size-8" />
-                                        </div>
-                                    @endif
-
-                                    <div class="cover-scrim" aria-hidden="true"></div>
-
+                                <x-cover.art :src="$group->primary->coverUrl()" :glow="true" :vt="true" class="group">
                                     <span class="absolute end-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art">
                                         +{{ $group->sourceCount() - 1 }}
                                     </span>
@@ -1112,7 +1099,7 @@ new #[Title('Search')] class extends Component
                                             {{ $group->strictestContentWarning() }}
                                         </span>
                                     @endif
-                                </div>
+                                </x-cover.art>
 
                                 <flux:heading size="sm" class="mt-2.5 line-clamp-2 font-display font-semibold leading-snug" level="3">
                                     <span class="transition-colors group-hover:text-vermilion-600 dark:group-hover:text-vermilion-400">
@@ -1128,27 +1115,13 @@ new #[Title('Search')] class extends Component
                                 tabindex="-1"
                                 aria-hidden="true"
                             >
-                                <div class="cover-frame">
-                                    @if ($cover = $group->primary->coverUrl())
-                                        <img
-                                            src="{{ $cover }}"
-                                            alt=""
-                                            loading="lazy"
-                                        />
-                                    @else
-                                        <div class="cover-placeholder flex items-center justify-center text-zinc-300 dark:text-zinc-600">
-                                            <flux:icon name="photo" class="size-8" />
-                                        </div>
-                                    @endif
-
-                                    <div class="cover-scrim" aria-hidden="true"></div>
-
+                                <x-cover.art :src="$group->primary->coverUrl()" :glow="true" :vt="true">
                                     @if ($group->strictestContentWarning() !== 'SAFE')
                                         <span class="absolute start-1.5 top-1.5 rounded-md bg-red-500/90 px-1.5 py-0.5 text-[0.65rem] font-bold tracking-wide text-white shadow-sm">
                                             {{ $group->strictestContentWarning() }}
                                         </span>
                                     @endif
-                                </div>
+                                </x-cover.art>
                             </a>
                         @endif
 
@@ -1311,13 +1284,13 @@ new #[Title('Search')] class extends Component
 
             <ul class="space-y-2" data-test="source-chooser-list">
                 @forelse ($this->chosenSources as $one)
-                    <li class="flex items-center gap-3 rounded-lg border border-zinc-200 p-2 dark:border-white/10">
+                    <li class="card-press flex items-center gap-3 rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-2 transition-colors hover:border-zinc-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:border-white/[0.16]">
                         @if ($one['cover'] !== null)
                             <img
                                 src="{{ $one['cover'] }}"
                                 alt=""
                                 loading="lazy"
-                                class="size-12 shrink-0 rounded object-cover"
+                                class="size-12 shrink-0 rounded-md object-cover"
                             />
                         @else
                             <div class="cover-placeholder flex size-12 shrink-0 items-center justify-center text-zinc-300 dark:text-zinc-600">
@@ -1330,7 +1303,10 @@ new #[Title('Search')] class extends Component
 
                             <flux:text size="xs" class="truncate">
                                 @if ($one['inLibrary'])
-                                    {{ __('In your library') }}
+                                    <span class="inline-flex items-center gap-1 text-moss-600 dark:text-moss-400">
+                                        <flux:icon name="bookmark" class="size-3" />
+                                        {{ __('In your library') }}
+                                    </span>
                                 @else
                                     {{ $one['title'] }}
                                 @endif
