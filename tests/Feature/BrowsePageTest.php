@@ -530,6 +530,98 @@ class BrowsePageTest extends TestCase
         );
     }
 
+    /**
+     * A home_url carrying a path groups by its host, not by the whole URL.
+     *
+     * This is a real case and not a hypothetical one: measured across the installed sources,
+     * `lhtranslation.net` is published as `https://lhtranslation.net/manga/?m_orderby=views`.
+     * The grouping used to remove the scheme with a regular expression and take the remainder,
+     * which made the group key, and the host printed under the site name,
+     *
+     * ```
+     * lhtranslation.net/manga/?m_orderby=views
+     * ```
+     *
+     * A reader was shown a query string as a domain, and the group a source landed in depended
+     * on a sort order in someone else's URL, so an extension changing its default ordering would
+     * silently split one site into two.
+     *
+     * Asserted by rendering the page, because the grouping is a private method on an anonymous
+     * component declared inside a Blade file and cannot be called directly. Rendering is also
+     * the only assertion that catches the printed host, which is half the bug.
+     */
+    public function test_a_home_url_with_a_path_groups_by_its_host(): void
+    {
+        Source::query()->create([
+            'suwayomi_source_id' => 920000,
+            'name' => 'Path Scans',
+            'display_name' => 'Path Scans (EN)',
+            'extension_pkg_name' => 'com.example.pathscans',
+            'lang' => 'en',
+            // The shape that broke it: scheme, host, a path, and a query.
+            'home_url' => 'https://pathscans.test/manga/?m_orderby=views',
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
+
+        $html = Livewire::actingAs($this->user)->test('pages::sources')->html();
+
+        $this->assertStringContainsString('pathscans.test', $html, 'The host is shown.');
+        $this->assertStringNotContainsString(
+            'm_orderby',
+            $html,
+            'A query string must not be shown to a reader as a host.'
+        );
+        $this->assertStringNotContainsString(
+            'pathscans.test/manga',
+            $html,
+            'A path must not become part of the host, or the group key changes with the path.'
+        );
+    }
+
+    /**
+     * Two sources whose URLs differ only by path are one site, not two.
+     *
+     * The grouping is by host, so this is the property the first version got wrong: same host,
+     * different paths, and the two must share a group.
+     */
+    public function test_two_sources_on_one_host_share_a_group_despite_different_paths(): void
+    {
+        Source::query()->create([
+            'suwayomi_source_id' => 930001,
+            'name' => 'Multi Popular',
+            'display_name' => 'Multi Popular (EN)',
+            'extension_pkg_name' => 'com.example.multiscans',
+            'lang' => 'en',
+            'home_url' => 'https://multi.test/browse/popular',
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
+
+        Source::query()->create([
+            'suwayomi_source_id' => 930002,
+            'name' => 'Multi Latest',
+            'display_name' => 'Multi Latest (EN)',
+            'extension_pkg_name' => 'com.example.multiscans',
+            'lang' => 'en',
+            'home_url' => 'https://multi.test/browse/latest',
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
+
+        $html = Livewire::actingAs($this->user)->test('pages::sources')->html();
+
+        $this->assertStringContainsString('multi.test', $html);
+        $this->assertStringNotContainsString('multi.test/browse', $html);
+
+        // One group, holding both, rather than two groups of one.
+        $this->assertMatchesRegularExpression(
+            '/2 sources/',
+            $html,
+            'Both sources belong to one group, so the group says two.'
+        );
+    }
+
     public function test_the_picker_links_every_installed_source_from_the_summary_row(): void
     {
         $source = $this->source();

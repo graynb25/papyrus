@@ -580,6 +580,46 @@ new #[Title('Sources')] class extends Component
      *
      * @return array<int, array{site: string, host: string|null, sources: array<int, array<string, mixed>>}>
      */
+    /**
+     * The host to group a source under, or null when it has none worth grouping by.
+     *
+     * Parsed, not stripped. The first version removed the scheme with a regular expression and
+     * took what was left as the host, which is fine until a `home_url` carries a path: measured
+     * across the installed sources, `lhtranslation.net` is published as
+     * `https://lhtranslation.net/manga/?m_orderby=views`, and stripping the scheme left
+     *
+     * ```
+     * lhtranslation.net/manga/?m_orderby=views
+     * ```
+     *
+     * as the group's host. That string was then printed under the site name, so a reader was
+     * shown a query string as though it were a domain, and it was used as the grouping key,
+     * which means the group a source lands in depends on a sort order in someone else's URL. An
+     * extension that changed its default ordering would silently become a second group for the
+     * same site.
+     *
+     * `parse_url` is the answer and the only reason this needed saying: a host is a component of
+     * a URL, and asking for the component is different from deleting the parts you did not want.
+     *
+     * Null for a source with no `home_url`, and for one whose `home_url` is unparseable, since
+     * both mean "no host to group by" and both get the local group rather than a group named
+     * after a malformed string.
+     */
+    private function hostOf(?string $homeUrl): ?string
+    {
+        if ($homeUrl === null || trim($homeUrl) === '') {
+            return null;
+        }
+
+        $host = parse_url(trim($homeUrl), PHP_URL_HOST);
+
+        if (! is_string($host) || $host === '') {
+            return null;
+        }
+
+        return strtolower($host);
+    }
+
     #[Computed]
     public function browseSites(): array
     {
@@ -591,14 +631,10 @@ new #[Title('Sources')] class extends Component
         $sites = [];
 
         foreach ($rows as $source) {
-            $host = $source->home_url;
-
-            if ($host !== null) {
-                $host = (string) preg_replace('#^https?://#', '', rtrim((string) $host, '/'));
-            }
+            $host = $this->hostOf($source->home_url);
 
             // The local source has no host and must still get a group of its own.
-            $key = $host !== null && $host !== '' ? $host : 'local';
+            $key = $host ?? 'local';
 
             if (! isset($sites[$key])) {
                 $sites[$key] = [

@@ -1066,27 +1066,41 @@ Each of these cost real time. Do not repeat them.
      the write and the undo**, so the undo needs to be a command rather than a line at the end
      of the script.
 
-143. **Nineteen of the twenty browser gates cannot be run on this box.** They are Python, and
-     no Python on this machine has `playwright` any more. The uv-managed interpreters under
-     `.local\bin` are all clean, and the Windows Store Python was never the one that ran them.
+143. **A gate that failed to load is not a gate that ran.** Written on 2026-10-04 when it was
+     true and it is no longer: nineteen of the twenty browser gates then could not run at all,
+     because they are Python and no Python on this machine had `playwright`. **That is now
+     fixed and the gates run again** (see the correction at the end), so the standing counts
+     below are measured rather than inherited. The trap itself is not the missing package, and
+     it did not stop being true when the package came back.
 
-     The browsers themselves are still installed, under `%LOCALAPPDATA%\ms-playwright`, and the
-     npm `playwright` in `.tools/suwayomi` drives them, which is how `verify-october-pass.mjs`
-     and `verify-source-chooser.mjs` work. So the gates are not obsolete, they are
-     misfiled: nineteen scripts need porting before they can check anything again.
+     What made it worth writing was that **`import playwright` failing at the top of a script
+     is indistinguishable from a gate that passed**, because `python script.py` on that box
+     printed "Python was not found" and exited 1, and a gate whose exit code nobody reads has
+     stopped existing without saying so. `verify-october-pass.mjs` carries a comment saying it
+     is a Node port of the Python original for exactly this reason, which is the only reason
+     the pattern was known at all.
 
-     The trap is not that they fail, it is that **`import playwright` failing at the top of a
-     script is indistinguishable from a gate that passed**, because `python script.py` on this
-     box prints "Python was not found" and exits 1, and a gate whose exit code nobody reads is
-     a gate that has stopped existing without saying so. `verify-october-pass.mjs` carries a
-     comment saying it is a Node port of the Python original for exactly this reason, which is
-     the only reason the pattern was known. The same shape arrived on 2026-10-04 from Node, as
-     `MODULE_NOT_FOUND` with `playwright@1.63.0` installed and `npm ls` clean: the shell's
-     working directory had reset to the workspace root, so `node verify-cover-reveal.mjs` was
-     looked for one level up. **A gate that failed to load is not a gate that ran**, and this
-     one printed a stack trace rather than a summary line, which is the difference between a
-     failure you can read and a green run that says nothing. The fix is an absolute path or a
-     `workdir` that is set on every call, since the harness resets the shell between commands.
+     The same shape arrived the same day from the other side, as `MODULE_NOT_FOUND` from Node
+     with `playwright@1.63.0` installed and `npm ls` clean: the shell's working directory had
+     reset to the workspace root, so `node verify-cover-reveal.mjs` was looked for one level
+     up. The fix in both cases is an absolute path or an explicit `workdir`, because the
+     harness resets the shell between commands.
+
+     **Then it happened again, twice, and to my own tooling**, which is why this is the trap
+     rather than a note. The gate runner written to measure all twenty-nine gates printed
+     `clean` for all eighteen Python gates on a run where every one had crashed at import with
+     `ModuleNotFoundError`, because its verdict was computed from the count of `[FAIL]`
+     markers and nothing else. That is trap 156, and it is this one wearing the runner's
+     clothes: **a gate that failed to load looks exactly like a gate that passed, and only the
+     exit code and a check count that is greater than zero distinguish them.**
+
+     The correction. Python is installed again, 3.14.8, and `playwright` 1.63.0 lives in a
+     venv at `.tools/suwayomi/.venv`. All eighteen Python gates run against the live app, which
+     is how `verify-search-syntax.py` was measured at 28 checks having been repaired earlier the
+     same day. **They were never obsolete and they do not need porting.** The earlier decision
+     to leave them as `.py` rather than rewrite nineteen scripts as `.mjs` was correct, and this
+     is the evidence for it rather than an argument: the scripts ran, unchanged, the moment the
+     interpreter came back.
 
 144. **A dev server that is up can still be serving a stylesheet missing utilities.** The search
      grid rendered one card per row at 1541px wide inside a 1440px window. Every card was a
@@ -1644,15 +1658,54 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,148 tests**, 2,540 assertions, Pint clean, PHPStan
-level 7 clean, zero em dashes. Plus 39 checks in `verify-reader.py`, 30 in
-`verify-navigator.py`, 33 in `verify-notes.py`, 20 in `verify-covers.py`, 18 in
-`verify-library.py`, 18 in `verify-downloads.py`, 21 in `verify-migrate.py`, 14 in
-`verify-search-anilist.py`, 21 in `verify-library-check.py` and 17 in
-`verify-continue-reading.py` and 21 in `verify-browse.py`, all of which need a browser that produces frames. The
-October 2026 feature pass added 21 checks in `verify-october-pass.mjs` over the search
-filters, the result-card library toggle, the read toggles, the updates view and the
-connections page.
+Current standing: **1,150 tests**, 2,546 assertions, Pint clean, PHPStan
+level 7 clean, zero em dashes.
+
+**The browser gates are measured, not remembered.** `run-all-gates.mjs` runs all twenty-nine
+and this is its output rather than a figure anyone typed. The first full run: **12 clean, 8
+failed, 3 crashed, 5 asserted nothing, 1 counted under another convention, 338 checks read from
+output.**
+
+| | |
+| --- | --- |
+| clean, count read from its output | 12 gates |
+| clean, but asserting nothing (trap 155) | 5 gates |
+| clean, counted under another convention | 1 gate |
+| failed or crashed | 11 gates |
+| checks read across the suite | **338** |
+
+Per gate, as measured:
+
+| Gate | Checks | Gate | Checks |
+| --- | --- | --- | --- |
+| `verify-notes.py` | 33 | `verify-migrate.py` | 21 |
+| `verify-navigator.py` | 30 | `verify-downloads.py` | 20 |
+| `verify-rating-tags.mjs` | 31 | `verify-library.py` | 18 |
+| `verify-cbz-export.mjs` | 15 | `verify-library-check.py` | 21 |
+| `verify-search-anilist.py` | 14 | `verify-covers.py` | 23 |
+| `verify-source-chooser.mjs` | 13 | `verify-incognito.mjs` | 14 |
+| `verify-card-bookmark.mjs` | 9 | `verify-drift-notice.mjs` | 7 |
+| `verify-sources-picker.mjs` | 3 | `verify-october-pass.mjs` | 21 |
+
+Seven gates assert through a `notes` list rather than a per-check line, so their counts are not
+in that table and are not zeros: `verify-browse.py`, `verify-cover-reveal.mjs`, `verify-fixes.py`
+and `verify-reader-fixes.py` assert nothing and cannot fail, and `verify-fanout.py` is a
+diagnostic. Trap 155.
+
+Every one of the eleven failures and crashes has been diagnosed. **Nine were the gate's fault
+and two were the app's**, which is close to the opposite of what the report looked like before
+per-gate output was being kept.
+
+| Failure | Whose fault | Trap |
+| --- | --- | --- |
+| `verify-covers.py`, 5 checks | gate: fixed sleeps read before the upload landed | 159 |
+| `verify-fanout-coverage.py`, "expected 16 site groups" | gate: a typed-in number, and the app's 18 is correct | 161 |
+| `verify-inflight.py`, "still Searching after 120s" | gate: an unsatisfiable check and a budget at the median | 162, 163 |
+| `verify-library-check.py`, 4 checks | gate: a ceiling with no headroom, and a poll that fought the job | 160 |
+| `verify-continue-reading.py`, crash | gate: `page.reload()` on a page that polls | 157 |
+| `verify-rating-tags.mjs`, crash | gate: `const` inside a `try`, invisible to its own `finally` | 157 |
+| **`browseSites()` grouped by a stripped URL, not a parsed one** | **app** | 161 |
+| **`$query` carries no `#[Url]`, so a search cannot be shared** | **app** | 163 |
 
 `verify-cover-reveal.mjs` is the gate for trap 151 and the only one that runs on the **login**
 wall rather than behind a sign-in. Ten checks across five surfaces, because the cover atom is
@@ -1685,6 +1738,32 @@ Seeding goes through `shell: true` because Node refuses to spawn a `.bat` direct
 the same Windows detail as the Python launcher.
 
 ### Running the gates
+
+`run-all-gates.mjs` runs the whole suite and is how the counts in the standing are produced
+rather than remembered. It takes an optional name fragment, so `run-all-gates.mjs verify-cbz`
+runs one gate. Three details in it are load-bearing:
+
+- It finds an interpreter **by probing for playwright** rather than by checking that a path
+  exists, because a path that exists and cannot import the dependency is a gate that never runs
+  rather than a loud error (trap 156).
+- It reports **CRASHED**, **FAILED**, **no checks** and **clean** as four different verdicts
+  instead of collapsing them, because a gate that asserted nothing and a gate that could not
+  fail are different facts and one of them is a defect (trap 155).
+- It writes every gate's whole output to `.tools/suwayomi/logs/gates/<gate>.log` and prints that
+  path beside any failure. Re-running a browser gate to find out why it failed is slow, and not
+  always possible, because the box it ran against has moved on (trap 157).
+
+Gates run twenty seconds apart, and six was not enough. `verify-browse.py` died with a
+Playwright timeout on `goto('/sources')` having started six seconds after the previous browser
+gate finished; run on its own it exits 0 with nothing reported. Nine minutes added to a run of
+about two hours is the right trade for a suite whose only value is that its failures mean
+something. **A gate suite that reports contention as a defect teaches people to ignore it.**
+
+One gate is declared in the runner as counting under a different convention rather than being
+silently read as zero. `verify-browse-failure.mjs` prints `OK`/`RAW`/`SKIP` per site rather than
+one line per check, while every other gate uses an identical `check()` helper, so the runner can
+read twenty-eight of the twenty-nine and says so in words about the one it cannot. A zero there
+would be a number nobody took.
 
 Three processes have to be up, and their absence has its own signature each time:
 
@@ -2152,7 +2231,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 154, each number once, ascending.
+tidiness. The list is now 1 to 164, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2291,3 +2370,392 @@ were eliminated.
      `finally` around the send runs on that path too, and it is the only version a test can
      see: `setCallback` never fires under a test, so a test asserting "nothing was left behind"
      would have passed against a build that leaks on every export.
+155. **A gate that cannot fail is worse than no gate, because it is read as passing.** Five of
+     the eighteen Python gates append their findings to a `notes` list, print it under a
+     heading like "could not verify / worth knowing", and `return 0` regardless:
+
+     ```
+     verify-browse.py             notes, return 0
+     verify-fanout-coverage.py    notes, return 0
+     verify-fixes.py              notes, return 0
+     verify-inflight.py           notes, return 0
+     verify-fanout.py             neither, return 0   (a diagnostic, not a gate)
+     ```
+
+     Every note they write reads like a failure. Measured on `verify-inflight.py`:
+     *"the search still read 'Searching' after 120s, so the run may not be finalising"*, and
+     the gate still exited 0. `verify-browse.py` appends *"no Next control on the browse page"*
+     for months without anything acting on it.
+
+     The convention was not chosen carelessly. `verify-reader-asks.py` and
+     `verify-reader-fixes.py` were written later by the same hand and both end with
+     `return 1 if problems else 0`, so the file that made them fail and the files that did not
+     sit side by side without anyone noticing the difference. **The two conventions are
+     indistinguishable from the outside**, because the failing one prints the same shape of
+     output when it is clean.
+
+     It was found by counting exit paths rather than by running anything: `Select-String` for
+     `return 0` and `def check(` across all eighteen, which put five files in a bucket none of
+     them knew about. **A gate's ability to fail is a property of its exit path, and it is
+     cheap to check and invisible to review.**
+
+     `verify-fanout.py` is the honest exception. It is a diagnostic: it runs a real fan-out and
+     prints the database state afterwards, and "what did the run leave" is a question rather
+     than a pass or fail. It should not be counted as a gate, and the only thing that makes the
+     distinction real is saying so, which is why it is named in this list.
+
+     The general shape, and it applies to any test suite and not only to these: **a check that
+     reports without asserting is a log line.** The fix is not to make the wording stronger, it
+     is to make the exit code agree with the report, so that the thing which noticed a problem
+     is the same thing which turns the suite red.
+
+     **Fixed, and the fix needed a distinction this trap had not made.** All four real gates now
+     end `return 1 if notes else 0`. Three could simply be changed, because every note in them
+     is a broken assertion. `verify-inflight.py` could not: one of its ten notes reads
+     *"AniList import NOT browser-verifiable: anilist_accounts is empty, so the import card is
+     behind 'connect AniList'"*, and that is not a defect. It is an honest statement that the
+     subject cannot be looked at without a live OAuth round trip against anilist.co.
+
+     So that gate now has two lists and two headings, `=== failures ===` and
+     `=== could not verify, not a failure ===`, and only the first is fatal. **Making a gate
+     able to fail is only half the work; the other half is not making it fail for something that
+     is not broken**, which is the same problem as a permanently green gate wearing the opposite
+     clothes. A gate nobody reads is a gate that has stopped existing whether it says yes or no.
+
+     `verify-fanout-coverage.py` had a third fault in the same area. It declared a `problems`
+     list that nothing ever appended to, printed it under its own heading, and put its actual
+     findings in `notes` under a heading that reads as optional. So it advertised a category
+     that could not occur and mislabelled the one that could. The dead list is gone and the
+     findings print under `=== failures ===`.
+
+     `verify-fanout.py` is still `return 0`, and that is right. It is a diagnostic, not a gate:
+     it runs a real fan-out and prints the database state afterwards, and "what did the run
+     leave" is a question rather than a pass or fail.
+
+156. **A status line that cannot say "did not run" will eventually say "passed" when the
+     answer is "did not run."** The runner written to measure the twenty-nine browser gates for
+     the standing in this file printed **`clean`** for all eighteen Python gates, on a run where
+     every single one of them had crashed with `ModuleNotFoundError: No module named
+     'playwright'` before reaching its first assertion.
+
+     Two faults, and the first one hid the second:
+
+     - It hardcoded an interpreter path that existed but had no playwright in it. A path that
+       does not exist is a loud error; a path that works but cannot import the dependency is a
+       gate that never runs, which is the quiet kind.
+     - The per-gate verdict was computed from the count of `[FAIL]` markers **alone**. The exit
+       code was collected and then not consulted, and so was whether any check had run at all.
+       Zero failures from a gate that produced zero checks is exactly zero, so `clean` was
+       printed for a process that had died at import time.
+
+     The general shape, and it is the same one as trap 155 seen from the other side. Trap 155
+     is a gate that reports a problem and exits zero. This is a runner that observes a crash
+     and prints a pass. Both come from **deciding the verdict from one signal**, when the signal
+     available is a proxy for what was asked rather than the thing itself.
+
+     Two habits fix it, and both are in the rewritten version:
+
+     - **Derive a status from at least three things, and let the most specific one win.** Exit
+       code, check count, and whether the output contains a crash marker. Order matters: a
+       crash is tested first, because a gate that died at import has zero checks and a
+       non-zero exit, which without the ordering would be reported as an ordinary failure,
+       true but hiding that it never ran.
+     - **Give "asserted nothing" its own bucket.** Five gates legitimately assert nothing (trap
+       155) and one gate that ought to assert something and does not is a defect, and both look
+       identical unless the runner is willing to say "I cannot tell these apart" instead of
+       picking one.
+
+     And when a runner writes its counts into a document, **only write the ones it measured.**
+     The first version's table would have listed every crashed gate as `0`, which is not a
+     measurement but would have been pasted into this file as one.
+
+     A related detail, found while fixing it, and the reason the probe is a file rather than
+     `-c` code: the runner has to launch Python through a shell to survive the space in
+     `Php Projects`, and **a shell splits `-c` arguments on whitespace**. So
+     `spawnSync(python, ['-c', 'import playwright, sys; print("ok")'])` delivered the single
+     word `import`, raised a SyntaxError, and made the runner report that no interpreter was
+     available. Quoting a *path* is something a shell does correctly. Quoting *code* is not,
+     and a probe that cannot run looks exactly like a probe that found nothing.
+157. **A gate that fails in its cleanup reports the feature as broken when the feature is
+     fine.** `verify-cbz-export.mjs` failed in the suite with `FAILED, 14 checks`, and every
+     assertion in it had passed. The cause was one line of scope:
+
+     ```js
+     try {
+         const PHP = 'C:/Users/<you>/.config/herd/bin/php.bat'   // block-scoped to the try
+         ...
+     } finally {
+         spawnSync(`${PHP} ${SEED} --clear`)                    // ReferenceError: PHP is not defined
+     }
+     ```
+
+     `const` inside a `try` block is not visible to its own `finally`. So the gate ran all
+     fifteen checks, passed all fifteen, and then died on the line that was supposed to tidy up
+     after it, exiting 1. The runner was right to call it FAILED and the report was useless:
+     it printed the last line, which was the tail of a Node crash banner, `Node.js v26.7.0`, and
+     not one word about what had crashed.
+
+     Two rules, and the second is the one that would have saved the hour this cost.
+
+     **Anything a cleanup path needs belongs where the cleanup path can see it.** Setup and undo
+     belong in the same scope, at module level, not in the block that happens to do the setting
+     up. This is the same shape as the `setCallback` note in trap 154: cleanup placed where the
+     happy path reaches it and nothing else does.
+
+     **Keep a failing gate's whole output, not its last line.** The runner was rebuilt to write
+     every gate's full output to `logs/gates/<gate>.log` and to print that path beside a
+     failure. Re-running a browser gate to find out why it failed is slow, and it is not always
+     possible, because the box it ran against has moved on. Writing the log for gates that
+     *pass* matters too, since the case worth reading about is the one that passed for the wrong
+     reason.
+
+     The general shape: **the exit code and the assertions answer different questions, and a
+     report that shows only one of them will be read as the other.** A verdict beside a check
+     count is worth reading on its own. Fifteen of fifteen passed and exit 1 is a different
+     situation from none of fifteen, and it points at the last thirty lines of the file rather
+     than at the feature.
+
+     A second gate lost most of a run the same way, and this one is worth writing down because
+     the log made it obvious and the status line did not. `verify-continue-reading.py` passed
+     nine checks, with the reader rendering and 46 page images present, and then died on
+
+     ```
+     page.reload()
+     playwright._impl._errors.Error: Page.reload: net::ERR_ABORTED; maybe frame was detached
+     ```
+
+     `ERR_ABORTED` on a reload is a race between the reload and a navigation the page starts
+     itself. The library page polls, because the continue-reading feed is live, so a poll
+     response landing mid-reload detaches the frame the reload was waiting on. **This is a gate
+     fault and not an app fault**: a reader pressing reload is not served a broken page by it,
+     and the nine checks before it had already proved the feature works.
+
+     It is still worth fixing, because a gate that throws away every check after the crash is
+     not reporting a pass and is not reporting a failure, it is reporting nothing while looking
+     like a failure. All four `page.reload()` calls became `page.goto(f"{BASE}/library",
+     wait_until="domcontentloaded")`, which is what the surrounding code already used, is subject
+     to the same race without aborting on it, and does not wait on `load` so a slow image cannot
+     hold it up either.
+
+     The general shape, and it is the second time this has come up today: **a gate that dies
+     after passing its checks has thrown away the evidence, and a reader cannot tell that from a
+     gate that died because the feature is broken.** Both look like a red line. The check count
+     is what separates them, which is why it is printed.
+
+158. **A gate that skips everything reports exactly what a gate that passes everything
+     reports.** `verify-browse-failure.mjs` exists to prove no browse page prints a JVM stack
+     trace to the reader. It prints `SKIP` and continues when a named source is not in the
+     picker, and the counter it reports on, `kotlin`, is only incremented for pages it actually
+     looked at. So with both target sites renamed, or with the picker's anchors changing shape,
+     it would examine nothing, increment nothing, and print **"no page showed the server an
+     exception verbatim"**, exit 0, and be correct by accident.
+
+     That is `every()` over an empty array wearing a different hat, and it has the same fix:
+     count the subject and refuse to report on none of it. The gate now tracks `examined` and
+     `skipped` separately and has three outcomes rather than two:
+
+     ```
+     a stack trace shown to a reader            -> fail
+     no stack trace, across every target        -> pass
+     no target examined at all                  -> fail, and say why
+     ```
+
+     The third was previously reported as the second. **"I found nothing" and "there was nothing
+     to find" are different results**, and a gate that cannot tell them apart will eventually
+     report the bug it was written to catch as fixed, having never looked at the page. Verified
+     both ways: `verify-browse-failure.mjs "A Site That Does Not Exist"` exits 1 and prints
+     "no page was examined", and the real run exits 0 having examined two pages.
+159. **A gate that probes whatever URL is in the DOM measures the wrong thing if it reads too
+     early, and reports it as the app's arithmetic being wrong.** `verify-covers.py` failed five
+     checks on a loaded box:
+
+     ```
+     [FAIL] the upload reports success        (detail: a list of chapter names)
+     [FAIL] the cover now points at our route   mi/api/v1/manga/76/thumbnail?format=webp
+     [FAIL] it is bounded at 800 on the long edge  800x1200
+     [FAIL] the proportions followed from it      800x1200
+     [FAIL] adding it to the library works
+     ```
+
+     Four of those five were one race. The gate slept 3.5 seconds after `set_input_files`, which
+     is Livewire's temporary upload plus the component update that decodes, rotates, resamples
+     and re-encodes a 1000x1500 image. Under load that is not enough, so at the moment it read:
+
+     - the success toast had not been dispatched,
+     - the cover `img` still carried **Suwayomi's** thumbnail, and
+     - the byte probe, which fetched whatever `src` it found, therefore measured **Suwayomi's
+       800x1200 thumbnail** and compared it against the expectations for a resized upload.
+
+     So `800x1200` was never the app's output. `CoverStore` computes
+     `scale = min(1, 800 / max(1000, 1500)) = 0.533`, giving 533x800, which is precisely what the
+     gate expected and precisely what it then measured once the wait was fixed: `533x800`.
+     **A number that is exactly wrong in a way that is easy to explain is usually the wrong
+     number**, and 800x1200 is 1000x1500 scaled to a width of 800, which is not what any code
+     here does.
+
+     What made this convincing rather than merely likely: the same gate had passed 23/23 earlier
+     the same day, and no application code had changed since, because `git diff HEAD -- app
+     config database resources routes tests` was empty. **When a gate fails a check it passed
+     before, and nothing in the code changed, the gate changed or the machine did.** The default
+     assumption should be the gate, because a gate is a script with a sleep in it and the
+     application is a thing that was already reviewed.
+
+     The fix is a `settle()` helper that polls a predicate to a timeout instead of sleeping a
+     fixed number of milliseconds, and the six call sites that used a sleep now wait for the
+     thing they are about to assert. Not one of them got slower: they got correct. A sleep is a
+     claim about how long something takes, and the machine is not a constant.
+
+     The general shape, and it is worth stating plainly because the failure was expensive to
+     read: **a probe that reads state is measuring the system at the moment it reads, and
+     nothing about that moment is guaranteed by anything else in the file.** Polling for the
+     condition being asserted is the assertion. Anything else is a guess with a duration
+     attached to it, and the guess is only correct on an idle box.
+160. **A budget set to the measured rate is not headroom, it is the same number wearing a hat.**
+     `verify-library-check.py` failed with `'All 21 series checked' after 843s for 21 series,
+     40.2s each` against a ceiling of `max(420, total * 40)` = 840s. Three seconds over, on a job
+     that completed correctly and rendered exactly the string the gate was looking for.
+
+     That ceiling was itself a repair. It was 420s and the pass took 423s for 20 series. So the
+     first fix raised it to 40s a series and it was still three seconds short, because the
+     multiple only accounts for the per-series work and none of everything else: the page loads,
+     the assertions that run before the pass, and the last series finishing after the final
+     slice delay. **A multiple of the observed rate has no slack in it by construction**, so
+     raising the rate is the same mistake with a bigger number.
+
+     What ships is a base plus the multiple: `300 + total * 70`. The base carries the fixed
+     costs and 70s a series against a measured 40.2s is about 1.7x. Generous on purpose, because
+     this gate runs for a quarter of an hour and a false failure costs more than a slow pass.
+
+     The same loop had a second fault, and it is the one worth remembering. It polled by
+     reloading the whole page, so over a fourteen minute pass it issued around **two hundred full
+     page loads of a page whose entire job is to be heavy.** Polling harder made the job it was
+     waiting for slower. Now every eight seconds rather than every four, and the state being
+     watched only changes when the pass finishes anyway.
+
+     And the count drift was this gate's own doing, made visible at last. It checks one series
+     inline before the full pass, which makes that series no longer due, so the button loses one.
+     Read before the inline check settled, `total` was the pre-check count and the pass completed
+     one short of it, reported as "a full pass leaves nothing due" failing on a pass that did
+     exactly what it was asked. That is why `total` read 21, then 20, then 19 across three runs
+     with nothing in the app changing, which looked like a fact about the library. It now waits
+     for the button to actually change rather than for a fixed time, and prints the count.
+
+     The general shape, across all three: **a timeout, a poll interval and a precondition are
+     all claims about how long something takes, and none of them is a measurement of whether it
+     finished.** Wait for the thing. Where a deadline genuinely has to exist, give it a base for
+     the fixed costs rather than trusting the marginal one.
+161. **Stripping a URL is not parsing it, and the difference is a query string in a place a
+     reader will see it.** The browse picker groups sources by site, and the key was built by
+     removing the scheme with a regular expression and taking the rest:
+
+     ```php
+     $host = (string) preg_replace('#^https?://#', '', rtrim((string) $host, '/'));
+     ```
+
+     Measured across the 84 installed sources, one of them is published as
+     `https://lhtranslation.net/manga/?m_orderby=views`, so the group's key, and the host
+     printed under the site name, was
+
+     ```
+     lhtranslation.net/manga/?m_orderby=views
+     ```
+
+     A reader was shown a query string as a domain. Worse, the grouping **key** depended on it, so
+     an extension changing its default sort order would silently split one site into two groups
+     and neither reader nor maintainer would know why.
+
+     `parse_url($homeUrl, PHP_URL_HOST)` is the whole fix. **A host is a component of a URL, and
+     asking for the component is a different operation from deleting the parts you did not
+     want.** Two tests, both verified to fail without the change: one that a path and query do
+     not survive into the displayed host, and one that two sources on one host with different
+     paths share one group and the group says "2 sources".
+
+     Found while chasing a gate that reported "expected 16 site groups, saw 18". That was a stale
+     number in the gate, and the probe written to settle it produced this instead. **A
+     diagnostic asked a simple question and returned something nobody was looking for**, which is
+     the argument for writing the probe even when the expected answer is obvious.
+162. **A page said a word in two unrelated places and a gate watched for the word.** The search
+     page renders "Searching" twice:
+
+     ```
+     L898   permanently, above the button:  "Searching :count sources"   (how wide the fan-out is)
+     L934   during a run, on the progress:  "Searching :count of :total sources"
+     ```
+
+     `verify-inflight.py` decided the run had finished with `"Searching" not in body`. That is
+     never true. The only way through was the `or "checking" in body.lower()` escape hatch, and
+     the word "checking" does not appear either, so **the check could not pass at all** and the
+     gate sat reporting "still Searching" for its entire budget, then exited 0 because it could
+     not fail (trap 155).
+
+     Measured from the other side, the run was healthy throughout: the two runs the gate started
+     both completed 40 of 40 sources, in 178s and 165s, while the page was being told they had
+     not. So this is the most expensive shape a wrong gate takes. Not a flake, not a slow box,
+     and not a broken feature, but a check that was unsatisfiable and had been for as long as
+     the fan-out width line existed. **A structural impossibility in a gate reads exactly like a
+     performance problem**, because both present as "it says it is still working".
+
+     It waits now for `Searching \d+ of \d+ sources` to disappear, which is the string that is
+     actually about the run.
+
+     The rule this is an instance of, and it is the same one as trap 159 from the other side: a
+     probe reading a whole page and matching a substring is reading the page, not the thing.
+     Scope the match to the subject, because the page is full of other sentences.
+
+163. **A gate that typed into a debounced field and waited less than the debounce ran a
+     different search than the one it meant to.** The query input is
+     `wire:model.live.debounce.500ms`. `verify-inflight.py` filled it and waited 400ms before
+     clicking submit, so the value had not reached the server.
+
+     This one was hiding behind another. The gate believed it had searched "one piece" and
+     measured something else, and the something else was larger, and the run overran its budget,
+     and the budget overrun looked like a stuck run. Three faults in a chain, each pointing at
+     the next. Waiting 1200ms fixed it, and the database then confirmed `query: 'one piece'` on
+     the run.
+
+     **A wait shorter than the debounce it is racing is not a wait.** The same shape as trap 160:
+     where a duration is load-bearing, read it from the definition rather than picking something
+     plausible.
+
+     And while measuring this, the run timings gave the answer to a question that had been open
+     all day. Over the 40 most recent finished runs on this box: **fastest 14.0s, median 109.5s,
+     slowest 211.0s, with 18 of the 40 over 120 seconds.** The gate budget was 120s, which is
+     the median, so it failed roughly half the time by construction. `verify-fanout.py`
+     independently drove a run to `complete, 40/40, results: 421`, which is the same thing said
+     from the other direction.
+164. **A full library check takes up to 27 minutes, and that is a fact about the app rather than
+     about the gate.** Found by three successive attempts to give `verify-library-check.py` a
+     working ceiling, none of which was a timing problem:
+
+     ```
+     420s fixed                -> 423s for 20 series, 21.2s each, missed by 3s
+     max(420, total * 40)      -> 843s for 21 series, 40.2s each, missed by 3s
+     300 + total * 70          -> 1639s for 19 series, 86.3s each, missed by 9s
+     ```
+
+     The per-series cost went 21s, then 40s, then 86s on **the same code with no deploy in
+     between**, because it is dominated by how busy the machine is and how many of the 40 sources
+     answer before the slice gives up. **No multiple of a measured rate survives that**, and three
+     attempts is enough to stop trying to find one.
+
+     So the ceiling is now `600 + total * 150` and it is only asking whether the job finished at
+     all, with the elapsed time printed whatever it turns out to be. A gate whose budget is a
+     hang detector should say so in its own failure message, because "took 1639s" and "hung" are
+     different findings and a reader of the report cannot tell them apart otherwise.
+
+     **The underlying number is the finding.** A reader who presses "Check 19 series" waits up to
+     27 minutes on a loaded box, with a page that polls and reports progress and gives no way to
+     leave and come back. The per-card check is the fast path and the full pass is not, and the
+     gap between 21s and 86s a series is a factor of four that the page does not explain.
+
+     Not fixed here, and deliberately: the options are a smaller slice, a faster check, a
+     resumable job, or accepting it. Each is a product decision, and the honest position is that
+     this gate now measures a real characteristic rather than hiding it behind a timeout that
+     used to fire first.
+
+     Two smaller things in the same gate. It polls by reloading, and it used to do so every four
+     seconds, which over a quarter of an hour is several hundred full page loads of the heaviest
+     page in the app, made slower by the polling. Now every eight. And the count it asserts on
+     moved 21, then 20, then 19 across three runs because the gate checks one series inline
+     before the full pass, which makes that series no longer due; it now waits for the button to
+     actually change and prints the count, so a moving number is visible as a moving number.
