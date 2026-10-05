@@ -2231,7 +2231,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 164, each number once, ascending.
+tidiness. The list is now 1 to 165, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2791,3 +2791,38 @@ were eliminated.
      moved 21, then 20, then 19 across three runs because the gate checks one series inline
      before the full pass, which makes that series no longer due; it now waits for the button to
      actually change and prints the count, so a moving number is visible as a moving number.
+165. **A run against a broken environment reports the environment as eight regressions, and the
+     tool that printed the table did not know the difference.** The queue worker and Suwayomi
+     were down when a session resumed, so they were started. Vite was not, and was missed,
+     because the check was "does the page reference the dev server" and the page was being served
+     from `public/build` for the eight gates that ran before anyone noticed.
+
+     The result: `verify-browse.py`, `verify-card-bookmark.mjs`, `verify-cbz-export.mjs`,
+     `verify-continue-reading.py`, `verify-covers.py`, `verify-downloads.py` and
+     `verify-drift-notice.mjs` all failed or crashed, every one of them a gate that had passed
+     hours earlier with no code change in between. Unstyled pages have no JavaScript, so every
+     locator-driven gate breaks at once and the failures look like a deploy went wrong.
+
+     What makes it worth writing down is not the mistake, it is that **the runner reported it as
+     a result.** It had a preflight for the Python interpreter (trap 156) and none for the three
+     processes the gates actually need, so it cheerfully produced a table of eight failures it
+     had caused.
+
+     It refuses now. Before the first gate it checks that Suwayomi answers, that the app answers,
+     and that **the stylesheet the page itself asks for** can be fetched, and exits rather than
+     starting. The third one is the part worth copying: the assets are served from the dev server
+     over IPv6 localhost, so the URL in the page is `http://[::1]:5173/...` and a hand-written
+     probe against `127.0.0.1:5173` gets a connection refused that reads like a different fault.
+     Asking for the stylesheet by the URL the page asked for is the only version of the question
+     that is actually about the app.
+
+     **Verify the thing the tool will report on, before it reports.** An interpreter probe when
+     the gates are Python, a stylesheet probe when the gates drive a browser. A preflight that
+     checks something adjacent is worse than none, because it converts an unknown into a false
+     all-clear.
+
+     With Vite up, `verify-search-syntax.py` passes 28 checks, and the three "skipped sources"
+     failures it had reported were the same cause. **Three failures that all pointed at one
+     feature, in a run where seven unrelated gates had also failed, was a broken box and nothing
+     else** - and it would have been very easy to spend the afternoon on a skipped-source bug
+     that does not exist.
