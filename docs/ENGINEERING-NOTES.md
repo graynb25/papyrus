@@ -1658,7 +1658,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,150 tests**, 2,546 assertions, Pint clean, PHPStan
+Current standing: **1,153 tests**, 2,554 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs all twenty-nine
@@ -1705,7 +1705,7 @@ per-gate output was being kept.
 | `verify-continue-reading.py`, crash | gate: `page.reload()` on a page that polls | 157 |
 | `verify-rating-tags.mjs`, crash | gate: `const` inside a `try`, invisible to its own `finally` | 157 |
 | **`browseSites()` grouped by a stripped URL, not a parsed one** | **app** | 161 |
-| **`$query` carries no `#[Url]`, so a search cannot be shared** | **app** | 163 |
+| **`$query` carried no `#[Url]`, so a search could not be bookmarked** | **app**, fixed | 163 |
 
 `verify-cover-reveal.mjs` is the gate for trap 151 and the only one that runs on the **login**
 wall rather than behind a sign-in. Ten checks across five surfaces, because the cover atom is
@@ -2723,6 +2723,38 @@ were eliminated.
      the median, so it failed roughly half the time by construction. `verify-fanout.py`
      independently drove a run to `complete, 40/40, results: 421`, which is the same thing said
      from the other direction.
+
+     **The gap this trap opened has been closed.** `$query` on the search page now carries
+     `#[Url(as: 'q', except: '', history: false)]`, and `mount()` runs the search when a query is
+     present, so a bookmarked link is a bookmarked search rather than a pre-filled box. Two
+     details are worth keeping.
+
+     `history: false`, because its neighbours do not use it and copying them would have been
+     wrong. `$langs`, `$content` and `$anilistOn` are chips, where one history entry per change
+     is what a reader wants. This one is `wire:model.live.debounce.500ms`, so a reader typing
+     "one piece" settles two or three times, and `push` would fill the back button with
+     keystrokes. The rendered `wire:effects` now reads `{"query":{"as":"q","use":"replace"}}` and
+     a test asserts exactly that, because the difference between the two modes is invisible from
+     PHP and is the entire point of the setting.
+
+     The second half is the part that fixing only the attribute would have missed. With `#[Url]`
+     alone, a bookmark restored the box and the filters and showed an empty results area, which
+     reads as a broken page rather than as a search waiting to be run. The reader asked for
+     those results by saving the link, and making them press Search again is asking twice.
+     **A URL that describes a state is only half a feature; something has to act on it when it
+     arrives.**
+
+     The gate that found the gap now asserts it, so it cannot quietly reopen: after submitting,
+     the address bar must carry `q=`. Measured after: the submit lands on
+     `/search?content[0]=SAFE&content[1]=MIXED&q=one+piece`.
+
+     And a note on how the test for it was written, because two attempts were wrong before the
+     third was right. Asserting `value="one piece"` in the markup fails, because a `wire:model`
+     input takes its value from the component snapshot rather than from server-rendered HTML.
+     Asserting against a `Livewire::test()` component to reach the URL asserts on a framework
+     internal and would have quietly proved nothing. What the page does render is
+     `wire:effects`, which is the binding contract itself, and it has to be HTML-entity decoded
+     before a regex will see it because the attribute is written escaped.
 164. **A full library check takes up to 27 minutes, and that is a fact about the app rather than
      about the gate.** Found by three successive attempts to give `verify-library-check.py` a
      working ceiling, none of which was a timing problem:

@@ -27,6 +27,28 @@ use Livewire\Component;
 
 new #[Title('Search')] class extends Component
 {
+    /**
+     * The search terms, in the URL.
+     *
+     * The one bound-looking property here that was not bound, and the gap was found by
+     * `verify-inflight.py`: it typed a query, submitted, and landed on
+     * `?content[0]=SAFE&content[1]=MIXED` with no `q` in the address at all. The value had
+     * reached the server, which is why nothing looked broken, but a reader could share the
+     * filters and the AniList toggle and not the search itself, which is the part most worth
+     * sharing. A bookmarked search that cannot be reopened is not a bookmark.
+     *
+     * `history: false`, and this is the reason the attribute needs explaining rather than just
+     * being copied from its neighbours. `$langs`, `$content` and `$anilistOn` all push a history
+     * entry per change, which is right for a chip: you want Back to step through the filters you
+     * tried. This one is `wire:model.live.debounce.500ms`, so a reader typing "one piece"
+     * produces two or three settled values and would fill the back button with keystrokes.
+     * Replacing the current entry keeps the address bar shareable and leaves Back meaning
+     * "leave the search page".
+     *
+     * Short parameter name because this is the address a reader will see and may hand to
+     * someone else: `?q=`, not `?query=`.
+     */
+    #[Url(as: 'q', except: '', history: false)]
     public string $query = '';
 
     /**
@@ -73,6 +95,28 @@ new #[Title('Search')] class extends Component
     public function mount(): void
     {
         $this->anilistOn = app(AniListPreference::class)->enabled(Auth::user());
+
+        /*
+         * Arrive at a search and run it.
+         *
+         * With `#[Url(as: 'q')]` on the query, the URL alone is now a complete description of a
+         * search, so arriving at one should produce that search. Without this a bookmarked link
+         * restores the box and the filters and shows an empty results area, which reads as a
+         * broken page rather than as a search waiting to be run: the reader asked for these
+         * results by saving the link, and pressing Search again is asking twice.
+         *
+         * Only on a query, so `/search` on its own is still the empty page it has always been.
+         * It goes through `search()` rather than duplicating it, so a bookmarked search and a
+         * typed one are the same code path and cannot drift apart, including the AniList
+         * resolution that a typed search starts.
+         *
+         * The cost is real and is the same cost the reader chose when they pressed Search:
+         * measured on this box, a 40-source fan-out runs 21 to 86 seconds. It is not paid by
+         * anyone following a link with no `q` in it.
+         */
+        if (trim($this->query) !== '') {
+            $this->search();
+        }
     }
 
     /**

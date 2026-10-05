@@ -79,6 +79,86 @@ class SearchPageTest extends TestCase
         });
     }
 
+    /**
+     * The query is bound to the URL as `q`, and replaces the history entry rather than pushing.
+     *
+     * `$query` was the one property on this page without `#[Url]`, so a reader could share the
+     * filters and the AniList toggle and not the search. Found by `verify-inflight.py`, which
+     * submitted a query and landed on an address bar carrying only `content[0]` and
+     * `content[1]`.
+     *
+     * Asserted on `wire:effects`, which is the binding contract rendered into the page: the
+     * parameter name it writes, and whether it pushes or replaces. The first version of this
+     * asserted `value="one piece"` in the markup and failed, because a `wire:model` input takes
+     * its value from the component snapshot rather than from server-rendered HTML. Asserting on
+     * the snapshot instead would test Livewire's encoding; the effects attribute is the part
+     * this change is responsible for.
+     *
+     * `use: replace` is deliberate and is why the test asserts it. The input is
+     * `wire:model.live.debounce.500ms`, so typing "one piece" settles two or three times, and
+     * with `push` the back button would step through a reader's own keystrokes.
+     */
+    public function test_the_query_is_bound_to_the_url(): void
+    {
+        $html = $this->actingAs($this->user)->get('/search')->assertOk()->getContent();
+
+        // HTML-entity decoded first: the attribute is written into the markup escaped, so
+        // `&quot;query&quot;` is what is in the document and a regex for a bare quote finds
+        // nothing. Asserting on the raw response cost one run of this test.
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5);
+
+        $this->assertMatchesRegularExpression(
+            '/"query":\{"as":"q","use":"replace"/',
+            $html,
+            'The query must be bound to the URL as ?q= and replace rather than push, or a search '
+                .'cannot be bookmarked and the back button fills with keystrokes.',
+        );
+    }
+
+    /**
+     * Arriving at a search runs it, rather than showing an empty box.
+     *
+     * The other half of being bookmarkable. With the terms restored but no run behind them, a
+     * bookmarked link reads as a broken page: the reader asked for these results by saving the
+     * link, and making them press Search again is asking twice.
+     */
+    public function test_arriving_with_a_query_starts_a_run(): void
+    {
+        $before = SearchRun::query()->count();
+
+        $this->actingAs($this->user)->get('/search?q=berserk')->assertOk();
+
+        $this->assertSame(
+            $before + 1,
+            SearchRun::query()->count(),
+            'A bookmarked search should run itself on arrival.',
+        );
+
+        $run = SearchRun::query()->latest('id')->first();
+
+        $this->assertNotNull($run);
+        $this->assertSame('berserk', $run->query, 'It must run the search that was bookmarked, not another.');
+    }
+
+    /**
+     * `/search` on its own is still the empty page.
+     *
+     * The guard on the auto-run. Without it, every visit to the search page would start a
+     * 40-source fan-out, which is measured at 21 to 86 seconds on this box.
+     */
+    public function test_arriving_without_a_query_starts_nothing(): void
+    {
+        $before = SearchRun::query()->count();
+
+        $this->actingAs($this->user)->get('/search')->assertOk();
+
+        $this->assertSame(
+            $before,
+            SearchRun::query()->count(),
+            'No query in the URL must mean no search, or the page costs a fan-out per visit.',
+        );
+    }
+
     public function test_the_page_requires_authentication(): void
     {
         $this->get('/search')->assertRedirect();
