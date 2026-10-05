@@ -1661,40 +1661,89 @@ argument about what the code must be doing.
 Current standing: **1,153 tests**, 2,554 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
-**The browser gates are measured, not remembered.** `run-all-gates.mjs` runs all twenty-nine
-and this is its output rather than a figure anyone typed. The first full run: **12 clean, 8
-failed, 3 crashed, 5 asserted nothing, 1 counted under another convention, 338 checks read from
-output.**
+**The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
+its output rather than a figure anyone typed. Measured on a healthy box, **27 of the 29 gates,
+in batches** (see the note on why not in one run):
 
 | | |
 | --- | --- |
-| clean, count read from its output | 12 gates |
-| clean, but asserting nothing (trap 155) | 5 gates |
-| clean, counted under another convention | 1 gate |
-| failed or crashed | 11 gates |
-| checks read across the suite | **338** |
+| clean, count read from its output | 19 gates |
+| clean, but asserting nothing (trap 155) | 6 gates |
+| failed | 2 gates |
+| crashed | 1 gate |
+| **not measured** | **1 gate** |
+| checks read across the suite | **399** |
 
-Per gate, as measured:
+| Gate | Checks | | Gate | Checks |
+| --- | --- | --- | --- | --- |
+| `verify-reader.py` | 39 | | `verify-continue-reading.py` | 17 |
+| `verify-notes.py` | 33 | | `verify-covers.py` | 23 |
+| `verify-navigator.py` | 30 | | `verify-downloads.py` | 20 |
+| `verify-rating-tags.mjs` | 31 | | `verify-migrate.py` | 21 |
+| `verify-search-syntax.py` | 28 | | `verify-library.py` | 18 |
+| `verify-october-pass.mjs` | 21 | | `verify-incognito.mjs` | 14 |
+| `verify-cbz-export.mjs` | 15 | | `verify-source-chooser.mjs` | 13 |
+| `verify-search-anilist.py` | 14 | | `verify-card-bookmark.mjs` | 9 |
+| `verify-drift-notice.mjs` | 7 | | `verify-sources-picker.mjs` | 3 |
 
-| Gate | Checks | Gate | Checks |
-| --- | --- | --- | --- |
-| `verify-notes.py` | 33 | `verify-migrate.py` | 21 |
-| `verify-navigator.py` | 30 | `verify-downloads.py` | 20 |
-| `verify-rating-tags.mjs` | 31 | `verify-library.py` | 18 |
-| `verify-cbz-export.mjs` | 15 | `verify-library-check.py` | 21 |
-| `verify-search-anilist.py` | 14 | `verify-covers.py` | 23 |
-| `verify-source-chooser.mjs` | 13 | `verify-incognito.mjs` | 14 |
-| `verify-card-bookmark.mjs` | 9 | `verify-drift-notice.mjs` | 7 |
-| `verify-sources-picker.mjs` | 3 | `verify-october-pass.mjs` | 21 |
+Six gates assert through a `notes` list rather than a per-check line, so their counts are not in
+that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`, `verify-fixes.py`,
+`verify-reader-fixes.py` and `verify-reader-asks.py` assert nothing and cannot fail, and
+`verify-fanout.py` is a diagnostic. `verify-browse-failure.mjs` asserts once per target site and
+is counted in words because its convention is `OK`/`RAW`/`SKIP` rather than one line per check.
 
-Seven gates assert through a `notes` list rather than a per-check line, so their counts are not
-in that table and are not zeros: `verify-browse.py`, `verify-cover-reveal.mjs`, `verify-fixes.py`
-and `verify-reader-fixes.py` assert nothing and cannot fail, and `verify-fanout.py` is a
-diagnostic. Trap 155.
+### What is still not clean
 
-Every one of the eleven failures and crashes has been diagnosed. **Nine were the gate's fault
-and two were the app's**, which is close to the opposite of what the report looked like before
-per-gate output was being kept.
+| Gate | What | State |
+| --- | --- | --- |
+| `verify-october-pass.mjs` | 1 of 21, a read toggle | **Flaky, not diagnosed.** It reported "pressing a read toggle flips it" on one run and "pressing it again clears it" on the next, so the assertion it fails changes between runs. |
+| `verify-rating-tags.mjs` | 4 of 31, the star row | **Open, and the gate contradicts itself.** An unrated series clips `0,0,0,0,100` rather than all-clear, and "clicking the fourth star checks exactly it" reads `.....` while the four-star fill check passes on the same page. |
+| `verify-october-pass.py` | crashes after 7 | **Open.** Crashes on `wait_for_timeout`, so no count is meaningful. |
+| `verify-library-check.py` | **not measured** | The gate exceeds an hour on this box and did not complete inside a sixty-minute budget. Its own subject is the reason: the app checks 21 to 86 seconds **a series**. |
+
+**A gate that cannot be run is not a passing gate and not a failing one, and reporting it as
+either would be the trap 156 mistake in a new place.** It is listed as unmeasured because that is
+what happened.
+
+### Why it is not run as one suite
+
+A single run of all twenty-nine does not fit in a usable window on this box, and the reason is
+worth having measured rather than guessed. From the timings, in seconds:
+
+```
+verify-library-check.py     1639+   presses "check every series" in the app, at 21-86s a series
+verify-search-syntax.py      409+   three real searches, each fanning out to 40 live sites
+verify-fanout.py             283     a real 40-source fan-out against live upstream sites
+verify-inflight.py           215     another real fan-out
+20s gap x 28 gates           560     mine, to stop SQLite contention faking failures
+every other gate              21-99  24 gates, all fast
+```
+
+So **three gates account for roughly seventy minutes of the seventy-five**, and two of those are
+slow because the app is slow rather than because the gate is.
+
+`verify-library-check.py` is the awkward one. Its subject is the library check, and the library
+check takes up to 27 minutes for nineteen series, so a gate that honestly reports on it takes at
+least as long as the feature does. That is the correct behaviour for a gate and useless for a
+suite: **there is no ceiling that is both honest and short**, and raising the ceiling until it
+passes is how trap 160 happened three times.
+
+The split that works is a fast set and a slow set, which is why the runner takes a comma-separated
+list of name fragments. Twenty-four gates run in about nine minutes; the three slow ones run when
+the answer is worth half an hour.
+
+Two other reasons a single run is not the default, both learned here:
+
+- **Background shells do not survive a turn.** Two full runs were lost at 14 of 29 and 8 of 29,
+  killed mid-gate with nothing in the log. The runner writes each gate's output as it goes for
+  exactly this reason, and a lost run still leaves per-gate evidence behind.
+- **The suite will not start on a broken box.** Trap 165.
+
+### Diagnosed, with the fault attributed
+
+Every failure below was traced to a cause rather than re-run until it went away. **Nine were the
+gate's fault and two were the app's**, which is close to the opposite of what the report looked
+like before per-gate output was being kept.
 
 | Failure | Whose fault | Trap |
 | --- | --- | --- |
@@ -1704,9 +1753,14 @@ per-gate output was being kept.
 | `verify-library-check.py`, 4 checks | gate: a ceiling with no headroom, and a poll that fought the job | 160 |
 | `verify-continue-reading.py`, crash | gate: `page.reload()` on a page that polls | 157 |
 | `verify-rating-tags.mjs`, crash | gate: `const` inside a `try`, invisible to its own `finally` | 157 |
-| **`browseSites()` grouped by a stripped URL, not a parsed one** | **app** | 161 |
+| `verify-browse-failure.mjs`, passes by skipping everything | gate: counted nothing as nothing found | 158 |
+| `verify-reader-asks.py`, plain-text source name | gate: clicked whichever card sorted first | 102 |
+| **`browseSites()` grouped by a stripped URL, not a parsed one** | **app**, fixed | 161 |
 | **`$query` carried no `#[Url]`, so a search could not be bookmarked** | **app**, fixed | 163 |
 
+Two of these had nothing to do with the code and everything to do with the box: `verify-reader.py`
+crashed on a locator that could never resolve and `verify-search-syntax.py` failed three
+checks about filtered searches, both because Vite was down. Trap 165.
 `verify-cover-reveal.mjs` is the gate for trap 151 and the only one that runs on the **login**
 wall rather than behind a sign-in. Ten checks across five surfaces, because the cover atom is
 shared and a reveal can break on one of them without breaking the others: it asks each image
