@@ -1662,48 +1662,63 @@ Current standing: **1,153 tests**, 2,554 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
-its output rather than a figure anyone typed. Measured on a healthy box, **27 of the 29 gates,
-in batches** (see the note on why not in one run):
-
+its output rather than a figure anyone typed. Measured on a healthy box, **28 of the 29 gates,
+in batches** (see the note on why not in one run). The buckets below add up to twenty-nine
+because twenty-nine is how many `verify-*` files are on disk, and every one of them is in
+exactly one bucket:
 | | |
 | --- | --- |
-| clean, count read from its output | 20 gates |
-| clean, but asserting nothing (trap 155) | 6 gates |
-| failed | 1 gate |
-| crashed | 1 gate |
-| **not measured** | **1 gate** |
-| checks read across the suite | **402** |
+| clean, count read from its output | 19 gates |
+| clean, but asserting nothing (trap 155) | 7 gates |
+| clean, under another convention | 2 gates, `verify-browse-failure.mjs` and `verify-fanout.py` |
+| failed | **0** |
+| crashed | **0** |
+| **not measured** | **1 gate**, `verify-library-check.py` |
+| **checks read across the suite** | **385** |
 
 | Gate | Checks | | Gate | Checks |
 | --- | --- | --- | --- | --- |
-| `verify-reader.py` | 39 | | `verify-continue-reading.py` | 17 |
-| `verify-notes.py` | 33 | | `verify-covers.py` | 23 |
-| `verify-navigator.py` | 30 | | `verify-downloads.py` | 20 |
-| `verify-rating-tags.mjs` | 34 | | `verify-migrate.py` | 21 |
-| `verify-search-syntax.py` | 28 | | `verify-library.py` | 18 |
-| `verify-october-pass.mjs` | 23 | | `verify-incognito.mjs` | 14 |
-| `verify-cbz-export.mjs` | 15 | | `verify-source-chooser.mjs` | 13 |
-| `verify-search-anilist.py` | 14 | | `verify-card-bookmark.mjs` | 9 |
-| `verify-drift-notice.mjs` | 7 | | `verify-sources-picker.mjs` | 3 |
+| `verify-reader.py` | 39 | | `verify-october-pass.py` | 24 |
+| `verify-rating-tags.mjs` | 34 | | `verify-covers.py` | 23 |
+| `verify-notes.py` | 33 | | `verify-october-pass.mjs` | 23 |
+| `verify-navigator.py` | 30 | | `verify-migrate.py` | 21 |
+| `verify-search-syntax.py` | 28 | | `verify-downloads.py` | 20 |
+| `verify-library.py` | 18 | | `verify-continue-reading.py` | 17 |
+| `verify-cbz-export.mjs` | 15 | | `verify-incognito.mjs` | 14 |
+| `verify-search-anilist.py` | 14 | | `verify-source-chooser.mjs` | 13 |
+| `verify-card-bookmark.mjs` | 9 | | `verify-drift-notice.mjs` | 7 |
+| `verify-sources-picker.mjs` | 3 | | | |
 
-Six gates assert through a `notes` list rather than a per-check line, so their counts are not in
-that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`, `verify-fixes.py`,
-`verify-reader-fixes.py` and `verify-reader-asks.py` assert nothing and cannot fail, and
-`verify-fanout.py` is a diagnostic. `verify-browse-failure.mjs` asserts once per target site and
-is counted in words because its convention is `OK`/`RAW`/`SKIP` rather than one line per check.
+**Seven** gates assert through a `notes` list rather than a per-check line, so their counts are
+not in that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`,
+`verify-fixes.py`, `verify-reader-fixes.py`, `verify-reader-asks.py`, `verify-fanout-coverage.py`
+and `verify-inflight.py` assert nothing and cannot fail, and `verify-fanout.py` is a diagnostic.
+`verify-browse-failure.mjs` asserts once per target site and is counted in words because its
+convention is `OK`/`RAW`/`SKIP` rather than one line per check.
+
+The 385 is the sum of that table, added up from the file rather than estimated, which is the
+whole point of the table being here. An earlier version of this paragraph said 399 and then 402,
+both of which were arithmetic done while editing and neither of which was ever checked.
+**A total nobody added up is a guess wearing a total's clothes**, and it is the same fault as a
+typed-in expected count one level up.
 
 ### What is still not clean
 
+**One gate, and it is not failing.** `verify-library-check.py` exceeds an hour on this box and was
+never measured. Its own subject is the reason: the app checks 21 to 86 seconds **a series**, so a
+gate that honestly reports on a full pass cannot also be short.
+
+Every other gate is clean, and seven of those cannot fail (trap 155). **A suite where nothing
+fails and seven gates are incapable of it is not a healthy suite, it is a quiet one**, and the
+difference between those two is not visible from the exit code.
+
 | Gate | What | State |
 | --- | --- | --- |
-| `verify-october-pass.mjs` | 1 of 21, a read toggle | **Fixed.** One fault, not two: a sleep after a click. Trap 167. |
-| `verify-rating-tags.mjs` | 4 of 34, the star row | **Fixed, and the gate was right.** One stale row from a probe of mine made all four; trap 166. |
-| `verify-october-pass.py` | crashes after 7 | **Open.** Crashes on `wait_for_timeout`, so no count is meaningful. |
-| `verify-library-check.py` | **not measured** | The gate exceeds an hour on this box and did not complete inside a sixty-minute budget. Its own subject is the reason: the app checks 21 to 86 seconds **a series**. |
+| `verify-library-check.py` | **not measured** | Exceeds a sixty-minute budget. The subject is the feature being slow, not the gate. Trap 164. |
 
 **A gate that cannot be run is not a passing gate and not a failing one, and reporting it as
-either would be the trap 156 mistake in a new place.** It is listed as unmeasured because that is
-what happened.
+either would be trap 156 in a new place.** It is listed as unmeasured because that is what
+happened.
 
 ### Why it is not run as one suite
 
@@ -2285,7 +2300,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 167, each number once, ascending.
+tidiness. The list is now 1 to 168, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2980,3 +2995,47 @@ were eliminated.
      fixed: **a gate that fails a different check each time is telling you where the fault is not.**
      Two failures in two places narrow it to whatever they share, and what two Livewire toggles
      share is a round trip and a sleep.
+
+168. **A gate that crashes on a selector was clicking the wrong element, and the wrong element was
+     three faults at once.** `verify-october-pass.py` died on check 8 of 24 every single run:
+
+     ```
+     playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+       - waiting for locator("form button[type=\"submit\"]").first
+         - locator resolved to <button type="submit" data-test="logout-button" ...>
+       - element is not visible
+     ```
+
+     The account menu's logout item is a submit button inside a form. It is hidden when the menu
+     is closed. `form button[type="submit"]` matches it, because a valid selector matching a
+     hidden element is not a wrong selector, it is a selector that has not been made specific.
+     The same one string was behind three separate symptoms:
+
+     | Where | What it looked like | What it was |
+     | --- | --- | --- |
+     | the click | `Timeout 30000ms exceeded` | a hidden button, waited on for 30s |
+     | `styled()` | reported "unstyled" on a styled page | `bounding_box()` of a hidden element is `None` |
+     | the login click | would have signed out the gate | whichever submit came first in the document |
+
+     `verify-search-syntax.py` had already been fixed for exactly this and was sitting next to it
+     with the scoped form to copy. **A fix applied to one gate and not the sibling that shares the
+     selector is a defect waiting for a run**, because the selector is duplicated precisely in the
+     places nobody looks after the first one works.
+
+     Two more in the same file, both the same mistake in a different costume:
+
+     - **It looked for a toast's text in the body.** `updateAll()` reports through `Flux::toast`,
+       and a toast is gone in seconds. Reading the body a moment later finds nothing, so the check
+       reported a missing feature on every run. **Assert the control, not the notification of it.**
+       A button is durable; a toast is a rumour.
+     - **It asserted one of two literal strings for a thing that has two states.**
+       `"Connect AniList" in body or "ANILIST_OAUTH_CLIENT_ID" in body` failed because this reader
+       *is* connected, and a connected account is shown a **Disconnect** button. That is the gate
+       asserting a fixture instead of a behaviour. The claim worth making is that the card offers
+       the action appropriate to the account's state.
+
+     And one that was a timeout rather than a wrong element: `results, deduplicated` matched only
+     the plural of a `trans_choice` that also has a singular form, so a search that found exactly
+     one result read as a search that never finished. **A gate that matches half a plural fails on
+     success**, which is the same shape as a budget set at the median (trap 163): both are
+     assertions that only hold for the common case.
