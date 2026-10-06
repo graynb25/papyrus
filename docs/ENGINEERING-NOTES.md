@@ -1662,32 +1662,32 @@ Current standing: **1,153 tests**, 2,554 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
-its output rather than a figure anyone typed. Measured on a healthy box, **28 of the 29 gates,
+its output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates,
 in batches** (see the note on why not in one run). The buckets below add up to twenty-nine
 because twenty-nine is how many `verify-*` files are on disk, and every one of them is in
 exactly one bucket:
 | | |
 | --- | --- |
-| clean, count read from its output | 19 gates |
+| clean, count read from its output | 20 gates |
 | clean, but asserting nothing (trap 155) | 7 gates |
 | clean, under another convention | 2 gates, `verify-browse-failure.mjs` and `verify-fanout.py` |
 | failed | **0** |
 | crashed | **0** |
-| **not measured** | **1 gate**, `verify-library-check.py` |
-| **checks read across the suite** | **385** |
+| **not measured** | **0** |
+| **checks read across the suite** | **407** |
 
 | Gate | Checks | | Gate | Checks |
 | --- | --- | --- | --- | --- |
-| `verify-reader.py` | 39 | | `verify-october-pass.py` | 24 |
-| `verify-rating-tags.mjs` | 34 | | `verify-covers.py` | 23 |
-| `verify-notes.py` | 33 | | `verify-october-pass.mjs` | 23 |
-| `verify-navigator.py` | 30 | | `verify-migrate.py` | 21 |
-| `verify-search-syntax.py` | 28 | | `verify-downloads.py` | 20 |
-| `verify-library.py` | 18 | | `verify-continue-reading.py` | 17 |
-| `verify-cbz-export.mjs` | 15 | | `verify-incognito.mjs` | 14 |
-| `verify-search-anilist.py` | 14 | | `verify-source-chooser.mjs` | 13 |
-| `verify-card-bookmark.mjs` | 9 | | `verify-drift-notice.mjs` | 7 |
-| `verify-sources-picker.mjs` | 3 | | | |
+| `verify-reader.py` | 39 | | `verify-library-check.py` | 22 |
+| `verify-rating-tags.mjs` | 34 | | `verify-library.py` | 18 |
+| `verify-notes.py` | 33 | | `verify-continue-reading.py` | 17 |
+| `verify-navigator.py` | 30 | | `verify-cbz-export.mjs` | 15 |
+| `verify-search-syntax.py` | 28 | | `verify-incognito.mjs` | 14 |
+| `verify-october-pass.py` | 24 | | `verify-search-anilist.py` | 14 |
+| `verify-covers.py` | 23 | | `verify-source-chooser.mjs` | 13 |
+| `verify-october-pass.mjs` | 23 | | `verify-card-bookmark.mjs` | 9 |
+| `verify-migrate.py` | 21 | | `verify-drift-notice.mjs` | 7 |
+| `verify-downloads.py` | 20 | | `verify-sources-picker.mjs` | 3 |
 
 **Seven** gates assert through a `notes` list rather than a per-check line, so their counts are
 not in that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`,
@@ -1696,7 +1696,7 @@ and `verify-inflight.py` assert nothing and cannot fail, and `verify-fanout.py` 
 `verify-browse-failure.mjs` asserts once per target site and is counted in words because its
 convention is `OK`/`RAW`/`SKIP` rather than one line per check.
 
-The 385 is the sum of that table, added up from the file rather than estimated, which is the
+The 407 is the sum of that table, added up from the file rather than estimated, which is the
 whole point of the table being here. An earlier version of this paragraph said 399 and then 402,
 both of which were arithmetic done while editing and neither of which was ever checked.
 **A total nobody added up is a guess wearing a total's clothes**, and it is the same fault as a
@@ -1704,48 +1704,70 @@ typed-in expected count one level up.
 
 ### What is still not clean
 
-**One gate, and it is not failing.** `verify-library-check.py` exceeds an hour on this box and was
-never measured. Its own subject is the reason: the app checks 21 to 86 seconds **a series**, so a
-gate that honestly reports on a full pass cannot also be short.
+**Nothing fails, which is the weakest thing that can be true of a suite and not the best.**
 
-Every other gate is clean, and seven of those cannot fail (trap 155). **A suite where nothing
-fails and seven gates are incapable of it is not a healthy suite, it is a quiet one**, and the
-difference between those two is not visible from the exit code.
+Seven of the twenty-nine gates cannot fail at all: they report through a `notes` list and exit 0
+whatever they find (trap 155). Two more report in words rather than a per-check line. So the
+twenty gates in the table above are the only ones whose verdict is a verdict, and all twenty are
+green.
 
-| Gate | What | State |
-| --- | --- | --- |
-| `verify-library-check.py` | **not measured** | Exceeds a sixty-minute budget. The subject is the feature being slow, not the gate. Trap 164. |
+That is worth saying plainly rather than letting the bucket table imply otherwise. A suite where
+nothing fails and seven gates are incapable of failure is **a quiet suite, not a healthy one**,
+and the difference is not visible from the exit code. It is visible only by asking, of each gate,
+what would make it red, and being able to answer.
 
-**A gate that cannot be run is not a passing gate and not a failing one, and reporting it as
-either would be trap 156 in a new place.** It is listed as unmeasured because that is what
-happened.
+The one gate that was genuinely not clean, `verify-library-check.py`, was not slow. It had a
+hardcoded per-series rate in a comment, a ceiling built from it, and a printed message that quoted
+it beside the real measurement. It runs in 54 seconds. The table entry that said `not measured` is
+gone because the gate got measured, and **the cost of finding that out was one in-process probe,
+not an architectural decision.**
 
 ### Why it is not run as one suite
 
-A single run of all twenty-nine does not fit in a usable window on this box, and the reason is
-worth having measured rather than guessed. From the timings, in seconds:
+A single run of all twenty-nine does not fit in a usable window on this box. From the timings, in
+seconds:
 
 ```
-verify-library-check.py     1639+   presses "check every series" in the app, at 21-86s a series
 verify-search-syntax.py      409+   three real searches, each fanning out to 40 live sites
+verify-library-check.py       54     presses "check every series" in the app, 20 series
 verify-fanout.py             283     a real 40-source fan-out against live upstream sites
 verify-inflight.py           215     another real fan-out
 20s gap x 28 gates           560     mine, to stop SQLite contention faking failures
 every other gate              21-99  24 gates, all fast
 ```
 
-So **three gates account for roughly seventy minutes of the seventy-five**, and two of those are
-slow because the app is slow rather than because the gate is.
+So the long tail is the two fan-out gates and the searches, and all three are slow because the
+app is waiting on live upstream sites rather than because the gate is.
 
-`verify-library-check.py` is the awkward one. Its subject is the library check, and the library
-check takes up to 27 minutes for nineteen series, so a gate that honestly reports on it takes at
-least as long as the feature does. That is the correct behaviour for a gate and useless for a
-suite: **there is no ceiling that is both honest and short**, and raising the ceiling until it
-passes is how trap 160 happened three times.
+`verify-library-check.py` was listed here at `1639+` for weeks, as a gate that could not be run
+inside a sixty-minute budget, and **that was a hardcoded string in the gate rather than a
+measurement of anything.** Its ceiling was `600 + total * 150`, sized off a sentence in its own
+comment claiming 21 to 86 seconds a series, and its own account of three successive raisings said
+the per-series cost had "gone 21s, then 40s, then 86s on the same code with no deploy in
+between". Those three numbers were `elapsed / total` from the gate itself, where `elapsed` runs
+from the click to the moment the gate noticed, so it counts the gate's own polling: a `page.goto`
+of a heavy `/library`, a 1.5s wait and a 6.5s wait, once every eight seconds.
+
+What the app actually costs, measured in-process against `CheckLedger::check()` by
+`probe-check-cost.php`:
+
+```
+10 series: median 718ms, min 368ms, max 1129ms, mean 739ms
+```
+
+Which is what `CheckLedger` has said in its own comments all along (361ms to 1617ms, median
+876ms). The gate now runs **54 seconds and 22 of 22, twice in a row**, and its ceiling is
+`300 + total * 10`, which is 11x the measured mean.
+
+The same class of error as trap 160, arriving from the opposite direction: not a ceiling raised
+until a gate passed, but **a rate invented to justify a ceiling that had already been raised.**
+A remembered number in a comment is not weaker than a remembered number in an assertion. Both
+are the same mistake wearing different clothes, and this one survived three rounds of someone
+measuring the timeout and never measuring the thing the timeout was about.
 
 The split that works is a fast set and a slow set, which is why the runner takes a comma-separated
-list of name fragments. Twenty-four gates run in about nine minutes; the three slow ones run when
-the answer is worth half an hour.
+list of name fragments. Twenty-six gates run in about eleven minutes; the two fan-out gates and
+the search gate run when the answer is worth the wall clock.
 
 Two other reasons a single run is not the default, both learned here:
 
@@ -1765,7 +1787,7 @@ like before per-gate output was being kept.
 | `verify-covers.py`, 5 checks | gate: fixed sleeps read before the upload landed | 159 |
 | `verify-fanout-coverage.py`, "expected 16 site groups" | gate: a typed-in number, and the app's 18 is correct | 161 |
 | `verify-inflight.py`, "still Searching after 120s" | gate: an unsatisfiable check and a budget at the median | 162, 163 |
-| `verify-library-check.py`, 4 checks | gate: a ceiling with no headroom, and a poll that fought the job | 160 |
+| `verify-library-check.py`, 4 checks | gate: a poll that fought the job, and a ceiling built from a rate that was the gate's own polling | 160, 164 |
 | `verify-continue-reading.py`, crash | gate: `page.reload()` on a page that polls | 157 |
 | `verify-rating-tags.mjs`, crash | gate: `const` inside a `try`, invisible to its own `finally` | 157 |
 | `verify-browse-failure.mjs`, passes by skipping everything | gate: counted nothing as nothing found | 158 |
@@ -2713,6 +2735,14 @@ were eliminated.
      all claims about how long something takes, and none of them is a measurement of whether it
      finished.** Wait for the thing. Where a deadline genuinely has to exist, give it a base for
      the fixed costs rather than trusting the marginal one.
+
+     **Superseded on the specifics, kept for the shape.** The 40.2s a series quoted throughout this
+     trap was itself the artifact, for the reason set out in trap 164: it was the gate's elapsed
+     time divided by its series count, so it contained the gate's own polling. The real per-series
+     cost is about 0.7s and the gate runs in 54 seconds. The lesson stands and the numbers do not,
+     which is worth noticing, because **a trap that teaches correctly from figures that turn out to
+     be wrong is still a trap that misleads.** The durable half is the last paragraph: wait for the
+     thing rather than for a duration.
 161. **Stripping a URL is not parsing it, and the difference is a query string in a place a
      reader will see it.** The browse picker groups sources by site, and the key was built by
      removing the scheme with a regular expression and taking the rest:
@@ -2824,9 +2854,11 @@ were eliminated.
      internal and would have quietly proved nothing. What the page does render is
      `wire:effects`, which is the binding contract itself, and it has to be HTML-entity decoded
      before a regex will see it because the attribute is written escaped.
-164. **A full library check takes up to 27 minutes, and that is a fact about the app rather than
-     about the gate.** Found by three successive attempts to give `verify-library-check.py` a
-     working ceiling, none of which was a timing problem:
+164. **A rate invented to justify a ceiling that had already been raised is the same mistake as a
+     typed-in expected count, and it survives three rounds of measuring the wrong thing.**
+     `verify-library-check.py` was written off as unmeasurable. The reasoning, which was recorded
+     here as a finding rather than a suspicion, was that a full library check "takes up to 27
+     minutes" and that no ceiling is both honest and short:
 
      ```
      420s fixed                -> 423s for 20 series, 21.2s each, missed by 3s
@@ -2834,25 +2866,37 @@ were eliminated.
      300 + total * 70          -> 1639s for 19 series, 86.3s each, missed by 9s
      ```
 
-     The per-series cost went 21s, then 40s, then 86s on **the same code with no deploy in
-     between**, because it is dominated by how busy the machine is and how many of the 40 sources
-     answer before the slice gives up. **No multiple of a measured rate survives that**, and three
-     attempts is enough to stop trying to find one.
+     The per-series cost "went 21s, then 40s, then 86s on the same code with no deploy in
+     between", which was read as the box being variable. **It was the gate's own arithmetic.**
+     Every one of those numbers was `elapsed / total`, where `elapsed` runs from the click to the
+     moment the gate noticed the answer, so it counted the gate's own polling: a `page.goto` of a
+     heavy `/library`, a 1.5 second wait and a 6.5 second wait, once every eight seconds. A number
+     that contains the observer cannot be used to measure the observed.
 
-     So the ceiling is now `600 + total * 150` and it is only asking whether the job finished at
-     all, with the elapsed time printed whatever it turns out to be. A gate whose budget is a
-     hang detector should say so in its own failure message, because "took 1639s" and "hung" are
-     different findings and a reader of the report cannot tell them apart otherwise.
+     `probe-check-cost.php` calls `CheckLedger::check()` once per series in-process and times each
+     one, which takes the gate out of the measurement entirely:
 
-     **The underlying number is the finding.** A reader who presses "Check 19 series" waits up to
-     27 minutes on a loaded box, with a page that polls and reports progress and gives no way to
-     leave and come back. The per-card check is the fast path and the full pass is not, and the
-     gap between 21s and 86s a series is a factor of four that the page does not explain.
+     ```
+     10 series: median 718ms, min 368ms, max 1129ms, mean 739ms
+     ```
 
-     Not fixed here, and deliberately: the options are a smaller slice, a faster check, a
-     resumable job, or accepting it. Each is a product decision, and the honest position is that
-     this gate now measures a real characteristic rather than hiding it behind a timeout that
-     used to fire first.
+     That is what `CheckLedger` had said in its own comments from the start (361ms to 1617ms,
+     median 876ms). The gate runs in **54 seconds** and passes 22 of 22.
+
+     Three things generalise, and the first is the one that cost the weeks:
+
+     - **Measure the subject, not the measurement of the subject.** A stopwatch around your own
+       polling measures the polling. When a number disagrees with the code's own comments, the
+       cheapest next step is the one that settles it, and it took about ten minutes.
+     - **A remembered rate in a comment is not weaker than a remembered rate in an assertion.**
+       Both are asserted and neither is checked. This one was written down, believed, cited in the
+       notes as a measurement, and used to raise a ceiling three times.
+     - **"It varies with load" is a conclusion, and it is usually the conclusion you reach when you
+       have not found the constant yet.** Three data points that disagree are not a trend.
+
+     The earlier version of this trap ended by deferring to a product decision: smaller slice,
+     faster check, resumable job, or accept. **There was no product decision to make.** The feature
+     was never slow, and the honest cost of finding that out was one probe rather than a redesign.
 
      Two smaller things in the same gate. It polls by reloading, and it used to do so every four
      seconds, which over a quarter of an hour is several hundred full page loads of the heaviest
