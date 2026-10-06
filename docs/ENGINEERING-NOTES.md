@@ -1679,7 +1679,7 @@ in batches** (see the note on why not in one run):
 | `verify-reader.py` | 39 | | `verify-continue-reading.py` | 17 |
 | `verify-notes.py` | 33 | | `verify-covers.py` | 23 |
 | `verify-navigator.py` | 30 | | `verify-downloads.py` | 20 |
-| `verify-rating-tags.mjs` | 31 | | `verify-migrate.py` | 21 |
+| `verify-rating-tags.mjs` | 34 | | `verify-migrate.py` | 21 |
 | `verify-search-syntax.py` | 28 | | `verify-library.py` | 18 |
 | `verify-october-pass.mjs` | 21 | | `verify-incognito.mjs` | 14 |
 | `verify-cbz-export.mjs` | 15 | | `verify-source-chooser.mjs` | 13 |
@@ -1697,7 +1697,7 @@ is counted in words because its convention is `OK`/`RAW`/`SKIP` rather than one 
 | Gate | What | State |
 | --- | --- | --- |
 | `verify-october-pass.mjs` | 1 of 21, a read toggle | **Flaky, not diagnosed.** It reported "pressing a read toggle flips it" on one run and "pressing it again clears it" on the next, so the assertion it fails changes between runs. |
-| `verify-rating-tags.mjs` | 4 of 31, the star row | **Open, and the gate contradicts itself.** An unrated series clips `0,0,0,0,100` rather than all-clear, and "clicking the fourth star checks exactly it" reads `.....` while the four-star fill check passes on the same page. |
+| `verify-rating-tags.mjs` | 4 of 34, the star row | **Fixed, and the gate was right.** One stale row from a probe of mine made all four; trap 166. |
 | `verify-october-pass.py` | crashes after 7 | **Open.** Crashes on `wait_for_timeout`, so no count is meaningful. |
 | `verify-library-check.py` | **not measured** | The gate exceeds an hour on this box and did not complete inside a sixty-minute budget. Its own subject is the reason: the app checks 21 to 86 seconds **a series**. |
 
@@ -2285,7 +2285,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 165, each number once, ascending.
+tidiness. The list is now 1 to 166, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2880,3 +2880,57 @@ were eliminated.
      feature, in a run where seven unrelated gates had also failed, was a broken box and nothing
      else** - and it would have been very easy to spend the afternoon on a skipped-source bug
      that does not exist.
+166. **A probe that changes state and does not put it back will make the next gate report a
+     defect that is not there, and the failures will all be true.** This one cost an afternoon
+     and it was mine.
+
+     `probe-star-render.mjs` clicked the fourth star on series 76 to see what the star row
+     rendered, read it, reloaded, read it again, and exited. It left four stars behind.
+
+     `verify-rating-tags.mjs` then failed four checks and looked, to me, like a gate
+     contradicting itself:
+
+     ```
+     [FAIL] nothing is checked when the series is unrated
+     [FAIL] an unrated row clips every star away entirely    clips: 0, 0, 0, 0, 100
+     [FAIL] clicking the fourth star checks exactly it        checked: .....
+     [FAIL] the rating survives a reload
+     ```
+
+     Every one of those is a **correct observation of a series that was already rated four**, and
+     the reason they looked like contradictions is that they contradict *each other*: two checks
+     saying the row is unrated and two saying it is four stars, on the same page. The click check
+     is the one that gave it away. `checked: .....` on a click of the fourth star is not a broken
+     radiogroup, it is a **tap-to-clear**: clicking a star you have already chosen clears the
+     rating. The feature working as designed produced the failure.
+
+     A probe of the live DOM proved the app right, with the database confirming no rating existed:
+
+     ```
+     unrated page : --shown 0, all five clipped away, every aria-checked false
+     after click  : --shown 4, stars 1-4 filled, exactly one aria-checked true
+     after reload : identical, so the write was a write
+     ```
+
+     Note that one `aria-checked="true"` in a five-star row is **correct**. A radiogroup has one
+     selected member, not five, and a gate expecting four checked stars is asserting the wrong
+     shape.
+
+     Then the gate passed 34 of 34, twice in a row.
+
+     Two fixes, and the second is the one worth keeping:
+
+     - **The probe clears in a `finally`.** Trap 142 is a gate leaving state behind. This is the
+       same thing in a diagnostic's clothes, which is worse, because a diagnostic looks like
+       something you are free to run.
+     - **The gate establishes its own empty state before asserting it.** Its cleanup ran at the
+       end and only *counted* a leftover rating rather than clearing one, so any run that died
+       before reaching the clear button poisoned the next one. **"Unrated" is not a fact about the
+       app, it is a fact about what the last run left**, and a gate that asserts an empty state has
+       to make it empty rather than assume it.
+
+     The general shape, and it is the reason this one was so expensive: **the cheapest thing to
+     believe about a gate failure is that the gate is wrong**, and that belief is usually right, so
+     it gets acted on. What would have caught it in two minutes was the database. Before changing
+     a gate because its assertions disagree, ask what state the assertions were made against, and
+     whether anything you ran today wrote to it.
