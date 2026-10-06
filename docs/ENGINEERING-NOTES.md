@@ -1667,12 +1667,12 @@ in batches** (see the note on why not in one run):
 
 | | |
 | --- | --- |
-| clean, count read from its output | 19 gates |
+| clean, count read from its output | 20 gates |
 | clean, but asserting nothing (trap 155) | 6 gates |
-| failed | 2 gates |
+| failed | 1 gate |
 | crashed | 1 gate |
 | **not measured** | **1 gate** |
-| checks read across the suite | **399** |
+| checks read across the suite | **402** |
 
 | Gate | Checks | | Gate | Checks |
 | --- | --- | --- | --- | --- |
@@ -1681,7 +1681,7 @@ in batches** (see the note on why not in one run):
 | `verify-navigator.py` | 30 | | `verify-downloads.py` | 20 |
 | `verify-rating-tags.mjs` | 34 | | `verify-migrate.py` | 21 |
 | `verify-search-syntax.py` | 28 | | `verify-library.py` | 18 |
-| `verify-october-pass.mjs` | 21 | | `verify-incognito.mjs` | 14 |
+| `verify-october-pass.mjs` | 23 | | `verify-incognito.mjs` | 14 |
 | `verify-cbz-export.mjs` | 15 | | `verify-source-chooser.mjs` | 13 |
 | `verify-search-anilist.py` | 14 | | `verify-card-bookmark.mjs` | 9 |
 | `verify-drift-notice.mjs` | 7 | | `verify-sources-picker.mjs` | 3 |
@@ -1696,7 +1696,7 @@ is counted in words because its convention is `OK`/`RAW`/`SKIP` rather than one 
 
 | Gate | What | State |
 | --- | --- | --- |
-| `verify-october-pass.mjs` | 1 of 21, a read toggle | **Flaky, not diagnosed.** It reported "pressing a read toggle flips it" on one run and "pressing it again clears it" on the next, so the assertion it fails changes between runs. |
+| `verify-october-pass.mjs` | 1 of 21, a read toggle | **Fixed.** One fault, not two: a sleep after a click. Trap 167. |
 | `verify-rating-tags.mjs` | 4 of 34, the star row | **Fixed, and the gate was right.** One stale row from a probe of mine made all four; trap 166. |
 | `verify-october-pass.py` | crashes after 7 | **Open.** Crashes on `wait_for_timeout`, so no count is meaningful. |
 | `verify-library-check.py` | **not measured** | The gate exceeds an hour on this box and did not complete inside a sixty-minute budget. Its own subject is the reason: the app checks 21 to 86 seconds **a series**. |
@@ -2285,7 +2285,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 166, each number once, ascending.
+tidiness. The list is now 1 to 167, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -2934,3 +2934,49 @@ were eliminated.
      it gets acted on. What would have caught it in two minutes was the database. Before changing
      a gate because its assertions disagree, ask what state the assertions were made against, and
      whether anything you ran today wrote to it.
+167. **A gate that fails a different check on each run has one fault, not several, and it is
+     usually leaking into its own next step.** `verify-october-pass.mjs` reported one failure per
+     run and the failing check moved:
+
+     ```
+     run 1:  pressing a read toggle flips it
+     run 2:  pressing it again clears it
+     run 3:  pressing a read toggle flips it
+     ```
+
+     Two checks in different places, on different pages, cannot both be intermittent for
+     unrelated reasons. Both were the same fault: an `aria-pressed` attribute read a fixed number
+     of milliseconds after a click, on a Livewire round trip that does not reliably finish in
+     300ms on a loaded box.
+
+     ```js
+     await english.first().click();
+     await sleep(300);
+     check("pressing it again clears it", (await english.first().getAttribute("aria-pressed")) === "false");
+     ```
+
+     That is trap 159 for the third time in this file, in a third gate, which is the point worth
+     recording: **a sleep is a claim about how long a request takes, and twenty-one of them in one
+     file is twenty-one chances to be wrong.**
+
+     The part that made it look like two problems is that **the first race poisoned the gate after
+     it**. The second pill click was a restore, and nothing checked that it had landed, so a
+     round trip that had not finished left the English language filter switched on. The next thing
+     this gate does is search, and it searched under whatever filter state it had inherited. So
+     one fault produced a failure in the pill and a different failure in the search that followed.
+
+     **A restore nobody verifies is not a restore.** It is an intention, and the next check reads
+     whatever the race left behind. Both toggles now restore inside a `finally`, wait for the
+     state to come back, and assert it:
+
+     ```
+     [ok] the language filter was put back
+     [ok] the read flag was put back
+     ```
+
+     23 of 23, three runs in a row, having previously failed one check per run.
+
+     The diagnostic worth keeping, because "flaky" is where a gate gets abandoned rather than
+     fixed: **a gate that fails a different check each time is telling you where the fault is not.**
+     Two failures in two places narrow it to whatever they share, and what two Livewire toggles
+     share is a round trip and a sleep.
