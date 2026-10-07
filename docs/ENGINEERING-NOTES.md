@@ -1658,7 +1658,7 @@ not. When a browser question has consumed two guesses, set `document.title` from
 the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
-Current standing: **1,153 tests**, 2,554 assertions, Pint clean, PHPStan
+Current standing: **1,157 tests**, 2,564 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
@@ -1674,13 +1674,13 @@ exactly one bucket:
 | failed | **0** |
 | crashed | **0** |
 | **not measured** | **0** |
-| **checks read across the suite** | **407** |
+| **checks read across the suite** | **408** |
 
 | Gate | Checks | | Gate | Checks |
 | --- | --- | --- | --- | --- |
 | `verify-reader.py` | 39 | | `verify-library-check.py` | 22 |
 | `verify-rating-tags.mjs` | 34 | | `verify-library.py` | 18 |
-| `verify-notes.py` | 33 | | `verify-continue-reading.py` | 17 |
+| `verify-notes.py` | 33 | | `verify-continue-reading.py` | 18 |
 | `verify-navigator.py` | 30 | | `verify-cbz-export.mjs` | 15 |
 | `verify-search-syntax.py` | 28 | | `verify-incognito.mjs` | 14 |
 | `verify-october-pass.py` | 24 | | `verify-search-anilist.py` | 14 |
@@ -1696,7 +1696,7 @@ and `verify-inflight.py` assert nothing and cannot fail, and `verify-fanout.py` 
 `verify-browse-failure.mjs` asserts once per target site and is counted in words because its
 convention is `OK`/`RAW`/`SKIP` rather than one line per check.
 
-The 407 is the sum of that table, added up from the file rather than estimated, which is the
+The 408 is the sum of that table, added up from the file rather than estimated, which is the
 whole point of the table being here. An earlier version of this paragraph said 399 and then 402,
 both of which were arithmetic done while editing and neither of which was ever checked.
 **A total nobody added up is a guess wearing a total's clothes**, and it is the same fault as a
@@ -1759,6 +1759,26 @@ Which is what `CheckLedger` has said in its own comments all along (361ms to 161
 876ms). The gate now runs **54 seconds and 22 of 22, twice in a row**, and its ceiling is
 `300 + total * 10`, which is 11x the measured mean.
 
+**SQLite contention is real, and it was not what those 500s were.** The 20s gap above is there
+because a queue worker writing `jobs` and a gate reloading a page do collide, and `laravel.log`
+carries `SQLSTATE[HY000]: General error: 5 database is locked` from the queue tables, plus a
+spurious `UNIQUE constraint failed: failed_jobs.uuid` that is two concurrent inserts of one row
+colliding rather than a duplicate. WAL and a 10 second `busy_timeout` are already configured in
+`config/database.php` for exactly this.
+
+The hypothesis that a deferred transaction cannot be waited out, so `transaction_mode` should be
+`IMMEDIATE`, is a real one and worth knowing: a deferred transaction that starts as a reader and
+upgrades to a writer gets `SQLITE_BUSY` immediately, and the busy handler is deliberately not
+invoked for that upgrade because waiting cannot help once another connection has committed and
+the snapshot is stale. **It was tested, on three consecutive `verify-continue-reading.py` runs,
+and it changed nothing.** All three failed identically with and without it, so the change was
+reverted rather than left in on the strength of a plausible story.
+
+The 500s turned out to be trap 170 instead. The reason the hypothesis was worth testing and
+wrong is that it explained the `database is locked` entries in the log, which are a genuine
+problem, and then that explanation was carried over to a set of 500s that had nothing to do with
+it. **A cause that fits one symptom is not thereby the cause of the next one.**
+
 The same class of error as trap 160, arriving from the opposite direction: not a ceiling raised
 until a gate passed, but **a rate invented to justify a ceiling that had already been raised.**
 A remembered number in a comment is not weaker than a remembered number in an assertion. Both
@@ -1794,6 +1814,7 @@ like before per-gate output was being kept.
 | `verify-reader-asks.py`, plain-text source name | gate: clicked whichever card sorted first | 102 |
 | **`browseSites()` grouped by a stripped URL, not a parsed one** | **app**, fixed | 161 |
 | **`$query` carried no `#[Url]`, so a search could not be bookmarked** | **app**, fixed | 163 |
+| **The Suwayomi proxy answered an `<img>` with the app's own error page** | **app**, fixed. A failed page image shipped the whole layout, CSRF token included, as its body | 170 |
 
 Two of these had nothing to do with the code and everything to do with the box: `verify-reader.py`
 crashed on a locator that could never resolve and `verify-search-syntax.py` failed three
@@ -2322,7 +2343,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 168, each number once, ascending.
+tidiness. The list is now 1 to 170, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3083,3 +3104,93 @@ were eliminated.
      one result read as a search that never finished. **A gate that matches half a plural fails on
      success**, which is the same shape as a budget set at the median (trap 163): both are
      assertions that only hold for the common case.
+
+169. **A gate that reads a page before the write it is asserting on will fail for reasons that
+     look like the app's.** `verify-continue-reading.py` seeds a series with read state and then
+     asserts that the feed card moved. Three checks started failing at once, all reporting the
+     same thing:
+
+     ```
+     reading moves the destination   None -> None
+     and the card reports the progress  wanted 'of 49, 3 read' in ''
+     a gap is offered rather than skipped
+     ```
+
+     Three failures whose message was an empty string is not three findings. The subject series
+     was resolving in the app, to "continue at 1 of 6", and was absent from the page.
+
+     The feed renders six cards ordered by `last_read_at` descending, and the seeder's subject is
+     required to have **no** last-read pointer so the read set is the only thing that can move it.
+     No pointer means the series was never opened, which means its series timestamp is null, which
+     means it sorts behind everything the reader has touched. It was the seeder's own requirement
+     that put the subject outside the window the page draws.
+
+     It passed for as long as it did because fewer than six other series had been opened. **The
+     gate was green by coincidence of data volume, and nothing in it noticed the coincidence
+     going away.** Earlier runs of the library-check pass and the October pass opened six series,
+     and the gate started failing on a fixture it had never checked was reachable.
+
+     Two fixes, and the second is the one that generalises:
+
+     - The seeder stamps its subject with `last_read_at = now()` and says so. `now()` is the
+       largest value the sort can see, so the subject leads the feed without anyone's state being
+       cleared. This is declaring the feature's precondition rather than faking state: `openChapter`
+       is the only thing that sets a series timestamp in normal use and it sets a pointer at the
+       same time, so "timestamp without a pointer" is not a state a reader reaches.
+     - **The gate reloads after seeding.** It was reading the card off a page loaded before the
+       write, which is trap 167 one level up: read the value before the click that changes it and
+       the wait-for-change can never fire.
+
+     And a check that names the precondition, so the next occurrence is legible in one line rather
+     than inferred from three empty strings: "the series the seeder moved is in the feed".
+
+     The general shape, and it is the fourth time this suite has hit it: **a fixture that depends
+     on a bounded set has to assert it is inside the bound.** Six cards, forty shelves, a page of
+     twenty, a feed with a limit. Every one of those is a place a gate's subject can fall out of
+     sight, and a gate that assumes it is inside reports an empty string when it is not.
+
+170. **A route that answers bytes must not answer with a document, and a gateway must not report
+     an upstream failure as its own.** `verify-continue-reading.py` failed three runs in a row on
+     "no console errors" with three HTTP 500s and said nothing else. `probe-5xx.py` replayed the
+     gate's own reader loop and printed them:
+
+     ```
+     500 GET http://papyrus.test/suwayomi/api/v1/manga/7/chapter/2/page/0?format=webp
+         <!DOCTYPE html> <html lang="en" class="dark"> <head> ...
+             <meta name="csrf-token" content="nsk3SRATwyla9jVBj9uw6GyVlSJPLsMkIPWrm6Vl" />
+     ```
+
+     The whole authenticated layout, **CSRF token included**, as the body of a request the browser
+     was about to treat as a picture. Two faults, and the first was hiding the second:
+
+     | | Was | Now |
+     | --- | --- | --- |
+     | body | the app's error page, 20KB | `text/plain`, one line |
+     | status | whatever Suwayomi said, so 500 for a blocked source | 502, with 404 kept |
+
+     `abort($response->status(), ...)` is the right tool for a web page and the wrong tool here.
+     Laravel's handler renders the application layout, and this route exists to serve `<img>`.
+
+     The status is the more interesting half. Suwayomi answers 500 when the manga source behind a
+     page is blocked or down. Relaying that verbatim told the browser **Papyrus** had failed, when
+     the app had done its job and something it depends on had not. That misreport is why this
+     surfaced as a console error on a gate whose subject was the continue-reading feed rather than
+     anything a blocked source was doing, and why it read as a gate fault for three runs before
+     anyone looked at which request it was.
+
+     Two things worth keeping:
+
+     - **A status-code assertion is not enough on its own.** The 404 case was already correct
+       before the change, so a test on status alone would have passed on half the fix. The body is
+       asserted separately, and that is the test that fails without the change.
+     - **The same `abort()` was on the allowlist rejection**, one branch up, returning HTML for
+       the same consumer. Fixed for the same reason rather than left as the branch nobody had
+       reported.
+
+     The tests were also wrong in a way worth naming, because it is the trap 161 shape: the
+     existing `Http::fake()` in `setUp()` registered a catch-all, `Http::fake()` **appends**, and
+     the first stub registered wins. So four new tests each re-faking the same pattern were
+     answered by `setUp()` and reported `200` for a `502`. The fake now reads the status from a
+     property at request time, and the comment above it says why.
+
+     **A test that cannot fail is worse than a test that fails, because it is found later.**

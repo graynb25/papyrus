@@ -17,19 +17,35 @@ class SuwayomiProxyTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * The status the fake Suwayomi answers page requests with.
+     *
+     * Read at request time rather than baked into the fake, because `Http::fake()` appends a
+     * stub and the first one registered wins: a test that re-fakes the same pattern after
+     * `setUp` silently keeps getting the `setUp` answer, which is a test that reports 200 for a
+     * 502 and passes a fix that did nothing.
+     */
+    private int $upstreamStatus = 200;
+
     protected function setUp(): void
     {
         parent::setUp();
 
-        Http::fake([
-            '*/api/graphql' => Http::response([
-                'data' => ['login' => ['accessToken' => 'token-1', 'refreshToken' => 'r']],
-            ]),
-            '*/api/v1/*' => Http::response('image-bytes', 200, [
-                'Content-Type' => 'image/webp',
-                'Cache-Control' => 'max-age=86400',
-            ]),
-        ]);
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/api/graphql')) {
+                return Http::response([
+                    'data' => ['login' => ['accessToken' => 'token-1', 'refreshToken' => 'r']],
+                ]);
+            }
+
+            $upstream = $this->upstreamStatus;
+
+            return Http::response(
+                $upstream === 200 ? 'image-bytes' : 'upstream is down',
+                $upstream,
+                $upstream === 200 ? ['Content-Type' => 'image/webp', 'Cache-Control' => 'max-age=86400'] : [],
+            );
+        });
     }
 
     public function test_it_streams_a_chapter_page(): void
@@ -76,5 +92,78 @@ class SuwayomiProxyTest extends TestCase
             return str_contains($request->url(), '/api/v1/manga/12/chapter/0/page/0')
                 && $request->hasHeader('Authorization', 'Bearer token-1');
         });
+    }
+
+    /**
+     * A blocked manga source makes Suwayomi answer 500, and the app used to
+     * hand that status to the browser as though it were its own fault.
+     *
+     * Measured, not asserted in advance: `verify-continue-reading.py` failed
+     * three runs in a row on "no console errors", and the three 500s were all
+     * `GET /suwayomi/api/v1/manga/{2,3,4,7}/chapter/N/page/K?format=webp`.
+     * Papyrus had done its job in all three and something it depends on had not.
+     */
+    public function test_an_upstream_failure_is_reported_as_a_gateway_failure(): void
+    {
+        $this->upstreamStatus = 500;
+
+        $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/7/chapter/2/page/0?format=webp')
+            ->assertStatus(502);
+    }
+
+    /**
+     * 404 is kept, because it is a different claim: Suwayomi has no such page.
+     */
+    public function test_a_missing_page_stays_a_404(): void
+    {
+        $this->upstreamStatus = 404;
+
+        $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/chapter/0/page/99')
+            ->assertStatus(404);
+    }
+
+    /**
+     * The other half of the fault, and the reason a status-code test is not
+     * enough on its own.
+     *
+     * This route answers `<img>`. It used to `abort()`, so a failed page image
+     * came back as the full authenticated application layout, head and CSRF
+     * token included, as the body of a resource the browser was about to treat
+     * as a picture. The body is asserted here because the status was already
+     * right in the 404 case above.
+     */
+    public function test_a_failure_never_returns_the_application_layout(): void
+    {
+        $this->upstreamStatus = 500;
+
+        $user = User::factory()->create();
+
+        foreach ([
+            '/suwayomi/api/v1/manga/7/chapter/2/page/0',
+            '/suwayomi/api/v1/manga/12/chapter/0/download',
+        ] as $path) {
+            $response = $this->actingAs($user)->get($path);
+
+            $this->assertStringNotContainsString('<html', $response->getContent(), $path);
+            $this->assertStringNotContainsString('csrf-token', $response->getContent(), $path);
+            $this->assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'), $path);
+        }
+    }
+
+    /**
+     * A failed page image must not be cached, or a source that recovers keeps
+     * rendering the broken image and the reader's reload does nothing.
+     */
+    public function test_a_failure_is_not_cacheable(): void
+    {
+        $this->upstreamStatus = 500;
+
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/7/chapter/2/page/0');
+
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
     }
 }

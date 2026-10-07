@@ -6,6 +6,7 @@ use App\Suwayomi\AuthManager;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -46,10 +47,16 @@ class SuwayomiProxyController extends Controller
      */
     private const ALLOWED_QUERY = ['format', 'updateProgress'];
 
-    public function __invoke(Request $request, string $path, AuthManager $auth): StreamedResponse
+    public function __invoke(Request $request, string $path, AuthManager $auth): StreamedResponse|Response
     {
         if (preg_match(self::ALLOWED_PATH, $path) !== 1) {
-            abort(404, 'Not a proxied resource.');
+            /*
+             * Plain text, and not `abort()`, for the same reason as the upstream failure below:
+             * this route answers `<img>` requests, and an HTML error page is not a usable answer
+             * to one. The status stays 404 because a refused path is a true statement about the
+             * request rather than a failure to fetch anything.
+             */
+            return self::plain('Not a proxied resource.', 404);
         }
 
         $url = rtrim((string) config('papyrus.suwayomi.url'), '/').'/api/v1/'.$path;
@@ -72,8 +79,32 @@ class SuwayomiProxyController extends Controller
             throw SuwayomiException::unavailable($e->getMessage(), $e);
         }
 
+        /*
+         * An upstream failure is answered as a gateway failure, in binary, with no layout.
+         *
+         * `abort()` was here, and it is the right tool for a web page: Laravel's handler
+         * renders the application's own error page. This route is not serving a web page, it
+         * is serving `<img>`, so every failed page image shipped the entire authenticated
+         * layout, head and CSRF token and all, as the body of a resource the browser was
+         * about to treat as a picture.
+         *
+         * The status was the second fault. Suwayomi answers 500 when the manga source behind a
+         * page is blocked or down, and relaying that verbatim told the browser that Papyrus
+         * had failed, when the app had done its job and something it depends on had not. A
+         * gateway that reports a dead upstream as its own server error is misreporting where
+         * the fault is, and it is why this surfaced as a console error on a gate whose subject
+         * was the continue-reading feed rather than anything a blocked source was doing.
+         *
+         * 404 is passed through because it means something different and is worth keeping:
+         * Suwayomi has no such page, which is a true statement about the request rather than a
+         * failure to fetch one. Everything else is a 502, including a 5xx from Suwayomi and a
+         * 4xx that is Suwayomi's complaint about something upstream of both of them.
+         */
         if (! $response->successful()) {
-            abort($response->status(), 'Suwayomi could not serve this page.');
+            return self::plain(
+                "Suwayomi could not serve this page.\n",
+                $response->status() === 404 ? 404 : 502,
+            );
         }
 
         $body = $response->toPsrResponse()->getBody();
@@ -97,5 +128,21 @@ class SuwayomiProxyController extends Controller
                 flush();
             }
         }, 200, $headers);
+    }
+
+    /**
+     * A failure for a consumer that wanted bytes, not a document.
+     *
+     * `no-store` because a failed page image must not be cached: the browser caches a 502
+     * eagerly enough that a source which recovers keeps rendering the broken image, and the
+     * reader reloads to no effect.
+     */
+    private static function plain(string $message, int $status): Response
+    {
+        return response($message, $status, [
+            'Content-Type' => 'text/plain; charset=utf-8',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 }
