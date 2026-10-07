@@ -1662,15 +1662,15 @@ Current standing: **1,157 tests**, 2,564 assertions, Pint clean, PHPStan
 level 7 clean, zero em dashes.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
-its output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates,
-in batches** (see the note on why not in one run). The buckets below add up to twenty-nine
-because twenty-nine is how many `verify-*` files are on disk, and every one of them is in
-exactly one bucket:
+its output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates, in
+one run of 33 minutes** (see the note on what that costs and why it used to be batched). The
+buckets below add up to twenty-nine because twenty-nine is how many `verify-*` files are on disk,
+and every one of them is in exactly one bucket:
 | | |
 | --- | --- |
 | clean, count read from its output | 20 gates |
-| clean, but asserting nothing (trap 155) | 7 gates |
-| clean, under another convention | 2 gates, `verify-browse-failure.mjs` and `verify-fanout.py` |
+| clean, but asserting nothing (trap 155) | 8 gates |
+| clean, under another convention | 1 gate, `verify-browse-failure.mjs` |
 | failed | **0** |
 | crashed | **0** |
 | **not measured** | **0** |
@@ -1689,12 +1689,18 @@ exactly one bucket:
 | `verify-migrate.py` | 21 | | `verify-drift-notice.mjs` | 7 |
 | `verify-downloads.py` | 20 | | `verify-sources-picker.mjs` | 3 |
 
-**Seven** gates assert through a `notes` list rather than a per-check line, so their counts are
-not in that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`,
-`verify-fixes.py`, `verify-reader-fixes.py`, `verify-reader-asks.py`, `verify-fanout-coverage.py`
-and `verify-inflight.py` assert nothing and cannot fail, and `verify-fanout.py` is a diagnostic.
+**Eight** gates assert through a `notes` list rather than a per-check line, so their counts are not
+in that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`,
+`verify-fanout-coverage.py`, `verify-fanout.py`, `verify-fixes.py`, `verify-inflight.py`,
+`verify-reader-fixes.py` and `verify-reader-asks.py` assert nothing and cannot fail.
 `verify-browse-failure.mjs` asserts once per target site and is counted in words because its
 convention is `OK`/`RAW`/`SKIP` rather than one line per check.
+
+Those two buckets are the runner's own, not a repartition of its output. `run-all-gates.mjs`
+prints `20 clean, 0 failed, 0 crashed, 8 asserted nothing, 1 counted elsewhere, of 29 gates` and
+`408 checks read from output`, and the table above is that sentence broken into rows. An earlier
+version gave `verify-fanout.py` a bucket of its own, which is a tidier-looking partition of the
+same twenty-nine and therefore a way of being wrong while looking organised.
 
 The 408 is the sum of that table, added up from the file rather than estimated, which is the
 whole point of the table being here. An earlier version of this paragraph said 399 and then 402,
@@ -1722,79 +1728,56 @@ it beside the real measurement. It runs in 54 seconds. The table entry that said
 gone because the gate got measured, and **the cost of finding that out was one in-process probe,
 not an architectural decision.**
 
-### Why it is not run as one suite
+### It runs as one suite, and it used not to because of a number nobody measured
 
-A single run of all twenty-nine does not fit in a usable window on this box. From the timings, in
-seconds:
+**`run-all-gates.mjs` with no arguments runs all twenty-nine in 33 minutes and is green.**
+Measured, in one run, `20 clean, 0 failed, 0 crashed, of 29 gates`, `408 checks read from output`.
+
+This section used to be headed "Why it is not run as one suite", and it was wrong for the same
+reason most things here have been wrong: it rested on a figure in a comment. The timings, in
+seconds, from that run:
 
 ```
-verify-search-syntax.py      409+   three real searches, each fanning out to 40 live sites
-verify-library-check.py       54     presses "check every series" in the app, 20 series
-verify-fanout.py             283     a real 40-source fan-out against live upstream sites
-verify-inflight.py           215     another real fan-out
+verify-fanout.py             290     a real 40-source fan-out against live upstream sites
+verify-search-syntax.py       60     three real searches, each fanning out to 40 live sites
+verify-cover-reveal.mjs       71     asserts nothing, and takes a while doing it
+every other gate              10-62  27 gates
 20s gap x 28 gates           560     mine, to stop SQLite contention faking failures
-every other gate              21-99  24 gates, all fast
 ```
 
-So the long tail is the two fan-out gates and the searches, and all three are slow because the
-app is waiting on live upstream sites rather than because the gate is.
+So one gate holds half the wall clock, the gap is a third, and the other twenty-seven share the
+rest. Nothing here justifies splitting the suite by hand any more.
 
-`verify-library-check.py` was listed here at `1639+` for weeks, as a gate that could not be run
-inside a sixty-minute budget, and **that was a hardcoded string in the gate rather than a
-measurement of anything.** Its ceiling was `600 + total * 150`, sized off a sentence in its own
-comment claiming 21 to 86 seconds a series, and its own account of three successive raisings said
-the per-series cost had "gone 21s, then 40s, then 86s on the same code with no deploy in
-between". Those three numbers were `elapsed / total` from the gate itself, where `elapsed` runs
-from the click to the moment the gate noticed, so it counts the gate's own polling: a `page.goto`
-of a heavy `/library`, a 1.5s wait and a 6.5s wait, once every eight seconds.
+What the section claimed before, and why each claim was wrong:
 
-What the app actually costs, measured in-process against `CheckLedger::check()` by
-`probe-check-cost.php`:
+- `verify-library-check.py` at `1639+`, "a gate that honestly reports on a full pass cannot also be
+  short". It runs in **40 to 54 seconds**. The rate that ceiling was built from was the gate's own
+  polling divided into its own series count. Trap 164.
+- "three gates account for roughly seventy minutes of the seventy-five". Two of those three are
+  the numbers just corrected, and the third is `verify-fanout.py` at 290 seconds rather than 283.
+- "twenty-four gates run in about nine minutes; the three slow ones run when the answer is worth
+  half an hour". **That is a batching habit built on a phantom.** A phantom is a fine reason to
+  batch, because batching is harmless, and a terrible reason to believe you know what the suite
+  costs.
+
+One thing the batching did buy, and it is worth keeping: **a single run is the only run that
+proves the gates do not fight each other.** Batches hide order dependence. The first full
+single run found three failures that each passed alone and none of which passed together:
 
 ```
-10 series: median 718ms, min 368ms, max 1129ms, mean 739ms
+verify-continue-reading.py   a fully read series leaves the feed entirely
+verify-library.py            filing adds a chip  card 0: 0 then 0
+verify-rating-tags.mjs       removing one tag keeps the other
 ```
 
-Which is what `CheckLedger` has said in its own comments all along (361ms to 1617ms, median
-876ms). The gate now runs **54 seconds and 22 of 22, twice in a row**, and its ceiling is
-`300 + total * 10`, which is 11x the measured mean.
+All three were the same fault as the rest of today, a fixed sleep read too early, and all three
+only surfaced because the suite ran end to end for the first time. **A green suite run in batches
+is a weaker claim than a green suite run in one go**, and the batching was hiding the difference
+between them.
 
-**SQLite contention is real, and it was not what those 500s were.** The 20s gap above is there
-because a queue worker writing `jobs` and a gate reloading a page do collide, and `laravel.log`
-carries `SQLSTATE[HY000]: General error: 5 database is locked` from the queue tables, plus a
-spurious `UNIQUE constraint failed: failed_jobs.uuid` that is two concurrent inserts of one row
-colliding rather than a duplicate. WAL and a 10 second `busy_timeout` are already configured in
-`config/database.php` for exactly this.
-
-The hypothesis that a deferred transaction cannot be waited out, so `transaction_mode` should be
-`IMMEDIATE`, is a real one and worth knowing: a deferred transaction that starts as a reader and
-upgrades to a writer gets `SQLITE_BUSY` immediately, and the busy handler is deliberately not
-invoked for that upgrade because waiting cannot help once another connection has committed and
-the snapshot is stale. **It was tested, on three consecutive `verify-continue-reading.py` runs,
-and it changed nothing.** All three failed identically with and without it, so the change was
-reverted rather than left in on the strength of a plausible story.
-
-The 500s turned out to be trap 170 instead. The reason the hypothesis was worth testing and
-wrong is that it explained the `database is locked` entries in the log, which are a genuine
-problem, and then that explanation was carried over to a set of 500s that had nothing to do with
-it. **A cause that fits one symptom is not thereby the cause of the next one.**
-
-The same class of error as trap 160, arriving from the opposite direction: not a ceiling raised
-until a gate passed, but **a rate invented to justify a ceiling that had already been raised.**
-A remembered number in a comment is not weaker than a remembered number in an assertion. Both
-are the same mistake wearing different clothes, and this one survived three rounds of someone
-measuring the timeout and never measuring the thing the timeout was about.
-
-The split that works is a fast set and a slow set, which is why the runner takes a comma-separated
-list of name fragments. Twenty-six gates run in about eleven minutes; the two fan-out gates and
-the search gate run when the answer is worth the wall clock.
-
-Two other reasons a single run is not the default, both learned here:
-
-- **Background shells do not survive a turn.** Two full runs were lost at 14 of 29 and 8 of 29,
-  killed mid-gate with nothing in the log. The runner writes each gate's output as it goes for
-  exactly this reason, and a lost run still leaves per-gate evidence behind.
-- **The suite will not start on a broken box.** Trap 165.
+So: run it as one suite, and treat any gate that only passes in a batch as broken. The runner
+still takes a comma-separated list of fragments, because that is now for re-running one gate
+rather than for dodging the slow ones.
 
 ### Diagnosed, with the fault attributed
 
@@ -2343,7 +2326,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 170, each number once, ascending.
+tidiness. The list is now 1 to 171, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3194,3 +3177,39 @@ were eliminated.
      property at request time, and the comment above it says why.
 
      **A test that cannot fail is worse than a test that fails, because it is found later.**
+
+171. **A green suite run in batches is a weaker claim than a green suite run in one go, and the
+     batching is usually why nobody can tell the difference.** The runner's own guidance was to
+     split the suite, on the grounds that three gates took seventy of its seventy-five minutes.
+     Two of those three figures were wrong (trap 164) and the whole suite turns out to run in
+     **33 minutes, green, as one run**.
+
+     So the advice was harmless and the belief behind it was not. It was also load-bearing in a
+     way nobody intended: **batches hide order dependence**, and order dependence is only
+     observable when gates run in the same session against the same database.
+
+     The first full single run found three failures that each passed alone and none of which
+     passed alongside the others:
+
+     ```
+     verify-continue-reading.py   a fully read series leaves the feed entirely
+     verify-library.py            filing adds a chip  card 0: 0 then 0
+     verify-rating-tags.mjs       removing one tag keeps the other
+     ```
+
+     All three were a fixed sleep read too early, which is trap 167 for the fifth and sixth time.
+     But that is the small half. The large half is that the fixture behind one of them had been
+     quietly searching for a library in the right shape, and other gates were the ones reshaping
+     it: `seed-continue-reading.php` required a subject with no last-read pointer, `verify-library.py`
+     opens readers, and once a full run had opened every library series the seeder found no
+     qualifying subject at all and exited. **The seeder established nothing and depended on
+     everything.** It now sets its own two preconditions and prints that it did.
+
+     Two rules, and both are about what a passing run is evidence of:
+
+     - **Run the whole thing at least once, end to end, before believing any of it.** A suite
+       validated only in batches has an untested claim in it: that the parts do not interfere.
+       "No batch has ever failed" is not the same statement as "it passes".
+     - **A fixture that hunts for a library in the right shape is a fixture whose shape is
+       somebody else's decision.** Set up what you need, say you set it up, and let the next
+       reader of the state know.
