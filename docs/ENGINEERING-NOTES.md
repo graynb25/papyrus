@@ -1659,7 +1659,24 @@ the suspect function and read it back with a snapshot: one round trip beats an
 argument about what the code must be doing.
 
 Current standing: **1,157 tests**, 2,564 assertions, Pint clean, PHPStan
-level 7 clean, zero em dashes.
+level 7 clean.
+
+Prose: **zero em dashes and zero en dashes**, and five ellipses, which are all the truncation
+marker in code rather than prose. Measured two ways, because measuring one of them was how the
+claim used to be wrong:
+
+```
+php .tools/suwayomi/scan-dashes.php    0 em, 0 en, 5 ellipses across 292 files (app, database,
+                                        tests, config, routes, resources)
+git grep -P '\x{2014}'                 nothing, plus this directory, which the scanner does not
+                                        cover
+```
+
+The scanner does not read `docs/`, so neither tool alone covers the repository and **a claim
+saying "zero em dashes" while measuring one file is not a claim about the repository.** Three were
+sitting in `app/Downloads/CbzExporter.php` and `tests/Feature/CbzWriterTest.php` at the time this
+was written, from the CBZ work, and the number had been reported as zero through several commits
+because the file being edited was the one being scanned.
 
 **The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
 its output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates, in
@@ -2326,7 +2343,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 171, each number once, ascending.
+tidiness. The list is now 1 to 172, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3213,3 +3230,43 @@ were eliminated.
      - **A fixture that hunts for a library in the right shape is a fixture whose shape is
        somebody else's decision.** Set up what you need, say you set it up, and let the next
        reader of the state know.
+
+172. **"Zero em dashes" measured on the file you just edited is not a claim about the repository.**
+     The standing carried "zero em dashes" through a long run of commits, and it was reported as a
+     standing rather than as a habit, which is what made it read as repo-wide. It was not. What had
+     actually been measured, each time, was the one documentation file being edited that day.
+
+     Asked properly, with two tools because neither covers the whole tree:
+
+     ```
+     php .tools/suwayomi/scan-dashes.php   0 em, 0 en, 5 ellipses across 292 files
+     git grep -n -P '\x{2014}' -- .        three hits
+     ```
+
+     ```
+     app/Downloads/CbzExporter.php:167       ... cleanup that can be tested at all <em dash> setCallback ...
+     tests/Feature/CbzWriterTest.php:25      ... a reader depends on <em dash> the names, the byte-for-byte
+     tests/Feature/CbzWriterTest.php:26      ... contents, and the CRCs <em dash> rather than the bytes ...
+     ```
+
+     Spelled out rather than quoted, because a trap about em dashes that contains three of them
+     is a trap that puts three back. The mark is `<em dash>` and the line numbers are the ones the
+     grep printed.
+
+     Three, in files from the CBZ export work, invisible to a scan of the docs. The scanner covers
+     `app`, `database`, `tests`, `config`, `routes` and `resources`, and **not `docs/`**, so the
+     two checks are not redundant and neither is sufficient.
+
+     Two things worth keeping from it:
+
+     - **A standing is a claim about everything it names.** "Zero em dashes" names no scope, so it
+       is read as the repository, and it has to be measured that way or it should say which tree it
+       covers. Both tools and both scopes are now in the standing, so the next reader can rerun
+       them.
+     - **The scanner counted five ellipses and all five are correct.** They are `'…'` as a
+       truncation marker in output strings, each with a matching assertion in a test. A byte scan
+       that finds something is the start of an inspection, not the finding: `substr($key, 0,
+       20).'…'` reads as `substr($key, 0, 20).'.'` in a cp1252 console, so the console said one
+       character and the bytes said another. **Trust the byte scan, including when it disagrees
+       with what you can see**, which is the same instruction already in section 6 for the PowerShell
+       version that reported zero in a file that had thirty.

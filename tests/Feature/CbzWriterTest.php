@@ -22,8 +22,8 @@ use ZipArchive;
  * ## Why reading it back is the whole test
  *
  * There is no way to assert "the offsets are right" without a reader that follows them. So
- * these tests assert the properties a reader depends on — the names, the byte-for-byte
- * contents, and the CRCs — rather than the bytes of the headers, which would be asserting the
+ * these tests assert the properties a reader depends on (the names, the byte-for-byte
+ * contents, and the CRCs) rather than the bytes of the headers, which would be asserting the
  * implementation back at itself.
  */
 class CbzWriterTest extends TestCase

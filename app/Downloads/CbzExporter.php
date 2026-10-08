@@ -164,7 +164,7 @@ class CbzExporter
                  * moment a reader who cancels stops listening: an aborted download is the case
                  * most worth cleaning up after and the one a send-time callback is least likely
                  * to reach. A `finally` around the send runs on that path too, and it is the
-                 * only cleanup that can be tested at all — `setCallback` never fires under a
+                 * only cleanup that can be tested at all. `setCallback` never fires under a
                  * test, so a test asserting "nothing was left behind" would have passed against
                  * a version that leaks on every single export.
                  */
