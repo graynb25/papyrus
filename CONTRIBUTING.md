@@ -84,9 +84,20 @@ this project passed 194 tests and were visible on the first click. So:
 
 **Open the page.** That is the fifth gate.
 
-The suite is currently **1034 tests across 60 files**, and twenty-three Playwright scripts
-live in `..\.tools\suwayomi\`. A sixth bug of the same kind is waiting for whoever reads
-this next.
+The suite is currently **1,157 tests**, and twenty-nine browser gates live in
+`..\.tools\suwayomi\`. A sixth bug of the same kind is waiting for whoever reads this next.
+
+Run the tests with `php artisan test`. Run the browser gates with `node
+..\.tools\suwayomi\run-all-gates.mjs`, which takes no arguments and runs all
+twenty-nine in one pass, about 33 minutes. Pass a comma-separated list of
+name fragments to run a subset: `run-all-gates.mjs october-pass,library`
+runs those two.
+
+**Run the gates as one suite, not in batches.** A gate that only passes in a
+batch is broken, and batching hides the reason: the first full single run
+found three failures that each passed alone and none of which passed
+alongside the others, all of them a fixed sleep read too early. Do not take a
+green suite run in batches as a green suite.
 
 `Http::fake()` the GraphQL endpoint; tests must never reach the real server. Use
 `Tests\Support\MintsTokens` for tokens, since a fake returning `"token-1"` has no readable
