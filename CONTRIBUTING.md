@@ -85,13 +85,20 @@ this project passed 194 tests and were visible on the first click. So:
 **Open the page.** That is the fifth gate.
 
 The suite is currently **1,157 tests**, and twenty-nine browser gates live in
-`..\.tools\suwayomi\`. A sixth bug of the same kind is waiting for whoever reads this next.
+`..\.tools\suwayomi\`, carrying **478 checks** between them. A sixth bug of the
+same kind is waiting for whoever reads this next.
 
 Run the tests with `php artisan test`. Run the browser gates with `node
 ..\.tools\suwayomi\run-all-gates.mjs`, which takes no arguments and runs all
-twenty-nine in one pass, about 33 minutes. Pass a comma-separated list of
+twenty-nine in one pass, about 34 minutes. Pass a comma-separated list of
 name fragments to run a subset: `run-all-gates.mjs october-pass,library`
 runs those two.
+
+**A gate must print `[ok ]` or `[FAIL]` per assertion.** The runner counts
+those markers, so a gate that asserts correctly and reports in its own way is
+counted as silent, and the standing will say it asserts nothing when it does not.
+`check(name, condition, detail)` is the convention, and the list that decides
+the exit code is the same list `check()` appends to.
 
 **Run the gates as one suite, not in batches.** A gate that only passes in a
 batch is broken, and batching hides the reason: the first full single run

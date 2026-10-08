@@ -1678,77 +1678,99 @@ sitting in `app/Downloads/CbzExporter.php` and `tests/Feature/CbzWriterTest.php`
 was written, from the CBZ work, and the number had been reported as zero through several commits
 because the file being edited was the one being scanned.
 
-**The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is
-its output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates, in
-one run of 33 minutes** (see the note on what that costs and why it used to be batched). The
-buckets below add up to twenty-nine because twenty-nine is how many `verify-*` files are on disk,
-and every one of them is in exactly one bucket:
+**The browser gates are measured, not remembered.** `run-all-gates.mjs` runs them and this is its
+output rather than a figure anyone typed. Measured on a healthy box, **29 of the 29 gates, in one
+run of 34 minutes** (see the note on what that costs and why it used to be batched):
+
+```
+28 clean, 0 failed, 0 crashed, 0 asserted nothing, 1 counted elsewhere, of 29 gates
+478 checks read from output, which excludes the 1 gate(s) this runner cannot count
+```
+
+**Twenty-eight of the twenty-nine now assert something the runner can count, and every one can
+fail.** The twenty-ninth is `verify-browse-failure.mjs`, which prints `OK`/`RAW`/`SKIP` per target
+site and is counted in words. There is no gate left that reports a finding into a list nothing
+reads.
+
 | | |
 | --- | --- |
-| clean, count read from its output | 20 gates |
-| clean, but asserting nothing (trap 155) | 8 gates |
+| clean, count read from its output | 28 gates |
 | clean, under another convention | 1 gate, `verify-browse-failure.mjs` |
 | failed | **0** |
 | crashed | **0** |
 | **not measured** | **0** |
-| **checks read across the suite** | **408** |
+| **checks read across the suite** | **478** |
+
+Trap 155 is retired as a live concern rather than as a note. It was written about eight gates
+that could not fail, and the truth was narrower and stranger: **six of the eight could fail and
+two could not**, and all eight were invisible to the count because none printed the markers the
+runner reads. Trap 173.
 
 | Gate | Checks | | Gate | Checks |
 | --- | --- | --- | --- | --- |
-| `verify-reader.py` | 39 | | `verify-library-check.py` | 22 |
-| `verify-rating-tags.mjs` | 34 | | `verify-library.py` | 18 |
-| `verify-notes.py` | 33 | | `verify-continue-reading.py` | 18 |
-| `verify-navigator.py` | 30 | | `verify-cbz-export.mjs` | 15 |
-| `verify-search-syntax.py` | 28 | | `verify-incognito.mjs` | 14 |
-| `verify-october-pass.py` | 24 | | `verify-search-anilist.py` | 14 |
-| `verify-covers.py` | 23 | | `verify-source-chooser.mjs` | 13 |
-| `verify-october-pass.mjs` | 23 | | `verify-card-bookmark.mjs` | 9 |
-| `verify-migrate.py` | 21 | | `verify-drift-notice.mjs` | 7 |
-| `verify-downloads.py` | 20 | | `verify-sources-picker.mjs` | 3 |
+| `verify-reader.py` | 39 | | `verify-library.py` | 18 |
+| `verify-rating-tags.mjs` | 34 | | `verify-continue-reading.py` | 18 |
+| `verify-notes.py` | 33 | | `verify-covers.py` | 23 |
+| `verify-navigator.py` | 30 | | `verify-library-check.py` | 22 |
+| `verify-search-syntax.py` | 28 | | `verify-october-pass.py` | 24 |
+| `verify-october-pass.mjs` | 23 | | `verify-cover-reveal.mjs` | 10 |
+| `verify-migrate.py` | 21 | | `verify-downloads.py` | 20 |
+| `verify-reader-asks.py` | 11 | | `verify-reader-fixes.py` | 11 |
+| `verify-fixes.py` | 7 | | `verify-inflight.py` | 7 |
+| `verify-fanout-coverage.py` | 7 | | `verify-drift-notice.mjs` | 7 |
+| `verify-browse.py` | 12 | | `verify-fanout.py` | 5 |
+| `verify-card-bookmark.mjs` | 9 | | `verify-cbz-export.mjs` | 15 |
+| `verify-incognito.mjs` | 14 | | `verify-search-anilist.py` | 14 |
+| `verify-source-chooser.mjs` | 13 | | `verify-sources-picker.mjs` | 3 |
 
-**Eight** gates assert through a `notes` list rather than a per-check line, so their counts are not
-in that table and are **not zeros**: `verify-browse.py`, `verify-cover-reveal.mjs`,
-`verify-fanout-coverage.py`, `verify-fanout.py`, `verify-fixes.py`, `verify-inflight.py`,
-`verify-reader-fixes.py` and `verify-reader-asks.py` assert nothing and cannot fail.
-`verify-browse-failure.mjs` asserts once per target site and is counted in words because its
-convention is `OK`/`RAW`/`SKIP` rather than one line per check.
+The two buckets above are the runner's own, not a repartition of its output.
+`run-all-gates.mjs` prints `28 clean, 0 failed, 0 crashed, 0 asserted nothing, 1 counted
+elsewhere, of 29 gates` and `478 checks read from output`, and the table is that sentence broken
+into rows.
 
-Those two buckets are the runner's own, not a repartition of its output. `run-all-gates.mjs`
-prints `20 clean, 0 failed, 0 crashed, 8 asserted nothing, 1 counted elsewhere, of 29 gates` and
-`408 checks read from output`, and the table above is that sentence broken into rows. An earlier
-version gave `verify-fanout.py` a bucket of its own, which is a tidier-looking partition of the
-same twenty-nine and therefore a way of being wrong while looking organised.
-
-The 408 is the sum of that table, added up from the file rather than estimated, which is the
+The 478 is the sum of that table, added up from the file rather than estimated, which is the
 whole point of the table being here. An earlier version of this paragraph said 399 and then 402,
-both of which were arithmetic done while editing and neither of which was ever checked.
-**A total nobody added up is a guess wearing a total's clothes**, and it is the same fault as a
-typed-in expected count one level up.
+both of which were arithmetic done in my head while editing and neither of which was ever
+checked. **A total nobody added up is a guess wearing a total's clothes**, and it is the same
+fault as a typed-in expected count one level up.
+
+One gate is still counted in words rather than in numbers:
+`verify-browse-failure.mjs` prints `OK`/`RAW`/`SKIP` per target site, so its assertion count is
+the number of sites it visited rather than a figure in a table. It is counted, it can fail, and
+the runner names it separately so the exclusion is visible rather than a quiet zero.
 
 ### What is still not clean
 
-**Nothing fails, which is the weakest thing that can be true of a suite and not the best.**
+**Nothing fails, and nothing fails now because every gate can.** That is a different sentence from
+last week's, when nothing failed because eight of the twenty-nine were incapable of it, and the
+bucket table above is the proof rather than a claim.
 
-Seven of the twenty-nine gates cannot fail at all: they report through a `notes` list and exit 0
-whatever they find (trap 155). Two more report in words rather than a per-check line. So the
-twenty gates in the table above are the only ones whose verdict is a verdict, and all twenty are
-green.
+Two things remain, and neither is a red gate:
 
-That is worth saying plainly rather than letting the bucket table imply otherwise. A suite where
-nothing fails and seven gates are incapable of failure is **a quiet suite, not a healthy one**,
-and the difference is not visible from the exit code. It is visible only by asking, of each gate,
-what would make it red, and being able to answer.
+- **`verify-browse-failure.mjs` is counted in words.** It prints `OK`/`RAW`/`SKIP` per target site
+  and asserts once per site, so the runner cannot put a single number on it. It is not blind and
+  not silent; it is in a different convention, and the convention is named so the exclusion is
+  visible rather than a quiet zero.
+- **`verify-reader-asks.py` reports one skipped section.** It checks the downloads page's series
+  label, and there are no download rows on this account, so it prints `SKIPPED` in its summary and
+  contributes 11 checks rather than 12. The old form printed a note in parentheses and said
+  nothing, which is trap 151: a section that cannot run reported as a passing gate.
 
-The one gate that was genuinely not clean, `verify-library-check.py`, was not slow. It had a
-hardcoded per-series rate in a comment, a ceiling built from it, and a printed message that quoted
-it beside the real measurement. It runs in 54 seconds. The table entry that said `not measured` is
-gone because the gate got measured, and **the cost of finding that out was one in-process probe,
-not an architectural decision.**
+The first is a reporting convention and the second is a genuine coverage gap, and closing the
+second means seeding a download row. `seed-finished-download.php` cannot do it, because it deletes
+the centre first for the CBZ gate. That is the honest next piece of work on this suite, and it is
+small.
+
+`verify-library-check.py`, the gate that was not measurable for weeks, is not on this list. It was
+never slow: it had a hardcoded per-series rate in a comment, a ceiling built from it, and a printed
+message quoting it beside the real measurement. It runs in 54 seconds, and **the cost of finding
+that out was one in-process probe, not an architectural decision.**
 
 ### It runs as one suite, and it used not to because of a number nobody measured
 
-**`run-all-gates.mjs` with no arguments runs all twenty-nine in 33 minutes and is green.**
-Measured, in one run, `20 clean, 0 failed, 0 crashed, of 29 gates`, `408 checks read from output`.
+**`run-all-gates.mjs` with no arguments runs all twenty-nine in 34 minutes and is green.**
+Measured, in one run, `28 clean, 0 failed, 0 crashed, 0 asserted nothing, 1 counted elsewhere, of
+29 gates`, `478 checks read from output`.
 
 This section used to be headed "Why it is not run as one suite", and it was wrong for the same
 reason most things here have been wrong: it rested on a figure in a comment. The timings, in
@@ -2343,7 +2365,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 172, each number once, ascending.
+tidiness. The list is now 1 to 173, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3270,3 +3292,50 @@ were eliminated.
        character and the bytes said another. **Trust the byte scan, including when it disagrees
        with what you can see**, which is the same instruction already in section 6 for the PowerShell
        version that reported zero in a file that had thirty.
+
+173. **A gate can fail and still be invisible, and the two faults are not the same size.** The
+     standing said eight gates asserted nothing and could not fail (trap 155). Asked what each one
+     actually did, the answer was not eight of a kind:
+
+     | | could fail | printed `[ok ]`/`[FAIL]` |
+     | --- | --- | --- |
+     | 6 gates | yes, `return 1 if notes else 0` | no |
+     | `verify-cover-reveal.mjs` | yes, `process.exit(failures ? 1 : 0)` | no, it printed `PASS`/`FAIL` |
+     | `verify-fanout.py` | **no**, `return 0` unconditionally | no |
+
+     So six of the eight were fine and merely unreadable, one was fine and used its own
+     convention, and exactly one was genuinely inert. The notes had them all in one bucket because
+     the bucket is what the runner could see, not what the gates were.
+
+     **The runner counts `[ok ]` and `[FAIL]` markers, so a gate that asserts correctly and
+     prints its findings its own way is counted as silent.** That is a reporting convention
+     masquerading as a capability claim, and it made the suite look worse than it was while making
+     the standing impossible to trust. Six gates were doing real work the whole time.
+
+     What fixing it found, which is the part worth having:
+
+     - **`verify-fanout.py` could not fail at all**, and its own docstring says what it exists for:
+       "asks the database directly whether the run finished and whether every source reported."
+       Nothing asserted either half. Both hang defects it was written to catch, a run stuck at
+       `status = running` and one whose `sources_done` never reaches `sources_total`, were
+       undetectable by the gate written to detect them.
+     - **Its first run failed, and it was the gate that was wrong.** The poll looked for
+       `status: done` and `status: failed`; the app writes `complete`. So it reported a run that
+       had finished perfectly, with 40 of 40 sources reporting, as hung. **A gate that reports
+       healthy runs as hangs is worse than one that reports nothing**, because it will be believed
+       the first time a real hang appears and dismissed as flakiness.
+     - **`verify-cover-reveal.mjs` was the healthiest of the eight** and the standing could not
+       tell. It counted its surfaces, printed `PASS` per surface and exited non-zero on any. Ten
+       assertions the whole time.
+
+     The lesson is about the shape of the standing rather than about gates:
+
+     - **A bucket that says "cannot fail" is a claim about a runner's parsing, not about a suite.**
+       Before writing it down, ask each gate what would make it red and be able to answer. Six of
+       eight could not be described that way.
+     - **Converting a gate to a counted convention is not cosmetic.** It took `check()` helpers in
+       eight files and it immediately surfaced a false hang report that had been sitting in a log
+       nobody read. **A finding nobody can see is not a finding, and a convention nobody counts is
+       not a verdict.**
+     - Trap 155 stays, because two gates still cannot fail and the reader-asks section still skips.
+       What retired is the claim that eight of twenty-nine were inert, which was wrong.
