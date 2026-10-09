@@ -65,10 +65,14 @@ yarn-error.log
 
 # Process logs written by the three services the notes tell you to start by
 # hand. They are per-developer runtime output, and vite.log in particular names
-# the port the dev server happened to pick.
+# the port the dev server happened to pick. suwayomi-probe.log is the same
+# thing from an ad-hoc start, which is why the pattern is a glob rather than
+# one more literal name.
 /queue.log
 /vite.log
 /vite.err.log
+/suwayomi*.log
+/suwayomi*.err
 
 # Local environment overrides and editor droppings that Laravel's defaults miss
 /.env.*
