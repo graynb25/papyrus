@@ -2365,7 +2365,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 173, each number once, ascending.
+tidiness. The list is now 1 to 174, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3339,3 +3339,57 @@ were eliminated.
        not a verdict.**
      - Trap 155 stays, because two gates still cannot fail and the reader-asks section still skips.
        What retired is the claim that eight of twenty-nine were inert, which was wrong.
+
+174. **The fixed-sleep fault is countable, and it has been counted: 29 places.** A `wait_for_timeout`
+     after a click, followed by a read of what the click changed, is the shape that has produced a
+     false failure in seven gates now. Each time it read as a feature that stopped working, because
+     a check that reads too early and a check that is right print the same thing.
+
+     The seven, all confirmed by fixing them:
+
+     | Gate | Was | Now |
+     | --- | --- | --- |
+     | `verify-october-pass.mjs` | 2000ms after a read toggle | waits for the value to change |
+     | `verify-library-check.py` | 1000ms after a click, then read a toast 120s later | polls for the toast |
+     | `verify-library.py` | fixed sleeps in both filing directions | polls each direction |
+     | `verify-inflight.py` | 2000ms for selection-mode checkboxes | polls |
+     | `verify-fanout.py` | 120s budget, read `"Searching"` that is never absent | polls the progress string |
+     | `verify-october-pass.mjs` | 1200ms after the Updates tab | `waitFor()` |
+     | `verify-notes.py` | 1800ms after saving a note | polls until the editor closes |
+
+     The last two were found by the 29 of 29 run after this one, which failed on
+     `verify-notes.py` "saving closes the editor" and `verify-october-pass.mjs` "the updates view
+     offers update-all". Neither carried a detail string, so the reports read as missing features.
+
+     **Twenty-nine more places have the same shape and are listed rather than fixed**, because
+     converting them blind would be a large change to gates that currently pass:
+
+     ```
+     verify-reader.py             12    verify-fixes.py                 1
+     verify-notes.py               3    verify-drift-notice.mjs         1
+     verify-search-anilist.py      2    verify-library.py               1
+     verify-browse.py              2    verify-covers.py                1
+     verify-reader-asks.py         2    verify-october-pass.py          1
+     verify-migrate.py             2    verify-october-pass.mjs         1
+     ```
+
+     29 across 12 gates, counted by running the audit and tallying its output rather than by
+     reading the list and adding it up. The first version of that block said `verify-reader.py 8`
+     where the audit says 12, and summed to 15 against a stated 29, because it was written from
+     memory of a long output rather than from the output. **A tally is arithmetic, and arithmetic
+     in prose is exactly the thing this document keeps catching.**
+
+     How the count was made, so it can be remade: a fixed wait of 300ms or more whose **preceding
+     line is a click** and whose following three lines read a value. The wait must be at least
+     300ms and the preceding line must be a click, because a wait after a page load is not the
+     fault and a wait after a check is not either. The audit was validated against a synthetic
+     instance before its silence was believed, which is worth doing with any audit whose result is
+     "nothing found": **a check that reports zero is indistinguishable from a check that is
+     broken until you watch it catch something.**
+
+     That same audit caught this: `page.waitForTimeout` does not exist in Playwright for Python, so
+     a process count of `java` processes was being read as evidence that Suwayomi was up. It was
+     two Android Studio JVMs, and Suwayomi was down. The runner's preflight reads the actual
+     endpoint and refused to start, which is why the suite reported an environment failure rather
+     than twenty-nine red gates. **My ad-hoc check was satisfied by the wrong process; the tool's
+     was not.**
