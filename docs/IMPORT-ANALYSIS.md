@@ -269,7 +269,7 @@ import runs rather than after.
 
 | # | Item | Why |
 | --- | --- | --- |
-| H1 | A 39 MB upload through Livewire | Measured on this server: `upload_max_filesize = 2M`, `post_max_size = 8M`, `memory_limit = 128M`. The cover upload's ceiling is `config('papyrus.covers.max_kilobytes')`, default 2048 KB, chosen to match the server limit. **A 39 MB backup cannot be uploaded as-is**, and `post_max_size` binds before `upload_max_filesize` does. |
+| H1 | A 39 MB upload through Livewire | Measured on this server: `upload_max_filesize = 2M`, `post_max_size = 8M`, `memory_limit = 128M`. The cover upload's ceiling is `config('papyrus.covers.max_kilobytes')`, default 2048 KB, chosen to match the server limit. **A 39 MB backup cannot be uploaded as-is**, and `post_max_size` binds before `upload_max_filesize` does. Answered above: an app-enforced ceiling plus an artisan command for what exceeds it. |
 | H2 | Bounded-slice job with progress | 1,277 series is 11 minutes of upstream calls. Above `memory_limit`/`max_execution_time` as a single request. Needs `Import`-style status row and polling. |
 | H3 | Idempotency | A reader will re-import. `unique(user_id, suwayomi_manga_id)` plus an import-run key, or a second import double-files. |
 | H4 | Tier 1 / tier 2 must be distinguished in the report | "1,204 resolved, 73 need a source that no longer answers" is a different outcome from "1,277 imported" and the reader deserves to see it. |
@@ -297,25 +297,43 @@ import runs rather than after.
 | L5 | `pref-all.json` / `prefs/` parsing, if ever wanted |
 | L6 | Extension comparison, offering to install a source the backup had |
 
+### Decisions taken
+
+Four questions were open. All four are now answered, so phase 0 is a record rather than a
+decision, and the answers are load-bearing enough to state in full.
+
+| Question | Decision | Why it changes the shape of the work |
+| --- | --- | --- |
+| How does a 39MB file reach a 2M server? | **Both paths.** A browser upload with an app-enforced ceiling, plus `php artisan papyrus:import-backup <path>` for anything above it. | `upload_max_filesize` is `PHP_INI_PERDIR`, so it cannot be raised at runtime, and `post_max_size` at 8M binds before the 2M file limit. Raising neither leaves a reader with a large library unable to import at all; raising only php.ini pushes a server edit onto every reader. |
+| What crosses over? | **Library, read state and shelves. Tracking later.** | Ratings and tags do not exist in the source and cannot be recovered, so the UI must say so before the run. Shelves are 2 named and 146 rows, which is measurable. Tracking has **0 rows in this backup**, so it would ship unproven. |
+| Conflict with an existing library? | **Never overwrite. Merge conservatively.** | A read is monotonic work and an un-read is irreversible loss of progress, so the safe direction is the one that only ever adds. Every skip is listed in the run report. |
+| Where does Mihon land? | **`.tmb` first, behind a reader interface.** | One measured `.tmb`, zero `.tachibk` samples. The interface is the constraint that matters, so `.tachibk` drops in later without reshaping the resolver or the writer. |
+
+The last one is a commitment, not a deferral: phase 1 puts the archive reader behind an interface
+precisely so that phase 6 is a new class rather than a refactor.
+
 ### Phase order
 
-**Phase 0, decide (no code).** S1 to S4 answered. The upload-size question needs your call,
-because the answer changes the UI: a 2M server limit means the backup cannot come through the
-browser, so either the limit is raised, or the file is read off disk by an artisan command, or the
-reader is told to raise it.
+**Phase 0, decide (no code).** Settled, above. S1 to S4 remain the blocking unknowns and they are
+answered in this document: the chapter-id remap, the timestamp units, the 1,277-vs-132,185
+distinction, and the 113MB-under-128M read.
 
 **Phase 1, read the archive.** Unzip streamed to a temp file, open `tachimanga.db` read-only,
 extract `Manga.in_library = 1` with `source`, `url`, `title`, and the chapter rows. Assert the
 tables exist before reading them. **No writes to this app.** Output: a JSON summary of what was
-found, which is testable on its own.
+found, which is testable on its own. The reader sits behind an interface here, not later, so that
+Mihon is additive.
 
 **Phase 2, resolve.** Tier 1 for everything, batched per source. Tier 2 only for what tier 1
 missed, through `fetchSourceManga`, in slices. Output: `(tachimanga manga id -> suwayomi manga
 id|unresolved)`, persisted so phase 4 does not redo it.
 
 **Phase 3, write.** `ReadingState` only. Per series: `setInLibrary`, then `markManyRead` for the
-resolved chapter ids, then `setPointer` from the remapped `History.last_chapter_id`. Shelves
-afterwards. One transaction per series, so a failure is one series rather than half a library.
+resolved chapter ids, then `setPointer` from the remapped `History.last_chapter_id`. Merge
+conservatively throughout: a chapter read in either side is read, nothing is ever cleared, and a
+series already in the library is added to rather than rewritten. Shelves afterwards, mapped by
+name with the unmapped ones reported rather than dropped. One transaction per series, so a
+failure is one series rather than half a library.
 
 **Phase 4, report and undo.** A run row the page polls, listing resolved, unresolved with
 reasons, and skipped-with-reason (no rating in the source). An undo that removes exactly what
@@ -722,18 +740,26 @@ level 7, Pint, and the 1,157-test suite, and the import gets tests for:
 
 ## What I could not settle
 
-1. **The upload limit, and it is two numbers.** `upload_max_filesize` is 2M and `post_max_size`
-   is 8M, against a real backup of 39 MB. So the reader cannot send it through the browser as
-   things stand, and raising one limit without the other changes nothing. Three answers, and they
-   differ in what the reader experiences: raise both, read the file from disk by an artisan
-   command, or tell the reader to raise them. **This is your call and it is phase 0.**
+The upload limit is settled and is no longer on this list. What is left is smaller, and none of it
+blocks phase 1.
 
-2. **Whether the app should hold a 113 MB temp file**, and for how long. A backup arrives,
-   is read, and can be deleted; the import's own state lives in the run row, not the file. But
-   the window between upload and first slice is a window where a 113 MB file exists.
+1. **Whether the app should hold a 113 MB temp file**, and for how long. A backup arrives, is read,
+   and can be deleted; the import's own state lives in the run row, not the file. But the window
+   between upload and first slice is a window where a 113 MB file exists, and with both paths
+   agreed that window is now reachable on a box that has only just cleared the memory limit. The
+   honest options are a delete-on-first-slice or a delete-on-run-completion, plus a ceiling check
+   on free disk before starting rather than failing partway through.
+
+2. **Shelf name matching.** Tachimanga's categories are `"Youtube "` (with a trailing space) and
+   `"Snowflakes"`. Papyrus shelves are the reader's own and may not have matching names. Whether an
+   unmatched shelf creates one, is reported and skipped, or needs a per-shelf mapping screen is
+   still open. My inclination is to report and skip, because silently creating shelves from
+   another app's naming is how a library ends up with four near-duplicate groups.
 
 3. **Mihon support is a different parser.** `.tachibk` is protobuf inside gzip. Everything in
-   phases 1 to 4 above is reusable; the reader is not. Worth its own phase, not a variant.
+   phases 1 to 4 is reusable and the reader interface from phase 1 is what makes it additive rather
+   than a reshape. Worth its own phase, and it needs a real `.tachibk` sample before it starts,
+   because the `.tmb` work is only trustworthy as far as its one measured file.
 
 4. **Whether 1,277 series is typical.** It is this reader's. The design should not assume the
    count; the slice budget already does not, but the UI copy should avoid implying a fixed size.
