@@ -3393,3 +3393,52 @@ were eliminated.
      endpoint and refused to start, which is why the suite reported an environment failure rather
      than twenty-nine red gates. **My ad-hoc check was satisfied by the wrong process; the tool's
      was not.**
+
+175. **A backup format that looks open-source is not necessarily readable, and a file that opens is
+     not a file that is safe to load.** Tachimanga's `.tmb` turned out to need no decryption at
+     all: byte zero is `PK\x03\x04` and `ZipArchive` opens it. The work was not in the crypto, it
+     was in three places nobody warns about. It is a zip inside a zip, so a reader that opens the
+     outer archive and looks for the database finds nothing. It holds a 113.5MB SQLite file
+     against this server's `memory_limit` of 128M, so `getFromName()` on it is a 113MB PHP string
+     and it has to be streamed to a temp file and opened by path. And **the library is 1,277 rows
+     inside a table of 132,185**: the rest is catalogue the app cached while browsing, so a plain
+     `select * from Manga` files a reader's entire browsing history as their shelf with no way to
+     tell afterwards. Measured, not assumed, and each of the three is invisible until it is
+     measured.
+
+176. **`sprintf` with more arguments than placeholders fails silently, and the substitution lands
+     somewhere unrelated.** Building a SQL query as a positional `sprintf` list, one argument too
+     many, put `is_downloaded` into the `FROM` clause. PHP accepts surplus arguments without
+     complaint, and the only symptom was `no such table: is_downloaded` naming a table that
+     exists. Three guesses at column names were wrong in this one reader (`History.manga` is
+     `History.manga_id`; `Manga` has no `is_delete`; `is_delete` exists on five of twenty tables),
+     so the pattern is the finding as much as the bug. **Use named PDO parameters, and `pragma
+     table_info` to assert the columns a query binds before running it.** SQLite's message for a
+     missing *column* is `no such table: <the column>`, which is actively misleading, so the guard
+     names what is missing in words instead.
+
+177. **A test whose only example already satisfies the invariant cannot catch its removal.** The
+     URL-normalisation check asserted that a series came back as `/comics/hiding-a-logistics-...`,
+     and the one fixture row that survived the `in_library` filter was stored without a trailing
+     slash, so the raw value and the normalised value were identical. Deleting `normaliseUrl()`
+     outright left all eighteen tests green. It was caught by mutating the source and re-running,
+     the same discipline as validating an audit against a synthetic instance, and the fix was a
+     fixture whose rows disagree with each other. **This is trap 173 again, in a different coat: a
+     check that cannot fail reads exactly like a check that passes.** The specific version here is
+     that a fixture convenient to write is usually a fixture that agrees with the code.
+
+178. **`ZipArchive::close()` throws on an archive that never opened, and a `finally` runs on an early
+     `return`.** A reader's `recognises()` opened the archive inside a `try` and closed it in the
+     `finally`, so every file that was not a zip at all died with `ValueError: Invalid or
+     uninitialized Zip object` instead of returning false. The caller's contract is that
+     `recognises()` answers yes or no for anything, because it tries each reader in turn. **Test the
+     open before the close is reached rather than putting the close in a `finally`.**
+
+179. **A count of "read" chapters is table-wide or library-wide, and the difference is 24,000 rows.**
+     Tachimanga's `Chapter` table holds 404,818 rows of which **64,024** are read, but only
+     **54,870** belong to the 1,277 series that are `in_library = 1`, and of those **40,160** are
+     read. Every one of those numbers was correct and every one of them was the wrong number for
+     an import, which sees only the library subset. **When a count is quoted from a table rather
+     than from the filtered set the import actually reads, it is a fact about the file and not
+     about the work.** `Manga.in_library` is the shelf flag; `CategoryManga` is 146 rows of
+     category membership and is not the library.

@@ -77,13 +77,30 @@ reserved vocabulary, so there is no shelf name worth matching against. See open 
 | `Manga` | 132,185 | 1,277 with `in_library = 1`; `title`, `url`, `real_url`, `source`, `in_library_at` |
 | `Chapter` | 404,818 | `read`, `bookmark`, `last_page_read`, `last_read_at`, `source_order`, `chapter_number`, `manga` |
 | `History` | 4,657 | one row per manga (`UNIQUE(manga_id)`): `last_chapter_id`, `last_read_at` |
-| `Category` / `CategoryManga` | 2 / 146 | named shelves and membership |
+| `Category` / `CategoryManga` | 2 / 146 | named categories and membership |
 | `TrackRecord` | 0 | AniList tracking, empty here but non-empty for most readers |
 | `Extension` | 1,438 | the installed extensions, as JARs in the archive |
 
-Read state measured: 64,024 chapters read, 1 bookmarked, 50 downloaded. **Downloaded chapters
-are not in the backup** (Tachimanga's own docs say so), so 50 downloaded chapters will import as
-read-or-unread with no local copy.
+**Table-wide counts are not import counts.** Every figure below is over the whole table, and an
+import sees only the `in_library = 1` subset. The difference is large enough to change what a
+reader would conclude:
+
+| | whole table | library only |
+| --- | --- | --- |
+| chapters | 404,818 | **54,870** |
+| chapters read | 64,024 | **40,160** |
+| chapters bookmarked | 1 | 1 |
+| chapters downloaded | 50 | **45** |
+| series with a resume point | 4,657 rows | **1,069** |
+
+The largest single series holds 633 chapters, and a chapter's `source_order` is populated and
+unique within its series on **every one** of the 54,870 rows. So for this format `source_order` is
+a complete pairing key with no fallback needed, though the reader keeps the fallbacks because a
+second backup might differ.
+
+Read state on the library subset: 40,160 chapters read, 1 bookmarked, 45 downloaded. **Downloaded
+chapters are not in the backup** (Tachimanga's own docs say so), so 45 downloaded chapters will
+import as read-or-unread with no local copy.
 
 ### Identity: the single most important finding
 
@@ -319,11 +336,49 @@ precisely so that phase 6 is a new class rather than a refactor.
 answered in this document: the chapter-id remap, the timestamp units, the 1,277-vs-132,185
 distinction, and the 113MB-under-128M read.
 
-**Phase 1, read the archive.** Unzip streamed to a temp file, open `tachimanga.db` read-only,
-extract `Manga.in_library = 1` with `source`, `url`, `title`, and the chapter rows. Assert the
-tables exist before reading them. **No writes to this app.** Output: a JSON summary of what was
-found, which is testable on its own. The reader sits behind an interface here, not later, so that
-Mihon is additive.
+**Phase 1, read the archive. Shipped.** Unzip streamed to a temp file, open `tachimanga.db`
+read-only, extract `Manga.in_library = 1` with `source`, `url`, `title`, and the chapter rows.
+Assert the tables exist before reading them. **No writes to this app.** Output: a JSON summary of
+what was found, which is testable on its own. The reader sits behind an interface here, not later,
+so that Mihon is additive.
+
+| | |
+| --- | --- |
+| `app/Import/BackupReader.php` | the interface, which is the Mihon commitment |
+| `app/Import/ImportedBackup.php` | what was found, with the counts that prove it |
+| `app/Import/ImportedSeries.php` | identity, and the one place a URL is normalised |
+| `app/Import/ImportedChapter.php` | one chapter, with the local id labelled as local |
+| `app/Import/ImportRefused.php` | every refusal carries a sentence a reader can act on |
+| `app/Import/Tachimanga/TachimangaSchema.php` | the measured facts as data, not as code |
+| `app/Import/Tachimanga/TachimangaReader.php` | the plumbing |
+| `app/Console/Commands/InspectBackup.php` | `php artisan import:inspect <path>` |
+
+What running it against the real 39.36MB file settled, rather than assuming:
+
+| | |
+| --- | --- |
+| read time | **0.7s** |
+| peak memory | **30MB against the 128M limit**, so eager reading is safe |
+| library subset | 1,277 series, 54,870 chapters, 40,160 read, 45 downloaded, 1,069 resume points |
+| every count cross-checked | against a raw `sqlite3` read of the same file: all match |
+| urls on the shelf | **all 1,277 have no trailing slash**, against Suwayomi which stores one |
+| dates before 2000 | **0**, and the earliest shelf date is 2025-09-19 |
+| temp files left behind | **0**, on both the success and the refusal path |
+
+Two findings changed the design while writing it:
+
+1. **`source_order` is a complete pairing key here.** Populated and unique on all 54,870
+   library chapters, which the plan had assumed might need a fallback.
+2. **Reusing `Timestamps::fromEpochAuto()` was the right call and the plan was wrong to write
+   its own.** That class already detects the unit at a 1e11 cutoff, documents why, and classified
+   all six measured columns correctly. The plan proposed a per-column unit map; a second unit
+   detector would have been a duplicate with the same reasoning in two places. The only addition
+   is the pre-2000 refusal, and it lives in the reader because it is an import-specific sanity
+   check rather than a fact about Suwayomi's wire format, which is what `Timestamps` documents.
+
+Three of the tests were verified by mutating the reader and confirming they turn red: dropping the
+`in_library` filter, reading seconds as milliseconds, and removing `normaliseUrl()`. The third
+was green at first, which was a real gap and is trap 177.
 
 **Phase 2, resolve.** Tier 1 for everything, batched per source. Tier 2 only for what tier 1
 missed, through `fetchSourceManga`, in slices. Output: `(tachimanga manga id -> suwayomi manga
