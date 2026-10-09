@@ -67,7 +67,8 @@ The other 131,908 are the catalogue the app had cached from browsing. A naive
 `select * from Manga` import would pull a reader's entire browsing history into their shelf.
 
 The library is identified by `Manga.in_library = 1`, not by `CategoryManga`, which has only 146
-rows and is the two named shelves ("Youtube", "Snowflakes").
+rows and is the two named categories, which are free-text labels the reader typed rather than any
+reserved vocabulary, so there is no shelf name worth matching against. See open item 2.
 
 ### The tables that matter
 
@@ -240,7 +241,7 @@ The mapping, with the honest gaps:
 | `History.last_chapter_id` | `last_read_chapter_id` | **local id.** Must be remapped through the chapter list. |
 | `Chapter.read = 1` | `chapter_states.is_read` | needs chapter ids from Suwayomi, not the backup's |
 | `Chapter.bookmark = 1` | `chapter_states.bookmarked` | 1 chapter here; a real reader may have more |
-| `Category.name` | a shelf | 2 shelves |
+| `Category.name` | a shelf | 2, both free-text labels the reader typed, so reported rather than auto-matched |
 | `CategoryManga` | shelf membership | 146 rows |
 | `TrackRecord` | AniList tracking | **0 rows here, non-empty for most readers** |
 | `Manga.rating`, `.tags` | `rating`, `tags` | **absent from the backup schema.** Tachimanga has no per-series rating or tags. |
@@ -750,11 +751,23 @@ blocks phase 1.
    honest options are a delete-on-first-slice or a delete-on-run-completion, plus a ceiling check
    on free disk before starting rather than failing partway through.
 
-2. **Shelf name matching.** Tachimanga's categories are `"Youtube "` (with a trailing space) and
-   `"Snowflakes"`. Papyrus shelves are the reader's own and may not have matching names. Whether an
-   unmatched shelf creates one, is reported and skipped, or needs a per-shelf mapping screen is
-   still open. My inclination is to report and skip, because silently creating shelves from
-   another app's naming is how a library ends up with four near-duplicate groups.
+2. **Shelf name matching, and the correction that changed the answer.** This backup's two
+   categories are `"Youtube "` (with a trailing space) and `"Snowflakes"`. The reader these came
+   from confirms both are categories **they typed themselves**: Tachimanga lets a reader create
+   arbitrary categories, and these are the names, not any reserved vocabulary.
+
+   That is stronger than the concern I first recorded. It is not that the names are awkward to
+   match, it is that **there is nothing to match them against.** They are free-text labels from one
+   person's library, so:
+   - a Papyrus shelf called `Snowflakes` that this reader made for an unrelated reason would
+     false-positive and silently absorb 146 series
+   - a shelf this reader did mean to match but spelled differently would be missed
+   - nothing in the file distinguishes a user label from a system one, so no heuristic can tell
+     them apart
+
+   So report and skip, listing every category and its member count in the run report, and let the
+   reader decide per shelf. Creating shelves from another app's free-text labels is how a library
+   ends up with four near-duplicate groups.
 
 3. **Mihon support is a different parser.** `.tachibk` is protobuf inside gzip. Everything in
    phases 1 to 4 is reusable and the reader interface from phase 1 is what makes it additive rather
