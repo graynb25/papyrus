@@ -3442,3 +3442,23 @@ were eliminated.
      than from the filtered set the import actually reads, it is a fact about the file and not
      about the work.** `Manga.in_library` is the shelf flag; `CategoryManga` is 146 rows of
      category membership and is not the library.
+
+180. **Sharing an id space is not sharing a set of ids, and the difference is three quarters of a
+     library.** Tachimanga and Suwayomi do use the same source ids, which is why the url join works
+     at all: `2848420679472350044` is Thunder Scans in both. Measured on a real 1,277 series
+     library: the series sit on **56** sources, this server has extensions for **13** of them, and
+     the other 43 hold 117 series on the largest one alone. **An import is bounded by which
+     extensions are installed, not by how good the join is**, and a report that says "8 of 56
+     resolved" against a report that says "8 of the 13 that could be asked" are the same run and
+     completely different news. Two failures, two sentences: "install that extension" is something
+     a reader can act on, "could not be reached" teaches them their data is gone, and it is not.
+
+181. **`isInstalled` is on the extension, not the source, and asking for it on the source reads as
+     an empty catalogue.** `SourceType` has no `isInstalled` field, so
+     `{ sources { nodes { id isInstalled } } }` is a validation error. A probe that swallowed that
+     reported **0 installed sources** and concluded that every source was missing, which is a
+     plausible-looking wrong answer rather than a crash. **A query that returns nothing is the
+     result most likely to be a malformed query**, and the two are told apart by printing the
+     response rather than by reading it. Same trap one level up: two probes disagreed about whether
+     the url join worked, and the second had mislabelled its own input, so the number that settled
+     it was the one where the input was printed.

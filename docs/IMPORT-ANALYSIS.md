@@ -194,30 +194,22 @@ Verified live: authenticated, valid, 66ms, zero rows for an absent series.
 This Suwayomi holds **7 manga on Thunder Scans**. The backup's library is 1,277 series across
 56 sources. So most of an import is a series Suwayomi has never heard of.
 
-**Tier 1, already in the catalogue:** `mangas(filter:)` on `(sourceId, url)`. 26 to 66ms. Free.
+**Tier 1, already in the catalogue:** `mangas(filter:)` on `(sourceId, url)`. 20 to 91ms. Free.
 
 **Tier 2, absent:** `fetchSourceManga`, which is a **mutation**, input `FetchSourceMangaInput`
 with `source: LongString`, `query`, `page: Int!` (non-null, so omitting it is a validation error,
 not a default) and `type: SEARCH|POPULAR|LATEST`. It returns a payload wrapper
 `{ mangas { ... } hasNextPage }`, and it **persists what it returns**.
 
-Measured, five real titles against one known source:
+Measured over seven samples, because the first reading of 1732ms was an outlier and quoting it
+would have been wrong:
 
 ```
-The Berserker's Second Playthrough          1 hits in    535ms
-Record of Lodoss War: Queen of the Spirits  1 hits in    524ms
-I Became the Berserker of the World...      1 hits in    505ms
-The Illegitimate Son Became a Monster...    1 hits in    505ms
-Doctor Go to Joseon                         1 hits in    511ms
-
-median 511ms, mean 516ms for ONE series, ONE source
-1,277 series serially:  11.0 minutes
+median 520ms, mean 522ms, min 506ms, max 555ms
+1,277 series serially at the median:  11.1 minutes
 ```
 
-**11 minutes, not hours.** The migration wizard's measured 21.9s per series is 82 sources per
-series; an import knows the source, so it is one search, not eighty-two.
-
-And tier 2 is self-healing: after the mutation, re-querying `mangas` by url returned 1 match in
+**Tier 2 is self-healing:** after the mutation, re-querying `mangas` by url returned 1 match in
 27ms. **A second import of the same backup is almost entirely tier 1.**
 
 ### What already exists to reuse
@@ -300,7 +292,7 @@ import runs rather than after.
 | M1 | Chapter id remapping needs a per-series fetch | `Chapter.id` is local, so read state can only be applied after resolving each chapter from Suwayomi's list. |
 | M2 | Rating and tags do not exist in the source | Must be stated, not left as a silent absence. |
 | M3 | Zip-slip guard on archive entry names | Reading entry names from an untrusted archive and writing them to disk is the standard zip-slip pattern. |
-| M4 | Declining sources | Tachimanga can hold sources this Suwayomi has not installed. 413 source ids in the backup, 84 here. |
+| M4 | Declining sources | **Raised to H.** 43 of 56 sources are not installed here. Compare the backup's sources against installed ones and offer to install the missing ones; without that, most of the library cannot be imported. |
 | M5 | `TrackRecord` import | AniList remote ids may point at a different list entry than Suwayomi's. |
 | M6 | First-run toast | The user's explicit ask, and **blocked by the importer existing.** |
 
@@ -313,7 +305,7 @@ import runs rather than after.
 | L3 | Mihon `.tachibk` support (protobuf, a different parser entirely) |
 | L4 | Aidoku `.aib` and Paperback `.pas4` |
 | L5 | `pref-all.json` / `prefs/` parsing, if ever wanted |
-| L6 | Extension comparison, offering to install a source the backup had |
+| L6 | ~~Extension comparison, offering to install a source the backup had~~ | **moved to H**, see M4. The backup names 413 sources and this server has 84, and only 13 of the library's 56 are shared. |
 
 ### Decisions taken
 
@@ -380,9 +372,64 @@ Three of the tests were verified by mutating the reader and confirming they turn
 `in_library` filter, reading seconds as milliseconds, and removing `normaliseUrl()`. The third
 was green at first, which was a real gap and is trap 177.
 
-**Phase 2, resolve.** Tier 1 for everything, batched per source. Tier 2 only for what tier 1
-missed, through `fetchSourceManga`, in slices. Output: `(tachimanga manga id -> suwayomi manga
-id|unresolved)`, persisted so phase 4 does not redo it.
+**Phase 2, resolve. Shipped.** Tier 1 for everything, tier 2 for what tier 1 missed, in slices.
+Output: `(tachimanga manga id -> suwayomi manga id|unresolved)`, persisted so phase 4 does not redo it.
+
+| | |
+| --- | --- |
+| `app/Suwayomi/SeriesLocator.php` | the one door for finding a series, separate from the gateway that reads one |
+| `app/Import/SeriesResolver.php` | tier 1, then tier 2, with the two failures kept apart |
+| `app/Import/Resolution.php` | resolved or not, and when not, why |
+| `tests/Feature/SeriesResolverTest.php` | 16 tests, 75 assertions |
+
+Three findings changed the design while writing it, all measured against the live server:
+
+**1. The url join is four forms, not two.** It was written as two (trailing slash or not) and
+that is wrong. Measured across the 13 sources this reader's library shares:
+
+| source | Suwayomi stores | the backup stores |
+| --- | --- | --- |
+| Thunder Scans | `/comics/x/` | `/comics/x` |
+| Asura Scans | `/series/x/` | `/series/x` |
+| Atsumaru | `pCHXM` | `/pCHXM` |
+| MangaTaro | `{"id":"689466"}` | `/{"id":"689466","slug":...}` |
+
+Some of it is a trailing slash, some a leading one, and all of it is the join. So the query sends
+all four combinations as a `likeAny` list: one round trip, **no wildcard**, so a slug that is a
+prefix of another series' cannot match the wrong one. A wildcard would have worked too and was
+rejected for that reason.
+
+**2. Most of the library cannot be reached at all, and that is the binding constraint.**
+
+| | |
+| --- | --- |
+| the library's sources | **56** |
+| installed on this server | **13** |
+| not installed here | **43**, holding 117 series on the largest one |
+
+An import is bounded by *which extensions are installed*, not by how good the join is. So the
+extension comparison is not a convenience: without it, three quarters of the sources cannot be
+imported at all. That moves it from **L6 to H**, and it moves into phase 2, before any writing.
+
+**3. Two failures that must not share a sentence.**
+
+| | resolved | what a reader can do |
+| --- | --- | --- |
+| source has no extension here | 8 of 56 | install the extension |
+| source installed, url has changed | 8 of 13 | nothing automatic; listed |
+
+Measured end to end on the real backup: **8 of 56 resolved overall, and 8 of the 13 on sources
+that exist here**, all through tier 1 at a median 35ms. Reporting both numbers is the point.
+Collapsing them is how "8 of 56" gets reported as a clean run.
+
+The four that are installed but still unresolved are sites that changed their url scheme
+outright: one now serves a numeric id where the backup has a slug, one spells the slug
+differently, one appends a `#102` fragment, and one replaced `/rg9jv` with a full slug. For those
+the url is no longer the identity and a **title match within the same source** is the only way,
+which is a different operation from {@see \App\Migration\CandidateFinder} and phase 3 of this work.
+
+Nine mutations were checked against the suite and all nine turn it red, including deleting the
+leading-slash forms and removing the missing-source check.
 
 **Phase 3, write.** `ReadingState` only. Per series: `setInLibrary`, then `markManyRead` for the
 resolved chapter ids, then `setPointer` from the remapped `History.last_chapter_id`. Merge
