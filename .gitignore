@@ -75,3 +75,24 @@ yarn-error.log
 !/.env.example
 /.phpunit.cache/
 /Thumbs.db
+
+# Backups other reader apps export, and anything unpacked out of one.
+#
+# Two reasons, and the second is the one that bites. These are a reader's own library: what
+# they follow, how far through they are, and what they have downloaded. Not something to
+# commit to a public repository even by accident.
+#
+# And they are large. A Tachimanga .tmb measured 39.4MB on this machine, and it holds a 113MB
+# SQLite file inside it, so one of these in the repository root is a permanent multi-megabyte
+# blob that `git add -A` will pick up silently, because a file being untracked is not the same
+# thing as a file being ignored.
+#
+# The extensions are the export formats the import work targets. .tmb is Tachimanga,
+# .tachibk is Mihon and the Tachiyomi forks, .proto.gz is the same content uncompressed,
+# .aib is Aidoku, .pas4 is Paperback, .backup is Mangayomi.
+*.tmb
+*.tachibk
+*.proto.gz
+*.aib
+*.pas4
+*.backup
