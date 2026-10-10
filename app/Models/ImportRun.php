@@ -35,6 +35,8 @@ use Illuminate\Support\Collection;
  * @property string|null $refusal_reason
  * @property int|null $series_in_file
  * @property int|null $library_series
+ * @property int $series_processed
+ * @property string|null $progress_note
  * @property int|null $chapters
  * @property int $resolved
  * @property int $from_catalogue
@@ -60,6 +62,8 @@ use Illuminate\Support\Collection;
     'refusal_reason',
     'series_in_file',
     'library_series',
+    'series_processed',
+    'progress_note',
     'chapters',
     'resolved',
     'from_catalogue',
@@ -90,6 +94,7 @@ class ImportRun extends OwnedModel
             'schema_version' => 'integer',
             'series_in_file' => 'integer',
             'library_series' => 'integer',
+            'series_processed' => 'integer',
             'chapters' => 'integer',
             'resolved' => 'integer',
             'from_catalogue' => 'integer',

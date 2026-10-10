@@ -7,6 +7,20 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', 'settings/profile');
 
     Route::livewire('settings/profile', 'pages::settings.profile')->name('profile.edit');
+
+    /*
+     * Importing another reader app's backup.
+     *
+     * Under `auth` and not `verified`, unlike everything below, and the difference is
+     * deliberate. Every other page here changes an account: a password, a theme, a
+     * connection. This one reads a file and writes a library, and a reader who has just signed
+     * up and cannot yet receive a mail is exactly the reader who is migrating off another app.
+     *
+     * There is nothing here to escalate for. The importer is handed the signed in user, never
+     * one named in the request, so an unverified account can only ever write to its own
+     * library. Placed in this group because it is an import, not an account change.
+     */
+    Route::livewire('settings/import', 'pages::settings.import')->name('import.edit');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

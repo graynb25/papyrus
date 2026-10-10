@@ -44,6 +44,15 @@ final class BackupImporter
     /** @var callable(string): void|null Progress line, so a command can print without this class knowing about consoles. */
     private $progress = null;
 
+    /**
+     * The run the current progress line belongs to, so `say()` can persist it.
+     *
+     * Rather than threading the run through every call that reports something. Three methods
+     * report, at three different depths, and the one that runs in a loop already has the run in
+     * hand but the two that precede it do not pass it to a shared helper.
+     */
+    private ?ImportRun $activeRun = null;
+
     public function __construct(
         private readonly BackupReaders $readers,
         private readonly ExtensionInstaller $installer,
@@ -65,6 +74,18 @@ final class BackupImporter
             'started_at' => now(),
         ]);
 
+        $this->activeRun = $run;
+
+        /*
+         * A run that is left half done is one nobody can tell apart from one that never started.
+         *
+         * The importer is written to be re-runnable rather than resumable, because the ledger
+         * makes a second run cheap. That is a recovery for a reader who knows to press the
+         * button again, and this is the half of it that makes the button safe to press again:
+         * a crash inside `import()` is otherwise invisible, because the row is only written at
+         * the end and a failure between here and there leaves `state` reading `running` with
+         * nothing behind it.
+         */
         try {
             $backup = $this->readers->for($path)->read($path);
         } catch (ImportRefused $e) {
@@ -299,7 +320,7 @@ final class BackupImporter
                 $this->say(sprintf(
                     '  %d of %d series, %d written, %d unchanged, %d not found',
                     $done, $total, $counts['applied'], $counts['unchanged'], $counts['unresolved'],
-                ));
+                ), $done);
             }
         }
 
@@ -456,8 +477,26 @@ final class BackupImporter
         $this->progress = $listener;
     }
 
-    private function say(string $line): void
+    private function say(string $line, int $done = 0): void
     {
+        if ($this->activeRun !== null) {
+            /*
+             * Every progress line is written down, not just the ones in the series loop.
+             *
+             * A page polling this row shows the last line an importer said, which is how a
+             * reader learns that eleven minutes of silence is spent installing extensions
+             * rather than being told the page is broken.
+             *
+             * `series_processed` only moves when `$done` is non-zero, so the extension phase
+             * does not report series it has not looked at. It stays 0, and `progress_note`
+             * is what carries the run through the part before the loop starts.
+             */
+            $this->activeRun->update([
+                'progress_note' => $line,
+                ...($done > 0 ? ['series_processed' => $done] : []),
+            ]);
+        }
+
         if ($this->progress !== null) {
             ($this->progress)($line);
         }
