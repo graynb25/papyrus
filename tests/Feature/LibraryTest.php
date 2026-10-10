@@ -1109,6 +1109,75 @@ class LibraryTest extends TestCase
         );
     }
 
+    public function test_the_pagination_arrows_reach_the_next_page(): void
+    {
+        foreach (range(1, 70) as $id) {
+            $this->addToLibrary($id);
+        }
+
+        $page = $this->page();
+
+        $this->assertCount(60, $page->instance()->visibleEntries);
+
+        /*
+         * Through `setPage`, because that is the only path the arrows take.
+         *
+         * `test_the_page_pages_at_sixty` sets the `page` property instead, which proves the
+         * slicing works and passes whether or not `setPage` exists at all. The view called a
+         * method no test ever called, so the one button behaviour that was broken had no test
+         * on it by construction.
+         */
+        $page->call('setPage', 2);
+
+        $this->assertSame(2, $page->instance()->page);
+        $this->assertCount(10, $page->instance()->visibleEntries);
+    }
+
+    public function test_set_page_cannot_go_past_the_end(): void
+    {
+        $this->addToLibrary(76);
+
+        $page = $this->page();
+
+        $page->call('setPage', 9);
+
+        $this->assertSame(
+            1,
+            $page->instance()->page,
+            'page 9 of a one page library renders an empty grid, which reads as a broken library',
+        );
+    }
+
+    public function test_set_page_cannot_go_below_one(): void
+    {
+        foreach (range(1, 70) as $id) {
+            $this->addToLibrary($id);
+        }
+
+        $page = $this->page();
+
+        $page->call('setPage', 0);
+
+        $this->assertSame(1, $page->instance()->page);
+    }
+
+    public function test_filtering_after_paging_returns_to_the_first_page(): void
+    {
+        foreach (range(1, 70) as $id) {
+            $this->addToLibrary($id);
+        }
+
+        $page = $this->page()->call('setPage', 2);
+
+        $this->assertSame(2, $page->instance()->page);
+
+        // A filter that narrows 70 series down to a handful would otherwise leave the reader on
+        // a page that no longer exists.
+        $page->set('search', 'Series 7');
+
+        $this->assertSame(1, $page->instance()->page);
+    }
+
     /**
      * The library page's rendered HTML.
      *

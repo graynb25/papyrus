@@ -535,6 +535,31 @@ new #[Title('Library')] class extends Component
     }
 
     /**
+     * Move to a page.
+     *
+     * `setPage` is the name the pagination buttons have always called, and the trait that
+     * supplies it, `WithPagination`, has never been declared in this repository. The markup
+     * arrived with the first commit and has thrown since: clicking either arrow raised
+     * `MethodNotFoundException: Public method [setPage] not found on component`.
+     *
+     * Declared here rather than by importing the trait because this component paginates by
+     * hand. `$page` is a typed property that `normalise()` clamps and `updated()` resets when a
+     * filter changes. `WithPagination` keeps its own page state in `$paginators` and reads
+     * `Paginator::resolveCurrentPage()`, so the trait would give the component two sources of
+     * truth for one number and a reset that never fires.
+     *
+     * Clamped at both ends. The upper clamp is the one that earns its place: when the library
+     * shrinks under the reader, page 9 of a result set that now has two pages renders an empty
+     * grid, which reads as a broken library rather than as being past the end.
+     */
+    public function setPage(int $page): void
+    {
+        $this->page = max(1, min($page, (int) $this->lastPage));
+
+        $this->normalise();
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     #[Computed]
