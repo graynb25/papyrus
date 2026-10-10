@@ -4,12 +4,12 @@ namespace App\Jobs;
 
 use App\Console\Commands\ImportBackup;
 use App\Import\BackupImporter;
+use App\Import\BackupReaders;
 use App\Import\ImportRefused;
 use App\Models\ImportRun;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -102,13 +102,22 @@ class RunBackupImport implements ShouldQueue
             return;
         }
 
-        if ($this->inspectOnly) {
-            $this->inspect($user);
-
-            return;
-        }
-
+        /*
+         * The inspect and the import share one guard, which they did not used to.
+         *
+         * `is_file()` catches a path that has gone, but not one that exists and is not a
+         * backup this server can read: `BackupReaders::for()` raises `ImportRefused` for that,
+         * and the inspect call sat outside the try, so the refusal escaped as an uncaught
+         * exception and the reader saw nothing at all. Caught by moving the branch inside,
+         * rather than by a second catch that would have had to remember to be kept in step.
+         */
         try {
+            if ($this->inspectOnly) {
+                $this->inspect($user);
+
+                return;
+            }
+
             $importer->import(
                 user: $user,
                 path: $this->path,
@@ -117,8 +126,13 @@ class RunBackupImport implements ShouldQueue
                 force: $this->force,
             );
         } catch (ImportRefused $e) {
-            // The importer has already recorded the refusal on its own run row. This job never
-            // created one, so there is nothing to update and nothing to add.
+            /*
+             * The importer records its own refusal on its own run row, so there is nothing to
+             * add there. An inspect has no run yet, so it records its own.
+             */
+            if ($this->inspectOnly) {
+                $this->refuse($e->getMessage());
+            }
         } catch (\Throwable $e) {
             /*
              * Mark whatever run the importer had reached, then let the exception continue.
@@ -147,17 +161,31 @@ class RunBackupImport implements ShouldQueue
      */
     private function inspect(User $user): void
     {
-        Artisan::call('import:inspect', ['path' => $this->path]);
+        $backup = app(BackupReaders::class)->for($this->path)->read($this->path);
 
-        $output = trim(Artisan::output());
+        $series = $backup->series->count();
+        $chapters = $backup->series->sum(fn ($s): int => $s->chapters->count());
+        $read = $backup->readChapterCount();
 
         ImportRun::createFor($user, [
-            'format' => 'unknown',
+            'format' => $backup->format,
+            'schema_version' => $backup->schemaVersion,
             'state' => ImportRun::COMPLETE,
             'file_name' => basename($this->path),
+            'series_in_file' => $backup->totalInFile,
+            'library_series' => $series,
+            'chapters' => $chapters,
             'started_at' => now(),
             'finished_at' => now(),
-            'progress_note' => $output,
+            'progress_note' => sprintf(
+                'A %s backup, format version %s. It holds %s series in your library across %s chapters, '
+                .'and %s of those chapters are marked read.',
+                $backup->format,
+                number_format($backup->schemaVersion),
+                number_format($series),
+                number_format($chapters),
+                number_format($read),
+            ),
         ]);
     }
 

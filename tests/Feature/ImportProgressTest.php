@@ -117,6 +117,60 @@ class ImportProgressTest extends TestCase
         $this->assertNull($run->library_series, 'the file was never read, so there is no total');
     }
 
+    public function test_an_inspect_writes_a_sentence_rather_than_a_terminals_output(): void
+    {
+        /*
+         * Measured: the page showed the raw output of `import:inspect`, which is a wall of
+         * `+---+` box drawing, `INFO` prefixes and a paragraph explaining WARN levels. Those are
+         * the terminal's layout, not an answer, and stripping the characters afterwards would be
+         * guessing which were content.
+         */
+        $job = new RunBackupImport($this->user->id, $this->backup(), inspectOnly: true);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $note = (string) $run->progress_note;
+
+        $this->assertStringContainsString('series in your library', $note);
+        $this->assertStringContainsString('marked read', $note);
+
+        foreach (['+---', '|', 'INFO', 'WARN', 'Count'] as $artefact) {
+            $this->assertStringNotContainsString(
+                $artefact,
+                $note,
+                "terminal output leaked into a page: {$artefact}",
+            );
+        }
+
+        $this->assertSame('tachimanga', $run->format, 'and the run now says what it read');
+    }
+
+    public function test_an_inspect_of_something_unreadable_is_a_refusal_not_a_crash(): void
+    {
+        /*
+         * `is_file()` catches a path that has gone, not one that exists and is not a backup.
+         * `BackupReaders::for()` raises for that, and the inspect call sat outside the try, so
+         * the refusal escaped uncaught and the reader saw nothing at all. Found by a test that
+         * was about the queue and happened to dispatch an inspect of a temp file.
+         */
+        $path = tempnam(sys_get_temp_dir(), 'papyrus-not-a-backup-');
+        file_put_contents((string) $path, 'this is not a backup');
+
+        $job = new RunBackupImport($this->user->id, (string) $path, inspectOnly: true);
+
+        try {
+            $job->handle($this->app->make(BackupImporter::class));
+        } finally {
+            @unlink((string) $path);
+        }
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+        $this->assertStringContainsString('No reader recognises', (string) $run->refusal_reason);
+    }
+
     public function test_the_importer_still_notifies_the_caller(): void
     {
         $lines = [];

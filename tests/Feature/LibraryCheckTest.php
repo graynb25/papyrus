@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
@@ -222,6 +223,18 @@ class LibraryCheckTest extends TestCase
             ],
             $count > 0 ? range(1, $count) : [],
         );
+    }
+
+    /**
+     * The library page, held so a test can read state off it between calls.
+     *
+     * Six places in this file call `Livewire::test('pages::library')` inline, and that is left
+     * alone. The new tests need a handle on the component across calls, because the property
+     * they move is the moment the run started and it has to survive a round trip.
+     */
+    private function page(): Testable
+    {
+        return Livewire::test('pages::library');
     }
 
     private function addToLibrary(int $mangaId): SeriesState
@@ -1104,5 +1117,155 @@ class LibraryCheckTest extends TestCase
             $tally['chapters'] > 0 ? 1 : 0,
             'and the well-formed one still produced its chapter count',
         );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A bulk check a reader can watch.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_no_progress_is_shown_before_the_button_is_pressed(): void
+    {
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $this->assertNull(
+            $this->page()->instance()->checkProgress(),
+            'an ordinary visit must not invent progress for a run it never saw start',
+        );
+    }
+
+    public function test_pressing_the_button_shows_a_fraction_and_a_percentage(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $progress = $page->instance()->checkProgress();
+
+        $this->assertNotNull($progress, 'a run was started here, so the page can report on it');
+        $this->assertSame(2, $progress['total'], 'the top of the fraction is fixed at press time');
+        $this->assertSame(0, $progress['done'], 'and nothing has been checked yet');
+        $this->assertTrue($progress['running']);
+
+        $page->assertSee('Checked 0 of 2 series, 0 percent.');
+    }
+
+    public function test_the_fraction_climbs_as_series_are_checked(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $page->set('checkingSince', now()->subMinutes(2)->toIso8601String());
+
+        // One of the two has been checked, which is what makes it stop being due.
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertSame(1, $progress['done'], 'a real count, read from the schedule, not an animation');
+        $this->assertSame(2, $progress['total']);
+        $this->assertSame(50, (int) round($progress['done'] / $progress['total'] * 100));
+    }
+
+    public function test_a_finished_run_says_so_and_reports_what_it_found(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $page = $this->page()->call('checkLibrary');
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertFalse($progress['running'], 'nothing is due any more, which is the job\'s own stop condition');
+
+        $page->call('$refresh')
+            ->assertSee(__('Checked all :count series.', ['count' => '1']))
+            ->assertDontSee('Checked 0 of 1 series');
+    }
+
+    public function test_a_run_that_goes_quiet_is_reported_as_a_dead_queue(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $page = $this->page()->call('checkLibrary');
+
+        /*
+         * The case that matters: the job was dispatched and nothing is serving the queue, so it
+         * never starts and `due` never falls. Without this the bar sits at zero for ever and the
+         * reader has no way to tell that from a slow worker.
+         *
+         * Both halves matter, and the first one was wrong first: a run that has just been pressed
+         * also has nothing checked yet, and treating that as stalled meant every run reported
+         * itself dead before it had done anything.
+         */
+        // Through `set()`, not by assigning to the instance: a round trip rehydrates the
+        // component from its snapshot, so an in-memory assignment is discarded before the
+        // assertion reads it.
+        $page->set('checkingSince', now()->subMinutes(20)->toIso8601String());
+
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertTrue($progress['stalled']);
+
+        $page->call('$refresh')
+            ->assertSee('php artisan queue:work');
+    }
+
+    public function test_a_run_that_has_only_just_started_is_not_called_stalled(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $page = $this->page()->call('checkLibrary');
+
+        // Nothing has been checked, because nothing has had time to be checked.
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertFalse(
+            $progress['stalled'],
+            'a run that has just started has not yet proven it is dead',
+        );
+
+        $page->call('$refresh')
+            ->assertSee('Checked 0 of 1 series, 0 percent.')
+            ->assertDontSee('php artisan queue:work');
+    }
+
+    public function test_a_slow_run_is_not_called_stalled(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $page->set('checkingSince', now()->subMinutes(2)->toIso8601String());
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertFalse(
+            $progress['stalled'],
+            'a slice is 45 seconds and a whole run is fifteen of them, so two minutes is working',
+        );
+
+        $page->call('$refresh')->assertDontSee('php artisan queue:work');
     }
 }

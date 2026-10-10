@@ -8,6 +8,7 @@ use App\Models\LibraryCheck;
 use App\Support\Library;
 use App\Support\ReadingState;
 use Flux\Flux;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -649,6 +650,35 @@ new #[Title('Library')] class extends Component
      * saying the button does nothing for a series checked an hour ago, which it
      * would.
      */
+    /**
+     * How many series were due when the reader pressed the button, or null when they have not.
+     *
+     * The denominator for the progress. Taken at press time rather than read live because a
+     * fraction needs a fixed top: the whole point is that 853 stays 853 while the bottom
+     * number climbs, and a denominator that moves with the numerator draws a bar that is always
+     * full.
+     */
+    public ?int $checkingTotal = null;
+
+    /** When the run started, so "has anything moved" is a question with an answer. */
+    public ?string $checkingSince = null;
+
+    /**
+     * Whether the run looks finished.
+     *
+     * Null means "no run to report". True means `due` has reached zero, which is the job's own
+     * termination condition: `CheckLibrary` re-books itself until nothing is due.
+     */
+    public ?bool $checkingDone = null;
+
+    /**
+     * How long a bulk check may report nothing before the page says the queue is not moving.
+     *
+     * Generous, because a slice is a time budget of 45 seconds and a whole run is fifteen of
+     * them. Five minutes is about seven slices with nothing, which is not a slow worker.
+     */
+    public const CHECK_STALL_SECONDS = 300;
+
     public function checkLibrary(): void
     {
         /*
@@ -676,17 +706,85 @@ new #[Title('Library')] class extends Component
 
         CheckLibrary::dispatch((int) auth()->id(), null, force: true);
 
+        /*
+         * Remember where this run started.
+         *
+         * Two numbers and a time, and all three are needed. The total is the bar's top, the
+         * time is what tells a stalled queue from a slow one, and neither survives a page
+         * reload, which is why the page also treats "nothing was pressed here" as "say
+         * nothing about a run in progress" rather than inventing progress.
+         */
+        $this->checkingTotal = $due;
+        $this->checkingSince = now()->toIso8601String();
+        $this->checkingDone = false;
+        unset($this->checkProgress);
+
         Flux::toast(
             text: trans_choice(
-                ':count series will be checked|:count series will be checked',
+                'Checking :count series. This takes about ten minutes for a large library.|Checking :count series. This takes about ten minutes for a large library.',
                 $due,
-                ['count' => $due],
+                ['count' => number_format($due)],
             ),
             heading: __('Checking'),
             variant: 'info',
         );
 
         $this->dispatch('$refresh');
+    }
+
+    /**
+     * Where the running check has got to.
+     *
+     * Null when no run was started from this page, so an ordinary visit says nothing about a
+     * background run rather than claiming one it cannot see the start of.
+     *
+     * @return array{total: int, done: int, running: bool, stalled: bool, new: int}|null
+     */
+    #[Computed]
+    public function checkProgress(): ?array
+    {
+        if ($this->checkingTotal === null || $this->checkingTotal === 0) {
+            return null;
+        }
+
+        $summary = app(CheckSchedule::class)->summary(auth()->user());
+        $counts = app(\App\Library\CheckLedger::class)->counts(auth()->user());
+
+        $done = max(0, $this->checkingTotal - (int) $summary['due']);
+
+        /*
+         * Finished when nothing is due any more, which is the condition the job itself uses to
+         * stop re-booking. Read here rather than set during a click, so a run that finishes
+         * while the page is shut still reports as finished when it is next opened.
+         */
+        $running = (int) $summary['due'] > 0;
+
+        $lastChecked = $counts['last_checked_at'];
+        $since = $this->checkingSince === null ? null : Carbon::parse($this->checkingSince);
+
+        /*
+         * Three conditions, and the first is the one that was wrong first.
+         *
+         * The run has to be old enough. Without it, "nothing has been checked yet" is true in
+         * the instant after the press, so every run reported itself stalled before it had done
+         * anything: measured, pressing the button showed the queue warning rather than a bar at
+         * zero. A run that has just started has not had time to prove anything either way.
+         *
+         * Then, something must have happened since it started, or nothing at all. A run whose
+         * last check predates the press is not making progress on this run.
+         */
+        $stalled = $running
+            && $since !== null
+            && $since->lt(now()->subSeconds(self::CHECK_STALL_SECONDS))
+            && ($lastChecked === null || $lastChecked->lt($since));
+
+        return [
+            'total' => $this->checkingTotal,
+            'done' => min($done, $this->checkingTotal),
+            'running' => $running,
+            'stalled' => $stalled,
+            'new' => (int) $counts['new'],
+        ];
     }
 
     /**
@@ -899,6 +997,93 @@ new #[Title('Library')] class extends Component
             </flux:button>
         </x-slot:actions>
     </x-page.header>
+
+        {{--
+            A bulk check, while one is running here.
+
+            The reader pressed a button, a toast said "Checking 853 series", and then nothing
+            happened on screen for eleven minutes. No fraction, no count of what had been done,
+            and nothing at all when it finished, so a working run and a dead one looked
+            identical.
+
+            `due` falls as series are checked, because a series stops being due the moment it
+            has been, so the bar's bottom number is a real count rather than an animation.
+        --}}
+        @php($progress = $this->checkProgress)
+
+        @if ($progress !== null)
+            <div
+                class="mt-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-white/10"
+                @if ($progress['running'] && ! $progress['stalled'])
+                    wire:poll.3s="render"
+                @endif
+            >
+                @if ($progress['stalled'])
+                    <div class="flex flex-wrap items-center gap-2 text-amber-600 dark:text-amber-400">
+                        <flux:icon name="exclamation-triangle" class="shrink-0" />
+
+                        <span>
+                            {{ __('The check has not reported anything for several minutes. That usually means nothing is processing this server queue.') }}
+
+                            <code class="font-mono text-xs">php artisan queue:work</code>
+                        </span>
+                    </div>
+                @elseif ($progress['running'])
+                    @php($pct = (int) round($progress['done'] / max(1, $progress['total']) * 100))
+
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-zinc-600 dark:text-zinc-300" aria-live="polite">
+                            {{
+                                __('Checked :done of :total series, :pct percent.', [
+                                    'done' => number_format($progress['done']),
+                                    'total' => number_format($progress['total']),
+                                    'pct' => $pct,
+                                ])
+                            }}
+                        </span>
+
+                        <span class="tabular-nums text-zinc-500">{{ $pct }}%</span>
+                    </div>
+
+                    <div
+                        class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="{{ $progress['total'] }}"
+                        aria-valuenow="{{ $progress['done'] }}"
+                    >
+                        <div
+                            class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
+                            style="width: {{ $pct }}%"
+                        ></div>
+                    </div>
+                @else
+                    <div class="flex flex-wrap items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                        <flux:icon name="check-circle" class="shrink-0" />
+
+                        <span aria-live="polite">
+                            {{
+                                trans_choice(
+                                    'Checked all :count series.|Checked all :count series.',
+                                    $progress['total'],
+                                    ['count' => number_format($progress['total'])],
+                                )
+                            }}
+
+                            @if ($progress['new'] > 0)
+                                {{
+                                    trans_choice(
+                                        'Found :count new chapter.|Found :count new chapters.',
+                                        $progress['new'],
+                                        ['count' => number_format($progress['new'])],
+                                    )
+                                }}
+                            @endif
+                        </span>
+                    </div>
+                @endif
+            </div>
+        @endif
 
         {{-- The count beside the check button is the whole point of the feature:
              6 of 14 series had no chapter list at all, and each of those was
