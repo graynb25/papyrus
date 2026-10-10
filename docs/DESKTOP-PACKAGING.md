@@ -1,7 +1,8 @@
 # Packaging Papyrus for Windows
 
 Status: phase 0 started. Items 0.2 and 0.4 are done and verified on a real Windows machine
-against the real app, and the shipped configs live in `packaging/`. Written after
+against the real app, and the shipped configs live in `packaging/`. Distribution, signing,
+platforms, backup and publishing are in [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after
 investigating this repository, this machine, and the upstream projects it would ship.
 
 The question is whether a reader can install Papyrus on a Windows machine and have a working
@@ -394,12 +395,14 @@ should be linked from the same major version Suwayomi targets.
 
 ## What this phase list does not cover
 
-- **macOS or Linux packaging.** Both are plausible and neither is blocked by anything here.
-  Suwayomi ships AppImage, deb and macOS tarballs. Left out because Windows was the question.
-- **Multi-user Windows accounts.** The current design assumes one reader per machine, since
-  Suwayomi's data directory is per user and its port is fixed.
-- **Automatic backup of `data/`.** Listed as required by bite 4, and worth doing on a schedule
-  regardless.
-- **PHP 8.5 behaviour.** Phase 0.2 verifies it, and if it is wrong the fallback is `php-cgi`
-  plus a conventional web server. That fallback is not free, which is why it is an H.
-- **Publishing.** Where the installer is hosted, and how updates are announced.
+Distribution, signing, platforms, backup and publishing are in
+[`DISTRIBUTION.md`](DISTRIBUTION.md). Three findings from that document change this plan:
+
+- **The backup plan is wrong as first written.** "Back up `data/`" does not contain the
+  reader's library, which is H2 inside a running JVM that holds an exclusive lock on the file.
+  Suwayomi already takes a daily `.tachibk` snapshot with 14 day retention, and this project can
+  now read those with the reader built for the Mihon import. See that document.
+- **Multi-user Windows accounts collide on ports**, because data is per account and both
+  instances want 4567. Phase 1.6 goes from medium to high.
+- **macOS notarisation is not optional** and costs $99 a year, which is a decision rather than a
+  task.
