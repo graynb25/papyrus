@@ -2365,7 +2365,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 216, each number once, ascending.
+tidiness. The list is now 1 to 217, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3938,3 +3938,27 @@ ull tells the checker the generator
     The general shape: **when a test is pinned to a threshold, check which side of it the clock
     is on, and check that direction.** Otherwise the suite's stability depends on how busy the
     machine is.
+217. **Two java.exe processes with the same command line are a launcher shim and its child.**
+    Recorded because this project stated the opposite for most of a session, and the correction
+    matters more than the mistake did.
+
+    On this machine, two java.exe processes run `-jar Suwayomi-Server-v2.4.2366.jar`. Read
+    naively that is a duplicate server, and it was described as one, in a note about single
+    instance handling. It is not. One is
+    `C:\Program Files\Common Files\Oracle\Java\javapath\java.exe` using **6MB**, and the other
+    is the real JVM at `C:\Program Files\Java\jdk-26.0.2\bin\java.exe` using **722MB** and
+    owning port 4567. The first is Oracle's launcher shim, which stays resident as the parent of
+    the process it spawns.
+
+    The lesson is not "check memory instead". It is that **process identity is not a fact you can
+    read off the process table.** Name, command line and even path can all be shared by something
+    that is not the thing you are detecting.
+
+    So three rules for anything that supervises a process: check the **port** or a lockfile you
+    own, never a process name; launch by **absolute path**, never by `PATH`, because whatever is
+    on `PATH` may be a shim or may not exist at all; and treat a stale lock as normal after a
+    crash, storing pid plus start time so a recycled pid cannot be mistaken for a live process.
+
+    Worth noting the failure would have been silent in both directions. A launcher that saw two
+    processes would refuse to start a second Suwayomi, and one that saw the 6MB shim would think
+    the server was dead while it was serving.
