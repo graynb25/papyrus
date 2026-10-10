@@ -52,6 +52,15 @@ class DownloadTest extends TestCase
     /** When set, every non-login call fails with this status. */
     private ?int $serverStatus = null;
 
+    /**
+     * When set, only the batched series read fails, and the queue still answers.
+     *
+     * `$serverStatus` cannot express this, because it fails everything and the sync returns
+     * from the queue catch before reaching the second call. The second call is the one that
+     * fabricated a failure reason, and it had no test at all for that reason.
+     */
+    private ?int $batchedReadStatus = null;
+
     /** @var array<int, string> every GraphQL document sent */
     private array $sent = [];
 
@@ -68,6 +77,7 @@ class DownloadTest extends TestCase
         $this->queue = [];
         $this->neverFetched([]);
         $this->serverStatus = null;
+        $this->batchedReadStatus = null;
         $this->sent = [];
         $this->enqueueCalls = [];
 
@@ -139,6 +149,10 @@ class DownloadTest extends TestCase
             }
 
             if (str_contains($query, 'mangas(')) {
+                if ($this->batchedReadStatus !== null) {
+                    return Http::response('down', $this->batchedReadStatus);
+                }
+
                 // The bulk call, carrying isDownloaded per chapter.
                 return Http::response(['data' => ['mangas' => ['nodes' => [
                     [
@@ -482,6 +496,54 @@ class DownloadTest extends TestCase
      * A sync that cannot reach the queue must do nothing. Failing the rows would
      * mark healthy downloads as broken because one poll timed out.
      */
+    /**
+     * A queue that answers and a series endpoint that does not.
+     *
+     * This is the case the class got wrong. `downloadedChapters()` returned `[]` on a transport
+     * failure, its caller read that as "not downloaded", and every orphan was written to the
+     * database as FAILED with the reason "It left the download queue without downloading. The
+     * server reports no reason."
+     *
+     * The server reported no reason because it was never asked. The row was durable, the reason
+     * was shown to the reader as the server's, and the next sync saw a FAILED row and never
+     * retried it. One unreachable series was enough to do that to every orphan in the library.
+     *
+     * The queue path twenty lines above already got this right, in as many words: "failing them
+     * on a transport error would be wrong."
+     */
+    public function test_a_sync_that_cannot_read_the_series_leaves_orphans_pending(): void
+    {
+        $this->pendingRow(13);
+        $this->pendingRow(14);
+
+        // The queue answers, and holds neither of them.
+        $this->queue = [];
+
+        // The series endpoint does not.
+        $this->batchedReadStatus = 503;
+
+        $result = $this->ledger()->sync($this->user);
+
+        foreach ([13, 14] as $chapterId) {
+            $row = Download::forUser($this->user->id)->where('suwayomi_chapter_id', $chapterId)->first();
+
+            $this->assertSame(
+                Download::QUEUED,
+                $row->state,
+                "chapter {$chapterId} is still pending, because nobody could ask what became of it",
+            );
+
+            $this->assertNull(
+                $row->error,
+                'and nothing is written claiming the server said something it did not say',
+            );
+        }
+
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(0, $result['finished']);
+        $this->assertSame(2, $result['still_pending'], 'both are resolvable by a later sync');
+    }
+
     public function test_a_sync_that_cannot_reach_the_queue_leaves_rows_pending(): void
     {
         $this->pendingRow(13);

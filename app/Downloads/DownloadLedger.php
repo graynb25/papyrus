@@ -207,6 +207,11 @@ class DownloadLedger
             'updated' => $updated,
             'finished' => $finished,
             'failed' => $failed,
+            /*
+             * Whatever we could not resolve is still pending, and that is the point. We do not
+             * know what became of those rows, and a pending row is one a later sync can still
+             * resolve, which a FAILED row never is again.
+             */
             'still_pending' => $pending->count() - $finished - $failed,
         ];
     }
@@ -215,6 +220,11 @@ class DownloadLedger
      * Chapters that left the queue without us seeing them finish.
      *
      * One bulk call for all of them, across however many series they belong to.
+     *
+     * Returns zeros rather than failures when the server could not be asked, which leaves
+     * every orphan pending and therefore resolvable by a later sync. `sync()` derives the
+     * unresolved count itself, from pending minus finished minus failed, so there is no reason
+     * to hand it back a number it already has.
      *
      * @param  Collection<int, Download>  $orphans
      * @return array{0: int, 1: int} finished and failed counts
@@ -233,6 +243,25 @@ class DownloadLedger
 
         $finished = 0;
         $failed = 0;
+
+        /*
+         * We could not ask, so we do not know, and an orphan stays an orphan.
+         *
+         * The queue path twenty lines up says exactly this in its own comment: "failing them on
+         * a transport error would be wrong". It was right there and wrong here, because this
+         * call returned `[]` for a failure, which is indistinguishable from a server that
+         * answered and said nothing is on disk.
+         *
+         * The cost of getting it wrong was not a wrong count on a page. It was a row written
+         * to the database saying the download failed because "the server reports no reason",
+         * when the server was never asked, and the next sync never retrying it.
+         *
+         * Counted as still pending, because that is the truth: we do not know what became of
+         * them, and a row that is still pending is one a later sync can still resolve.
+         */
+        if ($downloaded === null) {
+            return [0, 0];
+        }
 
         foreach ($orphans as $row) {
             $isDownloaded = $downloaded[$row->suwayomi_chapter_id] ?? false;
@@ -263,10 +292,15 @@ class DownloadLedger
     /**
      * Which chapters of these series are on disk, in one call.
      *
+     * Returns null when the server could not be asked, which is not the same as returning an
+     * empty map. An empty map is an answer: the server was reached and nothing is on disk.
+     * Collapsing the two is what let a transport failure be written to the database as a failed
+     * download with a reason the server never gave.
+     *
      * @param  array<int, int>  $mangaIds
-     * @return array<int, bool> chapter id to downloaded
+     * @return array<int, bool>|null Chapter id to downloaded, or null when we could not ask.
      */
-    private function downloadedChapters(array $mangaIds): array
+    private function downloadedChapters(array $mangaIds): ?array
     {
         if ($mangaIds === []) {
             return [];
@@ -274,8 +308,8 @@ class DownloadLedger
 
         try {
             $rows = $this->series->fetchMany($mangaIds);
-        } catch (SuwayomiException $e) {
-            return [];
+        } catch (SuwayomiException) {
+            return null;
         }
 
         $map = [];
