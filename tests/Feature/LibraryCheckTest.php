@@ -1343,4 +1343,28 @@ class LibraryCheckTest extends TestCase
 
         $this->assertFalse($progress['running'], 'and it reports finished rather than hanging at 0%');
     }
+
+    public function test_the_polling_attribute_is_the_bare_form(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $page = $this->page()->call('checkLibrary');
+
+        /*
+         * The markup, not the effect, and the harness is why.
+         *
+         * Putting `wire:poll.3s="render"` back leaves the suite green: the attribute is a string
+         * in the HTML and whether a browser honours it never reaches PHP. What this prevents is
+         * the wrong form returning, which is worth something because every other polling page in
+         * this app already uses the bare form and this one did not.
+         *
+         * Measured in the browser, which is what a test cannot do: the bar read "Checked 53 of
+         * 516 series, 10 percent" and climbed with the bare form, and sat at zero for a minute
+         * with the named one.
+         */
+        $page->assertSee('wire:poll.3s', escape: false)
+            ->assertDontSee('wire:poll.3s="render"', escape: false);
+    }
 }
