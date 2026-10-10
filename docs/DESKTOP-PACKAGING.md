@@ -306,6 +306,38 @@ the Suwayomi lifecycle outright rather than sharing it with a launcher jar they 
 The one thing left to verify, and it is the gate: a JRE we ship has to be one Suwayomi
 actually runs on. That is what the clean sandbox is for.
 
+### The JRE, staged rather than assumed
+
+Suwayomi's zip bundles a runtime, and reading its `jre/release` out of the zip with a single
+HTTP range request says exactly what it is:
+
+```
+JAVA_VERSION="25.0.4"
+```
+
+So the version is not a guess and not a "recent LTS". It is 25.
+
+**Picked: Eclipse Temurin JRE 25.0.4.1+1, Windows x64, 55.8MB.**
+
+| | |
+| --- | --- |
+| Why Temurin | The distribution Suwayomi's own build is based on, and the one with the clearest redistribution terms |
+| Why 25.0.4.1 and not 25.0.4 | It is the current patch of the version Suwayomi ships |
+| Why not their bundled copy | It is inside an artifact that also carries 85MB of Electron, and pulling a JRE out of someone else's zip makes the licence question theirs rather than ours |
+| Why not `jlink` | Their runtime is already a JRE with no `javac` in it, so there is nothing to strip |
+| Verified | SHA256 matched the published checksum before staging; `javac.exe` absent, confirming a JRE and not a JDK |
+
+Staged at `suwayomi/runtime/jre/`, which is the path the launcher already looks for, and
+launched by absolute path. The clean-room run removes every Java directory from `PATH` before
+starting anything, so a process that found its JVM by name rather than by absolute path would
+fail there and nowhere else.
+
+**A trap reproduced accidentally, which is the best kind.** The first scrub removed `PATH`
+entries containing `jdk` or `jre`, and `where java` still answered
+`C:\Program Files\Common Files\Oracle\Java\javapath\java.exe`, because that directory contains
+neither string. It is the Oracle launcher shim from trap 217, and a filter written from memory
+of what a Java path looks like is exactly the kind that misses it. The scrub now names it.
+
 ## Phase 1: acquiring Suwayomi
 
 This is the direct answer to "can the app ask the user whether to download it and then install
