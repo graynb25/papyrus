@@ -190,3 +190,24 @@ Re-run it after any Suwayomi upgrade; it prints a field-level diff of what chang
 | `non-JSON body` | `SUWAYOMI_URL` points at the server root instead of the GraphQL endpoint |
 | Sources return Cloudflare pages | JCEF has no desktop session. Run it as a normal process, not a service. |
 | Timeouts on browse/search | The server has a hardcoded 30s GraphQL ceiling (#2240); see C2 in the plan |
+| Every title renders but no covers and no chapter counts | The server is not running. See below. |
+
+### "Is it even up?"
+
+Do this before reading any symptom about missing covers, missing chapter counts or empty
+search results. All three look identical from the browser, and all three are what a stopped
+server looks like:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 4567
+```
+
+`TcpTestSucceeded : False` means the server is down and nothing else in this table applies yet.
+Start it again with `java -jar Suwayomi-Server-vX.Y.Z.jar` from wherever the jar lives, and
+leave that window open. Suwayomi is a process you start, not something that stays started: it
+does not survive a reboot, and closing the window stops it.
+
+The library page says so in a banner naming the address that is not answering, and the banner
+clears itself once the server answers again. That was added after this was diagnosed the hard
+way: a stopped server used to render all 867 titles with no covers, no counts and no words at
+all, which is indistinguishable from an empty library.

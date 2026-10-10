@@ -56,6 +56,14 @@ class Library
 {
     public function __construct(private readonly SeriesGateway $gateway) {}
 
+    /**
+     * Why the last source read came back empty, when it did.
+     *
+     * Set in {@see fetchFromSource()} and read by whoever wants to tell a reader that the
+     * server is down, as opposed to handing them a library with no covers and no words.
+     */
+    private ?string $sourceFailure = null;
+
     // Reading ----------------------------------------------------------
 
     /**
@@ -276,10 +284,38 @@ class Library
         }
 
         try {
-            return $this->gateway->fetchMany($ids);
-        } catch (SuwayomiException) {
+            $rows = $this->gateway->fetchMany($ids);
+
+            $this->sourceFailure = null;
+
+            return $rows;
+        } catch (SuwayomiException $e) {
+            /*
+             * Returning nothing is right. Throwing is not: a reader with 300 series should
+             * not get an error page because one upstream stalled.
+             *
+             * Returning nothing silently was wrong, and that is what this records. Measured
+             * with the server stopped: the page rendered 867 titles with no covers and no
+             * counts and said nothing at all, which is indistinguishable from a library the
+             * server answered for and found empty. The resilience is kept and the silence
+             * goes.
+             */
+            $this->sourceFailure = $e->getMessage();
+
             return [];
         }
+    }
+
+    /**
+     * Why the source read failed on its last call, or null if it did not.
+     *
+     * Null covers the three ordinary cases: nothing was read, the read succeeded, or the
+     * read returned rows. Only a caught failure sets it, so a caller can treat null as
+     * "the server answered" without knowing which of those happened.
+     */
+    public function sourceFailure(): ?string
+    {
+        return $this->sourceFailure;
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Import\Tachimanga\TachimangaReader;
 use App\Search\Deduplicator;
 use App\Search\TitleNormalizer;
 use App\Support\Deployment;
+use App\Support\Library;
 use App\Support\Suwayomi\Timestamps;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\Gateway;
@@ -24,6 +25,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        /*
+         * Scoped, not singleton, so it is shared within one request and fresh for the next,
+         * which is what a class carrying request state wants.
+         *
+         * Auto resolution handed out a new instance per `app()` call, so the failure the
+         * fetch recorded was invisible to whoever asked about it afterwards. Measured on the
+         * library page: the fetch knew why it returned nothing and the view could not see it.
+         */
+        $this->app->scoped(Library::class);
+
         $this->app->singleton(Timestamps::class);
         $this->app->singleton(Transport::class);
         $this->app->singleton(AuthManager::class);

@@ -397,6 +397,78 @@ class LibraryTest extends TestCase
             ->assertSee('Not on the server');
     }
 
+    /**
+     * The page has to say the server is down, not just quietly show an empty library.
+     *
+     * Measured with the server stopped: every title rendered with no covers, no counts and
+     * no words, which is indistinguishable from a library the server answered for and found
+     * empty. A reader cannot act on that, and neither can a screenshot of it.
+     *
+     * `test_an_unreachable_server_leaves_a_readable_page` above already had the right signal
+     * at the right size for a card. The complaint was never that a card was uninformative, it
+     * was that 867 cards being blank at once reads as an app that is broken rather than as a
+     * server that is off.
+     */
+    public function test_an_unreachable_server_says_so_on_the_page(): void
+    {
+        $this->addToLibrary(76, ['chapters' => 41]);
+        $this->serverDown = true;
+
+        $this->page()
+            ->assertOk()
+            ->assertSee('cannot reach the manga server');
+    }
+
+    public function test_the_banner_names_the_address_that_is_not_answering(): void
+    {
+        $this->addToLibrary(76, ['chapters' => 41]);
+        $this->serverDown = true;
+
+        $this->page()
+            ->assertOk()
+            ->assertSee((string) config('papyrus.suwayomi.url'), escape: false);
+    }
+
+    public function test_a_reachable_server_shows_no_such_banner(): void
+    {
+        $this->addToLibrary(76, ['chapters' => 41]);
+
+        $this->page()
+            ->assertOk()
+            ->assertDontSee('cannot reach the manga server');
+    }
+
+    public function test_a_failure_is_not_sticky_once_the_server_answers_again(): void
+    {
+        $this->addToLibrary(76, ['chapters' => 41]);
+
+        $library = $this->library();
+
+        $this->serverDown = true;
+        $library->entries($this->user);
+
+        $this->assertNotNull($library->sourceFailure());
+
+        // The failure is state on a scoped instance, so without this reset a server that came
+        // back would keep being told it was down until the process ended. That is the mirror
+        // of the bug being fixed: silence that is wrong, then a message that is wrong.
+        $this->serverDown = false;
+        $library->entries($this->user);
+
+        $this->assertNull(
+            $library->sourceFailure(),
+            'a server that came back and answered is not down, whatever it said a minute ago',
+        );
+    }
+
+    public function test_a_read_of_nothing_reports_no_failure(): void
+    {
+        $this->assertNull(
+            $this->library()->sourceFailure(),
+            'an empty library never reached the server, so it cannot have failed to reach it',
+        );
+    }
+
     // Staleness -----------------------------------------------------------
 
     public function test_a_changed_chapter_list_is_flagged_rather_than_silently_miscounted(): void

@@ -560,6 +560,24 @@ new #[Title('Library')] class extends Component
     }
 
     /**
+     * Why the library has no covers and no chapter counts, when it does.
+     *
+     * The verdict from the read the page already made, not a fresh probe. Probing would
+     * double the cost of the library page to learn something the fetch just learned, and the
+     * library page is the most expensive page in the app.
+     *
+     * Taking the read here is what lets the banner sit above the grid. Livewire memoises a
+     * computed for the request, so the grid's own read costs nothing extra.
+     */
+    #[Computed]
+    public function sourceFailure(): ?string
+    {
+        count($this->entries);
+
+        return app(Library::class)->sourceFailure();
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     #[Computed]
@@ -1039,6 +1057,30 @@ new #[Title('Library')] class extends Component
             `due` falls as series are checked, because a series stops being due the moment it
             has been, so the bar's bottom number is a real count rather than an animation.
         --}}
+        {{--
+            The server is not answering.
+
+            The library read swallows a transport failure so that one stalled upstream cannot
+            turn a page into an error page, and with the server stopped that rendered 867
+            titles with no covers, no counts and no explanation. A reader cannot tell that from
+            an empty library, and the address is here so they know what is not answering.
+
+            There was already a "Not on the server" on each card, which is the right signal at
+            the size of a card. 867 blank cards at once reads as a broken app rather than as a
+            server that is off.
+        --}}
+        @if ($this->sourceFailure !== null)
+            <div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+                <flux:icon name="exclamation-triangle" class="shrink-0" />
+
+                <span>
+                    {{ __('Papyrus cannot reach the manga server, so covers, chapter counts and new chapters are missing. Your series and what you have read are safe.') }}
+
+                    <code class="font-mono text-xs">{{ config('papyrus.suwayomi.url') }}</code>
+                </span>
+            </div>
+        @endif
+
         @php($progress = $this->checkProgress)
 
         @if ($progress !== null)
