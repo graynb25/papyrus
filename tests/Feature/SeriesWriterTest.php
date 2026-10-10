@@ -6,6 +6,7 @@ use App\Import\ImportedChapter;
 use App\Import\ImportedSeries;
 use App\Import\Resolution;
 use App\Import\SeriesWriter;
+use App\Models\ChapterState;
 use App\Models\ImportedSeries as LedgerRow;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
@@ -734,6 +735,165 @@ class SeriesWriterTest extends TestCase
         }
 
         return $rows;
+    }
+
+    // ------------------------------------------------------------------
+    // The four branches in theirChapters() that nobody reasoned about.
+    //
+    // A mutation harness put all four back and the suite stayed green. They are the defensive
+    // lines in the function that already had the worst bug in this repository, which is a fair
+    // summary: the branch everybody thought about is tested, the four nobody did are not.
+
+    public function test_a_chapter_with_no_id_is_not_indexed(): void
+    {
+        $this->suwayomiChapters = $this->theirs(3);
+        $this->suwayomiChapters[] = ['id' => 0, 'name' => 'Ghost', 'sourceOrder' => 9, 'chapterNumber' => 9.0];
+        $this->suwayomiChapters[] = ['name' => 'Also a ghost', 'sourceOrder' => 10, 'chapterNumber' => 10.0];
+
+        /*
+         * Four backup chapters, the fourth at order 9, which is the ghost's order.
+         *
+         * Without this the test proves nothing: the ghost is indexed but nothing pairs to it,
+         * so indexing it is harmless and the assertion passes either way. The damage the guard
+         * prevents needs a backup chapter that *reaches* the ghost, which then gets handed the
+         * zero id and has its read state written against a chapter that does not exist.
+         *
+         * Built by hand because `backupChapters()` numbers from 1 and cannot produce an order 9.
+         */
+        $chapters = new Collection;
+
+        foreach ([[1, 1.0], [2, 2.0], [3, 3.0], [9, 9.0]] as [$order, $number]) {
+            $chapters->push(new ImportedChapter(
+                backupId: 300 + $order,
+                number: $number,
+                name: "Chapter {$order}",
+                sourceOrder: $order,
+                /*
+                 * Read, and that is the whole point.
+                 *
+                 * My first version marked it unread, so even with the guard removed the ghost
+                 * paired to chapter 0 but never entered `$readIds`, nothing was written against
+                 * it, `read_chapters` was 3 either way, and both assertions passed with the
+                 * mutation in place.
+                 *
+                 * The harm the guard prevents is `markManyRead()` being handed the zero id,
+                 * which needs the chapter to be read.
+                 */
+                isRead: true,
+                isBookmarked: false,
+                lastPageRead: 0,
+            ));
+        }
+
+        $writer = $this->writer();
+        $result = $writer->write($this->user, $this->backupSeries($chapters, 2), $this->resolved());
+
+        $this->assertSame(
+            3,
+            $result['read_chapters'],
+            'the fourth reaches a ghost and is dropped, rather than paired against chapter zero',
+        );
+
+        $this->assertSame(
+            0,
+            ChapterState::query()->where('suwayomi_chapter_id', 0)->count(),
+            'a row of read state against the zero id is the shape of this going wrong',
+        );
+    }
+
+    public function test_two_chapters_sharing_a_source_order_pair_to_the_first(): void
+    {
+        $this->suwayomiChapters = $this->theirs(3);
+        // A duplicate order, as a source that renumbered mid-list would produce.
+        $this->suwayomiChapters[2]['sourceOrder'] = 1;
+
+        /*
+         * The backup side carries no chapter numbers either, so the order key is the only one
+         * that can pair anything and "first wins" is the whole question.
+         *
+         * My first version asserted the later duplicate must not be read, and it legitimately
+         * was: their chapter 3 lost its order, so backup chapter 3 paired to it *by number*,
+         * which is the fallback working. A test that fails for a correct reason is a test
+         * measuring the wrong thing.
+         */
+        $chapters = new Collection;
+
+        for ($i = 1; $i <= 3; $i++) {
+            $chapters->push(new ImportedChapter(
+                backupId: 300 + $i,
+                number: null,
+                name: "Chapter {$i}",
+                sourceOrder: $i,
+                isRead: true,
+                isBookmarked: false,
+                lastPageRead: 0,
+            ));
+        }
+
+        $writer = $this->writer();
+        $writer->write($this->user, $this->backupSeries($chapters, null), $this->resolved());
+
+        // Backup chapter at order 1 must land on THEIR first chapter with order 1, id 5001,
+        // not on the later one that now also claims order 1.
+        $this->assertTrue(
+            ChapterState::query()
+                ->where('suwayomi_chapter_id', 5001)
+                ->where('is_read', true)
+                ->exists(),
+            'first wins, or a duplicate silently moves a reader read state to a different chapter',
+        );
+
+        $this->assertFalse(
+            ChapterState::query()
+                ->where('suwayomi_chapter_id', 5003)
+                ->where('is_read', true)
+                ->exists(),
+            'the later duplicate must not take the read state meant for the earlier one',
+        );
+    }
+
+    public function test_two_chapters_sharing_a_number_pair_to_the_first(): void
+    {
+        $this->suwayomiChapters = $this->theirs(3);
+        // The shape of a recapped and a final chapter: same number, different chapters.
+        $this->suwayomiChapters[2]['chapterNumber'] = 1.0;
+
+        /*
+         * Built rather than mutated, because `ImportedChapter::$sourceOrder` is readonly.
+         *
+         * The backup side carries no source order at all, so nothing can pair on order and the
+         * chapter number is the only key left. That is the case the number join exists for.
+         */
+        $chapters = new Collection;
+
+        for ($i = 1; $i <= 3; $i++) {
+            $chapters->push(new ImportedChapter(
+                backupId: 300 + $i,
+                number: (float) $i,
+                name: "Chapter {$i}",
+                sourceOrder: null,
+                isRead: true,
+                isBookmarked: false,
+                lastPageRead: 0,
+            ));
+        }
+
+        $writer = $this->writer();
+        $writer->write($this->user, $this->backupSeries($chapters, 2), $this->resolved());
+
+        $this->assertTrue(
+            ChapterState::query()
+                ->where('suwayomi_chapter_id', 5001)
+                ->where('is_read', true)
+                ->exists(),
+        );
+
+        $this->assertFalse(
+            ChapterState::query()
+                ->where('suwayomi_chapter_id', 5003)
+                ->where('is_read', true)
+                ->exists(),
+        );
     }
 
     // ------------------------------------------------------------------
