@@ -430,6 +430,22 @@ new #[Title('Import a backup')] class extends Component
     }
 
     /**
+ * Whether a run only read the file rather than importing it.
+ *
+ * `library_series` is the discriminator, and it is a good one because the importer writes it
+ * the moment it has read the file, before anything is resolved. So a null total means the run
+ * never got past reading, which is exactly what an inspect is, and the report is sitting in
+ * `progress_note` instead of in the counters.
+ *
+ * The alternative was a column saying which it was. This needs no migration, and it cannot
+ * disagree with itself the way a second flag can.
+ */
+public function wasInspection(ImportRun $run): bool
+    {
+        return $run->state === ImportRun::COMPLETE && $run->library_series === null;
+    }
+
+    /**
      * The shape of a run's result, in the same counts the command prints.
      *
      * One method for the live run and the ones already finished, because two sets of wording
@@ -441,6 +457,16 @@ new #[Title('Import a backup')] class extends Component
             $this->abandoned($run) => __('This run stopped without finishing. Nothing after its last line was applied, and running the import again costs nothing for what it already did.'),
             $run->state === ImportRun::REFUSED, $run->state === ImportRun::FAILED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
             $run->state === ImportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
+            /*
+             * An inspect, not an import.
+             *
+             * Falling through to the counts said "0 series imported, 0 already up to date, 0
+             * with no source" for a run that had just described a 1,277 series library in
+             * full. Every number was true and the sentence was worthless, because a reader who
+             * pressed Inspect asked what is in the file and that answer was sitting one field
+             * away, unused.
+             */
+            $this->wasInspection($run) => (string) ($run->progress_note ?? __('The file was read and nothing needed reporting.')),
             default => trans_choice(
                 ':count series imported, :unchanged already up to date, :filed with no source.|:count series imported, :unchanged already up to date, :filed with no source.',
                 $run->applied,

@@ -599,6 +599,55 @@ class ImportPageTest extends TestCase
 
     /*
      * ---------------------------------------------------------------------------
+     * An inspect is not an import that found nothing.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_an_inspect_reports_what_was_in_the_file_not_a_count_of_zero(): void
+    {
+        /*
+         * Measured on the real 39.36MB backup. The run fell through to the import wording and
+         * said "0 series imported, 0 already up to date, 0 with no source" about a file holding
+         * 1,277 series, which had just been described in full one field away. Every number was
+         * true and the sentence was worthless.
+         */
+        ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'library.tmb',
+            'library_series' => null,
+            'progress_note' => 'Read a tachimanga backup, format version 520. 1277 series on the shelf.',
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $this->page()
+            ->assertSee('1277 series on the shelf')
+            ->assertDontSee(__('0 series imported'));
+    }
+
+    public function test_a_real_import_still_reports_counts(): void
+    {
+        ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'library.tmb',
+            'library_series' => 1277,
+            'progress_note' => '  1277 of 1277 series, 1082 written, 0 unchanged, 195 not found',
+            'applied' => 1082,
+            'unchanged' => 0,
+            'filed_without_source' => 195,
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $this->page()
+            ->assertSee('1,082')
+            ->assertSee('195');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
      * Helpers.
      * ---------------------------------------------------------------------------
      */
