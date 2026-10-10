@@ -80,8 +80,19 @@ class Library
             return $none;
         }
 
+        /*
+         * Ids for the one batched Suwayomi call, with the filed-only rows left out.
+         *
+         * A series imported from a backup whose source has since shut down has a null
+         * `suwayomi_manga_id`. Sending null to `mangas(filter: {id: {in: [...]}})` asks the
+         * server for a manga that does not exist, and casting it to 0 would do the same while
+         * looking like a real id everywhere else in this class. So they are excluded here and
+         * rendered from the row alone by `present()`.
+         */
         $ids = $states
-            ->map(fn (SeriesState $state): int => (int) $state->suwayomi_manga_id)
+            ->pluck('suwayomi_manga_id')
+            ->filter(fn ($id): bool => $id !== null)
+            ->map(fn ($id): int => (int) $id)
             ->unique()
             ->values()
             ->all();
@@ -102,8 +113,14 @@ class Library
         $entries = $states
             ->map(fn (SeriesState $state): array => $this->present(
                 $state,
-                $source[(int) $state->suwayomi_manga_id] ?? null,
-                $readCounts[(int) $state->suwayomi_manga_id] ?? 0,
+                // Null for a filed-only row, which is exactly the "server does not know this
+                // manga" case `present()` already handles, except that it also has a title.
+                $state->suwayomi_manga_id === null
+                    ? null
+                    : $source[(int) $state->suwayomi_manga_id] ?? null,
+                $state->suwayomi_manga_id === null
+                    ? 0
+                    : $readCounts[(int) $state->suwayomi_manga_id] ?? 0,
                 $covers,
             ))
             ->values();
@@ -177,10 +194,23 @@ class Library
         $fetched = $known && (bool) ($source['initialized'] ?? false);
         $total = (int) ($source['chapters']['totalCount'] ?? 0);
 
+        /*
+         * The title falls back to the row's own.
+         *
+         * A series filed from a backup has a title here and none in the server's response,
+         * because there is no source to ask. Measured: 195 series on the real backup land this
+         * way. `$source['title'] ?? ''` gave an empty card, which is the one thing a reader
+         * cannot recognise, and the whole reason for filing them.
+         */
+        $title = $source['title'] ?? $state->title ?? '';
+
         return [
             'state' => $state,
-            'manga_id' => (int) $state->suwayomi_manga_id,
-            'title' => (string) ($source['title'] ?? ''),
+            // Null rather than 0 for a filed-only row: a link built from it would be a request
+            // for a manga that does not exist, and 0 reads as a real id everywhere else.
+            'manga_id' => $state->suwayomi_manga_id === null ? null : (int) $state->suwayomi_manga_id,
+            'title' => (string) $title,
+            'unavailable_reason' => $state->unavailable_reason,
             'status' => $source['status'] ?? null,
             /*
              * The reader's own cover wins, and the source's is the fallback rather than
@@ -191,12 +221,19 @@ class Library
              * page renders up to 60 covers, and one query per cover would be 60 queries
              * to learn which of them are custom.
              */
-            'cover' => $known
+            /*
+             * No cover when the server does not know the manga, which is two different cases
+             * that used to be one: a manga id the server has never heard of, and a row with no
+             * id at all. Keying only on the id made the first case grow a cover link to a
+             * 404, which `test_no_cover_is_reported_rather_than_shown_as_a_broken_image` caught.
+             */
+            'cover' => $known && $state->suwayomi_manga_id !== null
                 ? (isset($covers[(int) $state->suwayomi_manga_id])
                     ? route('covers.show', ['manga' => (int) $state->suwayomi_manga_id])
                     : ImageUrl::thumbnail((int) $state->suwayomi_manga_id))
                 : null,
-            'has_custom_cover' => isset($covers[(int) $state->suwayomi_manga_id]),
+            'has_custom_cover' => $state->suwayomi_manga_id !== null
+                && isset($covers[(int) $state->suwayomi_manga_id]),
             'source_name' => $source['source']['name'] ?? null,
             'source_lang' => $source['source']['lang'] ?? null,
             'total_chapters' => $fetched ? $total : null,

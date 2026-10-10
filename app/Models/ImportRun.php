@@ -44,6 +44,7 @@ use Illuminate\Support\Collection;
  * @property int $ambiguous
  * @property int $series_on_missing_sources
  * @property int $applied
+ * @property int $filed_without_source
  * @property int $unchanged
  * @property int $read_chapters_applied
  * @property CarbonImmutable|null $started_at
@@ -68,6 +69,7 @@ use Illuminate\Support\Collection;
     'ambiguous',
     'series_on_missing_sources',
     'applied',
+    'filed_without_source',
     'unchanged',
     'read_chapters_applied',
     'started_at',
@@ -97,6 +99,7 @@ class ImportRun extends OwnedModel
             'ambiguous' => 'integer',
             'series_on_missing_sources' => 'integer',
             'applied' => 'integer',
+            'filed_without_source' => 'integer',
             'unchanged' => 'integer',
             'read_chapters_applied' => 'integer',
             'started_at' => 'datetime',

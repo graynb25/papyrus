@@ -218,6 +218,16 @@ class ImportBackup extends Command
             number_format($result->count('from_source')),
         ));
 
+        if ($result->count('filed') > 0) {
+            $this->line(trans_choice(
+                '  {1}:count series was filed by title alone, with no source behind it. It will sit in '
+                .'your library until the source comes back.|[2,*]:count series were filed by title alone, '
+                .'with no source behind them. They will sit in your library until those sources come back.',
+                $result->count('filed'),
+                ['count' => number_format($result->count('filed'))],
+            ));
+        }
+
         $this->reportExtensions($result);
 
         $run = $this->runFor($user);

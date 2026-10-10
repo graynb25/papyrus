@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $source_url
  * @property string|null $fingerprint
  * @property int|null $suwayomi_manga_id
+ * @property int|null $series_state_id The local row, when the series was filed without a source.
  * @property int|null $backup_manga_id
  * @property string|null $title
  * @property string $state
@@ -56,6 +57,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_url',
     'fingerprint',
     'suwayomi_manga_id',
+    'series_state_id',
     'backup_manga_id',
     'title',
     'state',

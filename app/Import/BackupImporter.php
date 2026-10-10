@@ -5,6 +5,7 @@ namespace App\Import;
 use App\Models\ImportedSeries as Ledger;
 use App\Models\ImportedSource as SourceRow;
 use App\Models\ImportRun;
+use App\Models\SeriesState;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
@@ -25,10 +26,18 @@ use Illuminate\Support\Collection;
  *
  * ## What it will not do
  *
- * It will not file a series whose source this server cannot have, and it will not invent a
- * match. Both are recorded with a reason, and both are in the run's counters, because an import
+ * It will not invent a match, and it will not file a series whose source this server cannot
+ * have as though it had come across. Both are counted and named at the end, because an import
  * that reports "1,082 imported" for a library of 1,277 is lying by omission unless it says
- * where the other 195 are.
+ * where the other 195 are. On the measured backup they sit on 7 sources the reader's own app
+ * had already marked gone, and nothing brings them back.
+ *
+ * ## What it does with those 195
+ *
+ * It files their titles, with no source behind them. A reader's library that quietly lost 15%
+ * of itself teaches them the import was lossy; one that shows 195 series greyed out and named
+ * teaches them what happened and when. The rows are local only, carry the reason, and are
+ * revisited on every run, so a source that comes back fills them in.
  */
 final class BackupImporter
 {
@@ -196,8 +205,8 @@ final class BackupImporter
         /*
          * Keyed by the resolver's tier names, so the bucketing is a lookup rather than a
          * string comparison, and so a tier added later cannot land in a bucket that does not
-         * exist. `applied`, `unchanged` and `read_chapters` are this importer's own, not the
-         * resolver's.
+         * exist. `applied`, `unchanged`, `filed` and `read_chapters` are this importer's own,
+         * not the resolver's.
          *
          * The one alias: the resolver calls it `unresolved` and a report calls it
          * `not_found`, because a reader asking why a series is missing is asking about the
@@ -213,6 +222,7 @@ final class BackupImporter
             'unreachable_source' => 0,
             'applied' => 0,
             'unchanged' => 0,
+            'filed' => 0,
             'read_chapters' => 0,
         ];
 
@@ -281,7 +291,9 @@ final class BackupImporter
                 ];
             }
 
-            $this->record($user, $run, $existing, $series, $resolution, $fingerprint, $written);
+            $ledgerRow = $this->record($user, $run, $existing, $series, $resolution, $fingerprint, $written);
+
+            $counts['filed'] += $this->fileWithoutSource($user, $series, $resolution, $ledgerRow);
 
             if ($done % 25 === 0 || $done === $total) {
                 $this->say(sprintf(
@@ -301,6 +313,7 @@ final class BackupImporter
             'series_on_missing_sources' => $counts['missing_source'],
             'applied' => $counts['applied'],
             'unchanged' => $counts['unchanged'],
+            'filed_without_source' => $counts['filed'],
             'read_chapters_applied' => $counts['read_chapters'],
             'finished_at' => now(),
         ]);
@@ -321,6 +334,7 @@ final class BackupImporter
             'unreachable_source' => $counts['unreachable_source'],
             'applied' => $counts['applied'],
             'unchanged' => $counts['unchanged'],
+            'filed' => $counts['filed'],
             'read_chapters' => $counts['read_chapters'],
         ];
     }
@@ -338,7 +352,7 @@ final class BackupImporter
         Resolution $resolution,
         string $fingerprint,
         array $written,
-    ): void {
+    ): Ledger {
         /*
          * Matched on the tier, which is a named constant of what happened, rather than on
          * the wording of the reason. The earlier version searched the sentence for the phrase
@@ -372,12 +386,63 @@ final class BackupImporter
         ];
 
         if ($existing === null) {
-            Ledger::createFor($user, $attributes);
-
-            return;
+            return Ledger::createFor($user, $attributes);
         }
 
         $existing->update($attributes);
+
+        return $existing;
+    }
+
+    /**
+     * File a series this server has nothing for, so its title is not simply lost.
+     *
+     * Only for a series whose *source* this server has no extension for, which is a fact
+     * nothing will change on its own. A series the source answered for and did not have at
+     * that url is a different thing: the url moved, matching it safely is not possible, and
+     * filing it would put a title in a reader's library that opens onto nothing at the wrong
+     * address.
+     *
+     * Idempotent through the ledger's `series_state_id`, because the ledger row is keyed by
+     * `(user_id, source_id, source_url)` and is updated in place on every run. Keying on the
+     * title would collide on any two series sharing one.
+     *
+     * @return int 1 when a row was filed, 0 when not.
+     */
+    private function fileWithoutSource(
+        User|int $user,
+        ImportedSeries $series,
+        Resolution $resolution,
+        Ledger $ledger,
+    ): int {
+        if ($resolution->resolved || $resolution->tier !== 'missing_source') {
+            return 0;
+        }
+
+        if ($ledger->series_state_id !== null) {
+            $existing = SeriesState::query()->forUser($user)->find($ledger->series_state_id);
+
+            if ($existing !== null) {
+                // Keep the title current if the backup spells it differently now.
+                if ($existing->title !== $series->title) {
+                    $existing->update(['title' => $series->title]);
+                }
+
+                return 0;
+            }
+        }
+
+        $state = SeriesState::createFor($user, [
+            'suwayomi_manga_id' => null,
+            'title' => $series->title,
+            'unavailable_reason' => 'Its source is not installed on this server.',
+            'in_library' => true,
+            'added_at' => $series->addedAt ?? now(),
+        ]);
+
+        $ledger->update(['series_state_id' => $state->id]);
+
+        return 1;
     }
 
     /**

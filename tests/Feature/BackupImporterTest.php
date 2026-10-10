@@ -12,6 +12,7 @@ use App\Import\Tachimanga\TachimangaReader;
 use App\Models\ImportedSeries as Ledger;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
+use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\ReadingState;
 use App\Suwayomi\ExtensionManager;
@@ -402,6 +403,116 @@ class BackupImporterTest extends TestCase
         );
 
         $this->assertSame(2, Ledger::query()->count());
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Filing what has no source behind it.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_series_whose_source_is_absent_is_filed_by_title_alone(): void
+    {
+        /*
+         * The choice a reader makes about a source that has shut down is rarely "throw the
+         * titles away". Measured on the real backup: 195 series on 7 dead sources, 15% of a
+         * library. A library that quietly lost them teaches the reader the import was lossy;
+         * one that shows them greyed out teaches them what happened.
+         */
+        $this->installed = []; // this server has no extension for anything
+
+        $this->importer()->import($this->user, $this->backup());
+
+        $filed = SeriesState::forUser($this->user)
+            ->whereNull('suwayomi_manga_id')
+            ->get();
+
+        $this->assertCount(2, $filed, 'both shelf series are filed');
+        $this->assertSame(
+            ['Hiding a Logistics Center', "The Berserker's Second Playthrough"],
+            $filed->pluck('title')->sort()->values()->all(),
+            'the titles are what a reader recognises, and they come from the backup',
+        );
+
+        foreach ($filed as $state) {
+            $this->assertTrue($state->in_library, 'filed means visible, not filed and hidden');
+            $this->assertNotNull(
+                $state->unavailable_reason,
+                'a reader who sees a title they cannot open deserves to be told why',
+            );
+        }
+    }
+
+    public function test_a_series_the_source_answered_for_is_not_filed(): void
+    {
+        /*
+         * The other unresolved case. The source was asked and did not have the series at that
+         * url, which usually means the url moved. Filing it would put a title in a library
+         * that opens onto nothing at the wrong address, and matching it safely is exactly what
+         * the resolver refuses to do.
+         */
+        $this->importer([self::FIRST => 1768])->import($this->user, $this->backup());
+
+        $this->assertSame(
+            0,
+            SeriesState::forUser($this->user)->whereNull('suwayomi_manga_id')->count(),
+            'one series was not at its address, and that is not the same as having no source',
+        );
+    }
+
+    public function test_a_resolved_series_is_never_filed_without_a_source(): void
+    {
+        $this->importer([self::FIRST => 1768, self::SECOND => 1769])->import($this->user, $this->backup());
+
+        $this->assertSame(
+            0,
+            SeriesState::forUser($this->user)->whereNull('suwayomi_manga_id')->count(),
+        );
+
+        $this->assertSame(
+            2,
+            SeriesState::forUser($this->user)->whereNotNull('suwayomi_manga_id')->count(),
+            'and the two that resolved have their server ids',
+        );
+    }
+
+    public function test_a_second_run_does_not_file_the_same_series_twice(): void
+    {
+        $this->installed = [];
+
+        $this->importer()->import($this->user, $this->backup());
+
+        $first = SeriesState::forUser($this->user)->whereNull('suwayomi_manga_id')->pluck('id')->sort()->all();
+
+        $this->importer()->import($this->user, $this->backup());
+
+        $second = SeriesState::forUser($this->user)->whereNull('suwayomi_manga_id')->pluck('id')->sort()->all();
+
+        /*
+         * Unresolved series are retried every run, on purpose, because a source can come back.
+         * That is the opposite hazard: a retry that re-files produces duplicate titles in a
+         * reader's library on every run of the command, and grows.
+         */
+        $this->assertSame($first, $second, 'the same rows, not new ones');
+        $this->assertCount(2, $second);
+    }
+
+    public function test_the_ledger_keeps_which_row_a_series_was_filed_as(): void
+    {
+        $this->installed = [];
+
+        $this->importer()->import($this->user, $this->backup());
+
+        $ledger = Ledger::forUser($this->user)->whereNotNull('series_state_id')->get();
+
+        $this->assertCount(2, $ledger, 'one per filed series, which is what makes filing idempotent');
+
+        foreach ($ledger as $row) {
+            $this->assertNotNull(
+                SeriesState::forUser($this->user)->find($row->series_state_id),
+                'and the id points at a row this reader owns',
+            );
+        }
     }
 
     /*

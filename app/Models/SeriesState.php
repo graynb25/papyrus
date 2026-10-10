@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\OwnedModel;
+use App\Support\Library;
 use Carbon\CarbonImmutable;
 use Database\Factories\SeriesStateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -19,9 +20,20 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * about a series - reader mode, tags, rating, notes, cover, scanlator
  * exclusions, fetch interval - lives here, keyed by MangaType.id.
  *
+ * ## A row can exist with no MangaType.id
+ *
+ * An import of a real backup resolves 1,082 of 1,277 series and cannot resolve 195, because
+ * they sit on 7 sources whose sites have shut down. Those are filed anyway, with
+ * {@see $suwayomi_manga_id} null and the title kept here, so a reader recognises what is
+ * missing rather than finding a library that quietly lost 15% of itself. Null rather than 0,
+ * because {@see Library::entries()} batches ids into one filtered Suwayomi call
+ * and a 0 in that list is a query for a manga that does not exist.
+ *
  * @property int $id
  * @property int $user_id
- * @property int $suwayomi_manga_id
+ * @property int|null $suwayomi_manga_id Null when the series has no source behind it.
+ * @property string|null $title The title, for a row the server cannot be asked about.
+ * @property string|null $unavailable_reason Why the server has nothing, in one sentence.
  * @property bool $in_library
  * @property int|null $default_category_id
  * @property string|null $chapter_list_fingerprint
@@ -42,6 +54,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  */
 #[Fillable([
     'suwayomi_manga_id',
+    'title',
+    'unavailable_reason',
     'in_library',
     'default_category_id',
     'chapter_list_fingerprint',

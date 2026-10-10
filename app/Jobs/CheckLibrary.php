@@ -138,6 +138,12 @@ class CheckLibrary implements ShouldQueue
     public static function dueIds(CheckSchedule $schedule, int $userId): array
     {
         return $schedule->due($userId)
+            /*
+             * A series filed from a backup, whose source has shut down, has no Suwayomi manga
+             * id and so nothing to check. Casting null to 0 would queue a pass for a manga that
+             * does not exist, once per sweep, forever.
+             */
+            ->filter(fn (SeriesState $state): bool => $state->suwayomi_manga_id !== null)
             ->map(fn (SeriesState $state): int => (int) $state->suwayomi_manga_id)
             ->all();
     }

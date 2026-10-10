@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\CheckLibrary;
+use App\Library\CheckSchedule;
 use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
@@ -913,5 +915,110 @@ class LibraryTest extends TestCase
 
         $this->assertStringContainsString('/suwayomi/api/v1/manga/76/thumbnail', $html);
         $this->assertStringNotContainsString('127.0.0.1', $html);
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A series with no source behind it.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_series_filed_without_a_source_shows_the_title_from_its_own_row(): void
+    {
+        $this->addToLibrary(76, ['title' => 'A Series That Resolved']);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'A Series Whose Source Is Gone',
+            'unavailable_reason' => 'Its source is not installed on this server.',
+            'in_library' => true,
+        ]);
+
+        $entries = $this->library()->entries($this->user);
+
+        $this->assertCount(2, $entries);
+
+        $filed = $entries->firstWhere('manga_id', null);
+
+        $this->assertNotNull($filed, 'the filed series is shown, not dropped');
+        $this->assertSame(
+            'A Series Whose Source Is Gone',
+            $filed['title'],
+            'the title comes from the row, because the server has nothing to give',
+        );
+        $this->assertSame(
+            'Its source is not installed on this server.',
+            $filed['unavailable_reason'],
+            'and it says why, so a title that cannot be opened is explained',
+        );
+        $this->assertNull($filed['cover'], 'there is no source to take a thumbnail from');
+        $this->assertNull($filed['manga_id'], 'and no id to build a link to a page that cannot exist');
+    }
+
+    public function test_a_filed_series_is_never_sent_to_the_server_as_an_id(): void
+    {
+        $this->addToLibrary(76);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Gone',
+            'in_library' => true,
+        ]);
+
+        $this->library()->entries($this->user);
+
+        /*
+         * The ids travel as GraphQL variables, so the check is on the request rather than on
+         * the document. A null in that list is a query for a manga that does not exist, and it
+         * would be sent on every page load for as long as the series is filed.
+         *
+         * Read from the raw body rather than through `Request::data()`, whose return shape
+         * comes from `$this->json()` and has been both an array and a stdClass across
+         * versions. Two earlier versions of this test failed on that and nothing else, which
+         * is a test that cannot tell a real regression from its own indexing.
+         *
+         * The variable is `ids`, because `SeriesGateway::fetchMany()` sends
+         * `['ids' => $ids, 'first' => count($ids) + 10]` rather than building a filter object
+         * inline. Three guesses at its name failed before reading the gateway.
+         */
+        $bodies = collect(Http::recorded())
+            ->map(fn (array $pair): mixed => json_decode((string) $pair[0]->body(), true))
+            ->filter(fn (mixed $body): bool => is_array($body) && str_contains((string) ($body['query'] ?? ''), 'mangas(filter:'));
+
+        $this->assertNotEmpty($bodies, 'the page still makes its one batched call');
+
+        $ids = $bodies->map(fn (array $body): mixed => $body['variables']['ids'] ?? null)
+            ->filter(fn (mixed $in): bool => $in !== null)
+            ->flatten()
+            ->all();
+
+        $this->assertNotContains(
+            null,
+            $ids,
+            'a null id must never reach the batched filter, which is a query for a manga that does not exist',
+        );
+
+        $this->assertSame(
+            [76],
+            array_values($ids),
+            'and the one real id is the only thing the page asks about',
+        );
+    }
+
+    public function test_a_filed_series_is_not_queued_for_a_library_check(): void
+    {
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Gone',
+            'in_library' => true,
+        ]);
+
+        $due = CheckLibrary::dueIds(app(CheckSchedule::class), $this->user->id);
+
+        $this->assertSame(
+            [],
+            $due,
+            'there is nothing to check on a series the server does not have, and a 0 would queue one forever',
+        );
     }
 }
