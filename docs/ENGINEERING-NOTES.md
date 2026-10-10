@@ -3658,3 +3658,180 @@ were eliminated.
      path, and a loop over another system's data is somewhere a throw is expected rather than
      exceptional.** A reader who pressed one button asked for 867 checks, and four is a worse
      answer than 866.
+
+198. **Three queries answered "what is due" and only two of them agreed.**
+     `CheckLibrary` asks `CheckSchedule::due()` whether anything is left and re-books if so.
+     `due()` had no `whereNotNull('suwayomi_manga_id')`, so a series filed from a backup with a
+     dead source came back from it, `isDue()` called it due for ever because nothing ever
+     checked it, and the chain never ended. This was the third query needing the filter:
+     `CheckLedger::candidates()` and `CheckSchedule::summary()` were both fixed for it earlier
+     and this one was missed, so the three disagreed and the disagreement was not cosmetic.
+     Measured: 95 dispatches against a worker that checked nothing else, every one of them
+     re-checking the same phantom. A reader watching that sees a job plainly running and a
+     number that never moves.
+
+     The general shape: **a concept like "due" that more than one query has to answer is a
+     concept with a definition, and the definition has exactly one home.** Three copies of a
+     predicate is three chances to forget a branch, and the one that is wrong is the one nothing
+     else calls. The fix was the filter; the answer is that "what is due" means "what a pass
+     would visit", and that sentence belongs beside the first query rather than in a comment on
+     the third.
+
+199. **A check that always fails never stops being due, so the job that chains on it chains
+     for ever.**
+     `chapter_list_checked_at` moved only when a source *answered*, on the reasoning that a
+     request which never landed is not information. That reasoning is sound and the consequence
+     is not: a series whose extension is broken never gets an answer, so it stayed due for ever.
+     Four series answering "Could not find environment bundle" failed on every pass, kept their
+     clock null, and were offered to the chain for as long as the worker ran.
+
+     The clock now moves on every outcome, written once in `record()` because every path through
+     `check()` funnels there and a rule enforced in one place cannot be half applied. It means
+     "we asked" rather than "the source answered", which is what the column is called. Nothing is
+     lost: the outcome and its error are still in `library_checks`, the page still shows which
+     series failed, and a reader can still press Check on one of them individually because that
+     path forces. `test_a_failure_does_not_advance_the_clock` asserted the old rule deliberately,
+     so it was replaced rather than deleted, with the measurement that proved it wrong kept in
+     place.
+
+     The general shape: **"do not record this as progress" is a rule that will eventually be read
+     as "keep offering this for ever".** Reserving a place for a result that never arrives is
+     correct; re-offering that place unconditionally is not. Retry on an interval, not on
+     nothing having happened.
+
+200. **`LockTimeoutException` is not a `SuwayomiException`, so every catch in the app missed
+     it.**
+     `AuthManager::renew()` takes a cache lock with `->block(5, ...)`. When it cannot, Laravel
+     raises `Illuminate\Contracts\Cache\LockTimeoutException`. Nothing in the app caught that
+     type, so it escaped as an unhandled 500. Measured: a worker holding the lock while it
+     checked series, and a reader loading the library at the same time, which produced an error
+     page instead of a library. That is not an edge case any more, because running a worker is
+     the documented way to use this app.
+
+     Translated in `AuthManager` rather than in each caller, because from anything above the
+     gateway "could not get a token" is the same fact as "the server is not reachable right
+     now", and the gateway's contract is to throw `SuwayomiException` for that. Verified by
+     holding the lock and asking for the library: 867 entries, page rendered.
+
+     The general shape: **a lock timeout is a transport failure wearing a different class, and
+     the place to translate it is the layer that owns the lock.** Catching it in every caller
+     would have been eleven chances to miss one, and the one that missed would be the page that
+     matters.
+
+201. **The test set the property the view never set, and called the method the test never
+     called.**
+     The library page's pagination arrows call `setPage()`. No component declared
+     `WithPagination`, and `git log -S WithPagination` across the whole repository returns
+     nothing, so both arrows had thrown on every click since the codebase was imported. The
+     suite was green because `test_the_page_pages_at_sixty` proved paging by setting the `page`
+     property directly, which works whether or not `setPage` exists at all. The tests and the
+     view disagreed about how to change pages and only the view was wrong.
+
+     Fixed by declaring `setPage()` rather than importing the trait, because this component
+     paginates by hand: `$page` is a typed property that `normalise()` clamps and `updated()`
+     resets on a filter change, and `WithPagination` keeps its own state in `$paginators`, so the
+     trait would give the component two sources of truth for one number and a reset that never
+     fires.
+
+     The general shape: **a test that drives state the way the code under it does not is testing
+     a second implementation.** When a control calls a method, something has to call that method,
+     or the control is unpinned no matter how many tests cover the state it changes.
+
+202. **An assertion both paths satisfy proves nothing about which check did the work.**
+     `test_an_item_from_another_readers_run_is_not_moved` has been in the suite throughout.
+     Delete `forUser()` from `BulkMover`'s query and it still passes, because `SeriesMigrator`
+     refuses the pair for want of an offer either way. What it never noticed is that the mover
+     then writes REFUSED onto *another reader's row*.
+
+     Found by a mutation harness: 11 of 21 mutations to the bulk migration survived, and most
+     were this shape. The suite was green against code that silently did the wrong thing in
+     every one of them.
+
+     The fix is to assert the observable that *separates* the checks rather than the outcome they
+     share. Another reader's row must be left untouched, not merely not moved. An item from a
+     different run must not move *even with a real offer for it*. A tampered destination must be
+     refused *even when that destination was genuinely offered*.
+
+     Two of the survivors were not gaps at all and are worth noticing as such. The catch around
+     `CandidateFinder::findOn()` is unreachable, because `CandidateFinder` catches at both the
+     places it can throw, so no test can kill a mutation of it. And dropping `forUser()` is
+     inert, because `BulkMigrationItem extends OwnedModel` and `OwnedModel::boot()` installs a
+     global `OwnedByUser` scope, so the tenancy is real and simply lives a layer below the line
+     the comment points at.
+
+     The general shape: **when two checks can each produce the outcome you are asserting, assert
+     the side effect instead.** The outcome is the intersection; the side effect is the difference.
+
+203. **A ledger written only by observation has no way to say "never asked".**
+     The Health page showed six zeros with 223 sources installed. `source_healths` was empty, and
+     `search_runs` was empty too, so no search had ever been run in this app and the dashboard was
+     telling the truth. One search filled 60 rows and turned it into 50 sites.
+
+     That left a defect behind it. A source only gets a ledger row by being asked, so the 163
+     sources nobody searched had no row, and a source with no row is *absent* rather than counted
+     as unobserved. The page said "223 sources are grouped into 50 sites" and showed 50, which
+     reads as a miscount and is really an omission. `STATE_UNOBSERVED` was unreachable, and the
+     class docblock argued against exactly this: "a dashboard that showed every unobserved source
+     as a blank or a 100% would be lying about 93% of the catalogue". Omitting them is a quieter
+     version of the same lie.
+
+     Seeded from `SourceCatalog::syncSources()`, the one place the catalogue changes, so there is
+     no second call site to forget. Counters at zero and no timestamp, because a seeded row
+     carrying `last_success_at` would read as a successful call that never happened. Existing rows
+     are never touched, so a seed cannot reset an observation.
+
+     The general shape: **a table that only exists as a record of activity cannot also answer
+     "what have you not looked at".** If absence is a state a reader is meant to see, absence has
+     to be written down deliberately, because it will otherwise never be written at all.
+
+204. **The image was in the database the whole time, and the endpoint that serves it needs a
+     credential the browser does not have.**
+     `sources.icon_url` and the extension list's `iconUrl` were both stored and both fetched from
+     the first build, and neither had ever been rendered. Fifty rows of a name, a badge and a
+     package name is what "flat, boring, generic" looks like, and the data to fix it had been
+     there the whole time.
+
+     The icon also cannot be pointed straight at Suwayomi. Measured: the endpoint answers 401
+     anonymously with a twelve byte body, and 200 image/png with a token. A browser cannot hold
+     that token, so the icon has to come through the app's own origin, which is why
+     `extension/icon/{packageName}` became an allowlist entry on the existing proxy rather than a
+     new route. `extension/list` is asserted refused in the tests because it is one character
+     away and enumerates the catalogue.
+
+     The general shape: **"we have the data" is not the same as "we show the data", and a column
+     that is written and never read is the cheapest possible bug to find and the easiest to leave
+     for years.**
+
+205. **`public/build` is not in git, so a class you have never used silently does nothing.**
+     `break-words` had been added to a card and the long single-word source names were still
+     clipped. The class was absent from the compiled stylesheet, which is a gitignored build
+     artifact, and a missing Tailwind class is not an error: it is a string in the markup that
+     matches nothing. This is the `npm run dev` trap the README already warns about, met in the
+     one place it was least expected.
+
+     Worth stating how it was found, because the browser disagreed with the source for a reason
+     that had nothing to do with either: the markup was right, the CSS was stale, and only
+     comparing the two found it. Searching the compiled sheet for the class is a ten second check
+     that would have answered it immediately.
+
+     The general shape: **a class name is not a promise that the rule exists, and a generated
+     artifact cannot be reviewed in a diff.**
+
+206. **`migrate:fresh` leaves an ordinary signature, and it is in the batch column.**
+     Worth recording because it answers a question that cost real time to ask: was there ever a
+     second account here, destroyed by a `migrate:fresh`?
+
+     The answer was no, and the strongest evidence was structural rather than forensic. A fresh
+     migrate runs every migration in a single batch, so the `migrations` table would hold all 34
+     in batch 1. It holds 31 in batch 1 and one each in batches 2, 3 and 4, which is an ordinary
+     incremental run over three days of adding migrations. The database file's NTFS creation time
+     is also unchanged, so it was never deleted and recreated.
+
+     The forensics agreed: `sqlite_sequence` for `users` is 1, `series_states` ids 1 to 867 are
+     contiguous, `freelist_count` is 0 with `secure_delete` off so carving was viable and found one
+     bcrypt hash in the whole file, and the WAL's 294 stale frames held cache pages and no user
+     records.
+
+     The general shape: **a schema's own bookkeeping can answer questions about its history that
+     no log kept.** Before spending an afternoon recovering data, check whether the thing you
+     suspect actually happened, and whether the database says so.
