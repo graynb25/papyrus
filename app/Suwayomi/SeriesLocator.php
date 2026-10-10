@@ -2,6 +2,7 @@
 
 namespace App\Suwayomi;
 
+use App\Import\ExtensionInstaller;
 use App\Import\SeriesResolver;
 
 /**
@@ -90,8 +91,41 @@ final class SeriesLocator
     /** Java's Long ceiling, which is where a mangled source id stops being a number. */
     private const LONG_MAXIMUM = 9_223_372_036_854_775_807;
 
-    /** @var list<string>|null Source ids with an extension installed, fetched once. */
-    private ?array $installed = null;
+    /**
+     * Whether the installed-sources query has run.
+     *
+     * A flag rather than a null check on one of the lists, because there are now two lists and
+     * a null check on one of them is a claim about the other.
+     */
+    private bool $surveyed = false;
+
+    /** @var list<string> Source ids with an extension installed. */
+    private array $installedIds = [];
+
+    /** @var list<string> Extension packages this server has, which is how an import names one. */
+    private array $installedPackages = [];
+
+    /**
+     * Drop the cached installed-sources answer, so the next question is asked again.
+     *
+     * ## Why this exists
+     *
+     * An install changes the thing this caches. {@see self::installedSources()} is asked once
+     * per import, so a run that installs extensions and then asks what is installed would read
+     * the answer from before and conclude it had installed nothing.
+     *
+     * That is not hypothetical: the first version of {@see ExtensionInstaller} did
+     * exactly this, and reported `installed: 0` after a successful `fetchExtensions`. Nothing
+     * threw, the sources genuinely became available, and the run's own counters said otherwise.
+     * A caller that installs has to invalidate; a caller that only reads must not, because
+     * that is the case the cache is for.
+     */
+    public function forgetInstalled(): void
+    {
+        $this->surveyed = false;
+        $this->installedIds = [];
+        $this->installedPackages = [];
+    }
 
     public function __construct(
         private readonly Gateway $gateway,
@@ -240,28 +274,59 @@ final class SeriesLocator
      *
      * @return list<string>
      */
-    private function installedSources(): array
+    public function installedSources(): array
     {
-        if ($this->installed !== null) {
-            return $this->installed;
+        $this->installed();
+
+        return $this->installedIds;
+    }
+
+    /**
+     * The extension packages this server has, which is how an import identifies one.
+     *
+     * The same query as {@see self::installedSources()}, because it is the same question asked
+     * two ways: the resolver needs a source *id* and the installer needs a *package*, and two
+     * queries would be two chances for the two to disagree about what is installed.
+     *
+     * @return list<string>
+     */
+    public function installedPackages(): array
+    {
+        $this->installed();
+
+        return $this->installedPackages;
+    }
+
+    private function installed(): void
+    {
+        if ($this->surveyed) {
+            return;
         }
 
         $result = $this->gateway->execute(
-            '{ sources(first: 400) { nodes { id extension { pkgName isInstalled } } } }'
+            '{ sources(first: 400) { nodes { id name extension { pkgName isInstalled } } } }'
         );
 
-        $this->installed = [];
+        $this->surveyed = true;
 
         foreach ($result['sources']['nodes'] ?? [] as $node) {
-            // `isInstalled` is on the extension, not on the source. `SourceType` has no
-            // such field, so asking for one is a validation error that reads as an empty
-            // catalogue and makes every source look uninstalled.
-            if ($node['extension']['isInstalled'] ?? false) {
-                $this->installed[] = (string) $node['id'];
+            /*
+             * `isInstalled` is on the extension, not on the source. `SourceType` has no such
+             * field, so asking for one is a validation error that reads as an empty catalogue
+             * and makes every source look uninstalled.
+             */
+            if (! ($node['extension']['isInstalled'] ?? false)) {
+                continue;
+            }
+
+            $this->installedIds[] = (string) $node['id'];
+
+            $package = $node['extension']['pkgName'] ?? null;
+
+            if (is_string($package) && $package !== '') {
+                $this->installedPackages[] = $package;
             }
         }
-
-        return $this->installed;
     }
 
     /**

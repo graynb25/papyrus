@@ -3462,3 +3462,117 @@ were eliminated.
      response rather than by reading it. Same trap one level up: two probes disagreed about whether
      the url join worked, and the second had mislabelled its own input, so the number that settled
      it was the one where the input was printed.
+
+182. **A cache that spans a write makes the write report itself as a no-op.** `SeriesLocator`
+     answers "which extensions are installed" once and reuses it, because an import asks that
+     question per series and 1,277 series against a fresh query each time is 1,277 queries to
+     learn the same thing. That is the right cache. But an install *changes the thing being
+     cached*, so the installer's post-install survey read the pre-install answer and reported
+     **`installed: 0`**. Nothing threw, the sources genuinely became available, and the run's
+     own counters said otherwise. **A cached read must be invalidated by whoever invalidates the
+     world, and only a caller that writes may do that.** A reader that only reads must leave the
+     cache alone, because that is the case the cache exists for.
+
+183. **Classify an outcome by a named value, never by searching its user-facing sentence.**
+     `BackupImporter` decided a series sat on a missing source by looking for the phrase
+     "not installed" in the reason string. That put a database column at the mercy of prose: a
+     plainer sentence would have reclassified **195 series** as genuinely not found, with
+     nothing failing and no test able to see it. `Resolution` now carries `missing_source` and
+     `unreachable_source` as constructors, and the ledger matches on the tier. **If a string
+     reaches the database, it is a bug waiting for an editor.**
+
+184. **A counter that lands in two buckets makes the totals exceed the library, and it reads as
+     rounding.** Every unresolved resolution counted as `not_found` and the ambiguous ones also
+     counted as `ambiguous`: **1,290 accounted for out of 1,277**. Nothing overflowed, no
+     assertion caught it, and the report looked like a small arithmetic error rather than a
+     counting bug. `BackupImporter` now buckets by the resolver's tier with exactly one
+     increment per series, and `test_the_buckets_add_up_to_the_library` sums them against the
+     library size. **Assert that your categories sum to the whole.** It is the only check that
+     catches a category that belongs to two parents.
+
+185. **A global scope means an unauthenticated command finds nothing, and looks like it found
+     everything.** The ledger restricts rows to whoever is signed in; a command run from a
+     shell has nobody signed in, so the scope degrades to `user_id is null`. The importer read
+     its own ledger through that scope, so on a second run it found no rows, decided every series
+     was new, and hit the **unique index on `(user_id, source_id, source_url)`**. The delta, the
+     whole reason an interrupted import is safe to resume, worked only in tests, because the
+     tests authenticate. Reads and writes for a named user go through `forUser($user)`. **A
+     suite that authenticates cannot see this class of bug at all**, which is the argument for
+     testing the command as well as the class.
+
+186. **SQLite does not enforce column types, so a mistyped column passes every test on the
+     database this project ships with.** `imported_series.last_seen_run_id` was declared
+     `timestamp` because the line above it ended in `_at` and this one ends in `_id`. Measured:
+     inserting `7` into that column stores the integer `7` and `typeof` reports `integer`, so
+     every write succeeded, every read came back correct, and the suite was green. It would be
+     wrong on any database that coerces. Same family, same file: the three import models had no
+     `casts()` at all, so `$run->applied` arrived as the string `'1'` and `$source->obsolete`
+     as the integer `1`. `assertTrue` on the latter failed; `== ` on the former would have
+     passed while a report printed a string. **A passing test on SQLite is evidence about your
+     code, not about your schema.**
+
+187. **`trans_choice` does not process `{1}`, and a pluralising sentence nobody rendered is a
+     sentence nobody wrote.** Laravel's `choice()` splits the key on the pipe, takes a whole
+     branch, and runs `makeReplacements` over it. `{1}` is not a placeholder it knows, so it
+     reaches the output as text. Measured:
+
+     ```
+     trans_choice('{1}:count series sits...|[2,*]:count series sit...', 1, ['count' => 1])
+       -> '  {1}1 series sits on a source this server has no extension for.'
+     ```
+
+     This project's blade uses the `{1} :count language variant|[2,*] :count language variants`
+     style, which reads well in a template precisely because the singular branch is one short
+     clause and nobody needs the marker. Copying that shape into prose produces literal braces,
+     and **nothing fails**: no exception, no failed assertion, just a report that says `{1}` to
+     a reader. The fix is that both branches carry the whole sentence, and
+     `.tools/suwayomi/check-choice-output.php` renders every one of them at 1 and at 195
+     because reading them is the only check that works. **A string that varies at runtime is
+     code, and should be run at least once before it ships.**
+
+188. **A per-run table read without the run id is a table that grows without telling you.**
+     `imported_sources` holds one row per source per run, on purpose, so that a second run can
+     say "still gone" without re-checking a repo. The report read every row the user had rather
+     than this run's, so measured after two runs against the real backup it printed all seven
+     dead sources **twice**, and its "and 4 more" was computed as 14 minus the 10 it showed.
+     The number about nothing is the tell. **Any query over a per-run table needs the run id,
+     and a count that can exceed the number of distinct things is a count that is wrong.**
+
+189. **A sentence built from the library size is a claim about series you never looked at.**
+     With `--limit=3` on a run that changed nothing, the report said "All 1,277 series already
+     match what is here" after examining three of them. It read as an honest summary and was
+     false about 1,274 series. The fix is to build the claim from what the run actually
+     processed, and to say so when that is less than the library. **A percentage or a total
+     copied from the input rather than from the work is the most comfortable lie an importer
+     can tell**, because on a partial run it looks exactly like a successful full one.
+
+190. **`fetchExtensions` refreshes the catalogue and installs nothing, and its name says
+     otherwise.** The import's extension step existed to make three quarters of a reader's
+     library reachable: measured, 1,277 series on 52 sources with extensions for 13. It called
+     `fetchExtensions`, on the reasonable reading that fetching extensions installs them.
+     Measured against the live server:
+
+     ```
+     before: 18 installed packages
+     fetchExtensions returned: 1428 extensions
+     after:  18 installed packages
+     gained: 0
+     ```
+
+     The step had never installed a single extension. The working route was already in the app,
+     unused by the import: `updateExtension(input: {id, patch: {install: true}})` one package at
+     a time, keyed by pkgName. Measured the same way: 17 installed, asked for one, got 18, and
+     nothing else moved. **The suffix on a mutation says what it returns, not what it does**, and
+     the only way to tell is to read the server's state before and after. This also removes a
+     cost the old route could not avoid: `FetchExtensionsInput` takes no filter, so it installed
+     all 1,428 extensions or none, against the 32 the library needed.
+
+191. **A test that asserts on the request cannot catch a request that does the wrong thing.** The
+     installer suite asserted that `fetchExtensions` was sent, and passed throughout the time
+     the call was installing nothing. Every assertion in that suite was about the shape of the
+     traffic, none about the state on the other side. It is a natural way to write the test,
+     because the fake is what you have, and it is the one way that cannot fail: **assert on the
+     server's state, and use the request log only to explain a failure.** The rewritten suite
+     makes the fake's installed set mutable, mutates it in the `updateExtension` branch, and
+     every test asserts on what landed. Five mutations on the install route are caught; the
+     equivalent of the first one, put back, takes four tests down.

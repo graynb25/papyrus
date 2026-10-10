@@ -3,6 +3,7 @@
 namespace App\Import\Tachimanga;
 
 use App\Import\BackupReader;
+use App\Import\BackupSource;
 use App\Import\ImportedBackup;
 use App\Import\ImportedChapter;
 use App\Import\ImportedSeries;
@@ -307,6 +308,7 @@ final class TachimangaReader implements BackupReader
             series: $built,
             categories: $this->categories($pdo),
             totalInFile: (int) $this->query($pdo, 'select count(*) from '.$this->t(TachimangaSchema::MANGA_TABLE))->fetchColumn(),
+            sources: $this->sources($pdo),
         );
     }
 
@@ -327,6 +329,26 @@ final class TachimangaReader implements BackupReader
 
         if ($statement === false) {
             throw new ImportRefused('That backup could not be queried. It may be damaged.');
+        }
+
+        return $statement;
+    }
+
+    /**
+     * Prepare and execute a query with no parameters, returning the statement.
+     *
+     * Separate from {@see self::query()} because this one is iterated rather than fetched,
+     * and typing each of them twice would be noise. Both refuse rather than return false,
+     * for the reason {@see self::query()} gives.
+     *
+     * @throws ImportRefused
+     */
+    private function statement(PDO $pdo, string $sql): PDOStatement
+    {
+        $statement = $pdo->query($sql);
+
+        if ($statement === false) {
+            throw new ImportRefused('That backup could not be read. It may be damaged.');
         }
 
         return $statement;
@@ -598,6 +620,64 @@ final class TachimangaReader implements BackupReader
         return $categories;
     }
 
+    /**
+     * Every source the shelf sits on, with the package that identifies it.
+     *
+     * Three hops, and two of them look wrong if you guess: `Source.extension` holds a number
+     * rather than a package name, and the packages live in `Extension.pkg_name`. An earlier
+     * join looked for a package on `Source`, found nothing, and concluded the backup carried
+     * no extension information at all.
+     *
+     * Only sources carrying shelf series are returned. The file names 413 sources, which is
+     * every source it has ever seen, and driving an install from that list would be an action
+     * the reader did not ask for. This returns the 56, and of those 52 resolve to a package.
+     *
+     * @return Collection<int, BackupSource>
+     */
+    private function sources(PDO $pdo): Collection
+    {
+        $sql = sprintf(
+            'select s.%1$s as source_id, s.%2$s as name, e.%3$s as package,
+                    e.%4$s as is_obsolete, e.%5$s as version_name, count(m.id) as series
+             from %6$s m
+             join %7$s s on s.%1$s = m.%8$s
+             left join %9$s e on e.%10$s = s.%11$s
+             where m.%12$s = 1
+             group by s.%1$s, s.%2$s, e.%3$s, e.%4$s, e.%5$s
+             order by series desc',
+            $this->t(TachimangaSchema::SOURCE_ID_COLUMN),
+            $this->t(TachimangaSchema::SOURCE_NAME_COLUMN),
+            $this->t(TachimangaSchema::EXTENSION_PACKAGE_COLUMN),
+            $this->t(TachimangaSchema::EXTENSION_OBSOLETE_COLUMN),
+            $this->t(TachimangaSchema::EXTENSION_VERSION_COLUMN),
+            $this->t(TachimangaSchema::MANGA_TABLE),
+            $this->t(TachimangaSchema::SOURCE_TABLE),
+            $this->t(TachimangaSchema::MANGA_SOURCE_COLUMN),
+            $this->t(TachimangaSchema::EXTENSION_TABLE),
+            $this->t(TachimangaSchema::EXTENSION_ID_COLUMN),
+            $this->t(TachimangaSchema::SOURCE_EXTENSION_COLUMN),
+            $this->t(TachimangaSchema::IN_LIBRARY_COLUMN),
+        );
+
+        $sources = new Collection;
+
+        foreach ($this->statement($pdo, $sql) as $row) {
+            $package = $row['package'] === null ? null : (string) $row['package'];
+
+            $sources->push(new BackupSource(
+                sourceId: (int) $row['source_id'],
+                package: $package,
+                seriesCount: (int) $row['series'],
+                obsolete: (bool) $row['is_obsolete'],
+                name: $row['name'] === null ? null : (string) $row['name'],
+                versionName: $row['version_name'] === null ? null : (string) $row['version_name'],
+            ));
+        }
+
+        return $sources;
+    }
+
+    /**
     /**
      * Read one date, refusing one that says the unit was wrong.
      *

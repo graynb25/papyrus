@@ -3,6 +3,7 @@
 namespace Tests\Support;
 
 use App\Import\ImportedSeries;
+use App\Models\ImportedSeries as LedgerRow;
 use PDO;
 use ZipArchive;
 
@@ -43,6 +44,33 @@ trait BuildsTachimangaBackups
 
     /** Build the archive but leave out a column the reader binds. */
     protected bool $withoutSourceOrder = false;
+
+    /**
+     * Add shelf series sitting on sources this server can never have.
+     *
+     * Off by default because it adds series to the shelf, and the committed tests count that.
+     * On, the fixture holds two more sources than it otherwise would: one the reader had
+     * already marked obsolete, and one with no extension row at all so the join returns a null
+     * package. Those are the two shapes that must not be conflated with "not installed here",
+     * and neither can be proven from a fixture where every source is reachable.
+     */
+    protected bool $withUnreachableSources = false;
+
+    /**
+     * Mark one manga's chapters as never read, whatever the rows say.
+     *
+     * This is the knob the delta tests need, and the earlier `chapter_last_read_at` clock was
+     * not: {@see LedgerRow::fingerprintFor()} hashes a chapter's `isRead`, `isBookmarked` and
+     * `lastPageRead`, and `lastReadAt` only per series. Moving the clock therefore produced an
+     * identical fingerprint and every delta test saw "nothing changed".
+     *
+     * Per manga id rather than a single switch, because the property under test is that the
+     * delta is decided per series. A knob that moved every series at once would prove only
+     * that the run does something.
+     *
+     * @var array<int, bool> Manga id to "unread".
+     */
+    protected array $unreadManga = [];
 
     /**
      * Write a date that reads before 2000 once a seconds column is read as milliseconds.
@@ -126,6 +154,7 @@ trait BuildsTachimangaBackups
         $pdo->exec($this->chapterTable());
         $pdo->exec($this->historyTable());
         $pdo->exec($this->categoryTables());
+        $pdo->exec($this->sourceTables());
         $this->seedRows($pdo);
 
         return $path;
@@ -227,6 +256,58 @@ trait BuildsTachimangaBackups
     }
 
     /**
+     * The source catalogue, column for column as measured.
+     *
+     * `Source.extension` is a foreign key to `Extension.id` and holds a number. Reading it as
+     * a package name is the mistake that made an earlier version of the import conclude the
+     * backup carried no extension information at all, so the column is typed `integer` here to
+     * match what the real file stores rather than what the name suggests.
+     */
+    private function sourceTables(): string
+    {
+        return <<<'SQL'
+            create table Source (
+                id integer primary key,
+                name varchar(255),
+                lang varchar(16),
+                extension integer,
+                is_nsfw boolean,
+                is_direct boolean,
+                random_ua boolean
+            );
+            create table Extension (
+                id integer primary key,
+                apk_name varchar(255),
+                icon_url varchar(2048),
+                name varchar(255),
+                pkg_name varchar(255),
+                version_name varchar(64),
+                version_code integer,
+                lang varchar(16),
+                is_nsfw boolean,
+                is_installed boolean,
+                has_update boolean,
+                is_obsolete boolean,
+                class_name varchar(255),
+                pkg_factory varchar(255),
+                has_changelog boolean,
+                has_readme boolean,
+                repo_id integer,
+                create_at bigint,
+                update_at bigint,
+                dirty boolean,
+                commit_id varchar(64),
+                base_url varchar(2048),
+                alternate_name varchar(255),
+                install_path_type integer,
+                apk_url varchar(2048),
+                jar_url varchar(2048),
+                content_warning integer
+            )
+            SQL;
+    }
+
+    /**
      * Three series. Only the first is on the shelf.
      *
      * The source id is the real Thunder Scans one, which is over 2^53, because a fixture
@@ -288,6 +369,18 @@ trait BuildsTachimangaBackups
         ];
 
         foreach ([...$shelfChapters, ...$cacheChapters] as $row) {
+            /*
+             * The unread knob clears the read flag, the bookmark and the page, because the
+             * fingerprint covers all three. Clearing only `read` would leave a bookmark on the
+             * second chapter and the series would still hash differently.
+             */
+            if (isset($this->unreadManga[$row[0]])) {
+                $row[3] = 0; // read
+                $row[4] = 0; // bookmark
+                $row[5] = 0; // last page
+                $row[6] = null; // last read at
+            }
+
             $chapter->execute($hasOrder ? $row : array_slice($row, 0, 8));
         }
 
@@ -303,6 +396,64 @@ trait BuildsTachimangaBackups
         $category->execute([2, 'Snowflakes', $this->timestamps['category_create_at']]);
 
         $pdo->prepare('insert into CategoryManga (category, manga) values (?, ?)')->execute([1, 217]);
+
+        $this->seedSources($pdo);
+    }
+
+    /**
+     * The source catalogue, covering the three shapes an import has to tell apart.
+     *
+     * The second source row carries no shelf series, which is what a browse-cache source looks
+     * like, and it is here so `ImportedBackup::librarySources()` has something to filter out
+     * rather than a list that happens to be right.
+     */
+    private function seedSources(PDO $pdo): void
+    {
+        $extension = $pdo->prepare(
+            'insert into Extension (id, name, pkg_name, version_name, lang, is_installed, is_obsolete)
+             values (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        $source = $pdo->prepare(
+            'insert into Source (id, name, lang, extension, is_nsfw, is_direct, random_ua)
+             values (?, ?, ?, ?, 0, 0, 0)'
+        );
+
+        // Thunder Scans. The real source id, over 2^53, carrying the two shelf series that
+        // mangaRows() already declares.
+        $extension->execute([7, 'Thunder Scans', 'eu.kanade.tachiyomi.extension.en.thunderscans', '1.4.9', 'en', 1, 0]);
+        $source->execute([2_848_420_679_472_350_044, 'Thunder Scans', 'en', 7]);
+
+        // A source that only the browse cache sits on, with a package of its own so a reader
+        // that forgot to filter on shelf series would report two sources where there is one.
+        $extension->execute([8, 'MangaSee', 'eu.kanade.tachiyomi.extension.en.mangasee', '1.4.7', 'en', 1, 0]);
+        $source->execute([1_000_000_000_000_000_001, 'MangaSee', 'en', 8]);
+
+        if (! $this->withUnreachableSources) {
+            return;
+        }
+
+        /*
+         * Marked obsolete by the reader's own app, so the site has shut down. Nothing installs
+         * this one, and reporting it as "not installed here" would send a reader looking for a
+         * package that does not exist.
+         */
+        $extension->execute([9, 'Utoon', 'eu.kanade.tachiyomi.extension.en.utoon', '1.4.2', 'en', 1, 1]);
+        $source->execute([2_848_420_679_472_350_099, 'Utoon', 'en', 9]);
+
+        /*
+         * No extension row at all, so the join yields a null package. Measured on the real
+         * backup: 4 of the 56 library sources are in this state, which is a reader having
+         * deleted the extension and the Source row outliving it.
+         */
+        $source->execute([2_848_420_679_472_350_100, 'Nameless', 'en', null]);
+
+        $manga = $pdo->prepare(
+            'insert into Manga (id, url, title, in_library, in_library_at, source, real_url)
+             values (?, ?, ?, 1, ?, ?, null)'
+        );
+        $manga->execute([9266, '/comics/gone-forever', 'Gone Forever', $this->timestamps['in_library_at'], 2_848_420_679_472_350_099]);
+        $manga->execute([9267, '/comics/nameless-source', 'Nameless Source', $this->timestamps['in_library_at'], 2_848_420_679_472_350_100]);
     }
 
     private function temporaryPath(string $suffix): string

@@ -2,10 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Import\BackupReader;
+use App\Import\BackupReaders;
 use App\Import\ImportRefused;
-use App\Import\Tachimanga\TachimangaReader;
-use App\Support\Suwayomi\Timestamps;
 use Illuminate\Console\Command;
 
 /**
@@ -40,7 +38,7 @@ class InspectBackup extends Command
 
     protected $description = 'Read another reader app\'s library backup and report what it holds, without importing anything';
 
-    public function handle(Timestamps $timestamps): int
+    public function handle(BackupReaders $readers): int
     {
         $path = (string) $this->argument('path');
 
@@ -50,13 +48,12 @@ class InspectBackup extends Command
             return self::FAILURE;
         }
 
-        // Each registered reader is asked in turn. One today, and the loop is what makes
-        // adding a second a registration rather than a change here.
-        $reader = $this->readerFor($path);
+        $reader = $readers->tryFor($path);
 
         if ($reader === null) {
             $this->components->error('No reader recognises that file.');
             // No markup here. This is a terminal, and a <code> tag renders as itself.
+            $this->line('  This server reads backups from: '.$readers->supported().'.');
             $this->line('  A Tachimanga backup is the .tmb that Tachimanga writes from its own backup screen.');
 
             return self::FAILURE;
@@ -127,27 +124,5 @@ class InspectBackup extends Command
         $this->components->info('Nothing was imported. No library was touched.');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * The first registered reader that claims the file, or null.
-     *
-     * Tries every reader rather than switching on the extension, because the extension is
-     * chosen by another app: Tachimanga names its own files by timestamp and a reader who
-     * renamed one in a file manager is not trying to deceive anyone.
-     *
-     * @param  list<BackupReader>  $readers
-     */
-    private function readerFor(string $path, array $readers = []): ?BackupReader
-    {
-        $readers = $readers ?: [new TachimangaReader(new Timestamps)];
-
-        foreach ($readers as $reader) {
-            if ($reader->recognises($path)) {
-                return $reader;
-            }
-        }
-
-        return null;
     }
 }

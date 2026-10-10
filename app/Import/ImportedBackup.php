@@ -29,6 +29,20 @@ use Illuminate\Support\Collection;
  *
  * No rating or tag is carried because Tachimanga stores neither, so a reader who rated
  * 300 series on their phone has lost them and the importer cannot recover them.
+ *
+ * ## Why the source list is the shelf's and not the file's
+ *
+ * {@see $sources} is what an install is driven from, so it names the sources the reader's
+ * library sits on. The Tachimanga file carries 279 `Source` rows in total, and only 52 of
+ * them have library series against them; the other 227 are what the app browsed past on a
+ * phone. Fetching extensions for those would be installing 227 things a reader did not ask
+ * for on the strength of what they once scrolled past.
+ *
+ * Its series counts sum to 1,260 against a shelf of 1,277, and the 17 that are missing are
+ * series whose `source` id has no row in the file's own `Source` table. That is a reader
+ * having removed a source while keeping its series. They are not lost: {@see $series} still
+ * carries them and the resolver finds them by url, because a series does not need its source
+ * named in order to be recognised. It is only this list that is short of them.
  */
 final class ImportedBackup
 {
@@ -37,6 +51,7 @@ final class ImportedBackup
      * @param  Collection<string, int>  $categories  Category name to member count, as free-text labels.
      * @param  int  $totalInFile  How many series the file holds in total, library and browse cache together.
      * @param  int  $schemaVersion  The format's own version number, which is what the reader gates on.
+     * @param  Collection<int, BackupSource>  $sources  The sources the shelf sits on, largest first.
      */
     public function __construct(
         public readonly string $format,
@@ -44,6 +59,7 @@ final class ImportedBackup
         public readonly Collection $series,
         public readonly Collection $categories,
         public readonly int $totalInFile,
+        public readonly Collection $sources = new Collection,
     ) {}
 
     /**

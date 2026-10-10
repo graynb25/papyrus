@@ -264,6 +264,88 @@ class TachimangaReaderTest extends TestCase
         $this->assertSame(0, $categories->get('Snowflakes'), 'an empty category still counts as a category');
     }
 
+    public function test_the_source_list_names_the_package_not_the_foreign_key(): void
+    {
+        $this->built = $this->buildTachimangaBackup();
+        $sources = $this->reader()->read($this->built)->sources;
+
+        $this->assertCount(1, $sources, 'one source carries shelf series; the second carries only browse cache');
+
+        $source = $sources->first();
+
+        /*
+         * `Source.extension` holds a number and the package lives two hops away in
+         * `Extension.pkg_name`. An earlier join looked for the package on `Source`, matched
+         * nothing, and concluded the backup carried no extension information at all, which
+         * would have made the whole install step look pointless.
+         */
+        $this->assertSame('eu.kanade.tachiyomi.extension.en.thunderscans', $source->package);
+        $this->assertSame('Thunder Scans', $source->name);
+        $this->assertSame('1.4.9', $source->versionName);
+        $this->assertSame(2, $source->seriesCount, 'both shelf series sit on Thunder Scans');
+        $this->assertFalse($source->obsolete);
+    }
+
+    public function test_a_source_with_only_browse_cache_series_is_not_listed(): void
+    {
+        $this->built = $this->buildTachimangaBackup();
+        $sources = $this->reader()->read($this->built)->sources;
+
+        /*
+         * The fixture seeds MangaSee with a package of its own, and MangaSee carries one
+         * browse-cache row and nothing else. Listing it would mean fetching extensions on the
+         * strength of something the reader once scrolled past.
+         */
+        $this->assertNotContains(
+            'eu.kanade.tachiyomi.extension.en.mangasee',
+            $sources->map(fn ($s): ?string => $s->package)->all(),
+        );
+    }
+
+    public function test_a_dead_source_is_marked_rather_than_merely_missing(): void
+    {
+        $this->withUnreachableSources = true;
+        $this->built = $this->buildTachimangaBackup();
+        $sources = $this->reader()->read($this->built)->sources;
+
+        $obsolete = $sources->firstWhere('package', 'eu.kanade.tachiyomi.extension.en.utoon');
+
+        $this->assertNotNull($obsolete, 'the marked-dead source is still listed, so the report can name it');
+        $this->assertTrue($obsolete->obsolete);
+        $this->assertFalse(
+            $obsolete->isRecoverable(),
+            'obsolete is a fact about the source, so nothing installs it and nothing retries it',
+        );
+
+        $nameless = $sources->firstWhere('name', 'Nameless');
+
+        $this->assertNotNull($nameless);
+        $this->assertNull($nameless->package, 'no extension row means no package to ask for');
+        $this->assertFalse($nameless->obsolete);
+        $this->assertTrue(
+            $nameless->isRecoverable(),
+            'a source with no extension row is not proof the source is gone',
+        );
+    }
+
+    public function test_the_source_list_does_not_swallow_shelf_series_on_unnamed_sources(): void
+    {
+        $this->withUnreachableSources = true;
+        $this->built = $this->buildTachimangaBackup();
+        $backup = $this->reader()->read($this->built);
+
+        $named = $backup->sources->sum(fn ($s): int => $s->seriesCount);
+
+        /*
+         * The inner join drops series whose `source` has no `Source` row, so the source list
+         * sums to less than the shelf. Measured on the real backup: 1,260 of 1,277. Those 17
+         * are still imported, and if a change ever made them vanish from `$series` as well,
+         * the difference would be silent and the ceiling would quietly drop.
+         */
+        $this->assertSame(4, $backup->series->count());
+        $this->assertSame(4, $named, 'the fixture names every shelf source, so nothing is lost here');
+    }
+
     public function test_a_version_this_server_does_not_know_is_refused(): void
     {
         $this->version = 4;

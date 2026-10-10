@@ -41,6 +41,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['import_run_id', 'source_id', 'name', 'pkg_name', 'series_count', 'obsolete'])]
 class ImportedSource extends OwnedModel
 {
+    /**
+     * Without these, SQLite hands back integers and every caller compares them wrongly.
+     *
+     * `$source->obsolete` arrives as `1` rather than `true`, which fails an `assertTrue` and
+     * passes `== $other`. That is not a test-only problem: it decides whether a reader is told
+     * a source has gone for good or merely that it is not installed here, and those two need
+     * different amounts of effort from them.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'series_count' => 'integer',
+            'obsolete' => 'boolean',
+        ];
+    }
+
     /** @return BelongsTo<ImportRun, $this> */
     public function run(): BelongsTo
     {

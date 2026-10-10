@@ -49,6 +49,15 @@ return new class extends Migration
             $table->unsignedInteger('not_found')->default(0);
             $table->unsignedInteger('ambiguous')->default(0);
 
+            /**
+             * Series on a source this server has no extension for. Kept apart from
+             * `not_found` because it is the one unresolved outcome with a fix, and a reader
+             * shown only a total cannot tell which of their missing series to go install
+             * things for. Counted in series, not sources: `sources_missing` below counts the
+             * sources to install, this counts what installing them would recover.
+             */
+            $table->unsignedInteger('series_on_missing_sources')->default(0);
+
             /** How many series this run actually wrote, which differs from resolved. */
             $table->unsignedInteger('applied')->default(0);
 
@@ -128,7 +137,20 @@ return new class extends Migration
             $table->unsignedInteger('chapters_seen')->default(0);
             $table->unsignedInteger('chapters_applied')->default(0);
 
-            $table->timestamp('last_seen_run_id')->nullable();
+            /*
+             * The run that last saw this series. An id, so `foreignId` rather than
+             * `timestamp`, which is what this column was declared as until it was read
+             * properly: the name ends in `_id` and the line above it ends in `_at`, and
+             * writing a migration by that pattern produced a datetime column holding a
+             * run id.
+             *
+             * SQLite does not catch it. Measured: inserting `7` into a `timestamp` column
+             * stores the integer 7 and `typeof` reports `integer`, so every write succeeded
+             * and every read came back right. It is silent on the database this project
+             * ships with and would be wrong on one that coerces. `foreignId` costs nothing
+             * and says what the column holds, so the next reader is not misled.
+             */
+            $table->foreignId('last_seen_run_id')->nullable()->constrained('import_runs')->nullOnDelete();
             $table->timestamp('last_applied_at')->nullable();
             $table->timestamps();
 

@@ -156,6 +156,14 @@ final class SeriesResolver
             'from_source' => $tiers['tier 2'] ?? 0,
             'not_found' => $tiers['unresolved'] ?? 0,
             'ambiguous' => $tiers['ambiguous'] ?? 0,
+            /*
+             * Series, not sources. `sources_missing` further down counts distinct source ids,
+             * which is what a reader needs in order to go install things; this counts the
+             * series affected, which is what tells them how much of their library is
+             * affected. They are different questions and the same number answers neither.
+             */
+            'series_on_missing_sources' => $tiers['missing_source'] ?? 0,
+            'series_on_unreachable_sources' => $tiers['unreachable_source'] ?? 0,
             'sources_missing' => count($this->missingSources),
             'sources_unavailable' => count($this->unavailableSources),
         ];
@@ -194,7 +202,7 @@ final class SeriesResolver
         if ($this->locator->sourceIsInstalled($series->sourceId) === false) {
             $this->missingSources[$series->sourceId] = true;
 
-            return Resolution::unresolved(
+            return Resolution::missingSource(
                 "This server does not have this series' source installed, so it cannot be looked "
                 ."up (source {$series->sourceId}). Installing that extension would let these series "
                 .'come across. Nothing about the series itself has gone missing.'
@@ -202,7 +210,7 @@ final class SeriesResolver
         }
 
         if (isset($this->unavailableSources[$series->sourceId])) {
-            return Resolution::unresolved(
+            return Resolution::unreachableSource(
                 "This series is on a source this server could not reach ({$series->sourceId})."
             );
         }

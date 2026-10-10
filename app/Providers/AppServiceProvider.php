@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Import\BackupReaders;
+use App\Import\Tachimanga\TachimangaReader;
 use App\Search\Deduplicator;
 use App\Search\TitleNormalizer;
 use App\Support\Deployment;
@@ -28,6 +30,18 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Gateway::class);
         $this->app->singleton(Deployment::class);
         $this->app->singleton(TitleNormalizer::class);
+
+        /*
+         * The one place the supported backup formats are listed.
+         *
+         * Both the inspect command and the importer take a list of readers, so a second
+         * format has to be registered here once rather than remembered in two places. The
+         * order is the order they are asked in, and `recognises()` sniffs magic bytes, so a
+         * file two readers both claim goes to the first. Nothing claims two files today.
+         */
+        $this->app->singleton(BackupReaders::class, fn ($app): BackupReaders => new BackupReaders([
+            $app->make(TachimangaReader::class),
+        ]));
 
         // The fuzzy-merge threshold is a primitive, so the container cannot
         // infer it. Binding it here keeps the value in config, where it can be

@@ -42,6 +42,7 @@ use Illuminate\Support\Collection;
  * @property int $sources_missing
  * @property int $not_found
  * @property int $ambiguous
+ * @property int $series_on_missing_sources
  * @property int $applied
  * @property int $unchanged
  * @property int $read_chapters_applied
@@ -65,6 +66,7 @@ use Illuminate\Support\Collection;
     'sources_missing',
     'not_found',
     'ambiguous',
+    'series_on_missing_sources',
     'applied',
     'unchanged',
     'read_chapters_applied',
@@ -73,6 +75,35 @@ use Illuminate\Support\Collection;
 ])]
 class ImportRun extends OwnedModel
 {
+    /**
+     * Cast because every counter here is compared and summed, and SQLite hands them back as
+     * strings without this. `$run->applied` arrived as `'1'`, so a report printed a string and
+     * a check for "nothing was imported" was false when nothing had been.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'schema_version' => 'integer',
+            'series_in_file' => 'integer',
+            'library_series' => 'integer',
+            'chapters' => 'integer',
+            'resolved' => 'integer',
+            'from_catalogue' => 'integer',
+            'from_source' => 'integer',
+            'sources_missing' => 'integer',
+            'not_found' => 'integer',
+            'ambiguous' => 'integer',
+            'series_on_missing_sources' => 'integer',
+            'applied' => 'integer',
+            'unchanged' => 'integer',
+            'read_chapters_applied' => 'integer',
+            'started_at' => 'datetime',
+            'finished_at' => 'datetime',
+        ];
+    }
+
     public const RUNNING = 'running';
 
     public const COMPLETE = 'complete';

@@ -75,6 +75,50 @@ final class Resolution
     }
 
     /**
+     * This server has no extension for the series' source, so it cannot be asked.
+     *
+     * A named case rather than a sentence a caller has to recognise, because the difference
+     * is load-bearing in two places: a reader can install an extension and these come across,
+     * which is not true of any other unresolved reason; and the ledger files them as
+     * `missing_source` so that a source coming back later is picked up on the next run
+     * instead of being filed as genuinely not found.
+     *
+     * The earlier version distinguished these by searching the reason for the phrase
+     * "not installed", which couples a database column to the wording of a user-facing
+     * sentence. Rewording the sentence to be plainer would have silently reclassified 195
+     * series as not found, with nothing failing.
+     */
+    public static function missingSource(string $reason): self
+    {
+        return new self(
+            resolved: false,
+            suwayomiMangaId: null,
+            title: null,
+            reason: $reason,
+            tier: 'missing_source',
+            matches: 0,
+        );
+    }
+
+    /**
+     * The source could not be reached, so nothing is known about the series either way.
+     *
+     * Distinct from {@see self::missingSource()} because the fix differs: this one is worth
+     * retrying, since the source may be up again by the next run.
+     */
+    public static function unreachableSource(string $reason): self
+    {
+        return new self(
+            resolved: false,
+            suwayomiMangaId: null,
+            title: null,
+            reason: $reason,
+            tier: 'unreachable_source',
+            matches: 0,
+        );
+    }
+
+    /**
      * The source holds more than one series on this slug.
      *
      * Deliberately unresolved. Silently taking the first would file a reader's history

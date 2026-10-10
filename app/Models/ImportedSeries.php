@@ -68,6 +68,28 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class ImportedSeries extends OwnedModel
 {
+    /**
+     * `source_id` and `backup_manga_id` are past 2^53, so they are cast to int rather than
+     * left as whatever the driver returns. They only survive as exact integers on this
+     * project's SQLite; a driver that widened to float would round 2848420679472350044 to
+     * 2848420679472350208 and every join after that would find nothing.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'source_id' => 'integer',
+            'suwayomi_manga_id' => 'integer',
+            'backup_manga_id' => 'integer',
+            'attempts' => 'integer',
+            'chapters_seen' => 'integer',
+            'chapters_applied' => 'integer',
+            'last_seen_run_id' => 'integer',
+            'last_applied_at' => 'datetime',
+        ];
+    }
+
     public const RESOLVED = 'resolved';
 
     /** Asked and not found: the source answered, and the series is not at that url. */
