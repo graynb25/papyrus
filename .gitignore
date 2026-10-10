@@ -56,6 +56,19 @@ yarn-error.log
 /bootstrap/cache/*
 !/bootstrap/cache/.gitignore
 
+# The runtime that packaging/runtime/stage-jre.php builds, and the install layout a probe or a
+# packaged build assembles around it.
+#
+# The launcher deliberately refuses to fall back to a system JVM, so the JRE has to exist inside
+# the install. That install is the repository root by default, which means a staged runtime is
+# 179MB of third-party binaries sitting where `git add -A` will find them. One accidental add
+# and the history carries them forever.
+#
+# The suwayomi/ directory here is the packaging layout's runtime, not the application's. Nothing
+# in app/ reads from it.
+/suwayomi/
+/runtime/
+
 # Local tooling output: browser-gate screenshots and scratch scripts. The probes
 # under .tools/suwayomi/ are kept outside this repository on purpose, because
 # several of them carry a local seed account's credentials.

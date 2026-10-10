@@ -338,6 +338,48 @@ entries containing `jdk` or `jre`, and `where java` still answered
 neither string. It is the Oracle launcher shim from trap 217, and a filter written from memory
 of what a Java path looks like is exactly the kind that misses it. The scrub now names it.
 
+**The clean-room run, with no system Java reachable.** After the scrub, `where java` returns
+nothing at all. Everything below then happened with that in force, so any process that had found
+its JVM by name rather than by absolute path would have failed there and nowhere else:
+
+```
+java:  ...\cleanroom\suwayomi\runtime\jre\bin\java.exe   the staged one, inside the install
+where java now finds: nothing, as intended
+
+port 4567 is free, so this is a real start
+starting Suwayomi, which takes the longest of the four
+Suwayomi is answering                            on attempt 3
+database is current
+the app reports ready                            on attempt 1
+started: suwayomi, web, queue, scheduler
+
+/ready  HTTP/1.1 200 OK  {"status":"ready","checks":{"key":true,"database":true,"pending_migrations":0}}
+/up     HTTP/1.1 200 OK
+aboutServer.version: v2.4.2366                  from the jar, started rather than adopted
+
+scheduler: terminated   queue: terminated   web: terminated   suwayomi: terminated
+8402 free   4567 free
+```
+
+Two runs were needed to get there, and the failure in between is worth keeping. The probe staged
+the JRE with `rename()`, so the first run consumed its own input, and deleting the clean-room
+directory afterwards destroyed it. The second run reported `NOT STAGED`. That was caught rather
+than papered over only because the probe refuses to continue when it cannot find a staged JRE,
+instead of quietly falling back to a system one. It copies now.
+
+### Staging it reproducibly
+
+`.tools` is scratch and lives outside the repository, so the manual staging above is not a build
+step anyone else can run. `packaging/runtime/stage-jre.php` is: it downloads the pinned archive,
+verifies the digest before extracting anything, strips the archive's single wrapper directory,
+and then checks that `bin/java.exe` exists and `bin/javac.exe` does not. A mismatch deletes the
+download rather than leaving it for the next person to trust by accident. `--force` replaces an
+existing staged JRE, and without it the script reports what is already there and exits.
+
+This is a build script rather than application code, so it is verified by running it end to end
+rather than by the test suite. That is a real gap and it is worth closing with tests for the
+argument parsing and the mismatch path once there is a suite that can stand a fake archive.
+
 ## Phase 1: acquiring Suwayomi
 
 This is the direct answer to "can the app ask the user whether to download it and then install
