@@ -134,7 +134,23 @@ class CheckSchedule
     /**
      * How many series a pass would visit, and how many it would skip.
      *
-     * @return array{total: int, due: int, never: int, skipped: int, interval_days: int}
+     * ## Why a series with no source is not counted as due
+     *
+     * Because it cannot be checked, and a number that cannot go down is not a number a reader
+     * can watch.
+     *
+     * A series filed from a backup whose source has since shut down has a null
+     * `suwayomi_manga_id`. There is nothing to check it against, so `CheckLedger::candidates()`
+     * excludes it, deliberately, and counting it here would contradict that. Measured on the
+     * real library: 867 series, 195 of them filed with no source, and `due` sitting at 853. A
+     * reader pressing "Check 853 series" would have watched it climb and then stop at 77%, with
+     * no way to tell the remaining 23% from a stall.
+     *
+     * So `due` here means "a pass would visit this", which is the question the button asks.
+     * The 195 are still in `total`, because they are still in the reader's library and the
+     * library page still shows them.
+     *
+     * @return array{total: int, due: int, never: int, skipped: int, unreachable: int, interval_days: int}
      */
     public function summary(User|int $user): array
     {
@@ -146,8 +162,15 @@ class CheckSchedule
 
         $due = 0;
         $never = 0;
+        $unreachable = 0;
 
         foreach ($states as $state) {
+            if ($state->suwayomi_manga_id === null) {
+                $unreachable++;
+
+                continue;
+            }
+
             if ($this->isDue($state)) {
                 $due++;
 
@@ -161,7 +184,11 @@ class CheckSchedule
             'total' => $states->count(),
             'due' => $due,
             'never' => $never,
-            'skipped' => $states->count() - $due,
+            // `$states->count() - $due` counts the unreachable ones as skipped, which would
+            // claim they are merely not due yet. They are due and can never be, so they are
+            // named.
+            'skipped' => $states->count() - $due - $unreachable,
+            'unreachable' => $unreachable,
             'interval_days' => self::defaultIntervalDays(),
         ];
     }

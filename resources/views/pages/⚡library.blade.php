@@ -753,9 +753,14 @@ new #[Title('Library')] class extends Component
         $done = max(0, $this->checkingTotal - (int) $summary['due']);
 
         /*
-         * Finished when nothing is due any more, which is the condition the job itself uses to
-         * stop re-booking. Read here rather than set during a click, so a run that finishes
-         * while the page is shut still reports as finished when it is next opened.
+         * Finished when nothing a pass could visit is due any more, which is the condition the
+         * job itself uses to stop re-booking. Read here rather than set during a click, so a
+         * run that finishes while the page is shut still reports as finished when it is next
+         * opened.
+         *
+         * Series with no source cannot be checked at all and are excluded from `due` upstream,
+         * so they cannot hold the bar open: without that, a library holding 195 of them would
+         * sit at 77% for ever with no way to tell the remainder from a stall.
          */
         $running = (int) $summary['due'] > 0;
 
@@ -1015,7 +1020,7 @@ new #[Title('Library')] class extends Component
             <div
                 class="mt-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-white/10"
                 @if ($progress['running'] && ! $progress['stalled'])
-                    wire:poll.3s="render"
+                    wire:poll.3s
                 @endif
             >
                 @if ($progress['stalled'])

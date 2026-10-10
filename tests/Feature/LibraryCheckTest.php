@@ -1268,4 +1268,79 @@ class LibraryCheckTest extends TestCase
 
         $page->call('$refresh')->assertDontSee('php artisan queue:work');
     }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A series a pass cannot visit.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_series_with_no_source_is_not_counted_as_due(): void
+    {
+        /*
+         * The disagreement this fixes.
+         *
+         * `CheckLedger::candidates()` excludes a series with no `suwayomi_manga_id`, because
+         * there is nothing to check it against. `summary()` counted it anyway, so the button
+         * said "Check 853 series" on a library of 867 where 195 had no source at all.
+         */
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $summary = app(CheckSchedule::class)->summary($this->user);
+
+        $this->assertSame(3, $summary['total'], 'it is still in the library, and still counted there');
+        $this->assertSame(2, $summary['due'], 'but a pass will not visit it');
+        $this->assertSame(1, $summary['unreachable']);
+        $this->assertSame(0, $summary['skipped'], 'and it is not merely not due yet');
+    }
+
+    public function test_due_reaches_zero_when_everything_reachable_has_been_checked(): void
+    {
+        $this->addToLibrary(76);
+
+        // A library holding only unreachable series must not read as permanently due.
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $summary = app(CheckSchedule::class)->summary($this->user);
+
+        $this->assertSame(0, $summary['due'], 'otherwise a progress bar can never finish');
+    }
+
+    public function test_the_bar_finishes_when_only_unreachable_series_remain(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $progress = $page->instance()->checkProgress();
+
+        $this->assertSame(1, $progress['total'], 'the press counted only what could be checked');
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $progress = $page->call('$refresh')->instance()->checkProgress();
+
+        $this->assertFalse($progress['running'], 'and it reports finished rather than hanging at 0%');
+    }
 }
