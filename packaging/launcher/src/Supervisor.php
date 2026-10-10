@@ -144,6 +144,7 @@ final class Supervisor
      */
     public function start(callable $say): array
     {
+        $this->prepareLayout($say);
         $this->takeLock();
 
         try {
@@ -444,9 +445,9 @@ final class Supervisor
      * runtime that keeps its ini in `runtime/php/` therefore gets none of its extensions
      * unless it is told, and a Laravel without pdo_sqlite cannot boot.
      */
-    private function runArtisan(array $arguments): int
+    private function runArtisan(array $arguments, array $extra = [], string $logName = 'migrate.log'): int
     {
-        $log = $this->logDirectory.DIRECTORY_SEPARATOR.'migrate.log';
+        $log = $this->logDirectory.DIRECTORY_SEPARATOR.$logName;
         @mkdir($this->logDirectory, 0o777, true);
 
         $command = array_merge(
@@ -457,6 +458,7 @@ final class Supervisor
                 $this->path('artisan'),
             ],
             $arguments,
+            $extra,
             ['--no-interaction'],
         );
 
@@ -501,6 +503,45 @@ final class Supervisor
         ));
 
         return $jars[0] ?? null;
+    }
+
+    /**
+     * Make sure the data directory exists, is outside the install, and is writable.
+     *
+     * Before anything starts, and before the lock is taken, because every one of these is a
+     * problem the reader can fix and none of them should be discovered halfway through bringing
+     * four processes up.
+     *
+     * @param  callable(string): void  $say
+     */
+    private function prepareLayout(callable $say): void
+    {
+        $layout = new InstallLayout($this->root, $this->dataDirectory);
+
+        $made = $layout->prepare($say);
+
+        if ($made !== []) {
+            $say('created '.count($made).' directories for this install');
+        }
+
+        /*
+         * The .env is written here rather than in a separate configure step, because the web
+         * server cannot answer `/ready` without an app key and the launcher has nothing to poll
+         * until there is one.
+         */
+        $env = $this->path('runtime', 'php', 'php.ini');
+        $envTarget = $this->dataDirectory.DIRECTORY_SEPARATOR.'.env';
+
+        if (is_file($env) && is_file($this->path('artisan'))) {
+            $this->runArtisan(
+                ['papyrus:configure'],
+                extra: [
+                    '--env' => $envTarget,
+                    '--data' => $this->dataDirectory,
+                    '--suwayomi' => sprintf('http://127.0.0.1:%d', $this->suwayomiPort),
+                ],
+            );
+        }
     }
 
     private function takeLock(): void
