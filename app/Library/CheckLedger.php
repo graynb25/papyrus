@@ -10,6 +10,7 @@ use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Throwable;
 
 /**
  * Re-reads a series from its source and records what came back.
@@ -191,7 +192,32 @@ class CheckLedger
                 break;
             }
 
-            $row = $this->check($user, (int) $state->suwayomi_manga_id, $force);
+            /*
+             * One bad series must not end the pass.
+             *
+             * A pass is a slice of a reader's whole library, so an exception on the third of
+             * sixty costs the other fifty-seven and stops the chain, because the job dies
+             * before it reaches the re-book. Measured: `Check 867 series` against a library
+             * holding series with no source queued a job that failed four times in 5ms,
+             * checked nothing, and re-queued itself never.
+             *
+             * `SuwayomiException` is the expected failure and `check()` already turns it into
+             * a failed row. What lands here is the unexpected: a malformed row, a source that
+             * returns nonsense, a cast that fails. Those are counted and skipped, because a
+             * reader pressing one button asked for 867 checks and getting four is a worse
+             * answer than 866.
+             */
+            try {
+                $row = $this->check($user, (int) $state->suwayomi_manga_id, $force);
+            } catch (Throwable $e) {
+                report($e);
+
+                $tally['failed']++;
+                $tally['checked']++;
+
+                continue;
+            }
+
             $tally['checked']++;
 
             match ($row->state) {
@@ -223,6 +249,12 @@ class CheckLedger
         if ($force) {
             return SeriesState::forUser($userId)
                 ->where('in_library', true)
+                // A series filed from a backup has no manga, so there is nothing to check it
+                // against. Measured: `Check 867 series` on a real import dispatched the job,
+                // which died four times on `Series 0 is not in this reader's state` because
+                // this query handed it the 195 filed series and the cast below turned their
+                // null ids into 0.
+                ->whereNotNull('suwayomi_manga_id')
                 ->orderByRaw('chapter_list_checked_at is not null')
                 ->orderBy('chapter_list_checked_at')
                 ->orderBy('added_at')

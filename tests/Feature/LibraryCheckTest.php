@@ -63,6 +63,15 @@ class LibraryCheckTest extends TestCase
     /** @var array<int, bool> every series this test put in the library */
     private array $libraryIds = [];
 
+    /**
+     * Series whose refresh returns a chapter node that is not a list.
+     *
+     * `hydrate()` closes over `function (array $chapter)`, so a scalar node raises a TypeError.
+     * A realistic malformed upstream rather than a contrived mock, and not a
+     * `SuwayomiException` either: those are the expected failure and `check()` records them.
+     */
+    private array $malformed = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -76,6 +85,7 @@ class LibraryCheckTest extends TestCase
         $this->noChapters = [];
         $this->renumber = [];
         $this->libraryIds = [];
+        $this->malformed = [];
 
         $this->fakeSuwayomi();
     }
@@ -116,6 +126,22 @@ class LibraryCheckTest extends TestCase
                     return Http::response([
                         'errors' => [['message' => 'Exception while fetching data (fetchMangaAndChapters) : java.lang.Exception: No chapters found']],
                     ]);
+                }
+
+                if (in_array($id, $this->malformed, true)) {
+                    return Http::response(['data' => ['fetchMangaAndChapters' => [
+                        'manga' => [
+                            'id' => (string) $id,
+                            'title' => "Series {$id}",
+                            'initialized' => true,
+                            'source' => ['id' => '1', 'name' => 'Asura Scans', 'lang' => 'en'],
+                            // `hydrate()` does `array_values($manga['genre'] ?? [])`, so a
+                            // string here is a TypeError. A sibling `chapters` key was the
+                            // first guess and never threw, because hydrate is handed the
+                            // manga node alone and reads chapters separately.
+                            'genre' => 'Action, Drama',
+                        ],
+                    ]]]);
                 }
 
                 $shape = $this->refreshShapes[$id] ?? ['chapters' => 10, 'initialized' => true];
@@ -1021,5 +1047,62 @@ class LibraryCheckTest extends TestCase
         $state->save();
 
         $this->assertFalse(app(CheckSchedule::class)->isDue($state));
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A series filed from a backup.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_filed_series_is_never_a_check_candidate(): void
+    {
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $this->addToLibrary(76);
+
+        $tally = app(CheckLedger::class)->checkDue($this->user, 45, 60, force: true);
+
+        $this->assertGreaterThan(0, $tally['checked'], 'the real series is still checked');
+        $this->assertSame(
+            0,
+            $tally['failed'],
+            'a series with no manga is not a candidate, rather than being checked as manga 0',
+        );
+    }
+
+    public function test_one_series_that_throws_does_not_end_the_pass(): void
+    {
+        /*
+         * A pass is a slice of a reader's whole library. An exception on the third of sixty
+         * costs the other fifty-seven and stops the chain, because the job dies before it
+         * reaches the re-book. Measured on a real library: four failures in 5ms and nothing
+         * checked, and 867 series pressing one button.
+         *
+         * Ordered by `added_at`, so 76 is visited before 77. Without the catch the pass dies
+         * on 76 and 77 is never reached, which is the assertion that fails.
+         */
+        $this->malformed = [76];
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $tally = app(CheckLedger::class)->checkDue($this->user, 45, 60, force: true);
+
+        $this->assertSame(2, $tally['checked'], 'both are visited, so the pass did not stop');
+        $this->assertSame(
+            1,
+            $tally['failed'],
+            'the malformed one is counted as failed rather than taking the pass with it',
+        );
+        $this->assertSame(
+            1,
+            $tally['chapters'] > 0 ? 1 : 0,
+            'and the well-formed one still produced its chapter count',
+        );
     }
 }
