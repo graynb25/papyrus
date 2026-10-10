@@ -2365,7 +2365,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 217, each number once, ascending.
+tidiness. The list is now 1 to 219, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3962,3 +3962,36 @@ ull tells the checker the generator
     Worth noting the failure would have been silent in both directions. A launcher that saw two
     processes would refuse to start a second Suwayomi, and one that saw the 6MB shim would think
     the server was dead while it was serving.
+218. **A config that adapts without error can still reject every single request.**
+    Two examples from the same FrankenPHP config, both producing a bare 400 on every route
+    with an empty error log and a config that had validated:
+
+    - `auto_https off` stops Caddy redirecting to HTTPS. It does **not** turn TLS off. The
+      listener still expects TLS and answers `Client sent an HTTP request to an HTTPS server`.
+      The address needs an explicit `http://` prefix, which also keeps QUIC out, since h3 is
+      always over TLS.
+    - `root * <path>` is Caddy module syntax. Used inside a block whose directive is
+      nginx-style, the wildcard changes the matcher, and the documented bare form is what
+      works.
+
+    The general shape: **a successful parse is a statement about syntax, not about behaviour.**
+    A config that validated is exactly as unverified as one that was never run, and the failure
+    mode of getting it wrong at serving time is a four hundred with nothing to go on, which is
+    worse than a crash because it survives a log check.
+
+219. **An ini that names directories the installer did not create fails at the first subprocess,
+    far from the cause.**
+    The packaged `php.ini` pointed `sys_temp_dir`, `upload_tmp_dir` and
+    `session.save_path` at three directories inside the runtime. The first thing that used one
+    was `artisan about`, which shells out through Symfony Process, and the error was:
+
+    `A temporary file could not be opened to write the process output: fopen(.../tmp/...):
+    Failed to open stream: No such file or directory`
+
+    which reads as a bug in `artisan about` and is not one. Nothing was wrong with the command,
+    the framework, or the application. A directory did not exist.
+
+    The general shape: **configuration that points at a path is a promise that something else
+    creates it**, and the consumer of that promise is rarely the thing that looks broken. The
+    installer has to create every path a config names, and the check that proves it is to run
+    something that shells out, because that is the first thing to notice.

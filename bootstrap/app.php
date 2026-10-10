@@ -1,16 +1,29 @@
 <?php
 
+use App\Http\Controllers\ReadinessController;
 use App\Http\Middleware\RegistrationMustBeAllowed;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        /*
+         * Readiness, registered outside every middleware group.
+         *
+         * `SESSION_DRIVER=database` means anything in the web group writes a session row per
+         * request, and a launcher polls this at least once a second. A timer-driven write to
+         * SQLite from a process whose whole job is to be idle is not a cost worth paying, so
+         * this route gets no group at all. See ReadinessController for the rest.
+         */
+        then: function (): void {
+            Route::get('ready', ReadinessController::class)->name('ready');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         /*

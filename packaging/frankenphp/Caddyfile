@@ -1,0 +1,99 @@
+# The FrankenPHP configuration a packaged Papyrus serves with.
+#
+# Templated at install time. `{{APP_ROOT}}` is the application root the launcher sets as its
+# working directory, and the one other path is the log file.
+#
+# Kept in the repository with its tokens intact so the decisions below are reviewable rather
+# than buried in a build script.
+#
+# ## Verified
+#
+# Against frankenphp.exe 1.13.0 / PHP 8.5.11 on Windows: the app boots, `/login` returns a
+# rendered 60KB Livewire page, and a warm request is about 55ms.
+
+{
+	admin off
+	auto_https off
+
+	# ## Thread counts, and why the default is wrong here
+	#
+	# FrankenPHP starts twice the CPU core count in workers by default. On the 20 core machine
+	# this was written on, that is 40 threads for one reader and one browser, each able to hold
+	# a full `memory_limit`. The documented heuristic is that `max_threads` times `memory_limit`
+	# must fit in RAM, and the default violates it before anything is even loaded.
+	#
+	# A packaged install cannot ask how much RAM the reader has, and the previous idea, sizing
+	# from the core count, is what produced the problem. So it picks a small fixed number that
+	# is right on a modest laptop and wastes nothing on a large one.
+	frankenphp {
+		max_threads 8
+	}
+}
+
+# The scheme is written out, and `auto_https off` alone is not enough.
+#
+# `auto_https off` stops Caddy redirecting to HTTPS, but the listener still expects TLS and
+# answers a plain request with `400 Client sent an HTTP request to an HTTPS server`. Nothing
+# appears in the error log, because the config adapted perfectly. Prefixing the address with
+# `http://` is what actually turns TLS off.
+#
+# It also keeps QUIC out. Left alone, Caddy advertises h1, h2 and h3 on the port, and h3 is
+# always over TLS.
+http://127.0.0.1:8399 {
+	# `root` without a `*`. The wildcard form is Caddy module syntax, and using it inside a
+	# block whose directive is nginx-style changed the matcher so that every request answered
+	# 400 with nothing logged. The documented Laravel form is a bare path.
+	root "{{APP_ROOT}}/public"
+
+	# ## Classic mode, deliberately. Worker mode is not available for free.
+	#
+	# Worker mode is the obvious choice and the wrong one here, for reasons that cost a real
+	# detour to establish:
+	#
+	# 1. `worker` is not a top level directive. It lives inside `php_server` and takes a
+	#    filename, so `worker { file ... }` fails with a `strconv.ParseUint` error on the path
+	#    because it is reading the token as a thread count.
+	# 2. That filename resolves against the **process working directory**, not against `root`.
+	#    Given a root and a worker in the same block it is natural to read the worker path as
+	#    relative to the root, and the error is `GetFileAttributesEx index.php`, which names
+	#    neither the real directory nor the real expectation.
+	# 3. With the path right, a plain Laravel `public/index.php` still fails to start:
+	#    "has not reached frankenphp_handle_request()". A Laravel worker script has to call
+	#    that function in a loop, and it does not.
+	#
+	# The supported way to get worker mode is `laravel/octane` with `octane:install
+	# --server=frankenphp`. That adds a dependency, a cache of application state held between
+	# requests, and a `--max-requests` reload policy so a long lived process does not leak.
+	#
+	# All of it buys throughput under concurrent load. Papyrus has one reader on one machine
+	# whose heaviest request is a page render, and a warm request here is about 55ms. So the
+	# correct trade is to add nothing and keep the framework boot per request. If a packaged
+	# install is ever measured too slow, Octane is the lever to reach for, not a different
+	# web server.
+	php_server {
+		# Serves public/build directly and falls back to index.php, which is what a Laravel
+		# app behind a document root needs. The documented alternative rewrites everything to
+		# index.php and splits assets by path, which saves file lookups that are noise next to
+		# a framework boot.
+		try_files {path} index.php
+	}
+
+	# Suwayomi serves its own images through this app's proxy, and a chapter is dozens of
+	# those. Compression is worth the CPU on a loopback connection where it costs nothing.
+	encode zstd br gzip
+
+	# ## Access log
+	#
+	# Only errors, on purpose. Four processes will each have a log, and a launcher's job when
+	# something goes wrong is to gather them. An access log on a reader clicking through a
+	# library is thousands of lines saying a page rendered, and it buries the one line that
+	# matters.
+	#
+	# Output is JSON because the launcher is the only consumer and it can filter by level
+	# without parsing prose.
+
+	log {
+		output file "{{LOGS}}/frankenphp.log"
+		level ERROR
+	}
+}

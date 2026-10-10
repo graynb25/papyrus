@@ -1,7 +1,8 @@
 # Packaging Papyrus for Windows
 
-Status: plan, not started. Written after investigating this repository, this machine, and
-the upstream projects it would ship.
+Status: phase 0 started. Items 0.2 and 0.4 are done and verified on a real Windows machine
+against the real app, and the shipped configs live in `packaging/`. Written after
+investigating this repository, this machine, and the upstream projects it would ship.
 
 The question is whether a reader can install Papyrus on a Windows machine and have a working
 manga reader without installing PHP, Java, or knowing what Suwayomi is.
@@ -58,6 +59,117 @@ Used throughout this document.
 | **H** | A reader hits it and sees a failure, or opens a support ticket about it. |
 | **M** | Friction or risk that a deliberate design choice contains. |
 | **L** | Polish. Real, deferrable. |
+
+## Phase 0 progress
+
+### Done and verified: 0.2, the FrankenPHP gate
+
+This was the item the whole plan hinged on, because it decides whether the runtime is one
+binary or three. It is resolved, in the app's favour, with evidence.
+
+| Check | Result |
+| --- | --- |
+| FrankenPHP Windows binary | 1.13.0, ships PHP **8.5.11** ZTS |
+| App requirement | `php ^8.3`, so 8.5.11 is in range |
+| Full suite on 8.5.11 | **1,453 tests, 3,372 assertions, all passing** |
+| Extensions needed by the app | all 12 load, zero warnings |
+| App boots on the packaged ini | yes, `artisan about` reports PHP 8.5.11 |
+| Serves the real app | `/login` returns a rendered 60KB Livewire page |
+| Warm request | **55ms** |
+
+The gap between what FrankenPHP's announcement claimed and what the Windows build does is
+worth writing down, because it changed the design.
+
+**Worker mode is not free, and it is not available for a plain Laravel app.** Getting there
+took four wrong turns, each of which fails quietly enough to be worth recording:
+
+1. `worker` is **not** a top level directive. It lives inside `php_server` and takes a
+   filename. Written as a top level block it answers `unrecognized directive: worker`.
+2. Inside `php_server`, `worker file <path>` fails with `strconv.ParseUint` on the path,
+   because the token after `worker` is being read as a thread count.
+3. With that filename correct, it resolves against the **process working directory**, not
+   against the `root` set one line above. Given both in the same block it is natural to read
+   the worker path as relative to the root, and the error is `GetFileAttributesEx index.php`,
+   which names neither the real directory nor the real expectation.
+4. With the path right, it still fails: `worker public/index.php has not reached
+   frankenphp_handle_request()`. A Laravel worker script must call that function in a loop and
+   does not.
+
+The supported route is `laravel/octane` with `octane:install --server=frankenphp`. That adds a
+dependency, a cache of application state held between requests, and a `--max-requests` policy
+so a long lived process does not leak. **Classic mode was chosen instead**, and the measured
+55ms warm request is what makes that defensible rather than merely convenient. One reader, one
+machine, one page render. If a packaged install is ever measured too slow, Octane is the lever,
+not a different web server.
+
+Two smaller traps in the same config, both of which cost time and neither of which logged why:
+
+- `auto_https off` **does not turn TLS off**. It stops the redirect and the listener still
+  expects TLS, so every request answers `400 Client sent an HTTP request to an HTTPS server`
+  with a clean config and an empty error log. The address needs an explicit `http://` prefix.
+  That also keeps QUIC out, since h3 is always over TLS.
+- `root * <path>` is Caddy module syntax. Using the wildcard inside a block whose directive is
+  nginx-style changes the matcher and every request answers 400, again with nothing logged.
+
+### Done and verified: 0.4, the readiness probe
+
+`/ready` in `app/Http/Controllers/ReadinessController.php`, registered through
+`withRouting(then:)` so it carries no middleware group.
+
+It is not simply Laravel's `/up`, because `/up` answers one question, "is PHP serving", and a
+packaged install needs three. A launcher has to know when to start the queue worker, when to
+run migrations, and whether the install it just wrote is the one the reader is about to use.
+`/up` returns 200 with no app key and no database, and both of those make every page after it
+fail.
+
+| Route | Answers |
+| --- | --- |
+| `/up` | is PHP serving at all |
+| `/ready` | can this installation actually be used |
+
+Two decisions in it that a reader would otherwise have to reverse-engineer.
+
+**It runs outside the web middleware group, deliberately.** `SESSION_DRIVER=database`, which is
+what `.env.example` ships, so every request through the web stack writes a session row. A
+launcher polls readiness at least once a second, and a timer-driven write to SQLite from a
+process whose job is to be idle is not a cost worth paying. There is a test asserting the
+route gathers no middleware, and another asserting that polling it twice writes nothing, so
+the comment cannot rot into a lie.
+
+**It does not check Suwayomi.** Suwayomi being down is not this process being unready. The
+launcher owns the Suwayomi lifecycle and polls its GraphQL `aboutServer` for that half. If
+this route waited on Suwayomi too, a Suwayomi outage would make Papyrus look broken to
+whatever was watching it, and the failure would be attributed to the wrong process.
+
+It also answers only on loopback, reading `REMOTE_ADDR` rather than `$request->ip()`, because
+`ip()` honours `X-Forwarded-For` for trusted proxies and a remote client behind a
+misconfigured proxy could otherwise present itself as local and learn whether the app key is
+set. There is a test for exactly that, sending the header and asserting 404.
+
+### Done: the shipped configs
+
+`packaging/php/php.ini` and `packaging/frankenphp/Caddyfile`, both carrying `{{TOKEN}}`
+placeholders for the installer to substitute. Verified by substituting and serving: all 12
+extensions load, `/ready`, `/up` and `/login` all answer 200, and the JSON access log at
+`ERROR` level stays empty on a healthy run.
+
+The php.ini exists because FrankenPHP's Windows archive ships `php.ini-development` and
+`php.ini-production` and **no working ini at all**, on purpose. The extension list was derived
+by grepping `app/` and `config/` for call sites rather than copied from a distribution default,
+and each entry says which call site justified it.
+
+Writing it also produced a bug worth recording, because the failure was nowhere near the
+cause. The ini pointed `sys_temp_dir` at a directory the installer had not created, and the
+first thing to use it was `artisan about`, which shells out. The error was a Symfony Process
+complaint about not being able to open a temporary file, which reads as a bug in
+`artisan about` and is not one. **The ini names three directories and the installer has to
+create all three.**
+
+### Still to do in phase 0
+
+0.3 the supervisor, 0.5 `.env` generation, 0.6 Windows path and junction reality, 0.7 data
+location under `%LOCALAPPDATA%`, 0.8 the launcher, 0.9 one log for four processes, 0.10 the
+clean sandbox, 0.11 the Suwayomi runtime shape, 0.12 uninstall leaving data alone.
 
 ## Phase 0: the portable runtime
 
