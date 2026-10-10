@@ -1,0 +1,127 @@
+<?php
+
+/**
+ * The packaged Papyrus launcher.
+ *
+ * Three commands, because that is all a phase 0 install needs:
+ *
+ *   start    bring everything up, wait until it is genuinely usable, then hold
+ *   stop     bring it all down, leaving nothing behind
+ *   status   say what is running, without changing anything
+ *
+ * ## Why this is plain PHP and not a compiled launcher
+ *
+ * Because the runtime already ships `php.exe`. A compiled launcher adds a toolchain, a
+ * cross-compilation matrix and a second thing that can be broken, in exchange for a tray icon
+ * that phase 0 explicitly does not have.
+ *
+ * It also has to keep working when the application does not, which is the whole reason a
+ * reader calls `stop`. So this file and the four classes beside it depend on nothing but PHP
+ * itself: no autoloader, no framework, no database. If the app is so broken that
+ * `artisan` will not run, this still stops it.
+ *
+ * The tray icon, when it comes in phase 2, is a small native binary whose only job is a
+ * system tray icon and a browser window, and it calls these same three commands.
+ */
+
+declare(strict_types=1);
+
+namespace Papyrus\Launcher;
+
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "The launcher runs from a terminal, not a browser.\n");
+
+    exit(1);
+}
+
+require __DIR__.'/src/ProcessIdentity.php';
+require __DIR__.'/src/InstanceLock.php';
+require __DIR__.'/src/Prober.php';
+require __DIR__.'/src/ManagedProcess.php';
+require __DIR__.'/src/Supervisor.php';
+
+$root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
+$data = getenv('PAPYRUS_DATA') ?: dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
+$logs = $data.DIRECTORY_SEPARATOR.'logs';
+
+/** @var callable(string): void $say */
+$say = static function (string $line): void {
+    fwrite(STDOUT, $line.PHP_EOL);
+};
+
+$supervisor = new Supervisor(
+    root: $root,
+    dataDirectory: $data,
+    logDirectory: $logs,
+    suwayomiPort: (int) (getenv('PAPYRUS_SUWAYOMI_PORT') ?: 4567),
+    appPort: (int) (getenv('PAPYRUS_APP_PORT') ?: 8000),
+);
+
+$command = $argv[1] ?? 'status';
+
+try {
+    switch ($command) {
+        case 'start':
+            $supervisor->start($say);
+            $say('');
+            $say(sprintf(
+                'Papyrus is running at http://127.0.0.1:%d',
+                (int) (getenv('PAPYRUS_APP_PORT') ?: 8000),
+            ));
+            $say('Press Ctrl+C to stop it.');
+
+            // Hold the terminal open. The children are not daemons and this process is what
+            // keeps them alive, so returning here would be a stop dressed as an exit.
+            while (true) {
+                sleep(1);
+
+                foreach ($supervisor->status() as $name => $running) {
+                    if (! $running) {
+                        $say(sprintf('%s stopped on its own, shutting the rest down.', $name));
+                        $supervisor->stopAll($say);
+
+                        exit(1);
+                    }
+                }
+            }
+
+        case 'stop':
+            $outcomes = $supervisor->stopAll($say);
+
+            if ($outcomes === []) {
+                $say('Nothing was started by this session, so nothing was stopped.');
+
+                exit(0);
+            }
+
+            foreach ($outcomes as $name => $outcome) {
+                if ($outcome === 'killed') {
+                    $say(sprintf('%s did not stop politely and had to be killed.', $name));
+                }
+            }
+
+            exit(0);
+
+        case 'status':
+            $status = $supervisor->status();
+
+            if ($status === []) {
+                $say('This session has nothing running. Papyrus is not installed under this launcher.');
+            }
+
+            foreach ($status as $name => $running) {
+                $say(sprintf('%-10s %s', $name, $running ? 'running' : 'not running'));
+            }
+
+            exit(0);
+
+        default:
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status]\n");
+
+            exit(2);
+    }
+} catch (\RuntimeException $e) {
+    fwrite(STDERR, PHP_EOL.$e->getMessage().PHP_EOL);
+
+    exit(1);
+}

@@ -166,13 +166,57 @@ complaint about not being able to open a temporary file, which reads as a bug in
 `artisan about` and is not one. **The ini names three directories and the installer has to
 create all three.**
 
+### Done and verified: 0.3, the supervisor
+
+`packaging/launcher/`, plain PHP with no dependency on the application. That is a requirement,
+not a preference: a reader calls `stop` precisely when the application is broken, so anything
+the launcher needs from the app it reads from files.
+
+Five classes and three commands (`start`, `stop`, `status`). Proved end to end on this machine
+against the real app: it adopted the Suwayomi already running on 4567 rather than starting a
+second one, migrated, started the web server, the queue worker and the scheduler, got
+`/ready` answering `{"status":"ready","checks":{"key":true,"database":true,
+"pending_migrations":0}}`, then stopped all three cleanly and released the port.
+
+Six real bugs were found by running it, and every one of them fails silently:
+
+| Bug | What it looks like from outside |
+| --- | --- |
+| `proc_open` given the log file for **stdin** in mode `r` | Nothing starts, no log, no error. `r` needs the file to exist and on a first run it does not. |
+| `artisan` omitted from the command | "Could not open input file: migrate", because PHP reads the first argument as a script path. |
+| `phpExecutable` overridable but the ini path not | "could not find driver", four layers from the cause. |
+| The Caddyfile path likewise not overridable | The server logs two lines about Go runtime tuning and exits, never reading a config. |
+| Path separators not normalised when substituting the Caddyfile | Server starts and reports itself running, and every request 404s. The template joins with `/` for Linux and macOS, and a Windows `APP_ROOT` arrives with `\`. |
+| `proc_open`'s environment argument **replaces** rather than merges | Passing only `PHPRC` hands a Windows process no `SystemRoot` and no `PATH`, and it dies before it can log. |
+
+The last two are the ones worth keeping. Both were "add one thing" changes that were supposed
+to be the most conservative available, and both produced a total failure in a direction that
+pointed away from the change.
+
+**And the one that is really the interesting finding: FrankenPHP does not read the ini that
+`php.exe` was given.** It embeds its own PHP and searches beside its own executable, so the
+server came up with no ini, loaded none of the twelve extensions the packaged one enables, and
+answered every request with "could not find driver" while its log said it was running and
+serving normally. The two halves of the install disagreed and nothing reported it:
+`artisan migrate` through `php.exe` was perfectly happy. The fix is `PHPRC`, and the reason it
+is worth writing down is that every symptom pointed at the database.
+
+### Also learned, and required by the build
+
+**A runtime needs the native libraries its extensions link against, beside the executable.**
+`php_pdo_sqlite` needs libsqlite3, `php_curl` needs libcurl, `php_openssl` needs libssl and
+libcrypto, `php_zip` needs libzip, `php_sodium` needs libsodium, and `frankenphp.exe` needs the
+glib and ICU set. Copy only `ext/` and the runtime boots cleanly, reports its version, and
+every one of those extensions fails to load with "the specified module could not be found",
+which reads as a broken ini rather than a missing library. 24 shared libraries and 36
+extension DLLs, in the smoke layout.
+
 ### Still to do in phase 0
 
-0.3 the supervisor, 0.5 `.env` generation, 0.6 Windows path and junction reality, 0.7 data
-location under `%LOCALAPPDATA%`, 0.8 the launcher, 0.9 one log for four processes, 0.10 the
-clean sandbox, 0.11 the Suwayomi runtime shape, 0.12 uninstall leaving data alone.
-
-## Phase 0: the portable runtime
+0.5 `.env` generation, 0.6 Windows path and junction reality, 0.7 data location under
+`%LOCALAPPDATA%`, 0.8 the launcher shell, 0.9 one log for four processes, 0.10 the clean
+sandbox, 0.11 the Suwayomi runtime shape, 0.12 uninstall leaving data alone, and the
+`VACUUM INTO` snapshot job that `DISTRIBUTION.md` puts at severe.
 
 The goal is a folder that runs on a machine with nothing installed, launched by a script.
 No installer, no shell, no registry. Everything after this phase is packaging; this phase is
@@ -195,6 +239,31 @@ machine". A sandbox.
 | 0.10 | Clean-sandbox verification | **S** | A fresh Windows VM, snapshot, install the folder, import a backup, read a chapter. This is the gate. |
 | 0.11 | Decide the Suwayomi runtime shape | M | Their zip is 328MB and bundles a JRE, which may be a full JDK. The bare jar is 174MB. If `jlink` can produce a working minimal runtime, the download drops by roughly 100MB and the Java version is ours to pin. See bite 5. |
 | 0.12 | Uninstall must not delete the library | **H** | An installer that removes a reader's 867 series on uninstall is the worst thing this project could ship. Data lives outside the install directory precisely so uninstall can delete only code. |
+
+## Phase 0: the portable runtime
+
+The goal is a folder that runs on a machine with nothing installed, launched by a script.
+No installer, no shell, no registry. Everything after this phase is packaging; this phase is
+the work.
+
+**Exit gate: it runs in a clean Windows sandbox with nothing preinstalled.** Not "works on my
+machine". A sandbox.
+
+| # | Item | Sev | Notes |
+| --- | --- | --- | --- |
+| 0.1 | Artifact layout and build pipeline | M | One folder: `runtime/`, `data/`, `logs/`. `composer install --no-dev`, `npm ci && npm run build`, `.env` generated, templates substituted. **60 files minimum**: the executable, its extensions, and the 24 shared libraries they link against. |
+| 0.2 | Verify FrankenPHP on Windows | H | **Done.** PHP 8.5.11, full suite green, serves the app. |
+| 0.3 | Process supervisor | **S** | **Done.** Four processes, verified end to end. |
+| 0.4 | Readiness probe | H | **Done.** `/ready`, outside the web group. |
+| 0.5 | First-run `.env` generation | H | `APP_KEY` per install, absolute `DB_DATABASE`, resolved `SUWAYOMI_URL`. |
+| 0.6 | Windows path reality | H | `public/storage` is a symlink in dev. `MAX_PATH` on deep `storage/app/private/livewire-tmp` paths. |
+| 0.7 | Data location | **H** | Never under `Program Files`. `%LOCALAPPDATA%`. |
+| 0.8 | Launcher shell | M | Go or C#, 5 to 10MB, or Tauri. Not Electron. |
+| 0.9 | One log for four processes | M | Today four locations. A reader cannot send that. |
+| 0.10 | Clean-sandbox verification | **S** | The gate. |
+| 0.11 | Suwayomi runtime shape | M | Zip 328MB vs jar 174MB plus a jlinked runtime. Verify the zip's bundled runtime first. |
+| 0.12 | Uninstall leaves data alone | **H** | Data lives outside the install directory precisely so this is possible. |
+| 0.13 | `VACUUM INTO` snapshot job | **S** | Added from `DISTRIBUTION.md`. The library is not in `data/`, but this side is, and a file copy of a live SQLite is a corrupt copy. |
 
 ## Phase 1: acquiring Suwayomi
 

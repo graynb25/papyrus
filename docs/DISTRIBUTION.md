@@ -142,33 +142,28 @@ Flatpak deserves a caution rather than a recommendation: it sandboxes the app, w
 mean Suwayomi and the PHP process run under restrictions that interact badly with a local
 database and a localhost port. Verify before committing.
 
-## Multi-user Windows accounts
+## Single user per machine, decided
 
-This is not a hypothetical, it is a consequence of the data location decision.
+An earlier draft of this document treated multiple Windows accounts as a case to design for.
+It is not, and the reasoning is worth keeping so nobody re-adds it.
 
-`%LOCALAPPDATA%` is per Windows account. So does `%LOCALAPPDATA%\Tachidesk`. Two accounts on
-one machine therefore produce **two independent Suwayomi instances and two independent Papyrus
-instances, and both Suwayomi instances want port 4567 and both Papyrus instances want the app
-port.**
+`%LOCALAPPDATA%` is per Windows account, so two accounts on one machine would produce two
+independent Suwayomi instances, two independent Papyrus instances, and both Suwayomi
+instances would want port 4567. The second account's Suwayomi fails to bind and the reader
+sees a server-down banner with no visible cause.
 
-Concretely: the second account's Suwayomi fails to bind, Papyrus shows its server-down banner,
-and the reader has no way to tell that the cause is the other account.
+That collision is a consequence of a decision that is right on its own: **one reader per
+install.** A manga library is personal. A shelf shared across Windows accounts, or worse,
+across human beings who happen to log into the same machine, is not something anyone has asked
+for, and supporting it properly would mean per-user port allocation, a launcher instance per
+account, and an answer to "which of these four processes is mine" on every support call.
 
-It is also the correct default. A manga library is personal, and a shared one across Windows
-accounts is not obviously what anyone wants.
+So the launcher is per user, ports are fixed and documented, and if the ports are taken the
+app says so plainly and names the process holding them.
 
-Three things follow, and they belong in the design rather than in a fixup:
-
-1. **Per-user ports, chosen at first run and stored in per-user config.** Not "find the next
-   free port" at every start, because `SUWAYOMI_URL` is already written into that user's `.env`
-   and a port that silently changes orphans it. Choose once, persist, and fail loudly if it is
-   taken.
-2. **Bind to loopback only**, always. This also avoids the Windows Firewall prompt, which is a
-   bad first impression and is avoidable.
-3. **The installer is per machine, the data is per user.** Install to Program Files once, and
-   each account gets its own data folder and its own ports.
-
-This raises the severity of the port conflict item in phase 1 from medium to high.
+The one thing worth keeping from the discarded section: **when a port is already bound, say
+which process holds it.** A reader who has Suwayomi running from a shortcut, the way this
+machine has it running, needs to be told that and not left with a banner.
 
 ## Backup, and the thing that is wrong about the obvious plan
 
@@ -286,23 +281,122 @@ Four channels, in ascending order of effort. Do the first two.
    available, here is what changed" and links out. It must not download and run anything
    without the reader accepting it, for the reason in the signing section: on an unsigned
    project, a silent update is indistinguishable from malware.
-
-   The check is one unauthenticated call to the GitHub API, which allows 60 requests an hour per
-   address. One reader polling once a day is nowhere near it.
 3. **A build log.** If anything is generating regular releases, a public changelog earns the
    update check its click.
 4. **Announcement accounts.** Mastodon or Bluesky for releases that matter. Not needed to
    start and not worth automating early.
 
+### The publish checklist
+
+Release day, in order. Each step is there because skipping it has caused a broken release at
+some point in every project that has ever shipped one.
+
+1. Full suite green on the **packaged** runtime, not just on the developer's. Phase 0's whole
+   point is that PHP 8.5.11 and the shipped ini are what CI runs.
+2. PHPStan and Pint clean.
+3. No dashes across the tree.
+4. Tag `v1.2.3`. Annotated, so the tag carries the message.
+5. Build the portable artifact. **Then run it on a clean machine.** Not the developer machine.
+6. Compute SHA256 for every artifact.
+7. `cosign attest` the artifacts, keyless.
+8. Write release notes that lead with what breaks, not what was added. The first line should be
+   readable by someone deciding whether to update without reading the rest.
+9. Attach artifacts, publish.
+10. Verify the Atom feed updated, and that the per-release URL an in-app check would read
+    actually resolves. This is the step that catches "released to the wrong tag".
+
+Steps 5 and 10 are the two that catch real problems and the two that get skipped.
+
+### Naming, so an old download is recognisable
+
+```
+papyrus-1.2.3-windows-x64-portable.zip
+papyrus-1.2.3-windows-x64-setup.exe
+papyrus-1.2.3-macos-arm64-portable.tar.gz
+papyrus-1.2.3-linux-x86_64.AppImage
+```
+
+Platform, arch and shape in the name, version in the name, no "latest". A reader with three
+downloads in their folder should be able to tell them apart at a glance and should never
+install a file whose name does not say what it is.
+
+### A manifest beside the artifacts
+
+A plain `manifest.json` per release, committed to the repository as well as attached:
+
+```json
+{
+  "version": "1.2.3",
+  "released": "2026-10-10",
+  "requires": { "suwayomi": ">=2.3.0", "jvm": ">=21" },
+  "artifacts": [
+    { "file": "papyrus-1.2.3-windows-x64-portable.zip", "sha256": "...", "size": 0 }
+  ]
+}
+```
+
+Two jobs. The updater reads it to know what it is looking at, and a reader who distrusts our
+page can read it and check the hashes themselves. It also makes the compatibility requirement
+machine readable instead of a sentence in a README.
+
+### Compatibility is a real contract, not a README sentence
+
+Papyrus reads Suwayomi through its GraphQL API and that schema moves between Suwayomi versions.
+Papyrus already has the machinery: `suwayomi:schema:dump` writes a snapshot and `suwayomi:check`
+compares it and reads `aboutServer { version buildTime }`.
+
+So the contract should be stated and enforced:
+
+| Papyrus | Suwayomi | Meaning |
+| --- | --- | --- |
+| 1.2.x | 2.3.x, 2.4.x | supported, tested together |
+| 1.2.x | 2.5.x | probably fine, untested, warn the reader |
+| 1.2.x | 2.2.x or older | refuse, and say which version to install |
+| 1.2.x | server reports something unparseable | refuse rather than render broken queries |
+
+**The launcher should check this at startup**, because the failure without it is a reader
+watching queries fail against a schema that moved. That check belongs next to the readiness
+probe, and it is the same `aboutServer` call the launcher already makes for health, so it costs
+one field.
+
 ### Version numbering
 
-Follow SemVer, and mean it. Papyrus has 34 migrations and a user-visible design that has been
-called "Second Pressing" in these notes, so **minor versions carry real change**, including
-migrations that need Suwayomi in a particular state.
+Follow SemVer, and mean it. Papyrus has 34 migrations and a design that these notes call
+"Second Pressing", so **minor versions carry real change**, including migrations that need
+Suwayomi in a particular state.
 
-The one rule that matters for an auto-updating install: **a new version never updates itself
-while it is running.** Extract beside the running version, migrate a copy, then flip. That is
-phase 2 item 2.3 and it is a severe item for a reason that has nothing to do with tidiness.
+Two rules that matter more than the scheme:
+
+- **A migration is a minor version.** Never a patch. A patch that migrates a database is a
+  patch that can fail irreversibly in someone's library.
+- **A new version never updates itself while it is running.** Extract beside the running
+  version, migrate a copy, then flip. That is phase 2 item 2.3 and it is severe for a reason
+  that has nothing to do with tidiness.
+
+### Deprecation, and how a release gets noticed
+
+Declare support windows out loud rather than letting them lapse:
+
+- A minor version is supported until two minors later.
+- The previous minor gets a warning in the update check, not a refusal. Refusing to start is
+  how you lose a reader permanently over something that would have worked.
+- When a Suwayomi version goes unsupported, say so in the release that drops it, with the
+  version that broke it. Silence here is what makes a support thread unreadable.
+
+### What if a takedown arrives anyway
+
+Not because of anything this project ships, which is code and no content, but because it is
+worth having thought about. A release asset can be targeted by a claim, and a URL pasted into
+an issue by a third party can be.
+
+- **Never attach anything content-derived to a release.** Which is the current posture, so
+  this is a rule to keep rather than a problem to solve.
+- **Do not respond in the issue thread beyond acknowledging.** Content policy is not a
+  discussion this project wins by arguing.
+- **Do keep the source.** If an artefact is contested, the build is reproducible from it and
+  that is the answer that outlives the argument.
+- **Do keep the manifest and hashes from previous releases.** If an artifact goes away, a
+  reader who already downloaded it still has a hash to verify it against.
 
 ## What this adds to the phase list
 
@@ -310,11 +404,12 @@ phase 2 item 2.3 and it is a severe item for a reason that has nothing to do wit
 | --- | --- | --- |
 | `VACUUM INTO` snapshot job for the Papyrus database | **S** | 0 |
 | Orchestrated restore, both databases, one action | **S** | 1 |
+| Versioned install with a pointer flip | **S** | 2 |
+| Suwayomi version compatibility check at startup | H | 0, next to the readiness probe |
 | Surface and manage Suwayomi's existing backups in the UI | H | 1 |
-| Per-user port allocation on Windows | **H** | 1 |
+| Name the process holding a taken port | H | 1 |
 | macOS notarisation budget decision, $99 a year | **H** | 2 |
 | cosign keyless attestations on releases | M | 2 |
-| SHA256 published for every artifact | M | 2 |
+| SHA256 and a machine readable manifest beside the artifacts | M | 2 |
 | Linux packaging, which is the cheap proof of the pipeline | M | 2 |
-| Versioned install with a pointer flip | **S** | 2 |
 | In-app update check that reports rather than installs | M | 2 |
