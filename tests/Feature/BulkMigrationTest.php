@@ -1,0 +1,933 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Jobs\BuildBulkMigration;
+use App\Migration\BulkMover;
+use App\Migration\BulkSourceMatcher;
+use App\Migration\SeriesMigrator;
+use App\Models\BulkMigration;
+use App\Models\BulkMigrationItem;
+use App\Models\MigrationSearch;
+use App\Models\SeriesMigration;
+use App\Models\SeriesState;
+use App\Models\Source;
+use App\Models\User;
+use App\Support\Library;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
+use Tests\Support\MintsTokens;
+use Tests\TestCase;
+
+/**
+ * Moving a whole shelf from one source to another.
+ *
+ * ## What is being asserted, and why each one earned a test
+ *
+ * 1. **Only the chosen destination is searched.** A reader who has picked both ends should
+ *    not have 82 sources searched per series. Measured, that is 6,560 requests for eighty
+ *    series where eighty will do, and the extras go to sites with no bearing on the decision.
+ * 2. **A bulk match goes through the wizard's own gate.** `SeriesMigrator` refuses any
+ *    destination that was not offered by a search this reader ran for that series. That is the
+ *    boundary stopping a tampered request from moving a series anywhere, so the bulk flow has
+ *    to satisfy it rather than grow a second way in.
+ * 3. **Nothing moves without a tick.** A pre-tick is a suggestion; the move still needs the
+ *    reader to press the button, and a run of eighty moves is a big thing to press once.
+ * 4. **One refusal does not undo the others.** Each move is its own transaction, so a
+ *    failure part way through leaves the good ones standing and reported.
+ * 5. **A filed series with no source is not offered.** It cannot be, there is no source to
+ *    move away from, and the library batch has to leave it out rather than cast its null.
+ */
+class BulkMigrationTest extends TestCase
+{
+    use MintsTokens, RefreshDatabase;
+
+    private User $user;
+
+    private const FROM_SOURCE = '6247824327199706550';
+
+    private const TO_SOURCE = '6247824327199706600';
+
+    /** Chapter count per manga id, on either source. */
+    private array $chapterCounts = [];
+
+    /** Title, author and source per manga id. */
+    private array $meta = [];
+
+    /** What each source's search returns, as manga id to title. */
+    private array $searchHits = [];
+
+    /** Manga the server does not know. */
+    private array $unknown = [];
+
+    /**
+     * Manga the library batch can list but a single read cannot answer.
+     *
+     * Distinct from `$unknown` because {@see Library::entries()} drops an unknown
+     * manga, so marking something unknown tests the filter rather than the matcher.
+     */
+    private array $failFind = [];
+
+    /** Sources whose refresh throws a transport error. */
+    private array $unreachable = [];
+
+    private Source $from;
+
+    private Source $to;
+
+    /** @var array<int, string> */
+    private array $sent = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->user = User::factory()->create();
+        $this->actingAs($this->user);
+
+        $this->from = $this->source('Asura Scans', 0, self::FROM_SOURCE);
+        $this->to = $this->source('MangaFire', 900, self::TO_SOURCE);
+
+        $this->fakeSuwayomi();
+    }
+
+    private function page(): Testable
+    {
+        return Livewire::test('pages::migrate-sources');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Reaching it, and not colliding with the wizard.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_it_requires_authentication(): void
+    {
+        auth()->logout();
+
+        $this->get('/migrate/sources')->assertRedirect();
+    }
+
+    public function test_it_renders(): void
+    {
+        $this->get('/migrate/sources')->assertOk();
+    }
+
+    public function test_the_wizard_route_is_not_swallowed_by_it(): void
+    {
+        /*
+         * Registration order, and it is load bearing.
+         *
+         * `migrate/{manga}` has no `whereNumber`, so it matches any segment. Registered after
+         * the bulk route, this page would be unreachable: every request would be handed to the
+         * wizard with `manga` set to the string "sources", and the wizard would try to read
+         * series "sources" from the server.
+         */
+        $this->get('/migrate/sources')->assertOk();
+        $this->get('/migrate/76')->assertOk();
+    }
+
+    public function test_the_sources_page_offers_it(): void
+    {
+        /*
+         * An unlinked feature is not a feature. This is the only door to it other than typing
+         * the URL, so if the link goes the page becomes unreachable without anyone noticing.
+         */
+        $this->get('/sources')
+            ->assertOk()
+            ->assertSee(route('migrate.sources'), escape: false);
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Comparing.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_it_refuses_to_compare_without_two_sources(): void
+    {
+        Queue::fake();
+
+        $this->page()->call('compare');
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, BulkMigration::query()->count());
+    }
+
+    public function test_it_refuses_the_same_source_twice(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('from', self::FROM_SOURCE)
+            ->set('to', self::FROM_SOURCE)
+            ->call('compare');
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, BulkMigration::query()->count());
+    }
+
+    public function test_comparing_dispatches_the_job_for_the_signed_in_reader(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('from', self::FROM_SOURCE)
+            ->set('to', self::TO_SOURCE)
+            ->call('compare');
+
+        $this->assertSame(1, BulkMigration::query()->forUser($this->user->id)->count());
+
+        Queue::assertPushed(BuildBulkMigration::class, function (BuildBulkMigration $job): bool {
+            return $job->userId === (int) $this->user->id
+                && $job->runId === (int) BulkMigration::query()->value('id');
+        });
+    }
+
+    public function test_it_finds_the_readers_series_on_the_source_they_are_leaving(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->seriesOnFrom(77, 'The Berserkers Second Playthrough', 1);
+        $this->seriesElsewhere(3000, 'Some Other Series', 10, '7777777777777777');
+
+        $tally = $this->matcher()->run($this->startRun());
+
+        $this->assertSame(2, $tally['total'], 'the series on another source is not counted');
+    }
+
+    public function test_it_compares_only_the_chosen_destination(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        // A third source with the same series on it, which must never be searched.
+        $other = $this->source('Lagoon Scans', 800, '6247824327199706800');
+        $this->searchHits[(string) $other->suwayomi_source_id] = [2034 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startRun());
+
+        $searched = $this->sourcesSearched();
+
+        $this->assertContains(self::TO_SOURCE, $searched);
+        $this->assertNotContains('6247824327199706800', $searched, 'a source nobody chose was searched');
+    }
+
+    public function test_it_records_the_measured_comparison_per_series(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startRun());
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertSame(76, $item->from_manga_id);
+        $this->assertSame(2033, $item->to_manga_id);
+        $this->assertSame(41, $item->chapters_here);
+        $this->assertSame(41, $item->chapters_there);
+        $this->assertSame(0, $item->chapter_delta);
+        $this->assertSame(1.0, $item->author_overlap);
+        $this->assertSame(BulkMigrationItem::PENDING, $item->status);
+    }
+
+    public function test_a_series_the_destination_does_not_have_is_not_offered(): void
+    {
+        $this->seriesOnFrom(76, 'Something Obscure', 12);
+        $this->searchHits[self::TO_SOURCE] = [];
+
+        $this->matcher()->run($this->startRun());
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertSame(BulkMigrationItem::SKIPPED, $item->status);
+        $this->assertNull($item->to_manga_id, 'nothing to move to, so nothing is offered');
+    }
+
+    public function test_a_series_that_fails_to_read_is_recorded_and_the_run_continues(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->seriesOnFrom(78, 'Something That Breaks', 5);
+
+        /*
+         * Readable in the library batch, unreadable one at a time.
+         *
+         * `$unknown` would not do, and testing it first is what showed this: `Library::entries()`
+         * leaves out a manga the server does not know, so such a series was never a candidate
+         * and the run correctly had nothing to be resilient about. The failure has to arrive
+         * somewhere the library can see.
+         */
+        $this->failFind[] = 78;
+
+        $tally = $this->matcher()->run($this->startRun());
+
+        $this->assertSame(2, $tally['checked'], 'the series that failed did not stop the rest');
+
+        $failed = BulkMigrationItem::query()->where('status', BulkMigrationItem::FAILED)->firstOrFail();
+
+        $this->assertSame(78, $failed->from_manga_id);
+        $this->assertNotNull($failed->reason);
+    }
+
+    public function test_a_destination_that_is_not_installed_fails_before_searching(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->to->update(['is_installed' => false]);
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $this->assertSame(BulkMigration::FAILED, $run->fresh()->state);
+        $this->assertSame([], $this->sourcesSearched(), 'an uninstalled source is not searched');
+    }
+
+    public function test_a_source_the_library_has_nothing_on_says_so_rather_than_reporting_zero(): void
+    {
+        $this->seriesElsewhere(3000, 'Some Other Series', 10, '7777777777777777');
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $this->assertSame(BulkMigration::READY, $run->fresh()->state);
+        $this->assertNotNull($run->error);
+    }
+
+    public function test_it_stops_at_the_limit_and_says_that_it_did(): void
+    {
+        foreach ([76, 77, 78, 79] as $id) {
+            $this->seriesOnFrom($id, "Series {$id}", 10);
+        }
+
+        $run = $this->startRun();
+        $this->matcher()->run($run, limit: 2);
+
+        $this->assertSame(4, $run->fresh()->series_total, 'all four are on the source');
+        $this->assertSame(2, $run->fresh()->series_checked, 'only two were compared');
+        $this->assertStringContainsString('stopped there', (string) $run->fresh()->error);
+    }
+
+    public function test_the_run_is_left_reading_running_when_the_job_dies(): void
+    {
+        $run = $this->startRun();
+
+        $this->assertFalse($run->isStalled());
+
+        $run->forceFill(['updated_at' => now()->subHours(1)])->save();
+
+        $this->assertTrue($run->fresh()->isStalled(), 'so a page can stop waiting for it');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * The gate the wizard already draws.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_bulk_match_is_accepted_by_the_wizards_own_verifier(): void
+    {
+        /*
+         * The whole reason `BulkSourceMatcher` writes a `migration_searches` row.
+         *
+         * `SeriesMigrator::offeredCandidate()` refuses any destination that was not offered by
+         * a search this reader ran for this series. If the bulk flow did not satisfy that, the
+         * only ways forward would be to trust the browser or to add a second way into the
+         * migrator, and both are worse than writing the row.
+         */
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startRun());
+
+        $search = MigrationSearch::query()->where('from_manga_id', 76)->firstOrFail();
+
+        $this->assertSame(MigrationSearch::READY, $search->state);
+        $this->assertSame(2033, (int) $search->candidates[0]['manga_id']);
+    }
+
+    public function test_the_migrator_still_refuses_a_destination_the_search_never_offered(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startRun());
+
+        $outcome = app(SeriesMigrator::class)->migrate($this->user, 76, 999999);
+
+        $this->assertFalse($outcome['ok'], 'a destination the search did not offer is still refused');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Approval.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_an_exact_match_on_every_signal_is_already_ticked(): void
+    {
+        $item = $this->offerable(chaptersHere: 41, chaptersThere: 41, similarity: 1.0, overlap: 1.0);
+
+        $this->page()->instance()->isTicked($item);
+        $this->assertTrue($item->isConfident());
+    }
+
+    public function test_a_chapter_count_that_disagrees_is_not_already_ticked(): void
+    {
+        /*
+         * The chapter count is the load bearing signal, not the title.
+         *
+         * Measured, five of six real candidates for one series tied at a title similarity of
+         * 1.000 while their chapter counts ran from 21 to 333. A title alone cannot separate
+         * them, so a row that matches on title and disagrees on chapters is not the same
+         * series and must not be ticked without a reader saying so.
+         */
+        $item = $this->offerable(chaptersHere: 41, chaptersThere: 333, similarity: 1.0, overlap: 1.0);
+
+        $this->assertFalse($item->isConfident());
+    }
+
+    public function test_a_different_author_is_not_already_ticked(): void
+    {
+        $this->assertFalse($this->offerable(chaptersHere: 41, chaptersThere: 41, similarity: 1.0, overlap: 0.0)->isConfident());
+    }
+
+    public function test_an_author_nobody_credits_is_not_treated_as_a_disagreement(): void
+    {
+        /*
+         * `author_overlap` is null whenever either side credits nobody, and a self hosted
+         * install has plenty of sources that credit nobody. Treating that as a mismatch would
+         * leave almost nothing pre-ticked on exactly the installs least able to check.
+         */
+        $this->assertTrue($this->offerable(chaptersHere: 41, chaptersThere: 41, similarity: 1.0, overlap: null)->isConfident());
+    }
+
+    public function test_a_series_with_no_chapter_count_is_not_already_ticked(): void
+    {
+        $item = $this->offerable(chaptersHere: null, chaptersThere: 41, similarity: 1.0, overlap: 1.0);
+
+        $this->assertFalse($item->isConfident());
+    }
+
+    public function test_a_weak_title_is_not_already_ticked(): void
+    {
+        $this->assertFalse($this->offerable(chaptersHere: 41, chaptersThere: 41, similarity: 0.8, overlap: 1.0)->isConfident());
+    }
+
+    public function test_a_row_the_reader_has_not_touched_uses_the_measured_default(): void
+    {
+        $item = $this->offerable(chaptersHere: 41, chaptersThere: 41, similarity: 1.0, overlap: 1.0);
+        $component = $this->page();
+
+        $this->assertTrue($component->instance()->isTicked($item));
+
+        $component->set('approved', [$item->from_manga_id => false]);
+
+        $this->assertFalse(
+            $component->instance()->isTicked($item->fresh()),
+            'a deliberate untick is different from a row nobody touched',
+        );
+    }
+
+    public function test_an_unticked_default_is_not_in_the_approvals(): void
+    {
+        $item = $this->offerable(chaptersHere: 41, chaptersThere: 333, similarity: 1.0, overlap: 1.0);
+        $run = $this->startRun();
+        $item->update(['bulk_migration_id' => $run->id]);
+        $run->update(['state' => BulkMigration::READY]);
+
+        $component = $this->page();
+
+        $this->assertTrue(
+            $component->instance()->effectiveApprovals()->isEmpty(),
+            'a row the reader has to tick is not queued for moving',
+        );
+    }
+
+    public function test_ticking_nothing_moves_nothing(): void
+    {
+        $run = $this->readyRunWithNoOffers();
+
+        $tally = app(BulkMover::class)->move($run, collect());
+
+        $this->assertSame(0, $tally['moved']);
+        $this->assertSame(0, $tally['refused']);
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Moving.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_an_approved_series_moves(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $tally = app(BulkMover::class)->move($run, collect([76 => 2033]));
+
+        $this->assertSame(1, $tally['moved']);
+        $this->assertSame(0, $tally['refused']);
+        $this->assertSame(1, SeriesMigration::query()->count());
+        $this->assertSame(2033, (int) SeriesMigration::query()->value('to_manga_id'));
+
+        $this->assertSame(
+            BulkMigrationItem::MOVED,
+            BulkMigrationItem::query()->value('status'),
+            'and the item says what happened',
+        );
+    }
+
+    public function test_a_pair_that_was_not_offered_is_not_moved(): void
+    {
+        $run = $this->readyRunWithNoOffers();
+
+        $item = BulkMigrationItem::createFor($this->user->id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Something',
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        $tally = app(BulkMover::class)->move($run, collect([$item->from_manga_id => 2033]));
+
+        $this->assertSame(0, $tally['moved'], 'the migrator refused it because no search offered it');
+        $this->assertSame(BulkMigrationItem::REFUSED, $item->fresh()->status);
+    }
+
+    public function test_an_item_from_another_readers_run_is_not_moved(): void
+    {
+        $run = $this->readyRunWithNoOffers();
+
+        $other = User::factory()->create();
+
+        BulkMigrationItem::createFor($other->id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Not yours',
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        $tally = app(BulkMover::class)->move($run, collect([76 => 2033]));
+
+        $this->assertSame(0, $tally['moved']);
+    }
+
+    public function test_a_series_that_already_moved_is_not_moved_twice(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        app(BulkMover::class)->move($run, collect([76 => 2033]));
+        $second = app(BulkMover::class)->move($run, collect([76 => 2033]));
+
+        $this->assertSame(0, $second['moved'], 'a second press of the same button does nothing');
+        $this->assertSame(1, SeriesMigration::query()->count());
+    }
+
+    public function test_one_refusal_does_not_undo_the_moves_that_succeeded(): void
+    {
+        /*
+         * One transaction per series, deliberately.
+         *
+         * A run of eighty moves is not one atomic operation and should not pretend to be. A
+         * reader whose read state moved for some of their series and not the rest has no way
+         * to tell, and cannot undo the ones that did move.
+         */
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $tally = app(BulkMover::class)->move($run, collect([76 => 2033, 999 => 1234]));
+
+        $this->assertSame(1, $tally['moved']);
+        $this->assertSame(1, $tally['refused']);
+        $this->assertSame(1, SeriesMigration::query()->count(), 'the good move stands');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * What the page shows.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_the_page_lists_the_sources_holding_the_readers_series(): void
+    {
+        $this->seriesOnFrom(76, 'One', 10);
+        $this->seriesOnFrom(77, 'Two', 10);
+        $this->seriesElsewhere(3000, 'Three', 10, '7777777777777777');
+
+        /*
+         * MangaFire is deliberately absent: it has no series on it, and listing it would only
+         * offer a choice that can produce "nothing in your library is on that source".
+         */
+        $this->page()
+            ->assertSee('Asura Scans')
+            ->assertDontSee('MangaFire');
+    }
+
+    public function test_the_page_says_so_when_nothing_in_the_library_has_a_source(): void
+    {
+        $this->page()->assertSee(__('Nothing in your library is on a source this server knows about'));
+    }
+
+    public function test_the_page_offers_the_moves_and_counts_them(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $this->page()
+            ->assertSee('Hiding a Logistics Center')
+            ->assertSee('Same as here: 41 chapters.')
+            ->assertSee('Same author')
+            ->assertSee(__('Move the ticked series'));
+    }
+
+    public function test_the_page_puts_the_series_with_nowhere_to_go_out_of_the_way_but_counts_them(): void
+    {
+        $this->seriesOnFrom(76, 'Something Obscure', 12);
+        $this->searchHits[self::TO_SOURCE] = [];
+
+        $this->matcher()->run($this->startRun());
+
+        $this->page()
+            ->assertSee(__('Nothing on that source is on the new one'))
+            ->assertSee('1 series is not on the new source');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Fixtures.
+     * ---------------------------------------------------------------------------
+     */
+
+    private function matcher(): BulkSourceMatcher
+    {
+        return app(BulkSourceMatcher::class);
+    }
+
+    private function startRun(): BulkMigration
+    {
+        return BulkMigration::createFor($this->user->id, [
+            'from_source_id' => self::FROM_SOURCE,
+            'to_source_id' => self::TO_SOURCE,
+            'state' => BulkMigration::RUNNING,
+            'started_at' => now(),
+        ]);
+    }
+
+    private function readyRunWithNoOffers(): BulkMigration
+    {
+        return BulkMigration::createFor($this->user->id, [
+            'from_source_id' => self::FROM_SOURCE,
+            'to_source_id' => self::TO_SOURCE,
+            'state' => BulkMigration::READY,
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+    }
+
+    /**
+     * An item that could be offered, with the comparison the confidence test reads.
+     */
+    private function offerable(
+        ?int $chaptersHere,
+        ?int $chaptersThere,
+        float $similarity,
+        ?float $overlap,
+    ): BulkMigrationItem {
+        $run = $this->readyRunWithNoOffers();
+
+        return BulkMigrationItem::createFor($this->user->id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Hiding a Logistics Center',
+            'to_title' => 'Hiding a Logistics Center',
+            'chapters_here' => $chaptersHere,
+            'chapters_there' => $chaptersThere,
+            'title_similarity' => $similarity,
+            'chapter_delta' => $chaptersHere !== null && $chaptersThere !== null ? $chaptersThere - $chaptersHere : null,
+            'author_overlap' => $overlap,
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+    }
+
+    private function seriesOnFrom(int $mangaId, string $title, int $chapters, ?string $author = null): void
+    {
+        $this->meta[$mangaId] = [
+            'title' => $title,
+            'author' => $author,
+            'source_id' => self::FROM_SOURCE,
+            'source_name' => 'Asura Scans',
+        ];
+
+        $this->chapterCounts[$mangaId] = $chapters;
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => $mangaId,
+            'in_library' => true,
+            'title' => $title,
+        ]);
+    }
+
+    private function seriesElsewhere(int $mangaId, string $title, int $chapters, string $sourceId): void
+    {
+        $this->meta[$mangaId] = [
+            'title' => $title,
+            'author' => null,
+            'source_id' => $sourceId,
+            'source_name' => 'Somewhere Else',
+        ];
+
+        $this->chapterCounts[$mangaId] = $chapters;
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => $mangaId,
+            'in_library' => true,
+            'title' => $title,
+        ]);
+    }
+
+    private function destination(int $mangaId, string $title, int $chapters, ?string $author = null): void
+    {
+        $this->meta[$mangaId] = [
+            'title' => $title,
+            'author' => $author,
+            'source_id' => self::TO_SOURCE,
+            'source_name' => 'MangaFire',
+        ];
+
+        $this->chapterCounts[$mangaId] = $chapters;
+    }
+
+    private function source(string $name, int $offset, string $sourceId): Source
+    {
+        return Source::create([
+            'suwayomi_source_id' => $sourceId,
+            'name' => $name,
+            'display_name' => $name,
+            'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.'.strtolower(str_replace(' ', '', $name)).$offset,
+            'lang' => 'en',
+            'home_url' => "https://{$name}.test",
+            'content_warning' => Source::SAFE,
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
+    }
+
+    /**
+     * Which sources a search was actually sent to.
+     *
+     * @return array<int, string>
+     */
+    private function sourcesSearched(): array
+    {
+        return $this->searchedSources;
+    }
+
+    /** @var array<int, string> */
+    private array $searchedSources = [];
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function chapterNodes(int $mangaId): array
+    {
+        $count = $this->chapterCounts[$mangaId] ?? 0;
+        $nodes = [];
+
+        for ($n = 1; $n <= $count; $n++) {
+            $nodes[] = [
+                'id' => ($mangaId * 1000) + $n,
+                'name' => "Chapter {$n}",
+                'chapterNumber' => $n,
+                'scanlator' => null,
+                'uploadDate' => 0,
+                'pageCount' => 20,
+                'isRead' => false,
+                'isDownloaded' => false,
+                'lastPageRead' => 0,
+                'sourceOrder' => $n,
+            ];
+        }
+
+        return $nodes;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mangaNode(int $mangaId): array
+    {
+        $meta = $this->meta[$mangaId] ?? [];
+
+        return [
+            'id' => (string) $mangaId,
+            'title' => (string) ($meta['title'] ?? "Series {$mangaId}"),
+            'url' => '/series/'.$mangaId,
+            'realUrl' => 'https://source.test/'.$mangaId,
+            'thumbnailUrl' => '/api/v1/manga/'.$mangaId.'/thumbnail',
+            'status' => 'ONGOING',
+            'author' => $meta['author'] ?? null,
+            'artist' => null,
+            'genre' => [],
+            'description' => null,
+            'initialized' => isset($this->chapterCounts[$mangaId]),
+            'unreadCount' => 0,
+            'updateStrategy' => 'ALWAYS_UPDATE',
+            'chaptersLastFetchedAt' => 1790776498,
+            'source' => [
+                'id' => (string) ($meta['source_id'] ?? self::FROM_SOURCE),
+                'name' => (string) ($meta['source_name'] ?? 'Asura Scans'),
+                'lang' => 'en',
+                'contentWarning' => 'SAFE',
+            ],
+            'chapters' => [
+                'totalCount' => $this->chapterCounts[$mangaId] ?? 0,
+                'nodes' => $this->chapterNodes($mangaId),
+            ],
+        ];
+    }
+
+    private function fakeSuwayomi(): void
+    {
+        Http::fake(function (Request $request) {
+            $query = (string) ($request->data()['query'] ?? '');
+            $variables = (array) ($request->data()['variables'] ?? []);
+
+            $this->sent[] = $query;
+
+            if (str_contains($query, 'mutation Login')) {
+                return Http::response(['data' => ['login' => [
+                    'accessToken' => $this->accessToken(),
+                    'refreshToken' => $this->refreshToken(),
+                ]]]);
+            }
+
+            /*
+             * The batched library call, which is how the page learns which source a series is
+             * on. `SeriesGateway::fetchMany()` sends `query Many` and reads `mangas.nodes`.
+             */
+            if (str_contains($query, 'query Many')) {
+                $ids = (array) ($variables['ids'] ?? []);
+                $nodes = [];
+
+                foreach ($ids as $id) {
+                    if (in_array((int) $id, $this->unknown, true)) {
+                        continue;
+                    }
+
+                    $nodes[] = [
+                        'id' => (string) (int) $id,
+                        'title' => $this->meta[(int) $id]['title'] ?? "Series {$id}",
+                        'thumbnailUrl' => null,
+                        'status' => 'ONGOING',
+                        'initialized' => isset($this->chapterCounts[(int) $id]),
+                        'source' => [
+                            'id' => (string) ($this->meta[(int) $id]['source_id'] ?? self::FROM_SOURCE),
+                            'name' => (string) ($this->meta[(int) $id]['source_name'] ?? 'Asura Scans'),
+                            'lang' => 'en',
+                        ],
+                        'chapters' => [
+                            'totalCount' => $this->chapterCounts[(int) $id] ?? 0,
+                            'nodes' => array_map(
+                                static fn (array $chapter): array => [
+                                    'id' => $chapter['id'],
+                                    'isDownloaded' => false,
+                                    'name' => $chapter['name'],
+                                ],
+                                $this->chapterNodes((int) $id),
+                            ),
+                        ],
+                    ];
+                }
+
+                return Http::response(['data' => ['mangas' => ['nodes' => $nodes]]]);
+            }
+
+            if (str_contains($query, 'mutation Search')) {
+                $sourceId = (string) ($variables['source'] ?? '');
+                $this->searchedSources[] = $sourceId;
+                $hits = $this->searchHits[$sourceId] ?? [];
+
+                if (in_array($sourceId, $this->unreachable, true)) {
+                    return Http::response('down', 500);
+                }
+
+                return Http::response(['data' => ['fetchSourceManga' => [
+                    'hasNextPage' => false,
+                    'mangas' => array_map(
+                        static fn (int $id, string $title): array => [
+                            'id' => (string) $id,
+                            'title' => $title,
+                            'url' => '/series/'.$id,
+                            'realUrl' => 'https://source.test/'.$id,
+                            'author' => null,
+                            'artist' => null,
+                            'description' => null,
+                            'status' => 'ONGOING',
+                            'initialized' => false,
+                        ],
+                        array_keys($hits),
+                        array_values($hits),
+                    ),
+                ]]]);
+            }
+
+            if (str_contains($query, 'mutation Refresh')) {
+                $mangaId = (int) ($variables['id'] ?? 0);
+
+                if (in_array($mangaId, $this->unknown, true)) {
+                    return Http::response('gone', 500);
+                }
+
+                return Http::response(['data' => ['fetchMangaAndChapters' => [
+                    'manga' => $this->mangaNode($mangaId),
+                    'chapters' => $this->chapterNodes($mangaId),
+                ]]]);
+            }
+
+            if (str_contains($query, 'manga(id:')) {
+                $mangaId = (int) ($variables['id'] ?? 0);
+
+                if (in_array($mangaId, $this->failFind, true)) {
+                    return Http::response('gone', 500);
+                }
+
+                if (in_array($mangaId, $this->unknown, true)) {
+                    return Http::response(['data' => ['manga' => null]]);
+                }
+
+                return Http::response(['data' => ['manga' => $this->mangaNode($mangaId)]]);
+            }
+
+            return Http::response(['data' => []]);
+        });
+    }
+}

@@ -1,0 +1,349 @@
+<?php
+
+namespace App\Migration;
+
+use App\Models\BulkMigration;
+use App\Models\BulkMigrationItem;
+use App\Models\MigrationSearch;
+use App\Models\Source;
+use App\Support\Library;
+use App\Suwayomi\SeriesGateway;
+use App\Suwayomi\SuwayomiException;
+
+/**
+ * Compares every series a reader has on one source against a chosen destination, and
+ * records what it found.
+ *
+ * ## Why this searches only the destination the reader picked
+ *
+ * A reader moving a shelf has already chosen both ends. Sweeping all 82 installed sources per
+ * series would be 6,560 requests for 80 series where 80 will do, and every one of the extra
+ * requests goes to a site that has no bearing on the decision. {@see CandidateFinder::findOn()}
+ * does the one search and reuses the same ranking and detail fetch as the wizard, so a bulk
+ * match and a wizard match cannot disagree.
+ *
+ * ## Why the current series is read even though the library already has it
+ *
+ * The library entry carries the title and the chapter count, but not the author. Author
+ * agreement is one of the signals that decides whether a match is pre-ticked, and measured
+ * author strings differ wildly across sources for the same series: "Life Ruined",
+ * "Isang, Life Ruined", "Insaengmanghaesseum, Isang" and "". Reading it properly costs one
+ * GraphQL call per series. Skipping it would make every match with no author on either side
+ * look like a disagreement, which on a self hosted install with many anonymous sources is
+ * most of them.
+ *
+ * ## Why one series that fails does not end the run
+ *
+ * Same lesson as every other loop in this app. A pass over a reader's shelf is a slice of
+ * something bigger, and an exception on the fortieth of eighty costs the other forty, because
+ * the job dies before it writes the finished row and the page is left watching a run that will
+ * never end. Each series is recorded as failed and the run continues, so the page can say
+ * which one and why.
+ *
+ * ## Why the cap is a series count rather than a time budget
+ *
+ * Because a reader needs to know whether their shelf was fully compared before they approve
+ * anything. A time budget would silently stop halfway on a slow day and the reader would have
+ * no way to tell that the forty series they were shown is not all eighty. A hard count can be
+ * stated plainly: this compared the first two hundred and there are more.
+ */
+class BulkSourceMatcher
+{
+    /**
+     * How often to write progress.
+     *
+     * The run row is a polled page and the number a reader watches, but writing it on every
+     * series is wasted IO for a figure that changes slowly in human terms.
+     */
+    private const PROGRESS_INTERVAL_SECONDS = 3;
+
+    public function __construct(
+        private readonly CandidateFinder $finder,
+        private readonly SeriesGateway $series,
+        private readonly Library $library,
+    ) {}
+
+    /**
+     * @return array{checked: int, matched: int, total: int}
+     */
+    public function run(BulkMigration $run, int $limit = 0): array
+    {
+        $userId = (int) $run->user_id;
+
+        $to = Source::query()->where('suwayomi_source_id', $run->to_source_id)->first();
+
+        if ($to === null) {
+            $run->update([
+                'state' => BulkMigration::FAILED,
+                'error' => __('That source is not in the catalogue on this server any more.'),
+                'finished_at' => now(),
+            ]);
+
+            return ['checked' => 0, 'matched' => 0, 'total' => 0];
+        }
+
+        if (! $to->is_installed) {
+            $run->update([
+                'state' => BulkMigration::FAILED,
+                'error' => __('That source is not installed on this server, so there is nothing to search. Install it and try again.'),
+                'finished_at' => now(),
+            ]);
+
+            return ['checked' => 0, 'matched' => 0, 'total' => 0];
+        }
+
+        $from = Source::query()->where('suwayomi_source_id', $run->from_source_id)->first();
+
+        if ($from === null) {
+            $run->update([
+                'state' => BulkMigration::FAILED,
+                'error' => __('The source you are moving away from is not in the catalogue on this server any more.'),
+                'finished_at' => now(),
+            ]);
+
+            return ['checked' => 0, 'matched' => 0, 'total' => 0];
+        }
+
+        /*
+         * The reader's own series on the source being left, read in one batched call.
+         *
+         * `entries()` rather than a query on `series_states`, because the table has no source
+         * column: which source a series sits on is a fact about the server's entry for it, not
+         * about the reader's row. It also excludes the 195 series filed from a backup, which
+         * have no server entry and therefore no source to move away from.
+         */
+        $onSource = $this->library->entries($userId)
+            ->filter(fn (array $entry): bool => $entry['source_id'] !== null
+                && (string) $entry['source_id'] === $run->from_source_id)
+            ->values();
+
+        $total = $onSource->count();
+
+        $run->update([
+            'series_total' => $total,
+            'from_source_name' => $from->display_name,
+            'to_source_name' => $to->display_name,
+        ]);
+
+        if ($total === 0) {
+            $run->update([
+                'state' => BulkMigration::READY,
+                'error' => __('Nothing in your library is on that source.'),
+                'finished_at' => now(),
+            ]);
+
+            return ['checked' => 0, 'matched' => 0, 'total' => 0];
+        }
+
+        $cap = $limit > 0 ? $limit : (int) config('papyrus.migration.bulk_series_cap', 200);
+        $willCompare = min($total, $cap);
+
+        $lastWrite = microtime(true);
+        $checked = 0;
+        $matched = 0;
+
+        foreach ($onSource as $entry) {
+            if ($checked >= $cap) {
+                $run->update([
+                    'state' => BulkMigration::READY,
+
+                    /*
+                     * The counts are written here as well as at the end.
+                     *
+                     * The in-progress writes are throttled to every three seconds, so a run
+                     * that compared two series and stopped wrote nothing at all, and the page
+                     * said "Looked at 0 of your series" directly above a message saying it had
+                     * stopped part way through. Two adjacent sentences contradicting each other,
+                     * which is the thing a reader is least able to reason about. Caught by
+                     * `test_it_stops_at_the_limit_and_says_that_it_did`.
+                     */
+                    'series_checked' => $checked,
+                    'series_matched' => $matched,
+
+                    /*
+                     * `sprintf`, not `trans_choice`, and the reason is the same one the import
+                     * command gives: the sentence does not change shape with the number, only
+                     * the number in it does, so there is no verb for the singular to disagree
+                     * with. The earlier version of this passed two identical string literals
+                     * separated by a comma where a `|` belonged, which PHP read as four
+                     * arguments, and passing an int where an array belonged is a type error
+                     * rather than a subtle mistake.
+                     */
+                    'error' => sprintf(
+                        'This compared the first %s series and stopped there. There are more, so raise the limit to compare them all.',
+                        number_format($willCompare),
+                    ),
+                    'finished_at' => now(),
+                ]);
+
+                return ['checked' => $checked, 'matched' => $matched, 'total' => $total];
+            }
+
+            $checked++;
+
+            $outcome = $this->compareOne($run, $from, $to, (int) $entry['manga_id']);
+
+            if ($outcome['matched']) {
+                $matched++;
+            }
+
+            $now = microtime(true);
+
+            if ($now - $lastWrite >= self::PROGRESS_INTERVAL_SECONDS) {
+                $lastWrite = $now;
+
+                $run->update(['series_checked' => $checked, 'series_matched' => $matched]);
+            }
+        }
+
+        $run->update([
+            'state' => BulkMigration::READY,
+            'series_checked' => $checked,
+            'series_matched' => $matched,
+            'error' => null,
+            'finished_at' => now(),
+        ]);
+
+        return ['checked' => $checked, 'matched' => $matched, 'total' => $total];
+    }
+
+    /**
+     * Compare one series, recording whatever happened rather than throwing.
+     *
+     * @return array{matched: bool}
+     */
+    private function compareOne(BulkMigration $run, Source $from, Source $to, int $mangaId): array
+    {
+        $userId = (int) $run->user_id;
+
+        try {
+            $current = $this->series->find($mangaId);
+        } catch (SuwayomiException $e) {
+            $this->recordFailed($run, $mangaId, '', $e->getMessage());
+
+            return ['matched' => false];
+        }
+
+        if ($current === null) {
+            $this->recordFailed(
+                $run,
+                $mangaId,
+                '',
+                __('The server no longer knows this series.'),
+            );
+
+            return ['matched' => false];
+        }
+
+        $title = (string) $current['title'];
+
+        try {
+            $found = $this->finder->findOn($from, $current, $to);
+        } catch (SuwayomiException $e) {
+            $this->recordFailed($run, $mangaId, $title, $e->getMessage());
+
+            return ['matched' => false];
+        }
+
+        $best = $found['candidates'][0] ?? null;
+
+        if ($best === null) {
+            BulkMigrationItem::createFor($run->user_id, [
+                'bulk_migration_id' => $run->id,
+                'from_manga_id' => $mangaId,
+                'title' => $title,
+                'status' => BulkMigrationItem::SKIPPED,
+                'reason' => __('That source does not list this series.'),
+            ]);
+
+            return ['matched' => false];
+        }
+
+        /*
+         * A candidate the finder could not read is not a match.
+         *
+         * `no_chapters` and `unavailable` are both destinations with nothing behind them. A
+         * series whose every candidate failed to answer is reported as not found there, which
+         * is what it amounts to, and offering a row with a destination the reader cannot read
+         * would be offering a move that fails on press.
+         */
+        if (($best['status'] ?? '') !== 'ready') {
+            BulkMigrationItem::createFor($run->user_id, [
+                'bulk_migration_id' => $run->id,
+                'from_manga_id' => $mangaId,
+                'title' => $title,
+                'to_manga_id' => (int) $best['manga_id'],
+                'to_title' => (string) $best['title'],
+                'status' => BulkMigrationItem::SKIPPED,
+                'reason' => (string) ($best['note'] ?? __('That source could not be read for this series.')),
+            ]);
+
+            return ['matched' => false];
+        }
+
+        BulkMigrationItem::createFor($run->user_id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => $mangaId,
+            'title' => $title,
+            'to_manga_id' => (int) $best['manga_id'],
+            'to_title' => (string) $best['title'],
+            'chapters_here' => (int) ($current['chapters']['totalCount'] ?? 0),
+            'chapters_there' => (int) ($best['chapters'] ?? 0),
+            'title_similarity' => (float) ($best['title_similarity'] ?? 0),
+            'chapter_delta' => isset($best['chapter_delta']) ? (int) $best['chapter_delta'] : null,
+            'author_overlap' => isset($best['author_overlap']) ? (float) $best['author_overlap'] : null,
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        $this->recordWhatWasOffered($userId, $mangaId, $found, $best);
+
+        return ['matched' => true];
+    }
+
+    /**
+     * Write the search row the per series migrator insists on.
+     *
+     * ## Why this is not optional bookkeeping
+     *
+     * {@see SeriesMigrator::offeredCandidate()} refuses any destination that was not offered
+     * by a search this reader ran for this series. That is the boundary that stops a value
+     * tampered with in the browser from moving a series anywhere on the internet, and it is
+     * checked in the migrator rather than only hidden in a template, because a hidden control
+     * is not a boundary.
+     *
+     * So a bulk match gets a real `migration_searches` row carrying the candidate that was
+     * found. The alternative was a second code path into the migrator for bulk moves, which
+     * would have been one more place where a destination is trusted, and one more thing to keep
+     * in step with the wizard. Writing the row means the bulk flow and the wizard go through
+     * exactly the same gate, and {@see SeriesMigrator} needs no change at all.
+     *
+     * One row per series rather than one per run, because that is what the migrator looks up:
+     * by `from_manga_id`. A run wide row could not answer "was this destination offered for
+     * this series".
+     *
+     * @param  array{candidates: array<int, array<string, mixed>>, meta: array<string, int>}  $found
+     * @param  array<string, mixed>  $best
+     */
+    private function recordWhatWasOffered(int $userId, int $mangaId, array $found, array $best): void
+    {
+        MigrationSearch::createFor($userId, [
+            'from_manga_id' => $mangaId,
+            'state' => MigrationSearch::READY,
+            'sources_searched' => (int) ($found['meta']['sources_searched'] ?? 0),
+            'sources_total' => (int) ($found['meta']['sources_total'] ?? 0),
+            'candidates' => [$best],
+            'error' => null,
+        ]);
+    }
+
+    private function recordFailed(BulkMigration $run, int $mangaId, string $title, string $reason): void
+    {
+        BulkMigrationItem::createFor($run->user_id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => $mangaId,
+            'title' => $title !== '' ? $title : __('(title unavailable)'),
+            'status' => BulkMigrationItem::FAILED,
+            'reason' => $reason,
+        ]);
+    }
+}

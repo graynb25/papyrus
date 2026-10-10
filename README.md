@@ -59,6 +59,7 @@ reader and settings all work.
 | Move to another source | `/migrate/{manga}` | Searches every other source for the same series, ranks the candidates, transfers on confirmation |
 | Series | `/series/{manga}` | Chapters with dates, scanlator filtering, per-series reading mode. Each chapter's read state is a toggle, with mark-all-read and mark-all-unread beside it |
 | Reader | `/read/{manga}/{chapter}` | Continuous scroll or paged, progress saved per user |
+| Import | `/settings/import` | Brings a library in from another reader app. Inspects the file before it writes anything, and reports what it did |
 | Settings | `/settings/profile`, `/settings/connections`, `/settings/appearance`, `/settings/security` | Profile, AniList tracking, reader appearance, and password, two-factor and passkeys |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
@@ -152,6 +153,43 @@ Reader settings are per series, resolved server side from defaults, then your de
 profile, then the series itself. A panel in the corner covers mode, column width, gap,
 zoom, background, fit-to-height and long strips.
 
+### Importing a backup
+
+`/settings/import`, reached from `Settings` then `Import`, brings a library in from another
+reader app. Before this page the only route was `php artisan import:run` typed into a shell,
+which [`docs/IMPORT-ANALYSIS.md`](docs/IMPORT-ANALYSIS.md) documents along with the format
+itself.
+
+It sits in the `auth` middleware group alone, not `auth,verified`, and that is deliberate. Every
+other settings page changes an account; this one reads a file and writes a library. A reader who
+has just signed up and cannot yet receive mail is exactly the reader migrating off another app,
+and there is nothing to escalate for, because the importer is handed the signed in user rather
+than one named in the request.
+
+**The file arrives by upload or by server path**, and it has to be both. A real Tachimanga
+backup measured 39.36MB, and this server has `post_max_size` 8M with `upload_max_filesize` 2M,
+so `post_max_size` binds first. Both are `PHP_INI_PERDIR`, which means neither can be raised at
+runtime. So the page takes a path to a file already on the server as well as an upload, and it
+tells the reader the server's own limit before they choose rather than letting them find out by
+watching a request fail.
+
+**It needs a queue worker, and it checks.** `import` dispatches `App\Jobs\RunBackupImport`. On
+`QUEUE_CONNECTION=sync`, which is what a fresh Laravel install ships with, the whole run happens
+inside the browser request, so an eleven minute import hangs the page and probably finishes
+anyway. The page says so before you press anything, naming `QUEUE_CONNECTION=database` and
+`php artisan queue:work`. With a worker running but the queue stalled it says plainly that
+nothing is processing the queue and names the command again, because a dispatch to an unserved
+queue leaves a run reading `running` for ever. See
+[The queue worker is not optional](#the-queue-worker-is-not-optional).
+
+**Inspect is the default.** The first thing a reader does with an unfamiliar app is point it at
+their real library and hope, and reading the file answers "what is in this and what would
+happen" in seconds without writing anything. Turning it off is one click.
+
+A second run is a delta rather than a repeat. `imported_series` fingerprints each series, so a
+second run applies only what changed, which is also what makes an interrupted import safe to
+press again.
+
 ## Running it
 
 Suwayomi first. It needs to be a normal process, not a Windows Service, because its
@@ -205,7 +243,7 @@ Two long-running processes, and the app is quietly broken without both:
 
 ```bash
 npm run dev                # otherwise new Tailwind classes are missing from the CSS
-php artisan queue:work     # otherwise a search never finishes
+php artisan queue:work     # otherwise search, series checks, downloads and import do nothing
 ```
 
 Then open the site. `composer dev` starts all three at once if you would rather not keep
@@ -218,13 +256,15 @@ This trips people up, so it is worth being blunt about it.
 | | What it is | Where it lives |
 |---|---|---|
 | **Suwayomi** | Credentials for the *server* that fetches manga. The app uses them; you never type them. | `SUWAYOMI_USERNAME` / `SUWAYOMI_PASSWORD` in `.env` |
-| **Papyrus** | Credentials for *your* account here. An email address and a password. | A row in the `users` table |
+| **Papyrus** | Credentials for *your* account here. An email address and a password. | A row in the `users` table, made by `php artisan users:create` |
 
 They share no storage and neither one will work on the other. Typing your Suwayomi
 username into the Papyrus login gets `Please include an '@' in the email address`, which
 is the correct answer to a question you were not asking.
 
 ### Making your first account
+
+This is the supported way into the app on a single reader install.
 
 `single` mode is the default and it **disables registration**, which is the point: it is a
 one-reader install, and an open sign-up form is a hole in one. So there is no "Sign up"
@@ -243,6 +283,27 @@ The password is not recoverable from the app. If you lose it, make another accou
 delete the old row.
 
 If you want open registration, set `PAPYRUS_DEPLOYMENT_MODE=shared` instead.
+
+### The queue worker is not optional
+
+```bash
+php artisan queue:work
+```
+
+It has to be running alongside the site, and nothing in the app tells you when it is not. Three
+features dispatch to the queue and do nothing at all without a worker serving it: **Check
+series** on the library page, download syncing, and backup import. Each dispatches a job, the
+job waits in the `jobs` table, and nothing happens, so the button reports success and the page
+carries on showing the state it was in before you pressed it. A dispatch to a queue nobody is
+serving leaves a run reading `running` for ever.
+
+`--timeout=300` is worth passing, because the default of `60` kills a migration search measured
+at 27.6s and a job killed at its timeout leaves no record at all. `composer dev` does not honour
+it: it runs `queue:listen --tries=1 --timeout=0`, so start the worker by hand.
+
+`php artisan schedule:work` is **not** needed. The work that used to depend on the scheduler
+books its own next pass through the queue, and `docs/ENGINEERING-NOTES.md` records what broke
+when it was left to the scheduler alone.
 
 ## How the code is laid out
 
@@ -375,6 +436,7 @@ php artisan suwayomi:schema:dump  # re-introspect and commit, with a field diff
 php artisan sources:sync          # mirror stores and the source catalogue
 php artisan users:create --email=you@example.com
 php artisan search:fanout "berserk" --lang=en --limit=6
+php artisan import:run <path>     # same work as /settings/import, from a shell
 ```
 
 `search:fanout` runs on the sync queue driver on purpose. It is a diagnostic, and a job

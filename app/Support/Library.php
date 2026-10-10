@@ -234,6 +234,17 @@ class Library
                 : null,
             'has_custom_cover' => $state->suwayomi_manga_id !== null
                 && isset($covers[(int) $state->suwayomi_manga_id]),
+            /*
+             * The source id alongside the name and language, for anything that has to name one
+             * source exactly rather than by its label. A string because source ids exceed
+             * 2^53 and would be corrupted by a JSON number, the same reason the gateway keeps
+             * them as strings. See trap 4.
+             *
+             * This exists because a name is not an identity: measured, MangaFire appears as
+             * seven language variants and several share a display name, so "everything on
+             * MangaFire" is ambiguous where "everything on source id X" is not.
+             */
+            'source_id' => isset($source['source']['id']) ? (string) $source['source']['id'] : null,
             'source_name' => $source['source']['name'] ?? null,
             'source_lang' => $source['source']['lang'] ?? null,
             'total_chapters' => $fetched ? $total : null,

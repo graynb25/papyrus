@@ -850,6 +850,28 @@ new #[Title('Sources')] class extends Component
     </x-page.header>
 
     {{--
+        Moving a whole source.
+
+        Here because this is where a reader is already thinking about which sources they use,
+        and because an unlinked feature is not a feature. The per series wizard is reached from
+        a series page and does one series; this one is reached from here and does the shelf.
+
+        A link rather than a button that does the work: choosing two sources is a decision with
+        no sensible default, and this page is already long.
+    --}}
+    <div class="flex justify-end">
+        <flux:button
+            size="sm"
+            variant="outline"
+            icon="arrow-right-circle"
+            href="{{ route('migrate.sources') }}"
+            wire:navigate
+        >
+            {{ __('Move a whole source') }}
+        </flux:button>
+    </div>
+
+    {{--
         Browse by source.
 
         This is the door search cannot be. Search fans out to 40 targets out of 82,

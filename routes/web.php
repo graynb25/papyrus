@@ -112,6 +112,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
      * move from a search, a chapter mapping and a state rewrite, and records what it
      * did because nothing upstream does.
      */
+    /*
+     * Moving a whole source at once.
+     *
+     * Registered BEFORE `migrate/{manga}`, and that ordering is load bearing rather than
+     * incidental. The wizard route has no `whereNumber`, so it matches any segment after
+     * `migrate/`, and Laravel takes the first match it finds. Registered after, this page would
+     * be unreachable: every request for it would be handed to the wizard with `manga` set to
+     * the string "sources".
+     */
+    Route::livewire('migrate/sources', 'pages::migrate-sources')->name('migrate.sources');
+
     Route::livewire('migrate/{manga}', 'pages::migrate')->name('migrate');
 
     /*

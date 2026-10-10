@@ -7,6 +7,7 @@ use App\Search\SourceSearcher;
 use App\Search\TitleNormalizer;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
+use Illuminate\Support\Collection;
 
 /**
  * Finds the same series on other sources, and says how sure it is.
@@ -87,10 +88,6 @@ class CandidateFinder
         array $current,
         ?callable $onProgress = null,
     ): array {
-        $title = (string) $current['title'];
-        $targetChapters = (int) ($current['chapters']['totalCount'] ?? 0);
-
-        $minimum = (float) config('papyrus.migration.minimum_similarity', 0.75);
         $currentSourceId = (string) $from->suwayomi_source_id;
 
         $sources = Source::query()
@@ -98,6 +95,69 @@ class CandidateFinder
             ->where('suwayomi_source_id', '!=', $currentSourceId)
             ->orderBy('suwayomi_source_id')
             ->get();
+
+        return $this->sweepAndRank($sources, $current, $onProgress);
+    }
+
+    /**
+     * The same search, against one named source instead of every source.
+     *
+     * ## Why the bulk migration needs this
+     *
+     * A reader moving a whole shelf off one source onto another has already chosen both ends.
+     * Sweeping all 82 sources per series would be 82 searches to answer a question with one
+     * destination, so at 80 series that is 6,560 requests where 80 would do, and the ones the
+     * reader did not ask about are requests made to sites that have nothing to do with the
+     * decision.
+     *
+     * The ranking, the detail fetch and the candidate shape are the same code as
+     * {@see find()}, deliberately. A bulk match and a wizard match that disagree would mean the
+     * same series moving two ways depending on which door the reader came through, and the
+     * per series migrator has to accept a bulk match as if the wizard had produced it, because
+     * it verifies against `migration_searches` and nothing else.
+     *
+     * ## Why an uninstalled destination is refused rather than searched
+     *
+     * Because there is nothing to search. An uninstalled source is a row in the catalogue with
+     * no server behind it, so the search would answer with a transport failure that looks like
+     * "this source does not have your series", which is a very different thing to tell someone
+     * about their library.
+     *
+     * @param  array<string, mixed>  $current
+     * @param  callable(int, int): void|null  $onProgress
+     * @return array{candidates: array<int, array<string, mixed>>, meta: array<string, int>}
+     */
+    public function findOn(
+        Source $from,
+        array $current,
+        Source $to,
+        ?callable $onProgress = null,
+    ): array {
+        if ((string) $to->suwayomi_source_id === (string) $from->suwayomi_source_id) {
+            return ['candidates' => [], 'meta' => ['sources_searched' => 0, 'sources_total' => 0, 'raw_hits' => 0, 'sites' => 0]];
+        }
+
+        if (! $to->is_installed) {
+            return ['candidates' => [], 'meta' => ['sources_searched' => 0, 'sources_total' => 1, 'raw_hits' => 0, 'sites' => 0]];
+        }
+
+        return $this->sweepAndRank(new Collection([$to]), $current, $onProgress);
+    }
+
+    /**
+     * Sweep the given sources, describe what they hold, and rank it.
+     *
+     * @param  Collection<int, Source>  $sources
+     * @param  array<string, mixed>  $current
+     * @param  callable(int, int): void|null  $onProgress
+     * @return array{candidates: array<int, array<string, mixed>>, meta: array<string, int>}
+     */
+    private function sweepAndRank(Collection $sources, array $current, ?callable $onProgress): array
+    {
+        $title = (string) $current['title'];
+        $targetChapters = (int) ($current['chapters']['totalCount'] ?? 0);
+
+        $minimum = (float) config('papyrus.migration.minimum_similarity', 0.75);
 
         $total = $sources->count();
         $searched = 0;

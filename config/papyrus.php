@@ -168,6 +168,37 @@ return [
          * 1346ms, only for a site that turns out to be a dead end.
          */
         'variants_per_site' => (int) env('PAPYRUS_MIGRATION_VARIANTS_PER_SITE', 2),
+
+        /*
+         * How alike two titles must be before a bulk match is already ticked.
+         *
+         * Different from `minimum_similarity` above, and deliberately much stricter, because
+         * the two are answering different questions. That one decides what a reader is *shown*:
+         * a near neighbour at 0.7586 is worth showing ranked low. This decides what is ticked
+         * *without* the reader ticking it, and a wrong tick is the one thing on that page
+         * that happens without a choice being made.
+         *
+         * 0.95 rather than anything lower, and it is not the load bearing part of the test on
+         * its own. Measured, five of six real candidates for one series tied at a title
+         * similarity of 1.000 while their chapter counts ran from 21 to 333, so a title alone
+         * cannot separate them. The chapter count is what actually decides, and this number
+         * only rules out the entries that are not the same series at all.
+         */
+        'confident_title_similarity' => (float) env('PAPYRUS_MIGRATION_CONFIDENT_TITLE', 0.95),
+
+        /*
+         * How many series one bulk comparison will look at before it stops and says so.
+         *
+         * A count rather than a time budget, because a reader needs to know whether their
+         * shelf was fully compared before approving anything. A budget would stop halfway on a
+         * slow day and the forty series shown would look like all eighty.
+         *
+         * 200 is about two to four minutes at the measured 370ms to 1346ms per series, which
+         * is past the point where a shelf this size is plausible but inside a request budget
+         * nobody should blow. The page can raise or lower it per run, and says on screen when
+         * it stopped short.
+         */
+        'bulk_series_cap' => (int) env('PAPYRUS_MIGRATION_BULK_CAP', 200),
     ],
 
     /*

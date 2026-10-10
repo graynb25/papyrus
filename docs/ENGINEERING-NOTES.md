@@ -3625,3 +3625,36 @@ were eliminated.
      moves**, and it has to be a column separate from the final tallies: writing `applied` every
      25 series would make a run that died at 60% claim it had imported 60% of the library, with
      no way to tell that apart from one that finished.
+
+196. **A guard written into one of two queries over the same rows is a guard on one of them.**
+     `CheckLibrary::dueIds()` filtered out series whose `suwayomi_manga_id` is null, because a
+     series filed from a backup has no Suwayomi manga to check against, and casting that null to
+     `0` would book a pass for a manga that does not exist. `CheckLedger::candidates()` had its
+     own query for the forced pass and carried no such filter, so the 195 filed series out of
+     867 reached `(int) $state->suwayomi_manga_id` as manga `0` and `check()` threw
+     `Series 0 is not in this reader's state` on the first of them. Measured against a real
+     import: `Check series` reported success having checked nothing.
+
+     The general shape: **the same rows fetched twice are two queries, and a condition written
+     into one of them is a property of that query rather than of the data.** The null was never
+     impossible, it was only new: nothing wrote a filed series before the importer existed, so
+     the first reader to import a backup was the first reader this could happen to. The fix is
+     `whereNotNull('suwayomi_manga_id')` beside the other branch's conditions, and the general
+     answer is to put the filter where the value is read rather than in a helper somebody else
+     remembered to call.
+
+197. **One exception ended a pass that was only a slice of a whole library.**
+     `CheckLedger::checkDue()` loops a slice bounded by time and count, 45 seconds and 60
+     series, and called `check()` bare. `check()` throws `InvalidArgumentException` for a manga
+     the reader does not hold, so a throw on the third of sixty cost the other fifty-seven and
+     stopped the chain, because `CheckLibrary::handle()` re-books the next slice *after* the pass
+     returns and a job that dies inside the loop never reaches that line. Measured: the job
+     failed four times in 5ms, checked nothing, and re-queued itself never.
+
+     The catch is `Throwable` rather than `SuwayomiException`, because `check()` already turns
+     that one into a failed row and what lands here is the unexpected: a malformed row, a source
+     returning nonsense, a cast that fails. Each is reported and counted as failed so the pass
+     keeps going. The general shape: **a self-chaining job has to reach its re-book from every
+     path, and a loop over another system's data is somewhere a throw is expected rather than
+     exceptional.** A reader who pressed one button asked for 867 checks, and four is a worse
+     answer than 866.
