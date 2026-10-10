@@ -48,8 +48,20 @@ const JRE_SHA256 = '4c95451cea98556def2c54f7782933f52a26d4a36bd85e1d59f036446482
 const JRE_URL = 'https://github.com/adoptium/temurin25-binaries/releases/download/'
     .'jdk-25.0.4.1%2B1/'.JRE_ARCHIVE;
 
-/** Where the launcher looks. Changing this means changing Supervisor::javaExecutable too. */
-const DEFAULT_DESTINATION = 'suwayomi'.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'jre';
+/**
+ * Where the launcher looks.
+ *
+ * This is Supervisor::javaExecutable's default, `suwayomi/runtime/bin/java.exe`, deliberately.
+ * The alternative of nesting the runtime one level deeper, at `suwayomi/runtime/jre/bin/java.exe`,
+ * is tidier to read in a file listing and it is what the staging script wrote at first. Nothing
+ * reads it: the launcher's default is the shallower path and it has tests behind it, so the
+ * script was the thing that was wrong.
+ *
+ * The cost of that is invisible until the day someone runs the install without passing
+ * `javaExecutable`, which is every real reader. A staged runtime at a path nothing looks in is
+ * an install that works on the machine that built it and nowhere else.
+ */
+const DEFAULT_DESTINATION = 'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
 
 $options = parseArguments($argv);
 

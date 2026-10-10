@@ -59,6 +59,19 @@ final class Supervisor
      */
     private ?string $resolvedConfig = null;
 
+    /**
+     * The php.ini with this install's paths filled in.
+     *
+     * Same arrangement as {@see $resolvedConfig} and for the same reason, but this one was
+     * missing for a while and the omission was invisible until the install was run the way a
+     * reader runs it. The shipped ini is a template: it says `extension_dir = "{{RUNTIME}}/ext"`
+     * and it means it. PHP accepts that as a directory name containing braces, fails to find
+     * any of the twelve extensions in it, and carries on with none of them loaded. The symptom
+     * arrives four layers away as a missing database driver, so the browser cannot connect and
+     * nothing says the ini was the reason.
+     */
+    private ?string $resolvedIni = null;
+
     public function __construct(
         private readonly string $root,
         private readonly string $dataDirectory,
@@ -101,6 +114,19 @@ final class Supervisor
      * database driver four layers away.
      */
     private function ini(): string
+    {
+        return $this->resolvedIni ?? $this->iniTemplate();
+    }
+
+    /**
+     * The ini as it ships, before substitution.
+     *
+     * Checked rather than assumed, because the failure of getting it wrong is a missing
+     * database driver four layers away. Kept separate from {@see ini()} so that the existence
+     * check still runs on the file that actually has to be there, rather than on a resolved copy
+     * this class wrote itself and would therefore always find.
+     */
+    private function iniTemplate(): string
     {
         return $this->existing(
             $this->phpIni ?? $this->path('runtime', 'php', 'php.ini'),
@@ -535,6 +561,8 @@ final class Supervisor
 
         $this->resolveWebConfig();
 
+        $this->resolvePhpConfig();
+
         /*
          * The .env is written here rather than in a separate configure step, because the web
          * server cannot answer `/ready` without an app key and the launcher has nothing to poll
@@ -589,6 +617,76 @@ final class Supervisor
         file_put_contents($target, $resolved);
 
         $this->resolvedConfig = $target;
+    }
+
+    /**
+     * Write the php.ini for this install, with its paths filled in.
+     *
+     * Written into the data directory rather than over the shipped template, for the same
+     * reason the Caddyfile is: the install directory can be read only, because it may live under
+     * Program Files, and a launcher that cannot write its own configuration is a launcher that
+     * fails only on a machine installed the way the installer intends.
+     *
+     * `{{RUNTIME}}` points back into the install rather than the data directory. That looks like
+     * an inconsistency and is not: the extensions are only ever read, so a read only install
+     * directory is exactly right for them, and copying 130MB of DLLs into the data directory on
+     * every start to satisfy a path that is only read would be the worse trade.
+     */
+    private function resolvePhpConfig(): void
+    {
+        $template = $this->iniTemplate();
+
+        $target = $this->dataDirectory.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini';
+
+        @mkdir(dirname($target), 0o777, true);
+
+        $resolved = str_replace(
+            ['{{RUNTIME}}', '{{LOGS}}', '{{TEMP}}'],
+            [
+                // Forward slashes, matching the Caddyfile. An ini path is read by the C runtime
+                // rather than by PHP's own path handling, so a mixed path is at best a warning.
+                str_replace('\\', '/', $this->path('runtime')),
+                str_replace('\\', '/', $this->logDirectory),
+                str_replace('\\', '/', $this->dataDirectory.DIRECTORY_SEPARATOR.'tmp'),
+            ],
+            (string) file_get_contents($template),
+        );
+
+        $this->refuseUnresolvedTokens($resolved, $target);
+
+        file_put_contents($target, $resolved);
+
+        $this->resolvedIni = $target;
+    }
+
+    /**
+     * Refuse to start on an ini that still contains a template token.
+     *
+     * This exists because the failure it prevents is silent. PHP does not reject
+     * `extension_dir = "{{RUNTIME}}/ext"`. It treats it as a literal directory, fails to load
+     * every extension in it, prints a warning to stderr that the launcher is not reading, and
+     * serves an app that cannot reach its database. Every clue points at the database, which is
+     * why this check exists rather than a comment warning it off.
+     *
+     * Comment lines are skipped, because the shipped ini explains the templating in a comment
+     * that mentions the token syntax by name. Checking the whole file would refuse to start on
+     * a perfectly correct configuration.
+     */
+    private function refuseUnresolvedTokens(string $resolved, string $target): void
+    {
+        foreach (preg_split('#\R#', $resolved) ?: [] as $line) {
+            if (str_starts_with(ltrim($line), ';')) {
+                continue;
+            }
+
+            if (preg_match('#\{\{[A-Z_]+\}\}#', $line) === 1) {
+                throw new RuntimeException(sprintf(
+                    'The PHP configuration resolved into %s still contains a template token: %s',
+                    $target,
+                    trim($line),
+                ));
+            }
+        }
     }
 
     private function takeLock(): void
