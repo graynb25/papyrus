@@ -46,6 +46,95 @@ class HealthDashboardTest extends TestCase
         ]);
     }
 
+    /**
+     * The report this fixes: 223 sources installed, 0 rows, six zeros, no explanation.
+     */
+    public function test_a_source_nobody_has_searched_is_counted_as_never_asked(): void
+    {
+        $this->source('https://a.test');
+        $this->source('https://b.test');
+
+        $this->assertSame(0, SourceHealth::query()->count(), 'nothing observed it yet');
+
+        SourceHealth::seedForInstalledSources();
+
+        $tally = app(HealthDashboard::class)->siteTally();
+
+        $this->assertSame(2, $tally['unobserved'], 'they are visible, and visibly unasked');
+        $this->assertSame(0, $tally['healthy'], 'not mistaken for working');
+        $this->assertSame(2, $tally['sites']);
+    }
+
+    /**
+     * Two sites, several variants. The dashboard's grain is the site, so the seeded rows have
+     * to roll up the same way an observed one does.
+     */
+    public function test_seeded_sources_roll_up_by_site_like_observed_ones(): void
+    {
+        $this->source('https://a.test', 'en');
+        $this->source('https://a.test', 'es');
+
+        SourceHealth::seedForInstalledSources();
+
+        $sites = app(HealthDashboard::class)->sites();
+
+        $this->assertCount(1, $sites);
+        $this->assertSame(2, (int) $sites->first()->variants);
+    }
+
+    public function test_seeding_never_resets_an_observation(): void
+    {
+        $source = $this->source('https://a.test');
+        $observed = $this->health($source, ['total_successes' => 7, 'last_success_at' => now()]);
+
+        $this->assertSame(0, SourceHealth::seedForInstalledSources(), 'nothing was missing');
+
+        $observed->refresh();
+
+        $this->assertSame(7, $observed->total_successes, 'a real reading is not a blank one');
+        $this->assertNotNull($observed->last_success_at);
+    }
+
+    public function test_seeding_is_safe_to_run_twice(): void
+    {
+        $this->source('https://a.test');
+        $this->source('https://b.test');
+
+        $this->assertSame(2, SourceHealth::seedForInstalledSources());
+        $this->assertSame(0, SourceHealth::seedForInstalledSources(), 'the second run creates nothing');
+        $this->assertSame(2, SourceHealth::query()->count());
+    }
+
+    /**
+     * A seed that carried a timestamp would read as an observation, which is the one thing
+     * "never asked" must not be. `last_success_at` in particular has to stay null.
+     */
+    public function test_a_seeded_row_carries_no_timestamp(): void
+    {
+        $this->source('https://a.test');
+
+        SourceHealth::seedForInstalledSources();
+
+        $row = SourceHealth::query()->firstOrFail();
+
+        $this->assertNull($row->last_success_at);
+        $this->assertNull($row->last_error_at);
+        $this->assertNull($row->marked_dead_at);
+        $this->assertNull($row->successRate(), 'unknown, not zero and not a hundred percent');
+        $this->assertSame(0, $row->total_successes);
+        $this->assertFalse($row->is_dead);
+    }
+
+    public function test_an_uninstalled_source_is_not_seeded(): void
+    {
+        $gone = $this->source('https://gone.test');
+        $gone->update(['is_installed' => false]);
+
+        SourceHealth::seedForInstalledSources();
+
+        $this->assertSame(0, SourceHealth::query()->count(), 'health describes what is there now');
+    }
+
     private function health(Source $source, array $overrides = []): SourceHealth
     {
         return SourceHealth::create(array_merge([

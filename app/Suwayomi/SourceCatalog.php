@@ -5,6 +5,7 @@ namespace App\Suwayomi;
 use App\Models\ExtensionStore;
 use App\Models\Scopes\OwnedByUser;
 use App\Models\Source;
+use App\Models\SourceHealth;
 use App\Models\UserExtensionStore;
 use App\Support\Suwayomi\Timestamps;
 use Illuminate\Support\Facades\DB;
@@ -238,6 +239,16 @@ class SourceCatalog
                 ->where('is_installed', true)
                 ->update(['is_installed' => false, 'last_synced_at' => $now]);
         }
+
+        /*
+         * Seed the health ledger, here and not in the callers.
+         *
+         * This is the only place the catalogue changes, and the seed has to run whenever it
+         * does or a newly mirrored source is invisible on the Health page rather than
+         * visibly unasked. Putting it in the command and the page action would be two call
+         * sites to forget.
+         */
+        SourceHealth::seedForInstalledSources();
 
         return count($seen);
     }

@@ -642,8 +642,23 @@ new #[Title('Sources')] class extends Component
                         ? (string) __('On this machine')
                         : $this->siteName($rows, $key),
                     'host' => $key === 'local' ? null : $key,
+                    /*
+                     * One icon for the site, taken from a variant that has one.
+                     *
+                     * `icon_url` has been stored since the catalogue was mirrored and was
+                     * never rendered, which is most of why this list read as flat: fifty
+                     * rows of a name and a count with nothing to tell them apart. It is a
+                     * per extension path, so a site borrows the first one its variants
+                     * offer. The later fill matters because extensions do not all ship an
+                     * icon and the first variant of a site is not reliably the one that does.
+                     */
+                    'icon' => null,
                     'sources' => [],
                 ];
+            }
+
+            if ($sites[$key]['icon'] === null && $source->icon_url !== null) {
+                $sites[$key]['icon'] = (string) $source->icon_url;
             }
 
             $sites[$key]['sources'][] = [
@@ -651,6 +666,7 @@ new #[Title('Sources')] class extends Component
                 'name' => (string) $source->display_name,
                 'lang' => (string) $source->lang,
                 'latest' => (bool) $source->supports_latest,
+                'icon' => $source->icon_url === null ? null : (string) $source->icon_url,
             ];
         }
 
@@ -945,9 +961,18 @@ new #[Title('Sources')] class extends Component
                 </p>
             </flux:callout>
         @else
-            <ul class="space-y-2">
+            {{--
+                Cards, three to five to a row.
+
+                The same grid the library, browse and search pages use, at the same
+                breakpoints, so the sources page finally reads as the same application as
+                the rest of it. It was the only long list on the site still laid out one
+                item per full-width row, and it sat next to a second one, which is what
+                made this page taller than anything it had to say.
+            --}}
+            <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->browseSites as $group)
-                    <li class="rounded-lg border border-zinc-200 dark:border-white/10">
+                    <li class="rounded-xl border border-zinc-200 dark:border-white/10">
                         {{--
                             Every group starts closed.
 
@@ -962,43 +987,46 @@ new #[Title('Sources')] class extends Component
                             A single-language site already shows its one source as a pill and never
                             needs expanding at all.
                         --}}
-                        <details>
-                            <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                                <span class="font-medium">{{ $group['site'] }}</span>
+                        <details class="group">
+                            {{--
+                                The face of the card. Icon, name, host, count.
 
-                                @if ($group['host'] !== null)
-                                    <span class="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                                        {{ $group['host'] }}
-                                    </span>
-                                @endif
+                                The icon is what this list never had. `icon_url` has been
+                                stored on every source since the catalogue was mirrored and
+                                was never drawn, so fifty tiles of a name and a count had
+                                nothing to tell them apart and read as one long list however
+                                they were arranged.
 
-                                <flux:badge size="sm" color="zinc">
-                                    {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
-                                </flux:badge>
+                                The chevron is not decoration. A summary that only grows when
+                                clicked, and gives nothing else away, is a control the reader
+                                has to try before they trust it, and this page is mostly made
+                                of them.
+                            --}}
+                            <summary class="flex cursor-pointer list-none flex-col gap-3 p-4">
+                                <div class="flex items-start gap-3">
+                                    <x-source.icon :path="$group['icon']" size="size-9 sm:size-11" />
 
-                                {{--
-                                    MangaDex carries 61 language variants, which would put 61
-                                    pills on one row and swamp every other site. Past a handful
-                                    the languages collapse behind a count and the first few
-                                    stay reachable without expanding anything.
-                                --}}
-                                <span class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                                    @foreach (array_slice($group['sources'], 0, 4) as $one)
-                                        <a
-                                            href="{{ route('browse', ['source' => $one['id']]) }}"
-                                            wire:navigate
-                                            class="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 transition hover:border-vermilion-400 hover:text-vermilion-700 dark:border-white/15 dark:text-zinc-300 dark:hover:border-vermilion-400 dark:hover:text-vermilion-300"
-                                        >
-                                            {{ $one['name'] }}
-                                        </a>
-                                    @endforeach
+                                    <div class="min-w-0 flex-1">
+                                        <span class="block break-words font-medium leading-snug line-clamp-2">{{ $group['site'] }}</span>
 
-                                    @if (count($group['sources']) > 4)
-                                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                                            {{ __('+:count more', ['count' => count($group['sources']) - 4]) }}
-                                        </span>
-                                    @endif
-                                </span>
+                                        @if ($group['host'] !== null)
+                                            <span class="mt-0.5 block truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                                {{ $group['host'] }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                </div>
+
+                                <div class="mt-auto flex items-center justify-between gap-2">
+                                    <flux:badge size="sm" color="zinc">
+                                        {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
+                                    </flux:badge>
+
+                                    <flux:icon
+                                        name="chevron-down"
+                                        class="size-4 text-zinc-400 transition group-open:rotate-180 dark:text-zinc-500"
+                                    />
+                                </div>
                             </summary>
 
                             <div class="flex flex-wrap gap-1.5 border-t border-zinc-200 px-4 py-3 dark:border-white/10">
@@ -1456,52 +1484,82 @@ new #[Title('Sources')] class extends Component
                 @endif
             </flux:callout>
         @else
-            <ul class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-white/10 dark:border-white/10">
+            {{--
+                Cards, three to five to a row, on the same breakpoints as the library,
+                browse and search grids. This was the second full-width list on this page,
+                which is what made the page taller than it had anything to say, and every
+                row was a name, a badge and a package name with nothing to look at.
+            --}}
+            <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->extensions as $extension)
                     @php($installed = ($extension['isInstalled'] ?? false) === true)
 
-                    <li class="flex flex-wrap items-center gap-3 px-4 py-3">
-                        @if ($installed)
-                            <span class="size-[1.125rem] shrink-0"></span>
-                        @else
-                            <flux:checkbox
-                                wire:model="selected"
-                                :value="$extension['pkgName']"
-                                class="shrink-0"
-                            />
-                        @endif
+                    {{--
+                        `iconUrl` has been in this query's selection set since the
+                        catalogue was first mirrored. Drawn here for the first time.
 
-                        <div class="min-w-0 flex-1">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="font-medium">{{ $extension['name'] }}</span>
+                        The checkbox moves into the corner. In a full-width row a spacer
+                        held the column still for the installed case, and in a card there
+                        is no shared column to hold and the hole read as something
+                        missing.
+                    --}}
+                    <li class="flex flex-col gap-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
+                        <div class="flex items-start gap-3">
+                            <x-source.icon :path="$extension['iconUrl'] ?? null" size="size-9 sm:size-10" />
 
-                                @if (($extension['lang'] ?? null) !== null)
-                                    <flux:badge size="sm" color="zinc">{{ $extension['lang'] }}</flux:badge>
-                                @endif
+                            <div class="min-w-0 flex-1">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="font-medium">{{ $extension['name'] }}</span>
 
-                                @if (($extension['contentWarning'] ?? null) === Source::NSFW)
-                                    <flux:badge size="sm" color="red" icon="exclamation-triangle">{{ __('NSFW') }}</flux:badge>
-                                @endif
+                                    @if (($extension['lang'] ?? null) !== null)
+                                        <flux:badge size="sm" color="zinc">{{ $extension['lang'] }}</flux:badge>
+                                    @endif
 
-                                @if ($extension['hasUpdate'] ?? false)
-                                    <flux:badge size="sm" color="orange" icon="arrow-up">{{ __('update') }}</flux:badge>
-                                @endif
+                                    @if (($extension['contentWarning'] ?? null) === Source::NSFW)
+                                        <flux:badge size="sm" color="red" icon="exclamation-triangle">{{ __('NSFW') }}</flux:badge>
+                                    @endif
 
-                                @if ($extension['isObsolete'] ?? false)
-                                    <flux:badge size="sm" color="zinc">{{ __('obsolete') }}</flux:badge>
-                                @endif
+                                    @if ($extension['hasUpdate'] ?? false)
+                                        <flux:badge size="sm" color="orange" icon="arrow-up">{{ __('update') }}</flux:badge>
+                                    @endif
+
+                                    @if ($extension['isObsolete'] ?? false)
+                                        <flux:badge size="sm" color="zinc">{{ __('obsolete') }}</flux:badge>
+                                    @endif
+                                </div>
+
+                                {{--
+                                    Under the name rather than beside it. A card is narrow,
+                                    so both truncate where a full-width row never had to,
+                                    and the package name is the least interesting thing on
+                                    the card by a distance. The version leads because it is
+                                    the part a reader comparing two updates actually reads.
+                                --}}
+                                <p class="mt-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                    @if (($extension['versionName'] ?? null) !== null)
+                                        <span class="font-sans">{{ $extension['versionName'] }}</span>
+                                    @endif
+
+                                    {{ $extension['pkgName'] }}
+                                </p>
                             </div>
 
-                            <p class="mt-0.5 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                                {{ $extension['pkgName'] }}
-
-                                @if (($extension['versionName'] ?? null) !== null)
-                                    <span class="font-sans">{{ $extension['versionName'] }}</span>
-                                @endif
-                            </p>
+                            @unless ($installed)
+                                <flux:checkbox
+                                    wire:model="selected"
+                                    :value="$extension['pkgName']"
+                                    class="shrink-0"
+                                />
+                            @endunless
                         </div>
 
-                        <div class="flex shrink-0 items-center gap-2">
+                        {{--
+                            `mt-auto` so the buttons line up across a row of cards that do
+                            not all carry the same amount of text, and `flex-wrap` because
+                            "Update" and "Uninstall" do not both fit two columns on a
+                            phone.
+                        --}}
+                        <div class="mt-auto flex flex-wrap items-center gap-2 pt-1">
                             @if ($installed)
                                 @if (($extension['hasUpdate'] ?? false) && $this->isTrusted($extension))
                                     <flux:button

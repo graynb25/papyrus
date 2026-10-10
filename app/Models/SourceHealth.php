@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Search\HealthRecorder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -60,6 +61,55 @@ class SourceHealth extends Model
             'total_failures' => 'integer',
             'avg_latency_ms' => 'integer',
         ];
+    }
+
+    /**
+     * Give every installed source a ledger row, and report how many were missing.
+     *
+     * Without this the "never asked" state is unreachable, and it is unreachable for a
+     * structural reason rather than an accidental one: a row is only ever created by
+     * {@see HealthRecorder::record()}, so a source that has never been searched
+     * has no row, and a source with no row is absent from the dashboard entirely rather
+     * than counted as unobserved.
+     *
+     * Measured on the dev library before this existed: 223 sources installed, 0 rows, and a
+     * Health page reading six zeros with no explanation. One search then filled 60 rows,
+     * which is the correct behaviour but the wrong first impression, and it left 163
+     * sources permanently invisible rather than visibly unasked.
+     *
+     * Existing rows are left alone, so a seed never resets an observation. The counters
+     * stay at zero rather than being nulled, and no timestamp is written, because a seeded
+     * row carrying `last_success_at` would read as a successful call that never happened.
+     *
+     * @return int How many rows were created.
+     */
+    public static function seedForInstalledSources(): int
+    {
+        $missing = Source::query()
+            ->installed()
+            ->whereNotExists(
+                fn ($query) => $query->selectRaw('1')
+                    ->from('source_healths')
+                    ->whereColumn('source_healths.source_id', 'sources.suwayomi_source_id'),
+            )
+            ->get(['suwayomi_source_id', 'name', 'lang']);
+
+        $now = now();
+
+        foreach ($missing as $source) {
+            SourceHealth::query()->create([
+                'source_id' => (int) $source->suwayomi_source_id,
+                'name' => (string) $source->name,
+                'lang' => (string) $source->lang,
+                'consecutive_failures' => 0,
+                'consecutive_empty' => 0,
+                'total_successes' => 0,
+                'total_failures' => 0,
+                'is_dead' => false,
+            ]);
+        }
+
+        return $missing->count();
     }
 
     /**

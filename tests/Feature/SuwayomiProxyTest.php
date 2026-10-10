@@ -83,6 +83,75 @@ class SuwayomiProxyTest extends TestCase
         $this->get('/suwayomi/api/v1/manga/12/chapter/0/page/0')->assertRedirect();
     }
 
+    /**
+     * Extension icons, which the source cards draw.
+     *
+     * `icon_url` and `iconUrl` were mirrored and fetched from the very first build and had
+     * never been rendered, which is most of why the sources page read as fifty identical
+     * lines. Drawing them needs this route, because Suwayomi answers the icon endpoint 401
+     * without a bearer token and the browser cannot hold one.
+     */
+    public function test_it_serves_an_extension_icon(): void
+    {
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.mangadex');
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'image/webp');
+        $this->assertSame('image-bytes', $response->streamedContent());
+    }
+
+    public function test_an_extension_icon_carries_the_suwayomi_token_server_side(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.mangadex');
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/extension/icon/')
+            && $request->hasHeader('Authorization', 'Bearer token-1'));
+    }
+
+    public function test_an_extension_icon_still_needs_a_signed_in_reader(): void
+    {
+        $this->get('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.mangadex')
+            ->assertRedirect();
+    }
+
+    /**
+     * The set the widening must not have taken with it.
+     *
+     * `extension/list` is the sharp case: one character from `extension/icon`, and it
+     * enumerates the whole catalogue, which is the admin surface the class docblock says
+     * this route must never become a relay to.
+     */
+    public function test_the_icon_allowlist_did_not_widen_the_admin_surface(): void
+    {
+        $user = User::factory()->create();
+
+        foreach ([
+            '/suwayomi/api/v1/extension/list',
+            '/suwayomi/api/v1/extension/install/eu.kanade.tachiyomi.extension.en.mangadex',
+            '/suwayomi/api/v1/extension/icon',
+            '/suwayomi/api/v1/extension/icon/../../settings',
+            '/suwayomi/api/v1/extension/icons/eu.kanade.tachiyomi.extension.en.mangadex',
+            '/suwayomi/api/v1/settings',
+            '/suwayomi/api/v1/graphql',
+        ] as $path) {
+            $this->actingAs($user)->get($path)->assertNotFound($path);
+        }
+    }
+
+    public function test_a_failed_icon_never_returns_the_application_layout(): void
+    {
+        $this->upstreamStatus = 500;
+
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.mangadex');
+
+        $this->assertSame(502, $response->getStatusCode());
+        $this->assertStringNotContainsString('<html', (string) $response->getContent());
+        $this->assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'));
+    }
+
     public function test_it_attaches_the_suwayomi_token_server_side(): void
     {
         $this->actingAs(User::factory()->create())

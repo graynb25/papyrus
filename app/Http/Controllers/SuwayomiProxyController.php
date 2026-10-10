@@ -32,12 +32,20 @@ class SuwayomiProxyController extends Controller
     /**
      * Paths this proxy will forward, relative to /api/v1.
      *
-     * Suwayomi addresses pages as manga/{mangaId}/chapter/{index}/page/{page}
-     * and covers as manga/{mangaId}/thumbnail. Everything else - including the
+     * Suwayomi addresses pages as manga/{mangaId}/chapter/{index}/page/{page},
+     * covers as manga/{mangaId}/thumbnail, and extension icons as
+     * extension/icon/{packageName}. Everything else - including the
      * CBZ export, which builds an entire zip in memory server-side
      * (Suwayomi-Server#2353) - is refused.
+     *
+     * Icons are here for the same reason covers are. The endpoint needs the bearer
+     * token, and measured anonymous it answers 401, so the browser cannot ask Suwayomi
+     * for one directly and a plain `<img>` pointed at the server would either show
+     * nothing or put the token in the markup. An allowlist entry rather than a widened
+     * rule, so extension install, settings mutation and raw GraphQL stay unreachable
+     * from the browser exactly as before.
      */
-    private const ALLOWED_PATH = '#^manga/\d+(/chapter/\d+/page/\d+|/thumbnail)$#';
+    private const ALLOWED_PATH = '#^(manga/\d+(/chapter/\d+/page/\d+|/thumbnail)|extension/icon/[A-Za-z0-9._-]+)$#';
 
     /**
      * Query parameters forwarded upstream.

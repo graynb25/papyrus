@@ -154,7 +154,7 @@ class SourcesPageTest extends TestCase
      *
      * @return array<string, mixed>
      */
-    private function source(int $id, string $pkg, string $name): array
+    private function source(int $id, string $pkg, string $name, ?string $icon = null): array
     {
         return [
             'id' => (string) $id,
@@ -163,7 +163,7 @@ class SourcesPageTest extends TestCase
             'lang' => 'en',
             'contentWarning' => 'SAFE',
             'homeUrl' => 'https://example.test',
-            'iconUrl' => null,
+            'iconUrl' => $icon === null ? null : '/api/v1/extension/icon/'.$pkg,
             'supportsLatest' => true,
             'isConfigurable' => false,
             'extension' => ['pkgName' => $pkg, 'isInstalled' => true],
@@ -487,6 +487,106 @@ class SourcesPageTest extends TestCase
         // The list only offers an untrusted row, so nothing is installable and
         // the selection is cleared rather than acted on.
         $this->assertDatabaseCount('user_extension_stores', 0);
+    }
+
+    /**
+     * The reason these cards exist.
+     *
+     * `iconUrl` was in this query's selection set from the first build and had never been
+     * rendered, which is most of why the list read as generic: fifty rows of a name, a badge
+     * and a package name with nothing to tell them apart.
+     *
+     * The URL is asserted in full because the endpoint needs the bearer token. Measured
+     * against the live server, anonymous answers 401 with a twelve byte body and with a token
+     * answers 200 image/png, so an `<img>` pointed straight at Suwayomi renders nothing and
+     * looks exactly like an icon that was never wired up.
+     */
+    public function test_a_source_card_draws_its_icon_through_the_proxy(): void
+    {
+        $this->serveSources([$this->source(1, 'eu.kanade.tachiyomi.extension.en.example', 'Example', 'icon')]);
+
+        $this->page()
+            ->call('syncSources')
+            ->assertOk()
+            ->assertSee('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.example', escape: false);
+    }
+
+    public function test_an_extension_card_draws_its_icon_through_the_proxy(): void
+    {
+        $this->nodes = [$this->withIcon(
+            $this->extension('eu.kanade.tachiyomi.extension.en.example', 'Example', true, true),
+        )];
+
+        $this->page()
+            ->assertOk()
+            ->assertSee('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.example', escape: false);
+    }
+
+    /**
+     * Not every extension ships an icon, and one that does not must still leave a card of the
+     * same shape. The frame reserves the square before the bytes arrive, so a grid of them
+     * does not shove the layout sideways one at a time, and an icon that 404s removes itself
+     * and leaves that frame rather than a broken image glyph.
+     */
+    public function test_a_source_without_an_icon_still_holds_its_space(): void
+    {
+        $this->serveSources([
+            $this->source(1, 'eu.kanade.tachiyomi.extension.en.example', 'Example', 'icon'),
+            $this->source(2, 'eu.kanade.tachiyomi.extension.en.bare', 'Bare'),
+        ]);
+
+        $page = $this->page()->call('syncSources')->assertOk();
+
+        $page->assertSee('/extension/icon/eu.kanade.tachiyomi.extension.en.example', escape: false)
+            ->assertDontSee('/extension/icon/eu.kanade.tachiyomi.extension.en.bare', escape: false);
+
+        // Both names are still on the page, so the one without an icon is drawn rather than
+        // quietly dropped.
+        $page->assertSee('Bare');
+    }
+
+    /**
+     * The layout, asserted so it cannot quietly go back to one item per full-width row.
+     *
+     * These are the breakpoints the library, browse and search grids already use, which is
+     * also the three to five per row that was asked for.
+     */
+    public function test_the_lists_are_grids_and_not_one_row_each(): void
+    {
+        $this->serveSources([$this->source(1, 'eu.kanade.tachiyomi.extension.en.example', 'Example', 'icon')]);
+
+        // Sync first. The site list only renders once something has been mirrored, so a bare
+        // render puts only the extensions list on screen.
+        //
+        // Worth stating plainly, because this test asserted two grids and was counting one:
+        // it would have gone green the moment the whole site list was deleted, which is the
+        // opposite of what it claims to hold.
+        $page = $this->page()->call('syncSources')->assertOk();
+
+        $grids = substr_count($page->html(), 'sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5');
+
+        $this->assertSame(
+            2,
+            $grids,
+            'the site list and the extension list, which is what made this page the longest one in the app',
+        );
+
+        $this->assertStringNotContainsString(
+            'divide-y divide-zinc-200',
+            $page->html(),
+            'the extensions list is back to one item per row',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function withIcon(array $node, ?string $icon = '/api/v1/extension/icon/'): array
+    {
+        $node['iconUrl'] = $icon === null ? null : $icon.$node['pkgName'];
+
+        return $node;
     }
 
     public function test_the_installed_tab_is_the_default(): void
