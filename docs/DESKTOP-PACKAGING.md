@@ -261,9 +261,50 @@ machine". A sandbox.
 | 0.8 | Launcher shell | M | Go or C#, 5 to 10MB, or Tauri. Not Electron. |
 | 0.9 | One log for four processes | M | Today four locations. A reader cannot send that. |
 | 0.10 | Clean-sandbox verification | **S** | The gate. |
-| 0.11 | Suwayomi runtime shape | M | Zip 328MB vs jar 174MB plus a jlinked runtime. Verify the zip's bundled runtime first. |
+| 0.11 | Suwayomi runtime shape | M | **Answered by measurement, see below. Do not use their zip. |
 | 0.12 | Uninstall leaves data alone | **H** | Data lives outside the install directory precisely so this is possible. |
 | 0.13 | `VACUUM INTO` snapshot job | **S** | Added from `DISTRIBUTION.md`. The library is not in `data/`, but this side is, and a file copy of a live SQLite is a corrupt copy. |
+
+
+### 0.11 answered: what is actually in Suwayomi's Windows zip
+
+Measured with two HTTP range requests reading the zip's central directory, so nothing was
+downloaded. The numbers are exact rather than inferred from the total size.
+
+```
+327.9 MB  Suwayomi-Server-v2.4.2366-windows-x64.zip, of which
+   85.3 MB   electron/electron.exe and its assets, 196MB raw
+  159.3 MB   bin/Suwayomi-Server.jar
+   36.2 MB   jre/, 292 entries, java.exe present and javac.exe absent
+   14.7 MB   Suwayomi-Launcher.jar
+```
+
+Two things follow, and one of them contradicts what this document assumed.
+
+**Their bundled runtime is already a JRE, not a JDK.** `javac.exe` is absent, which is what
+distinguishes them. So `jlink` is not the lever this plan assumed it was, and an earlier
+version of the probe printed the opposite conclusion with the logic inverted. There is very
+little to strip, because there was never a compiler in there.
+
+**Do not use their zip.** 85.3 MB of it is an Electron build for Suwayomi's optional Electron
+WebUI, which matches the `server.webUIInterface = BROWSER | ELECTRON` setting and which this
+project would never launch. Shipping it would be shipping 85MB of Chromium we would throw away,
+in a project whose entire reason for not using Electron is that Chromium is a liability.
+
+So the runtime is the jar plus a JRE:
+
+| | Size |
+| --- | --- |
+| `Suwayomi-Server.jar` | 159.3 MB compressed |
+| a JRE, theirs or one we pick | 36.2 MB compressed |
+| **total** | **~196 MB** |
+| their whole zip | 327.9 MB |
+
+**A 132MB saving, and it is also the cleaner arrangement**, because the launcher then owns
+the Suwayomi lifecycle outright rather than sharing it with a launcher jar they wrote.
+
+The one thing left to verify, and it is the gate: a JRE we ship has to be one Suwayomi
+actually runs on. That is what the clean sandbox is for.
 
 ## Phase 1: acquiring Suwayomi
 
