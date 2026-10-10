@@ -46,8 +46,8 @@ final class BackupReaders
         }
 
         throw new ImportRefused(sprintf(
-            'No reader recognises that file. This server reads backups from: %s. A Tachimanga '
-            .'backup is the .tmb that Tachimanga writes from its own backup screen.',
+            'No reader recognises that file. This server reads backups from: %s. Tachimanga writes a '
+            .'.tmb and Mihon or Suwayomi writes a .tachibk.',
             $this->supported(),
         ));
     }

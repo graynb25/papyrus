@@ -178,10 +178,12 @@ class RunBackupImport implements ShouldQueue
             'started_at' => now(),
             'finished_at' => now(),
             'progress_note' => sprintf(
-                'A %s backup, format version %s. It holds %s series in your library across %s chapters, '
+                'A %s backup, %s. It holds %s series in your library across %s chapters, '
                 .'and %s of those chapters are marked read.',
                 $backup->format,
-                number_format($backup->schemaVersion),
+                $backup->schemaVersion === null
+                        ? 'which states no format version'
+                        : 'format version '.number_format($backup->schemaVersion),
                 number_format($series),
                 number_format($chapters),
                 number_format($read),

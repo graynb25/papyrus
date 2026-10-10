@@ -68,9 +68,16 @@ class InspectBackup extends Command
         }
 
         $this->components->info(sprintf(
-            'Read a %s backup, format version %d.',
+            'Read a %s backup%s.',
             $backup->format,
-            $backup->schemaVersion,
+            /*
+             * `.tachibk` states no version anywhere, so there is nothing to print and a plain
+             * %d would print a 0 the file never wrote. A reader would take that for a version
+             * this server recognised, which is the opposite of what happened.
+             */
+            $backup->schemaVersion === null
+                ? ', which states no format version'
+                : ', format version '.$backup->schemaVersion,
         ));
 
         // The keys are the point of this table, so they are shown. `except` drops the two
@@ -80,9 +87,15 @@ class InspectBackup extends Command
             ['Found', 'Count'],
             collect($backup->summary())
                 ->except('format', 'schema_version')
-                ->map(fn (int|string $count, string $what): array => [
+                ->map(fn (int|string|null $count, string $what): array => [
                     str_replace('_', ' ', $what),
-                    number_format((int) $count),
+                    /*
+                 * A null count prints as "none" rather than as 0. Casting it would turn a
+                 * value this server could not determine into a confident zero, which on a
+                 * report about somebody's library is the one number nobody should be given
+                 * without knowing it is missing.
+                 */
+                    $count === null ? 'none' : number_format((int) $count),
                 ])
                 ->values()
                 ->all(),
@@ -103,12 +116,22 @@ class InspectBackup extends Command
         }
 
         $this->newLine();
-        $this->line(sprintf(
-            '  %d of %d series in the file are on the shelf. The rest is what the app '
-            .'cached while browsing, and importing it is not something this command does.',
-            $backup->series->count(),
-            $backup->totalInFile,
-        ));
+
+        /*
+         * Only claim a browse cache where there is one. Tachimanga carries 132,185 series of
+         * which 1,277 are the library, and that difference matters enough to say out loud. A
+         * `.tachibk` only ever holds what the reader chose to keep, so there the two counts are
+         * equal, and telling someone that 4 of 4 were on the shelf and "the rest is what the
+         * app cached" describes a thing that does not exist in their file.
+         */
+        $this->line($backup->series->count() === $backup->totalInFile
+            ? sprintf('  All %s series in the file are on the shelf.', number_format($backup->series->count()))
+            : sprintf(
+                '  %s of %s series in the file are on the shelf. The rest is what the app '
+                .'cached while browsing, and importing it is not something this command does.',
+                number_format($backup->series->count()),
+                number_format($backup->totalInFile),
+            ));
 
         $downloaded = $backup->downloadedChapterCount();
 

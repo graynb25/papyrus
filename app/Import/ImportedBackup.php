@@ -50,12 +50,12 @@ final class ImportedBackup
      * @param  Collection<int, ImportedSeries>  $series  The reader's library, and only their library.
      * @param  Collection<string, int>  $categories  Category name to member count, as free-text labels.
      * @param  int  $totalInFile  How many series the file holds in total, library and browse cache together.
-     * @param  int  $schemaVersion  The format's own version number, which is what the reader gates on.
+     * @param  int|null  $schemaVersion  The format's own version number, or null when the format states none.
      * @param  Collection<int, BackupSource>  $sources  The sources the shelf sits on, largest first.
      */
     public function __construct(
         public readonly string $format,
-        public readonly int $schemaVersion,
+        public readonly ?int $schemaVersion,
         public readonly Collection $series,
         public readonly Collection $categories,
         public readonly int $totalInFile,
@@ -97,7 +97,12 @@ final class ImportedBackup
      * hands to a browser would silently round them. A summary that omits them cannot leak
      * a wrong id into a page.
      *
-     * @return array<string, int|string>
+     * `schema_version` is null for a format that states no version, which `.tachibk` does
+     * anywhere. That is carried through rather than defaulted to 0, because 0 is a number
+     * the file never wrote and a report printing it would read as a version this server
+     * recognised when nothing had been recognised at all.
+     *
+     * @return array<string, int|string|null>
      */
     public function summary(): array
     {

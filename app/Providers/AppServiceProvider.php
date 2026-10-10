@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Import\BackupReaders;
+use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
 use App\Search\Deduplicator;
 use App\Search\TitleNormalizer;
@@ -52,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
          */
         $this->app->singleton(BackupReaders::class, fn ($app): BackupReaders => new BackupReaders([
             $app->make(TachimangaReader::class),
+            $app->make(TachibkReader::class),
         ]));
 
         // The fuzzy-merge threshold is a primitive, so the container cannot

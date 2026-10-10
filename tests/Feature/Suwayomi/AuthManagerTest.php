@@ -271,10 +271,22 @@ class AuthManagerTest extends TestCase
     {
         $this->fakeLogin();
 
+        /*
+         * 300 seconds, not 31. `AuthManager::ACCESS_MARGIN` is 30 and `isFresh()` is
+         * `time() < $expiresAt - 30`, so an expiry of `time() + 31` is outside the margin by
+         * exactly one second. Every second of work between capturing that time and asking for
+         * the token flips the branch, so this test fails on a loaded machine and passes on an
+         * idle one, which is the worst way for a test to behave.
+         *
+         * The margin is still pinned to the second from the other side: the test above uses
+         * `time() + 29`, which is inside it and stays inside for the whole run. Pinning the
+         * outside case to the second as well would need a clock this code does not use, since
+         * `AuthManager` reads `time()` directly and Laravel's `travelTo` cannot reach it.
+         */
         cache()->put('suwayomi.tokens', [
-            'accessToken' => $this->accessToken(31),
+            'accessToken' => $this->accessToken(300),
             'refreshToken' => $this->refreshToken(),
-            'accessExpiresAt' => time() + 31,
+            'accessExpiresAt' => time() + 300,
             'refreshExpiresAt' => time() + 50000,
         ], 3600);
 

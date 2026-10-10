@@ -2229,7 +2229,7 @@ and it is not something to monetise.
 
 ## 14. Known gaps between the documents and the code
 
-Found by reading all 94 files under `app/` and tracing every public method to a caller.
+Found by reading all 142 files under `app/` and tracing every public method to a caller.
 The pass that found them was documentation only, so nothing here was fixed at the time and
 every entry was a live gap. Entries that later passes closed are marked **closed**, because a
 gap list that reports a resolved gap as open is worse than no gap list. What remains is
@@ -2365,7 +2365,7 @@ cites trap 123 is the manual-read-marking row, and it describes the upsert trap,
 kept the number and the other became 133 and moved to the end. The 68-to-82 block was
 **re-ordered and not renumbered**, because trap 70 is cited eleven times elsewhere and trap 45
 four times, and renumbering to close the gap would have broken a dozen citations to buy
-tidiness. The list is now 1 to 174, each number once, ascending.
+tidiness. The list is now 1 to 216, each number once, ascending.
 
 The `failOnTimeout` note above is also out of date. Three jobs set it now:
 `FindMigrationCandidates`, `SyncAniListProgress` and `ImportAniListProgress`. `CheckLibrary`
@@ -3835,3 +3835,106 @@ were eliminated.
      The general shape: **a schema's own bookkeeping can answer questions about its history that
      no log kept.** Before spending an afternoon recovering data, check whether the thing you
      suspect actually happened, and whether the database says so.
+207. **A protobuf flag that is absent is not a flag that is false, and !== 0 says it is true.**
+    `integer(\, 4) !== 0` reads as true whenever the field is missing, because 
+ull !== 0,
+    and protobuf omits a false rather than writing a zero. The .tachibk reader shipped that way
+    and reported **2,911 chapters read out of a file holding 1,616**, while every other number it
+    printed stayed correct.
+
+    That is the shape of failure worth fearing: not a crash, not a wrong-looking count, but a
+    plausible report with one number in it quietly inverted. Nothing on screen contradicts it.
+
+    It survived a fixture that set a read flag to zero, because that is not what the format does.
+    It was caught by running the reader on a file a person had actually made and comparing the
+    count against a second decoder written in another language.
+
+    The general shape: **the fixture must reproduce the shape of the data, not the shape of the
+    idea.** "Unread" in this format is an absent field, and a fixture that writes alse is
+    testing a file no writer produces.
+
+208. **Protobuf writes a fixed32 little endian, and unpack('G') reads it big endian.**
+    g is little endian and G is big, they look identical, and getting it wrong does not
+    raise. 700.5 comes back as a denormal so small it reads as  . Every decimal chapter
+    number silently became zero and every whole one became nonsense.
+
+    The general shape: **byte order errors are silent, and a language that names both variants
+    with two characters gives you no way to notice.** Read the format's specification for the
+    order rather than for the field.
+
+209. **A dropped ternary branch is still valid PHP when it is the last argument.**
+    `sprintf('Read a %s backup%s.', \, \ === null)` compiles. The call is
+    complete, \ === null is the third argument, and the trailing ) closes the
+    enclosing call. It printed Read a tachibk backup1. and every test passed.
+
+    This one is worth keeping for the shape rather than the instance. The intermediate state was
+    **syntactically valid and semantically broken**, and PHP will not help you. A ternary written
+    across several lines needs a test that asserts on the sentence, not on the exit code.
+
+210. **A nullable value through %d becomes a confident zero.**
+    ImportedBackup::\ is now ?int, because .tachibk states no version anywhere
+    and a   reads as a version the server recognised. The type was changed and one caller was
+    fixed; the second, `number_format(\->schemaVersion)`, turned 
+ull into '0' in the
+    progress note and nothing failed.
+
+    The general shape: **widening a type does not migrate its callers.** PHP will coerce 
+ull
+    into 
+umber_format and '%d' without a word, so every consumer of a newly nullable value
+    has to be found by the type checker and not by memory.
+
+211. **A count of what survived a filter is not a count of what was in the file.**
+    `totalInFile` was `count(\)` after unnameable series had been skipped, so a file
+    holding three series reported two. The comment next to the skip said it still counted, which
+    made the bug a documented lie rather than an undocumented one.
+
+212. **A sentence that is true of one format can be false of the next one.**
+    import:inspect ended every report with "the rest is what the app cached while browsing". For
+    Tachimanga that is the single most important sentence in the output, because 131,908 of its
+    132,185 rows are browse cache. For .tachibk there is no rest, so the same sentence told a
+    reader that a thing existed in their file which does not exist in that format at all.
+
+    The general shape: **adding a format re-tests every sentence that a format can reach.** The
+    branch that was written for the first case is now also the default for the second.
+
+213. **A listing index is not a source order, and the writer prefers the one it is given.**
+    `SeriesWriter::pair()` tries `sourceOrder` before `number`. A `.tachibk` chapter field
+    holds a 1 based index in the backup's own listing, which is the app's sort order rather than
+    anything the source published. Mapping it would have let a sort choice override a chapter
+    number that is definitely right, and a source that inserts a chapter would move every read
+    flag after it onto the wrong chapter.
+
+    The general shape: **an easy field is not a safe field.** Ask what a consumer does with the
+    value before deciding what it means, and prefer the key that means what it says.
+
+214. **A wire type and a value type cannot be correlated in a single PHP type.**
+    The walk yields `[wire type, value]` where the value is an int or a string depending on the
+    wire type, so every caller that wanted a nested message had to repeat the same two checks and
+    PHPStan could not follow it. messages() does the filtering once and narrows with is_string
+    rather than casting, because a cast claims a type the walk never promised.
+
+215. **A generator that declares Generator<K, V, null, null> trips eturn.missing.**
+    Declaring the third and fourth type parameters as 
+ull tells the checker the generator
+    returns a null explicitly, and then it wants the eturn null that a generator never needs.
+    `@return Generator<int, array{int, int|string}>` is the accurate declaration.
+216. **A test one second away from a boundary is a coin flip, not a test.**
+    `AuthManager::ACCESS_MARGIN` is 30 and `isFresh()` is `time() < \ - 30`. The
+    test for a token *outside* that margin captured `time() + 31`, so it had exactly one
+    second of slack before the branch it was asserting on would flip. It passed in isolation and
+    failed once in a full run, on a machine that was also running something else.
+
+    That is the shape to look for: a fixture value chosen as the *nearest* value on the correct
+    side of a threshold. It reads as the most precise test available, and it is the one that
+    fails at random.
+
+    `AuthManager` reads `time()` directly, so Laravel's `travelTo` cannot reach it and
+    there is no clean way to freeze the boundary. The fix was to move the value to 300 seconds
+    and leave the margin pinned to the second from the *other* side, where `time() + 29` is
+    inside the margin and stays inside for the whole run. A boundary needs one tight case, not
+    two, and the tight one should be the one that cannot go the wrong way as time passes.
+
+    The general shape: **when a test is pinned to a threshold, check which side of it the clock
+    is on, and check that direction.** Otherwise the suite's stability depends on how busy the
+    machine is.

@@ -302,7 +302,7 @@ import runs rather than after.
 | --- | --- |
 | L1 | Import history visible to the reader |
 | L2 | Dry-run preview before committing |
-| L3 | Mihon `.tachibk` support (protobuf, a different parser entirely) |
+| L3 | ~~Mihon `.tachibk` support (protobuf, a different parser entirely)~~ | **done.** `app/Import/Tachibk/`. Read from a real Suwayomi written backup of 4 series, 2,911 chapters and 1,616 read chapters. See "What `.tachibk` turned out to be" below. |
 | L4 | Aidoku `.aib` and Paperback `.pas4` |
 | L5 | `pref-all.json` / `prefs/` parsing, if ever wanted |
 | L6 | ~~Extension comparison, offering to install a source the backup had~~ | **moved to H**, see M4. The backup names 413 sources and this server has 84, and only 13 of the library's 56 are shared. |
@@ -318,6 +318,7 @@ decision, and the answers are load-bearing enough to state in full.
 | What crosses over? | **Library, read state and shelves. Tracking later.** | Ratings and tags do not exist in the source and cannot be recovered, so the UI must say so before the run. Shelves are 2 named and 146 rows, which is measurable. Tracking has **0 rows in this backup**, so it would ship unproven. |
 | Conflict with an existing library? | **Never overwrite. Merge conservatively.** | A read is monotonic work and an un-read is irreversible loss of progress, so the safe direction is the one that only ever adds. Every skip is listed in the run report. |
 | Where does Mihon land? | **`.tmb` first, behind a reader interface.** | One measured `.tmb`, zero `.tachibk` samples. The interface is the constraint that matters, so `.tachibk` drops in later without reshaping the resolver or the writer. |
+| Did that hold? | **Yes, and it has now been used.** | `.tachibk` arrived as one new class and one registration line. Nothing in the resolver, the chapter remap or the writer changed, which was the whole point of putting the reader behind an interface in phase 1. |
 
 The last one is a commitment, not a deferral: phase 1 puts the archive reader behind an interface
 precisely so that phase 6 is a new class rather than a refactor.
@@ -871,10 +872,59 @@ blocks phase 1.
    reader decide per shelf. Creating shelves from another app's free-text labels is how a library
    ends up with four near-duplicate groups.
 
-3. **Mihon support is a different parser.** `.tachibk` is protobuf inside gzip. Everything in
-   phases 1 to 4 is reusable and the reader interface from phase 1 is what makes it additive rather
-   than a reshape. Worth its own phase, and it needs a real `.tachibk` sample before it starts,
-   because the `.tmb` work is only trustworthy as far as its one measured file.
+3. ~~**Mihon support is a different parser.**~~ **Done, and it was a different parser.**
+   `.tachibk` is protobuf inside gzip and nothing below the parsing was reusable, which is what
+   the phase 1 interface existed to make true. It also needed a real sample, and there now is
+   one. See the section below.
 
 4. **Whether 1,277 series is typical.** It is this reader's. The design should not assume the
    count; the slice budget already does not, but the UI copy should avoid implying a fixed size.
+
+### What `.tachibk` turned out to be
+
+Written against a real backup rather than a published schema, because the published schema
+describes what a writer *may* emit and the file describes what this writer *did*. Getting a
+`.tachibk` sample was the thing that had been blocking this since phase 1.
+
+**The sample.** A 77,061 byte file, 259,960 bytes decompressed, holding four series across one
+source: 2,911 chapters of which **1,616 are read**. Small, but it carries the read state, the
+fractional chapter numbers and a source id past 2^53, which are the three things worth having.
+
+**It is a Suwayomi file, not a Mihon one.** Two top level field numbers in it, 9000 and 9001,
+hold `webUI_migration` and a preferences block containing a websocket URL and a cache ceiling.
+Neither is a Tachiyomi concept. So what was measured is Suwayomi's writer, and the claim this
+server can honestly make is narrower than "reads Mihon backups": the fields it maps are the
+shared core, and Mihon's own exporter declares the same numbers for all of them (`url: 1`,
+`name: 2`, `scanlator: 3`, `read: 4`, `chapterNumber: 9` on a chapter; `source: 1`, `url: 2`,
+`title: 3` on a series). A Mihon backup should read correctly. That has not been tested against
+a file Mihon wrote. Issue 1 tracks getting one.
+
+**Read state is real, timestamps are not.** The read flag is trustworthy: it appears on 1,616
+chapters and those are exactly the chapters the separate history list names, with zero
+disagreement, so two independent parts of the file agree. Every timestamp, though, is within 91
+seconds of when the backup was taken, so they are the exporter's clock rather than the
+reader's. Read state comes across; "when" does not, and `addedAt` and `lastReadAt` are
+deliberately left null rather than filled with a plausible wrong date.
+
+**Three fields that could have been mapped and were not.**
+
+| Field | What it is | Why it is not imported |
+| --- | --- | --- |
+| chapter 10 | a 1 based index in the backup's own listing | It is the app's sort order, not the source's, and `SeriesWriter::pair()` tries `sourceOrder` before `number`. Mapping it would let a sort order override a chapter number that is definitely right. |
+| chapter 12 | a boolean on exactly the read chapters, always 1 | This file cannot say what it means. A backup where every read chapter is also bookmarked is indistinguishable. Importing it would fabricate bookmarks. |
+| every timestamp | the exporter's run time | Would put a real looking date on every series, all of it the day the backup happened. |
+
+**One bug the real file caught that the fixtures did not.** Protobuf omits a false rather than
+writing zero, so `integer($bytes, 4) !== 0` is true for every chapter in the file. The reader
+shipped that way and reported **2,911 chapters read out of a file holding 1,616**, while every
+other number it printed stayed correct. The fixture now builds the real shape, with unread
+chapters carrying no flag at all, and a mutation check confirms the test kills it.
+
+**Not in the format at all:** categories, downloads, ratings, resume points, package names.
+Each is something a reader has and expects to keep, and the import reports what arrived rather
+than implying the rest came with it.
+
+**Two sentences in `import:inspect` were wrong and were found by running it, not by reading it.**
+It printed "format version 0" for a format that states no version, and it told someone whose
+file had no browse cache that "the rest is what the app cached while browsing". Both are now
+covered by `tests/Feature/InspectBackupCommandTest.php`.

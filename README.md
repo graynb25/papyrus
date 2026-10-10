@@ -160,6 +160,11 @@ reader app. Before this page the only route was `php artisan import:run` typed i
 which [`docs/IMPORT-ANALYSIS.md`](docs/IMPORT-ANALYSIS.md) documents along with the format
 itself.
 
+Two formats are read. A Tachimanga `.tmb`, a zip holding a zip holding SQLite, and a `.tachibk`,
+which is a protobuf message inside a gzip and is what Mihon, Tachiyomi and Suwayomi write.
+They share nothing below the parsing, which is why each is one class behind one interface, so
+which one you give it is decided from the bytes and not from the file's name.
+
 It sits in the `auth` middleware group alone, not `auth,verified`, and that is deliberate. Every
 other settings page changes an account; this one reads a file and writes a library. A reader who
 has just signed up and cannot yet receive mail is exactly the reader migrating off another app,
@@ -316,7 +321,7 @@ app/AniList/        Title matching, the OAuth flow, progress push and import, pe
 app/Covers/         Reader-supplied cover art, which Suwayomi cannot store
 app/Downloads/      The per-reader ledger against Suwayomi's shared queue
 app/Local/          The local folder source Suwayomi picks up from disk
-app/Jobs/           Seven queued jobs, four of which re-book themselves
+app/Jobs/           Ten queued jobs, five of which re-book themselves
 app/Http/           The reader, the cover route, and the image proxy
 app/Models/         Side tables, all user-scoped or all global
 app/Console/        Artisan commands
@@ -324,7 +329,7 @@ resources/views/pages/   Livewire pages, one file each
 config/papyrus.php  Timeouts, thresholds, and the measured numbers
 ```
 
-Five of the 41 keys in `config/papyrus.php` are read by nothing. They are listed, with the
+Four of the 41 keys in `config/papyrus.php` are read by nothing. They are listed, with the
 rest, in [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) section 14, along with
 the public methods nothing calls and the claims in these documents that the code does not
 back up.
