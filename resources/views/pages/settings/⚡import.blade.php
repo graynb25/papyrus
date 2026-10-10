@@ -57,6 +57,19 @@ new #[Title('Import a backup')] class extends Component
     public bool $inspectOnly = true;
 
     /**
+     * Re-apply everything, ignoring what the ledger remembers.
+     *
+     * A recovery, not a normal mode. The ledger records a fingerprint of what each series
+     * would be written as, which describes the file rather than what a given version of
+     * this importer managed to do with it. So after a fix to the importer, a plain re-run
+     * sees the same fingerprints and skips everything, and the only way to pick up what the
+     * old version missed is to say so.
+     *
+     * Every write is forward only, so this can add and cannot take anything away.
+     */
+    public bool $force = false;
+
+    /**
      * Whether to keep watching after a dispatch.
      *
      * Separate from whether a run exists, because of the gap between the two. The button
@@ -99,6 +112,7 @@ new #[Title('Import a backup')] class extends Component
             limit: max(0, $this->limit),
             installExtensions: $this->installExtensions,
             inspectOnly: $this->inspectOnly,
+            force: $this->force,
         );
 
         Flux::toast(
@@ -610,6 +624,15 @@ public function wasInspection(ImportRun $run): bool
                     label="{{ __('Read the file first and report, without importing') }}"
                     wire:model="inspectOnly"
                 />
+
+                <flux:checkbox
+                    label="{{ __('Re-apply everything, even if the ledger says it is already here') }}"
+                    wire:model="force"
+                />
+
+                <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('Only for after this app was fixed. A normal import skips series it has already written, and it cannot tell the difference between "already written" and "written wrongly".') }}
+                </p>
 
                 <flux:button
                     variant="primary"

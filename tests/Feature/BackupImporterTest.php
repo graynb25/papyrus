@@ -9,6 +9,7 @@ use App\Import\ImportRefused;
 use App\Import\SeriesResolver;
 use App\Import\SeriesWriter;
 use App\Import\Tachimanga\TachimangaReader;
+use App\Models\ChapterState;
 use App\Models\ImportedSeries as Ledger;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
@@ -73,6 +74,18 @@ class BackupImporterTest extends TestCase
 
     /** @var list<string> Every progress line the importer emitted, in order. */
     private array $lines = [];
+
+    /**
+     * Manga ids whose series read answers an unreadable error.
+     *
+     * The measured real message was "Could not find environment bundle", which is a source
+     * extension failing to ship its JS bundle. The entry exists, the series is real, and the
+     * answer is a transport fault rather than a fact about the library, which is why it needs
+     * its own outcome and not one of the resolution tiers.
+     *
+     * @var array<int, int>
+     */
+    private array $seriesThatThrow = [];
 
     /**
      * The manga this server's catalogue holds, keyed by the backup's normalised url.
@@ -189,6 +202,13 @@ class BackupImporterTest extends TestCase
              */
             if (str_contains($document, 'query Series')) {
                 $mangaId = (int) ($body['variables']['id'] ?? 0);
+
+                if (in_array($mangaId, $this->seriesThatThrow, true)) {
+                    // A GraphQL error on HTTP 200, which is the shape Suwayomi actually uses.
+                    return Http::response(['errors' => [[
+                        'message' => 'Could not find environment bundle',
+                    ]]]);
+                }
 
                 return Http::response(['data' => ['manga' => [
                     'id' => $mangaId,
@@ -520,6 +540,92 @@ class BackupImporterTest extends TestCase
      * Re-import: the delta.
      * ---------------------------------------------------------------------------
      */
+
+    public function test_force_re_applies_what_a_plain_run_would_skip(): void
+    {
+        $catalogue = [self::FIRST => 1768];
+
+        $this->importer($catalogue)->import($this->user, $this->backup());
+
+        /*
+         * The recovery this flag exists for, stated as the ledger sees it: the fingerprint is
+         * unchanged because the *file* has not changed, so the series reads as already written
+         * even though an earlier version of the importer wrote it wrongly.
+         */
+        $skipped = $this->importer($catalogue)->import($this->user, $this->backup());
+
+        $this->assertSame(0, $skipped->count('applied'));
+
+        $forced = $this->importer($catalogue)->import($this->user, $this->backup(), force: true);
+
+        $this->assertSame(
+            1,
+            $forced->count('applied'),
+            'the same fingerprint, applied anyway, because the reader asked',
+        );
+        $this->assertSame(
+            0,
+            $forced->count('unchanged'),
+            'and nothing is reported as skipped when the point was not to skip it',
+        );
+    }
+
+    public function test_force_never_clears_a_read_chapter(): void
+    {
+        $catalogue = [self::FIRST => 1768];
+
+        $this->importer($catalogue)->import($this->user, $this->backup());
+
+        $before = ChapterState::query()->where('is_read', true)->count();
+
+        $this->importer($catalogue)->import($this->user, $this->backup(), force: true);
+
+        $this->assertSame(
+            $before,
+            ChapterState::query()->where('is_read', true)->count(),
+            'every write is forward only, so forcing can add and cannot take away',
+        );
+    }
+
+    public function test_a_series_whose_source_throws_does_not_end_the_run(): void
+    {
+        $catalogue = [self::FIRST => 1768, self::SECOND => 1769];
+
+        /*
+         * The shape of the real failure: one source whose extension answers with something
+         * unreadable, in the middle of a walk over a thousand series.
+         */
+        $this->seriesThatThrow = [1769];
+
+        $result = $this->importer($catalogue)->import($this->user, $this->backup());
+
+        $this->assertSame(1, $result->count('applied'), 'the series that could be read was');
+        $this->assertSame(
+            1,
+            $result->count('threw'),
+            'and the one that raised is counted separately from the ones that did not resolve',
+        );
+
+        $threw = Ledger::query()->where('state', Ledger::THREW)->firstOrFail();
+
+        $this->assertNotNull($threw->reason, 'with the reason it raised, for the report');
+        $this->assertNull(
+            $threw->fingerprint,
+            'and no fingerprint, because a null one is what makes the next run try again',
+        );
+    }
+
+    public function test_the_run_is_finished_even_when_a_series_threw(): void
+    {
+        $this->seriesThatThrow = [1769];
+
+        $this->importer([self::FIRST => 1768, self::SECOND => 1769])->import($this->user, $this->backup());
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::COMPLETE, $run->state, 'not left reading running');
+        $this->assertNotNull($run->finished_at);
+    }
 
     public function test_a_second_run_of_the_same_backup_applies_nothing(): void
     {

@@ -71,6 +71,7 @@ class RunBackupImport implements ShouldQueue
         public readonly int $limit = 0,
         public readonly bool $installExtensions = true,
         public readonly bool $inspectOnly = false,
+        public readonly bool $force = false,
     ) {}
 
     public function handle(BackupImporter $importer): void
@@ -113,6 +114,7 @@ class RunBackupImport implements ShouldQueue
                 path: $this->path,
                 limit: $this->limit,
                 installExtensions: $this->installExtensions,
+                force: $this->force,
             );
         } catch (ImportRefused $e) {
             // The importer has already recorded the refusal on its own run row. This job never

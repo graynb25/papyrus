@@ -103,6 +103,16 @@ class ImportedSeries extends OwnedModel
     /** This server has no extension for the source, so it cannot be asked at all. */
     public const MISSING_SOURCE = 'missing_source';
 
+    /**
+     * The comparison raised rather than answering.
+     *
+     * Its own state, distinct from `unresolved`. `unresolved` is a fact about the world: this
+     * series is not at that address on its source. `threw` is a fault: the source's extension
+     * answered with something unreadable, and running again might well work. Filing them under
+     * the same state would report a broken source as a series that no longer exists.
+     */
+    public const THREW = 'threw';
+
     /** @return BelongsTo<ImportRun, $this> */
     public function run(): BelongsTo
     {

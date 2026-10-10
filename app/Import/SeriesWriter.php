@@ -158,11 +158,48 @@ final class SeriesWriter
      * second fetcher for the same rows would be the same document in two places with two
      * chances to disagree about the shape.
      *
+     * ## Why this refreshes, and why that was the read state's whole life
+     *
+     * A manga entry the server created from a search has never been initialised, and it answers
+     * `initialized: false` with an empty chapter list and `totalCount: 0`. Measured against
+     * the real backup on the 40 imported series sampled here: **31 of 40 answered that way.**
+     *
+     * So reading the destination with `find()` alone gives the pairing nothing to join on for
+     * most of a library, every chapter falls out of {@see pair()}, and every read chapter in
+     * the backup is silently dropped. Measured on the same import: the file carries 40,160 read
+     * chapters, the run recorded 30,687 chapters seen and applied **1,053** read chapters, and
+     * series showed "read 0 of 97" for series the reader had finished.
+     *
+     * The 1,053 were the series that happened to already be initialised, which is why the
+     * import looked like it mostly worked. It is the same stub {@see CandidateFinder} documents
+     * for ranking, reached here through a different door.
+     *
+     * One refresh per series that needs it, at the measured 370ms to 1346ms, which is real
+     * time: the alternative is an import that reports success and loses the only thing the
+     * reader had.
+     *
      * @return array{by_order: array<int, int>, by_number: array<int, int>, position: array<int, int>}
      */
     private function theirChapters(int $mangaId): array
     {
         $found = $this->series->find($mangaId);
+
+        if ($found === null || ! ($found['initialized'] ?? false)) {
+            $refreshed = $this->series->refresh($mangaId);
+
+            /*
+             * A refresh that fails leaves the empty list in place rather than throwing.
+             *
+             * One source that will not answer must not end an import of a thousand series: the
+             * other series still pair, and this one is reported as having paired nothing. The
+             * alternative is the shape this whole class already had, where a transport
+             * failure looked exactly like a series with nothing in it.
+             */
+            if (($refreshed['error'] ?? null) === null && ($refreshed['series'] ?? null) !== null) {
+                $found = $refreshed['series'];
+            }
+        }
+
         $nodes = $found['chapters']['nodes'] ?? [];
 
         $byOrder = [];

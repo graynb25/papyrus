@@ -8,6 +8,7 @@ use App\Models\ImportRun;
 use App\Models\SeriesState;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Throwable;
 
 /**
  * Runs a whole import: read, install, resolve, write, report.
@@ -65,7 +66,7 @@ final class BackupImporter
      *
      * @param  int  $limit  Stop after this many series. Zero means all of them.
      */
-    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true): ImportResult
+    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true, bool $force = false): ImportResult
     {
         $run = ImportRun::createFor($user, [
             'format' => 'unknown',
@@ -113,7 +114,7 @@ final class BackupImporter
         $extensions = $this->installExtensions($user, $run, $sources, $installExtensions);
 
         return new ImportResult(
-            series: $this->applySeries($user, $run, $backup, $limit),
+            series: $this->applySeries($user, $run, $backup, $limit, $force),
             alreadyInstalled: $extensions['already'],
             attempted: $extensions['attempted'],
             installed: $extensions['installed'],
@@ -221,7 +222,7 @@ final class BackupImporter
      *
      * @return array<string, int>
      */
-    private function applySeries(User|int $user, ImportRun $run, ImportedBackup $backup, int $limit): array
+    private function applySeries(User|int $user, ImportRun $run, ImportedBackup $backup, int $limit, bool $force = false): array
     {
         /*
          * Keyed by the resolver's tier names, so the bucketing is a lookup rather than a
@@ -245,6 +246,14 @@ final class BackupImporter
             'unchanged' => 0,
             'filed' => 0,
             'read_chapters' => 0,
+
+            /*
+             * Series that raised rather than resolving. Its own bucket rather than one of the
+             * resolution tiers, because "this source is broken" is a fault and "this series is
+             * not at that address" is a fact about the library, and a report that adds them
+             * together is the kind of number nobody can act on.
+             */
+            'threw' => 0,
         ];
 
         $total = $backup->series->count();
@@ -257,6 +266,14 @@ final class BackupImporter
 
             $done++;
             $fingerprint = Ledger::fingerprintFor($series);
+
+            /*
+             * Declared outside the try so the filing below can tell "resolved to something
+             * unusable" from "threw before a resolution existed". The two are different
+             * outcomes: one is a fact about the source, the other is a fault, and filing
+             * collapses them.
+             */
+            $resolution = null;
 
             /*
              * `forUser()`, not `query()`.
@@ -275,51 +292,99 @@ final class BackupImporter
                 ->where('source_url', $series->url)
                 ->first();
 
-            // The delta. A series whose fingerprint matches has nothing to write, and that is
-            // the whole point of recording one.
-            if ($existing !== null && ! $existing->wantsApplyingFor($fingerprint)) {
+            /*
+             * The delta. A series whose fingerprint matches has nothing to write, and that is
+             * the whole point of recording one.
+             *
+             * `force` is the escape hatch, and it exists because the fingerprint describes the
+             * *input*, not what a given importer version manages to do with it. Measured: an
+             * importer that could not pair a destination's chapter list wrote 1,053 of 40,160
+             * read chapters and reported success. The fix makes the pairing work, but the
+             * fingerprint is byte for byte the same, so every one of those series is now
+             * "unchanged" and a plain re-run skips them. Without this flag the only recovery is
+             * editing the ledger by hand.
+             *
+             * Safe to force because every write is forward only: a chapter is marked read if
+             * either side says so, a bookmark is never cleared, and a series already in the
+             * library is added to rather than rewritten. Re-applying can only add.
+             */
+            if (! $force && $existing !== null && ! $existing->wantsApplyingFor($fingerprint)) {
                 $counts['unchanged']++;
                 $existing->update(['last_seen_run_id' => $run->id]);
 
                 continue;
             }
 
-            $resolution = $this->resolver->resolve($series);
-
             /*
-             * Exactly one bucket per series. An earlier version counted every unresolved
-             * resolution as `not_found` and *also* counted the ambiguous ones, so the totals
-             * exceeded the library: 1,290 accounted for out of 1,277, which reads as a
-             * rounding problem rather than the counting bug it was.
-             */
-            if ($resolution->resolved) {
-                $counts['resolved']++;
-                $counts[$resolution->tier]++;
+ * One series that throws must not end the run.
+ *
+ * A series is one step of a walk over a reader's whole library, so an exception on the
+ * nine hundred and twenty fifth of one thousand two hundred and seventy seven costs the three
+ * hundred and fifty two that follow, and the run is left reading `running` with nothing behind
+ * it. Measured on the real backup: a forced re-apply got to 925 of 1,277 with 432 series'
+ * read state written, and stopped on a single source whose extension answered "Could not find
+ * environment bundle". The reader's read state was half restored and the run looked like it
+ * had just started.
+ *
+ * `SuwayomiException` is the expected failure and is handled where it is thrown. What lands in
+ * this catch is the unexpected: a source whose extension is broken, a response shaped wrong, a
+ * cast that fails. Those are counted and skipped, because a reader who pointed this at their
+ * real library asked for 1,277 series and getting 925 is a worse answer than getting 1,276.
+ *
+ * The series is still recorded, so the next run retries it and the report can say which one
+ * and why rather than a run that looks merely short.
+ */
+            try {
+                $resolution = $this->resolver->resolve($series);
 
-                $written = $this->writer->write($user, $series, $resolution);
+                /*
+                 * Exactly one bucket per series. An earlier version counted every unresolved
+                 * resolution as `not_found` and *also* counted the ambiguous ones, so the totals
+                 * exceeded the library: 1,290 accounted for out of 1,277, which reads as a
+                 * rounding problem rather than the counting bug it was.
+                 */
+                if ($resolution->resolved) {
+                    $counts['resolved']++;
+                    $counts[$resolution->tier]++;
 
-                $counts['applied'] += (int) $written['written'];
-                $counts['read_chapters'] += $written['read_chapters'];
-            } else {
-                $counts[$resolution->tier]++;
+                    $written = $this->writer->write($user, $series, $resolution);
 
-                $written = [
-                    'written' => false,
-                    'read_chapters' => 0,
-                    'chapters_seen' => 0,
-                    'pointer' => null,
-                    'reason' => $resolution->reason,
-                ];
+                    $counts['applied'] += (int) $written['written'];
+                    $counts['read_chapters'] += $written['read_chapters'];
+                } else {
+                    $counts[$resolution->tier]++;
+
+                    $written = [
+                        'written' => false,
+                        'read_chapters' => 0,
+                        'chapters_seen' => 0,
+                        'pointer' => null,
+                        'reason' => $resolution->reason,
+                    ];
+                }
+
+                $ledgerRow = $this->record($user, $run, $existing, $series, $resolution, $fingerprint, $written);
+            } catch (Throwable $e) {
+                report($e);
+
+                $counts['threw']++;
+
+                $ledgerRow = $this->recordThrew($user, $run, $existing, $series, $e->getMessage());
             }
 
-            $ledgerRow = $this->record($user, $run, $existing, $series, $resolution, $fingerprint, $written);
-
-            $counts['filed'] += $this->fileWithoutSource($user, $series, $resolution, $ledgerRow);
+            /*
+             * Only a series that got as far as a resolution can be filed, because filing is
+             * what happens to a series whose source turned out to be unusable. A series that
+             * threw has no resolution to file against and is recorded as an error instead.
+             */
+            if ($resolution !== null) {
+                $counts['filed'] += $this->fileWithoutSource($user, $series, $resolution, $ledgerRow);
+            }
 
             if ($done % 25 === 0 || $done === $total) {
                 $this->say(sprintf(
-                    '  %d of %d series, %d written, %d unchanged, %d not found',
-                    $done, $total, $counts['applied'], $counts['unchanged'], $counts['unresolved'],
+                    '  %d of %d series, %d written, %d unchanged, %d not found, %d could not be read',
+                    $done, $total, $counts['applied'], $counts['unchanged'], $counts['unresolved'], $counts['threw'],
                 ), $done);
             }
         }
@@ -357,7 +422,51 @@ final class BackupImporter
             'unchanged' => $counts['unchanged'],
             'filed' => $counts['filed'],
             'read_chapters' => $counts['read_chapters'],
+            'threw' => $counts['threw'],
         ];
+    }
+
+    /**
+     * Write the ledger row for a series that raised rather than resolved.
+     *
+     * Recorded rather than skipped, for two reasons. The next run has to retry it, and a
+     * fingerprint-less row is exactly what makes "we could not resolve this" survive into the
+     * next run instead of being retried from nothing. And a reader whose import reported
+     * 1,277 series needs to be able to see which ones raised and why, rather than a run that
+     * looks merely short.
+     */
+    private function recordThrew(
+        User|int $user,
+        ImportRun $run,
+        ?Ledger $existing,
+        ImportedSeries $series,
+        string $reason,
+    ): Ledger {
+        $attributes = [
+            'import_run_id' => $run->id,
+            'source_id' => $series->sourceId,
+            'source_url' => $series->url,
+            // Null on purpose: an unknown fingerprint is what makes the next run try again.
+            'fingerprint' => null,
+            'suwayomi_manga_id' => null,
+            'backup_manga_id' => $series->backupId,
+            'title' => $series->title,
+            'state' => Ledger::THREW,
+            'reason' => $reason,
+            'attempts' => ($existing === null ? 0 : (int) $existing->attempts) + 1,
+            'chapters_seen' => $series->chapters->count(),
+            'chapters_applied' => 0,
+            'last_seen_run_id' => $run->id,
+            'last_applied_at' => null,
+        ];
+
+        if ($existing !== null) {
+            $existing->update($attributes);
+
+            return $existing;
+        }
+
+        return Ledger::createFor($user, $attributes);
     }
 
     /**

@@ -69,15 +69,40 @@ class SeriesWriterTest extends TestCase
                 return Http::response(['data' => ['login' => ['accessToken' => 'a-token']]]);
             }
 
+            /*
+             * The refresh, which is what has to happen for a stub.
+             *
+             * Answered before the `chapters {` branch below because that substring matches
+             * this document too, and a test whose fake answers the wrong branch is a test
+             * asserting against a shape nothing produces.
+             */
+            if (str_contains($document, 'mutation Refresh')) {
+                return Http::response(['data' => ['fetchMangaAndChapters' => [
+                    'manga' => [
+                        'id' => '900', 'title' => 'A Series', 'url' => '/comics/x/', 'realUrl' => null,
+                        'thumbnailUrl' => null, 'status' => 0, 'author' => null, 'artist' => null,
+                        'genre' => [], 'description' => null, 'initialized' => true,
+                        'unreadCount' => 0, 'updateStrategy' => null, 'chaptersLastFetchedAt' => null,
+                        'source' => ['id' => '2848420679472350044', 'name' => 'Thunder Scans',
+                            'lang' => 'en', 'contentWarning' => null],
+                    ],
+                    'chapters' => $this->suwayomiChapters,
+                ]]]);
+            }
+
             if (str_contains($document, 'chapters {')) {
+                $stub = $this->findIsStub;
+
                 return Http::response(['data' => ['manga' => [
                     'id' => '900', 'title' => 'A Series', 'url' => '/comics/x/', 'realUrl' => null,
                     'thumbnailUrl' => null, 'status' => 0, 'author' => null, 'artist' => null,
-                    'genre' => [], 'description' => null, 'initialized' => true,
+                    'genre' => [], 'description' => null, 'initialized' => ! $stub,
                     'unreadCount' => 0, 'updateStrategy' => null, 'chaptersLastFetchedAt' => null,
                     'source' => ['id' => '2848420679472350044', 'name' => 'Thunder Scans',
                         'lang' => 'en', 'contentWarning' => null],
-                    'chapters' => ['totalCount' => 92, 'nodes' => $this->suwayomiChapters],
+                    'chapters' => $stub
+                        ? ['totalCount' => 0, 'nodes' => []]
+                        : ['totalCount' => 92, 'nodes' => $this->suwayomiChapters],
                 ]]]);
             }
 
@@ -92,6 +117,16 @@ class SeriesWriterTest extends TestCase
 
     /** @var array<int, array<string, mixed>> */
     private array $suwayomiChapters = [];
+
+    /**
+     * Whether `manga(id:)` answers with a chapter list, or with a stub.
+     *
+     * A stub is what a manga entry the server created from a search answers with, and it is
+     * the shape that lost the read state. Measured against the real backup: 31 of 40 imported
+     * series answered this way, so the pairing had nothing to join on for most of a library and
+     * every read chapter was dropped.
+     */
+    private bool $findIsStub = false;
 
     /**
      * Build a chapter list shaped like the measured one: ids that are nothing like the
@@ -699,5 +734,87 @@ class SeriesWriterTest extends TestCase
         }
 
         return $rows;
+    }
+
+    // ------------------------------------------------------------------
+    // The stub, which is where the read state went.
+    // ------------------------------------------------------------------
+
+    public function test_read_state_survives_a_destination_that_has_never_been_fetched(): void
+    {
+        /*
+         * The bug this file could not see.
+         *
+         * Every other test here had the fake answer `initialized: true` with a chapter list,
+         * so the pairing always had something to join on. In production a manga entry the
+         * server created from a search answers `initialized: false` with an empty list, the
+         * pairing had nothing, every chapter fell out of `pair()`, and every read chapter in
+         * the backup was dropped.
+         *
+         * Measured on the real import: the file carries 40,160 read chapters and the run
+         * applied 1,053, because only the series that happened to already be initialised had a
+         * list to pair against. 31 of 40 sampled imported series answered this way, and a
+         * reader with a finished series was told they had read none of it.
+         */
+        $this->findIsStub = true;
+        $this->suwayomiChapters = $this->theirs(92);
+
+        $result = $this->writer()->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(92, [1, 2, 3])),
+            $this->resolved(),
+        );
+
+        $this->assertTrue($result['written']);
+        $this->assertSame(
+            3,
+            $result['read_chapters'],
+            'three chapters were read in the backup, so three must be read here',
+        );
+    }
+
+    public function test_a_destination_that_already_has_its_chapters_is_not_fetched_again(): void
+    {
+        $this->suwayomiChapters = $this->theirs(92);
+
+        $this->writer()->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(92, [1, 2, 3])),
+            $this->resolved(),
+        );
+
+        $this->assertSame(
+            0,
+            $this->refreshCount(),
+            'the extra fetch costs 370ms to 1346ms a series, so it is only worth paying when it is needed',
+        );
+    }
+
+    public function test_a_stub_is_fetched_exactly_once(): void
+    {
+        $this->findIsStub = true;
+        $this->suwayomiChapters = $this->theirs(92);
+
+        $this->writer()->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(92, [1])),
+            $this->resolved(),
+        );
+
+        $this->assertSame(1, $this->refreshCount());
+    }
+
+    /** How many `mutation Refresh` documents this test has sent. */
+    private function refreshCount(): int
+    {
+        $count = 0;
+
+        foreach ($this->sent as $body) {
+            if (str_contains((string) ($body['query'] ?? ''), 'mutation Refresh')) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 }

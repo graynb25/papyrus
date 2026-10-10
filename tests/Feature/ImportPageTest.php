@@ -190,6 +190,29 @@ class ImportPageTest extends TestCase
         });
     }
 
+    public function test_the_force_flag_reaches_the_job(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('path', (string) $this->file)
+            ->set('force', true)
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class, fn (RunBackupImport $job): bool => $job->force === true);
+    }
+
+    public function test_force_is_off_by_default(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('path', (string) $this->file)
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class, fn (RunBackupImport $job): bool => $job->force === false);
+    }
+
     public function test_a_negative_limit_is_clamped_rather_than_dispatched(): void
     {
         Queue::fake();

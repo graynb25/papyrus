@@ -6,6 +6,7 @@ use App\Import\BackupImporter;
 use App\Import\ExtensionInstaller;
 use App\Import\ImportRefused;
 use App\Import\ImportResult;
+use App\Models\ImportedSeries;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
 use App\Models\User;
@@ -46,7 +47,8 @@ class ImportBackup extends Command
                             {--user= : Whose library to import into. Defaults to the first user}
                             {--limit=0 : Stop after this many series, for a trial run. 0 means all of them}
                             {--no-install : Report which extensions are missing instead of installing them}
-                            {--dry-run : Read the file and report what would happen, writing nothing}';
+                            {--dry-run : Read the file and report what would happen, writing nothing}
+                            {--force : Re-apply everything, ignoring what the ledger remembers. For after a fix to the importer itself}';
 
     protected $description = "Import another reader app's library backup, applying only what has changed since last time";
 
@@ -94,6 +96,7 @@ class ImportBackup extends Command
                 path: $path,
                 limit: $limit,
                 installExtensions: ! $this->option('no-install'),
+                force: (bool) $this->option('force'),
             );
         } catch (ImportRefused $e) {
             // The run is already recorded with this sentence on it, which is why the message is
@@ -103,6 +106,23 @@ class ImportBackup extends Command
             $this->line('  Nothing was imported. The attempt was recorded.');
 
             return self::FAILURE;
+        } catch (\Throwable $e) {
+            /*
+             * Close out whatever run the importer had reached.
+             *
+             * Measured on the real backup: a run died at 925 of 1,277 with 432 series' read
+             * state written, and the row it had written said `running` with `finished_at` null
+             * for ever. That is the one state a page polling the run cannot interpret, and it
+             * is indistinguishable from a run that never started.
+             *
+             * By elimination, not by checking whether a run exists first: a run that reached
+             * the end was written `complete`, so anything still reading `running` when this
+             * command dies is a run that died. Rethrown so the shell reports it as a failure
+             * rather than a quiet success.
+             */
+            $this->closeOutTheRun($user, $e);
+
+            throw $e;
         }
 
         $this->report($user, $result);
@@ -124,6 +144,33 @@ class ImportBackup extends Command
         return $id === null
             ? User::query()->orderBy('id')->first()
             : User::find((int) $id);
+    }
+
+    /**
+     * Mark the run this command started as failed, whatever state it is in.
+     *
+     * Takes the user rather than resolving it again. The caller has already resolved it, and
+     * this method has no console input to resolve one from, which is also why it could not be
+     * exercised from a test without building a whole command. Scoped to that reader, so it
+     * cannot close out a run belonging to somebody else. A run already `complete` is left
+     * alone: the importer writes that itself at the end, and overwriting a finished run because
+     * something threw while printing the report would be a lie in the other direction.
+     */
+    public function closeOutTheRun(?User $user, \Throwable $e): void
+    {
+        if ($user === null) {
+            return;
+        }
+
+        ImportRun::query()
+            ->forUser($user)
+            ->where('state', ImportRun::RUNNING)
+            ->latest('id')
+            ->first()?->update([
+                'state' => ImportRun::FAILED,
+                'finished_at' => now(),
+                'refusal_reason' => $e->getMessage(),
+            ]);
     }
 
     /**
@@ -304,11 +351,38 @@ class ImportBackup extends Command
     {
         $unrecoverable = $result->count('missing_source') + $result->count('not_found') + $result->count('ambiguous');
 
-        if ($unrecoverable === 0 && $result->count('unreachable_source') === 0) {
+        /*
+         * Series that raised, counted from the ledger rather than from a run column.
+         *
+         * The run row has no column for it, because a fault is not a durable property of the
+         * import in the way a resolution is: the same series may raise once and resolve on the
+         * next run. The ledger row is where that belongs, and it is already written.
+         */
+        $threw = $run === null
+            ? 0
+            : ImportedSeries::query()
+                ->forUser($user)
+                ->where('import_run_id', $run->id)
+                ->where('state', ImportedSeries::THREW)
+                ->count();
+
+        if ($threw === 0 && $unrecoverable === 0 && $result->count('unreachable_source') === 0) {
             return;
         }
 
         $this->newLine();
+
+        if ($threw > 0) {
+            $this->line(trans_choice(
+                '  :count series could not be read because its source answered with something '
+                .'unreadable. Those were skipped rather than counted as missing, and running this '
+                .'again will try them.|  :count series could not be read because their sources '
+                .'answered with something unreadable. Those were skipped rather than counted as '
+                .'missing, and running this again will try them.',
+                $threw,
+                ['count' => number_format($threw)],
+            ));
+        }
 
         if ($result->count('missing_source') > 0) {
             $this->line(trans_choice(

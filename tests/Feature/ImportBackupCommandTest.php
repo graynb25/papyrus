@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\ImportBackup;
 use App\Import\BackupImporter;
 use App\Import\BackupReaders;
 use App\Import\ExtensionInstaller;
@@ -52,6 +53,85 @@ class ImportBackupCommandTest extends TestCase
 
     /** @var array<string, int> Url to manga id, for the catalogue this fake serves. */
     private array $catalogue = [self::FIRST => 1768];
+
+    public function test_a_run_is_not_left_reading_running_when_the_import_dies(): void
+    {
+        /*
+         * The state a page cannot interpret.
+         *
+         * Measured on the real backup: a run died at 925 of 1,277 and its row read `running`
+         * with `finished_at` null for ever, which is indistinguishable from a run that never
+         * started. The importer now records a throwing series instead of dying, so this
+         * exercises the outer guard for whatever it cannot survive itself.
+         */
+        $run = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::RUNNING,
+            'started_at' => now(),
+        ]);
+
+        $command = new class extends ImportBackup {};
+
+        $command->closeOutTheRun($this->user, new \RuntimeException('the server went away'));
+
+        $this->assertSame(ImportRun::FAILED, $run->fresh()->state);
+        $this->assertNotNull($run->fresh()->finished_at);
+        $this->assertStringContainsString('the server went away', (string) $run->fresh()->refusal_reason);
+    }
+
+    public function test_it_does_not_close_out_a_finished_run(): void
+    {
+        $run = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'applied' => 42,
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $command = new class extends ImportBackup {};
+
+        $command->closeOutTheRun($this->user, new \RuntimeException('threw while printing'));
+
+        $this->assertSame(
+            ImportRun::COMPLETE,
+            $run->fresh()->state,
+            'the importer writes this itself at the end, and overwriting it would be a lie the other way',
+        );
+        $this->assertSame(42, $run->fresh()->applied);
+    }
+
+    public function test_it_does_not_close_out_another_readers_run(): void
+    {
+        $other = User::factory()->create();
+
+        $run = ImportRun::createFor($other, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::RUNNING,
+            'started_at' => now(),
+        ]);
+
+        $command = new class extends ImportBackup {};
+
+        $command->closeOutTheRun($this->user, new \RuntimeException('threw'));
+
+        $this->assertSame(ImportRun::RUNNING, $run->fresh()->state);
+    }
+
+    public function test_the_force_flag_exists_and_is_documented(): void
+    {
+        /*
+         * The recovery has to be reachable from a shell, because that is where someone with a
+         * half written library and a fixed importer is standing. Asserted on the signature
+         * rather than on behaviour because a flag that exists but is not wired to anything
+         * would still pass a test that only ran the happy path.
+         */
+        $defined = (string) (new \ReflectionProperty(ImportBackup::class, 'signature'))
+            ->getDefaultValue();
+
+        $this->assertStringContainsString('--force', $defined);
+        $this->assertStringContainsString('Re-apply everything', $defined);
+    }
 
     protected function setUp(): void
     {
