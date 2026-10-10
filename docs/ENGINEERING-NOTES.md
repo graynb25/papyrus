@@ -3576,3 +3576,16 @@ were eliminated.
      makes the fake's installed set mutable, mutates it in the `updateExtension` branch, and
      every test asserts on what landed. Five mutations on the install route are caught; the
      equivalent of the first one, put back, takes four tests down.
+
+192. **A stale `public/hot` serves the whole app with no stylesheet, and only `npm run dev`
+     cleans it up.** `@vite` reads `public/hot` and, when it exists, emits every asset URL
+     against the dev server. That file is written when the dev server starts and removed when
+     it exits cleanly. Kill it instead and the file survives: every CSS and JS request 404s,
+     every Tailwind class becomes inert, and the page renders as raw HTML. Measured: a login
+     failure came out as a full-screen unstyled SVG and a line of 8px text, which reads as a
+     broken design rather than a missing dev server. Worse, `npm run build` does not clear it,
+     so the one command that should produce a self-contained app leaves the app still broken.
+     The build now deletes the file first, which is what makes the build a recovery rather
+     than only a way to compile. **A marker file that switches an app from "dev" to "prod" mode
+     needs whoever switches back to the other mode to clean it up**, and the recovery path has
+     to be the obvious command rather than a file deletion.

@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vp build",
+        "build": "node -e \"require('fs').rmSync('public/hot',{force:true})\" && vp build",
         "dev": "vp dev"
     },
     "dependencies": {
