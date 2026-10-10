@@ -40,16 +40,26 @@ use Throwable;
  * today is a fact about the source, and a reader shown an error would go looking for
  * a fault that is not there.
  *
- * ## What moves the clock and what does not
+ * ## What moves the clock, which is everything
  *
- * `chapter_list_checked_at` moves on any check the source *answered*, including
- * "I have no chapters". A timeout or a refused mutation leaves it alone, because a
- * request that never landed is not information and must not hold the series out for
- * a whole interval.
+ * `chapter_list_checked_at` means "we asked", not "the source answered", and it moves on
+ * every outcome including a failure. It is written once, in `record()`, because every path
+ * through `check()` funnels there and a rule enforced in one place is a rule that cannot be
+ * half applied.
  *
- * The distinction was measured rather than assumed. A `no_chapters` check on One
- * Piece left the clock alone at first, so the series stayed due forever and every
- * press re-asked a source that had already said no.
+ * It used to move only when the source answered, on the reasoning that a request that never
+ * landed is not information. True, and it does not stop the loop: a series whose extension is
+ * broken never gets an answer, so it stayed due for ever and `CheckLibrary` re-booked the chain
+ * on it for as long as the worker ran. Measured: 4 series answering "Could not find environment
+ * bundle", 95 dispatches against a worker that checked nothing else, every one of them
+ * re-checking the same four.
+ *
+ * Nothing is lost by counting a failure as a check. The outcome and its error are recorded in
+ * `library_checks`, the library page still shows which series failed and why, and a reader can
+ * still press Check on a single series because that path forces. Retrying on the normal
+ * interval rather than immediately is the shape worth having: a source being briefly down is
+ * worth trying again, and a tight loop against a broken extension is how a worker ends up at 100%
+ * for nobody's benefit.
  */
 class CheckLedger
 {
@@ -117,10 +127,6 @@ class CheckLedger
                  * describe. `fingerprintMatches` treats a null fingerprint as current,
                  * so this cannot be mistaken for staleness either.
                  */
-                SeriesState::forUser($userId)
-                    ->where('suwayomi_manga_id', $mangaId)
-                    ->update(['chapter_list_checked_at' => now()]);
-
                 return $this->record($userId, $mangaId, LibraryCheck::NO_CHAPTERS, [
                     'error' => (string) $result['error'],
                 ]);
@@ -299,6 +305,17 @@ class CheckLedger
             ->forUser($userId)
             ->where('suwayomi_manga_id', $mangaId)
             ->first();
+
+        /*
+         * The clock, moved here and only here.
+         *
+         * Every outcome of `check()` reaches `record()`, so one write covers success, "no
+         * chapters" and failure alike, and there is no second path that can forget. The class
+         * docblock explains why a failure counts.
+         */
+        SeriesState::forUser($userId)
+            ->where('suwayomi_manga_id', $mangaId)
+            ->update(['chapter_list_checked_at' => now()]);
 
         $values = array_merge($attributes, [
             'suwayomi_manga_id' => $mangaId,

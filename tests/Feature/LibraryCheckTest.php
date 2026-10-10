@@ -478,21 +478,71 @@ class LibraryCheckTest extends TestCase
         $this->assertNull($state->chapter_list_fingerprint);
     }
 
-    public function test_a_failure_does_not_advance_the_clock(): void
+    /**
+     * The opposite of what this test used to assert, and the reason is worth keeping.
+     *
+     * It was `test_a_failure_does_not_advance_the_clock`, on the reasoning that a request which
+     * never landed is not information and must not hold a series out for an interval. That
+     * reasoning was sound and the consequence was not: a series whose extension is broken never gets
+     * an answer, so it stayed due for ever.
+     *
+     * Measured: 4 series answering "Could not find environment bundle". They failed on every pass,
+     * `chapter_list_checked_at` stayed null, `CheckSchedule::due()` kept returning them, and
+     * `CheckLibrary::anythingStillDue()` re-booked the chain on them for as long as the worker ran.
+     * 95 dispatches against a worker that checked nothing else. A reader watching that sees a job
+     * plainly running and a number that never moves, which is the complaint that started this.
+     *
+     * The clock now means "we asked" and moves on every outcome. The failure is still recorded and
+     * still shown, which is what the two tests below hold.
+     */
+    public function test_a_failure_does_advance_the_clock_so_a_broken_source_cannot_loop(): void
     {
         $state = $this->addToLibrary(76);
         $this->unreachable[] = 76;
 
         $row = $this->ledger()->check($this->user, 76, force: true);
 
-        $this->assertSame(LibraryCheck::ERROR, $row->state);
+        $this->assertSame(LibraryCheck::ERROR, $row->state, 'the outcome is still recorded as a failure');
 
         $state->refresh();
 
-        $this->assertNull(
+        $this->assertNotNull(
             $state->chapter_list_checked_at,
-            'A request that never landed must not hold the series out for an interval.',
+            'otherwise it is due for ever and the job re-books on it for as long as the worker runs',
         );
+    }
+
+    public function test_a_series_whose_source_fails_stops_being_due(): void
+    {
+        $this->addToLibrary(76);
+        $this->unreachable[] = 76;
+
+        $this->ledger()->check($this->user, 76, force: true);
+
+        $this->assertFalse(
+            app(CheckSchedule::class)->isDue(SeriesState::forUser($this->user->id)->where('suwayomi_manga_id', 76)->firstOrFail()),
+            'and the chain can end, which is the whole point',
+        );
+    }
+
+    public function test_a_source_that_comes_back_is_picked_up_again(): void
+    {
+        $this->addToLibrary(76);
+        $this->unreachable[] = 76;
+
+        $this->ledger()->check($this->user, 76, force: true);
+
+        // The source recovers, and the series is checked again on its own interval rather than
+        // being re-checked in a tight loop the moment anything touches it.
+        $this->assertFalse(app(CheckSchedule::class)->isDue(
+            SeriesState::forUser($this->user->id)->where('suwayomi_manga_id', 76)->firstOrFail(),
+        ));
+
+        $this->unreachable = [];
+
+        $row = $this->ledger()->check($this->user, 76, force: true);
+
+        $this->assertSame(LibraryCheck::CHECKED, $row->state, 'the source recovered, so the series checks');
     }
 
     public function test_a_failure_records_some_error_text(): void
@@ -1299,6 +1349,47 @@ class LibraryCheckTest extends TestCase
         $this->assertSame(2, $summary['due'], 'but a pass will not visit it');
         $this->assertSame(1, $summary['unreachable']);
         $this->assertSame(0, $summary['skipped'], 'and it is not merely not due yet');
+    }
+
+    public function test_a_series_with_no_source_is_never_returned_as_due(): void
+    {
+        /*
+         * The third query that needed the fix, and the one that mattered most.
+         *
+         * `candidates()` and `summary()` were both corrected for the null `suwayomi_manga_id`
+         * and this one was missed, so the three disagreed. Measured consequence: a filed series
+         * came back from `due()`, `isDue()` called it due for ever because nothing ever
+         * checked it, and `CheckLibrary::anythingStillDue()` re-booked the chain on it. 95
+         * dispatches against a worker that checked nothing else, every one re-checking the same
+         * phantom. A reader watching that sees a job plainly running and a number that never
+         * moves.
+         */
+        $this->addToLibrary(76);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $due = app(CheckSchedule::class)->due($this->user);
+
+        $this->assertCount(1, $due, 'only the one series a pass could actually visit');
+        $this->assertSame(76, (int) $due->first()->suwayomi_manga_id);
+    }
+
+    public function test_the_check_chain_ends_on_a_library_of_only_unreachable_series(): void
+    {
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $this->assertFalse(
+            app(CheckSchedule::class)->due($this->user)->isNotEmpty(),
+            'which is what stops CheckLibrary re-booking itself for ever',
+        );
     }
 
     public function test_due_reaches_zero_when_everything_reachable_has_been_checked(): void

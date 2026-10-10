@@ -2,6 +2,7 @@
 
 namespace App\Suwayomi;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 
@@ -169,6 +170,47 @@ class AuthManager
      * @throws SuwayomiException
      */
     private function renew(?array $stale): array
+    {
+        /*
+         * The lock, and what happens when it cannot be taken.
+         *
+         * `block()` raises `LockTimeoutException` after five seconds. Left alone it is not a
+         * `SuwayomiException`, so it escaped every `catch (SuwayomiException)` in the app and
+         * surfaced as a 500: measured, a worker holding the lock while it checked series, and a
+         * reader loading the library at the same time, which is the normal state now that a
+         * worker runs at all.
+         *
+         * So it is translated here rather than in the callers. From anything above the gateway,
+         * "could not get a token" is the same fact as "the server is not reachable right now",
+         * and the gateway's contract is to throw `SuwayomiException` for that. One place, and
+         * the handling that already exists starts working: the library renders without source
+         * data instead of erroring, which is what `Library::fetchFromSource()` does for every
+         * other transport failure.
+         *
+         * Not retried, because a request that could not take the lock in five seconds is a
+         * server that is saturated, and adding another five seconds of waiting to a page request
+         * makes that worse rather than better.
+         */
+        try {
+            return $this->underLock($stale);
+        } catch (LockTimeoutException $e) {
+            throw new SuwayomiException(
+                'This server is busy and did not hand out a Suwayomi token in time. Try again in a moment.',
+                // `Timeout`, and not `Unavailable`: this is literally our own wait expiring, not
+                // the server being down. Anything that branches on the kind reads it correctly.
+                FailureKind::Timeout,
+                previous: $e,
+            );
+        }
+    }
+
+    /**
+     * The refresh itself, under the lock that stops two processes refreshing at once.
+     *
+     * @param  array{accessToken?: mixed, refreshToken?: mixed, accessExpiresAt?: mixed, refreshExpiresAt?: mixed}|null  $stale
+     * @return array{accessToken: string, refreshToken: string|null, accessExpiresAt: int|null, refreshExpiresAt: int|null}
+     */
+    private function underLock(?array $stale): array
     {
         return cache()->lock(self::LOCK_KEY, 10)->block(5, function () use ($stale): array {
             // Re-check under the lock. Without this every process that queued

@@ -117,9 +117,26 @@ class CheckSchedule
          *
          * Ordered in the database rather than here so the limit applies to the
          * oldest checks, not to whatever happened to load first.
+         *
+         * And only the rows a check can actually be run against, which is the third query that
+         * needed saying. `CheckLedger::candidates()` and `CheckSchedule::summary()` were both
+         * fixed for this and this one was missed, so the three disagreed, and the disagreement
+         * was not cosmetic.
+         *
+         * Measured, and this is the whole of "the check is not updating even after a good
+         * while": a series filed from a backup with a dead source has a null
+         * `suwayomi_manga_id`, so it came back from here, `isDue()` called it due for ever
+         * because nothing ever checked it, and `CheckLibrary::anythingStillDue()` re-booked the
+         * chain on it. 95 dispatches against a worker that checked nothing, every one of them
+         * re-checking the same phantom. A reader watching that sees a job plainly running and a
+         * number that never moves.
+         *
+         * Excluded here, and in the two places above, because "what is due" has to mean "what a
+         * pass would visit", which is the question the schedule exists to answer.
          */
         $states = SeriesState::forUser($userId)
             ->where('in_library', true)
+            ->whereNotNull('suwayomi_manga_id')
             ->orderByRaw('chapter_list_checked_at is not null')
             ->orderBy('chapter_list_checked_at')
             ->orderBy('added_at')

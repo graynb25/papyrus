@@ -3,9 +3,11 @@
 namespace Tests\Feature\Suwayomi;
 
 use App\Suwayomi\AuthManager;
+use App\Suwayomi\FailureKind;
 use App\Suwayomi\SuwayomiException;
 use App\Suwayomi\Transport;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
@@ -308,5 +310,49 @@ class AuthManagerTest extends TestCase
 
         $this->assertSame(1, $this->refreshCalls, 'Five processes, one refresh.');
         $this->assertSame(0, $this->loginCalls);
+    }
+
+    public function test_a_lock_it_cannot_take_arrives_as_a_gateway_failure(): void
+    {
+        /*
+         * The page must be able to cope, and the only way it copes is by catching the gateway's
+         * own exception type.
+         *
+         * `block(5, ...)` raises `LockTimeoutException`, which is not a `SuwayomiException`, so
+         * it escaped every handler in the app. Measured: a worker holding the lock while it
+         * checked, and a reader loading the library, which produced a 500 with a lock timeout
+         * in it rather than a library page with no covers.
+         */
+        $this->fakeLogin();
+
+        // A lock held by someone else for far longer than `block(5)` is willing to wait.
+        Cache::lock('suwayomi.tokens:lock', 60)->get(function () {
+            try {
+                app(AuthManager::class)->token();
+            } catch (SuwayomiException $e) {
+                $this->assertSame(FailureKind::Timeout, $e->kind);
+                $this->assertStringContainsString('busy', $e->getMessage());
+            }
+        });
+    }
+
+    public function test_the_lock_timeout_is_not_swallowed(): void
+    {
+        $this->fakeLogin();
+
+        $threw = false;
+
+        Cache::lock('suwayomi.tokens:lock', 60)->get(function () use (&$threw) {
+            try {
+                app(AuthManager::class)->token();
+            } catch (SuwayomiException) {
+                $threw = true;
+            }
+        });
+
+        $this->assertTrue(
+            $threw,
+            'silently returning nothing would give every page a blank library and no explanation',
+        );
     }
 }
