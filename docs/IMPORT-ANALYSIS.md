@@ -294,7 +294,7 @@ import runs rather than after.
 | M3 | Zip-slip guard on archive entry names | Reading entry names from an untrusted archive and writing them to disk is the standard zip-slip pattern. |
 | M4 | Declining sources | **Raised to H.** 43 of 56 sources are not installed here. Compare the backup's sources against installed ones and offer to install the missing ones; without that, most of the library cannot be imported. |
 | M5 | `TrackRecord` import | AniList remote ids may point at a different list entry than Suwayomi's. |
-| M6 | First-run toast | The user's explicit ask, and **blocked by the importer existing.** |
+| M6 | First-run toast | **Done.** Shipped once the Tachimanga reader existed, which is what the note below said it was waiting for. Fires while the library is empty rather than once ever, so it needs no flag and cannot outlive being true. |
 
 ### L, low
 

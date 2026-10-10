@@ -583,6 +583,63 @@ public function wasInspection(ImportRun $run): bool
                 </flux:callout>
             @endif
 
+            {{--
+                How to make the file, before there is a form to give it to.
+
+                The original ask was "how to create the backup on those apps and how to
+                import them into our app", and this half was owed. It was held back until
+                the importer existed, on the grounds that a link to a guide for a feature
+                that does not work is worse than nothing. It works now.
+
+                The steps are Tachimanga's own, not remembered: Settings -> Backup & Restore
+                -> Create Backup, and the file lands in Files -> On My iPhone ->
+                Tachimanga -> backups.
+
+                That last line is the reason this section earns its place. Tachimanga is an
+                iOS app, and `On My iPhone` is hidden from the Files browser until it is
+                revealed, so a reader who did the right thing can still be told they could
+                not store a backup, and believe it.
+
+                Only Tachimanga is claimed. The Mihon reader is not built, and saying so is
+                the same reasoning as building the section late.
+            --}}
+            <flux:callout variant="secondary" icon="question-mark-circle">
+                <x-slot name="heading">{{ __('Making the backup') }}</x-slot>
+
+                <div class="space-y-3 text-sm">
+                    <p>
+                        {{ __('Papyrus reads a backup made by Tachimanga. In Tachimanga, open Settings, then Backup & Restore, then Create Backup.') }}
+                    </p>
+
+                    <p>
+                        {{ __('The file is written to your phone, not to Papyrus. On iOS it goes to') }}
+
+                        <code class="font-mono text-xs">Files &#8250; On My iPhone &#8250; Tachimanga &#8250; backups</code>
+
+                        {{ __('which iOS hides from the Files app until you tap') }}
+
+                        <code class="font-mono text-xs">...</code>
+
+                        {{ __('at the top of a folder and choose "Show Hidden Files". Look for a file ending in .tmb.') }}
+                    </p>
+
+                    <p>
+                        {{ __('Then send that file here: pick it above, or if it is too big to upload, copy it onto the server and give its path below.') }}
+                    </p>
+
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('Backups from other reader apps are not read yet. A backup from Mihon, Tachiyomi or a fork will not import.') }}
+
+                        <a
+                            href="https://tachimanga.app/help/guides/backups.html"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="underline underline-offset-2 hover:text-vermilion-600 dark:hover:text-vermilion-400"
+                        >{{ __('Tachimanga\'s own backup guide') }}</a>
+                    </p>
+                </div>
+            </flux:callout>
+
             {{-- The form. Two routes in, because no single one works for every backup. --}}
             <flux:card class="space-y-4 p-4">
                 <flux:input

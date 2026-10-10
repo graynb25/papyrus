@@ -57,6 +57,44 @@ class ImportPageTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * The guide is the other half of the same sentence: how to create the backup on the
+     * source app, not just how to hand one over.
+     *
+     * The steps are Tachimanga's own rather than remembered. The file location is the part
+     * that earns the section: Tachimanga is an iOS app, `On My iPhone` is hidden from the
+     * Files browser until it is revealed, and a reader who did exactly the right thing can
+     * still conclude they could not store a backup.
+     */
+    public function test_it_says_how_to_make_the_backup(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertSee('Making the backup')
+            // The literal HTML holds `&amp;`, and the needle has to be that escaped form
+            // with escaping off, or the two sides disagree about what an ampersand is.
+            ->assertSee('Backup &amp; Restore', escape: false)
+            ->assertSee('Create Backup')
+            ->assertSee('On My iPhone')
+            ->assertSee('.tmb');
+    }
+
+    /**
+     * Only Tachimanga is claimed, because only Tachimanga is read.
+     *
+     * The Mihon reader is not built. Saying so is the whole reason the section was held
+     * back until now, and leaving it out again would hand a reader a `.tachibk` and a wait
+     * for nothing.
+     */
+    public function test_it_says_which_apps_are_read_and_which_are_not(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertSee('Backups from other reader apps are not read yet')
+            ->assertSee('Mihon')
+            ->assertSee('https://tachimanga.app/help/guides/backups.html', escape: false);
+    }
+
     private function page(): Testable
     {
         return Livewire::test('pages::settings.import');

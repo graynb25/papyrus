@@ -882,6 +882,68 @@ class LibraryTest extends TestCase
         $this->assertSame(1, $this->page()->set('page', -4)->instance()->page);
     }
 
+    /**
+     * The half of the ask that was owed.
+     *
+     * `docs/IMPORT-ANALYSIS.md` recorded two deliverables from one sentence, and said the
+     * second should not be built first: "a toast that links to a guide for an importer that
+     * does not exist is worse than no toast". The importer exists now.
+     *
+     * Asserted on the dispatched effect rather than the markup, because `Flux::toast()`
+     * dispatches `toast-show` and a dispatched effect is never in the rendered HTML. My
+     * first attempt asserted the text against the page and could not pass; the empty-library
+     * heading in the markup starts the same way, which is precisely the coincidence that
+     * makes a test pass for the wrong reason.
+     */
+    public function test_an_empty_library_says_a_library_can_be_brought_across(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertDispatched('toast-show');
+    }
+
+    /**
+     * The part of it a reader can still find tomorrow, which the toast is not.
+     */
+    public function test_an_empty_library_offers_the_import_page_as_a_way_in(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertSee('Bring a library from another app')
+            ->assertSee(route('import.edit'), escape: false);
+    }
+
+    /**
+     * The half that matters and is easy to get wrong.
+     *
+     * A toast that keeps firing is worse than no toast, because it trains a reader to
+     * dismiss the ones that matter. This is the case that would ship it wrong.
+     */
+    public function test_a_library_with_series_is_never_told_it_is_empty(): void
+    {
+        $this->addToLibrary(76);
+
+        $page = $this->page()->assertOk();
+
+        $page->assertNotDispatched('toast-show')
+            ->assertDontSee('Bring a library from another app');
+    }
+
+    /**
+     * And the search empty state is a different sentence, so it must not borrow the import
+     * offer. Someone who filtered to nothing is not a new reader.
+     */
+    public function test_an_empty_search_result_does_not_offer_the_importer(): void
+    {
+        $this->addToLibrary(76);
+
+        $this->page()
+            ->set('search', 'nothing matches this')
+            ->assertOk()
+            ->assertSee('Nothing matches that search')
+            ->assertDontSee('Bring a library from another app');
+    }
+
     public function test_the_page_pages_at_sixty(): void
     {
         foreach (range(1, 70) as $id) {

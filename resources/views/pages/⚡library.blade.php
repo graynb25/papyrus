@@ -578,6 +578,48 @@ new #[Title('Library')] class extends Component
     }
 
     /**
+     * Say once, on arrival at an empty library, that a library can be brought across.
+     *
+     * While the library is empty rather than once ever, and that is the whole design. A
+     * "seen this" flag would need a column, a migration, and a rule for what a dismissal
+     * means, all of it to answer a question the library already answers for free: an empty
+     * library is the only state in which this is true.
+     *
+     * So the toast appears on arriving at an empty library and stops for ever the moment
+     * the reader imports one series or searches one series. Nothing to clean up, and no
+     * flag that can be set wrongly or survive the flag being cleared.
+     *
+     * `mount()` rather than the render, because a toast dispatched from the template would
+     * fire on every poll as well. The library page only polls while a check is running and
+     * an empty library has nothing to check, but relying on that is relying on a coincidence
+     * between two unrelated decisions.
+     */
+    public function mount(): void
+    {
+        if ($this->totalAll > 0) {
+            return;
+        }
+
+        Flux::toast(
+            text: __('If you keep your library in another reader app, you can bring it across instead of adding series one at a time.'),
+            heading: __('This library is empty'),
+            variant: 'info',
+            /*
+             * `link`, and not an icon.
+             *
+             * `Flux::toast()` takes $text, $heading, $duration, $variant, $position, $link
+             * and $action, and nothing else, so an `icon:` named argument is an unknown
+             * parameter rather than a missing glyph. Measured by the empty-library test
+             * failing with "Unknown named parameter $icon".
+             *
+             * The link is the better use of the slot anyway. A toast that says a route
+             * exists and then closes is a sentence the reader has to act on from memory.
+             */
+            link: route('import.edit'),
+        );
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     #[Computed]
@@ -1484,9 +1526,24 @@ new #[Title('Library')] class extends Component
             </p>
 
             @if ($this->totalAll === 0)
-                <flux:button class="mt-6" variant="primary" href="{{ route('search') }}" wire:navigate icon="magnifying-glass">
-                    {{ __('Go to search') }}
-                </flux:button>
+                {{--
+                    Two ways in, because a reader arriving at an empty library has two
+                    situations and the page was only offering one of them.
+
+                    Most people here want one series. Some arrived from another reader app
+                    with a whole library on their phone and nothing on this machine, and
+                    searching for eight hundred series one at a time is not a thing anyone
+                    is going to do.
+                --}}
+                <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                    <flux:button variant="primary" href="{{ route('search') }}" wire:navigate icon="magnifying-glass">
+                        {{ __('Go to search') }}
+                    </flux:button>
+
+                    <flux:button variant="outline" href="{{ route('import.edit') }}" wire:navigate icon="arrow-up-tray">
+                        {{ __('Bring a library from another app') }}
+                    </flux:button>
+                </div>
             @endif
         </div>
     @else
