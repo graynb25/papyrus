@@ -1021,4 +1021,107 @@ class LibraryTest extends TestCase
             'there is nothing to check on a series the server does not have, and a 0 would queue one forever',
         );
     }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * The page, with a series filed from a backup.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_the_page_renders_a_series_that_has_no_server_manga(): void
+    {
+        $this->addToLibrary(76);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'The Buff Cuisine Diner',
+            'unavailable_reason' => 'Its source is not installed on this server.',
+            'in_library' => true,
+        ]);
+
+        /*
+         * Rendered HTML, deliberately.
+         *
+         * The unit test above already asserts that `present()` hands back a null manga id and
+         * a good title, and it passed while the page threw. `route('series', ['manga' => null])`
+         * is a UrlGenerationException, not a broken href, so the failure lives in the template
+         * and only a template can see it.
+         */
+        $this->page()
+            ->assertOk()
+            ->assertSee('The Buff Cuisine Diner')
+            ->assertSee('Its source is not installed on this server.');
+
+        $this->assertSame(
+            0,
+            substr_count($this->rendered(), 'route: series'),
+            'nothing on the page links to a series route with no id',
+        );
+    }
+
+    public function test_a_filed_series_offers_no_bulk_actions(): void
+    {
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $html = $this->rendered(enterSelectionMode: true);
+
+        $this->assertStringNotContainsString(
+            'tryCheckSeries()',
+            $html,
+            'a check button with an empty id calls the method with no argument at all',
+        );
+
+        $this->assertStringNotContainsString(
+            'toggleFiling(,',
+            $html,
+            'and a shelf button would file manga 0, which is a real id to everything downstream',
+        );
+    }
+
+    public function test_selecting_visible_series_never_selects_the_zero_id(): void
+    {
+        $this->addToLibrary(76);
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        $this->page()
+            ->call('selectVisible')
+            ->assertSet('selected', [76]);
+
+        /*
+         * `(int) null` is 0, and 0 is not a stand-in for "no manga": every bulk action keyed
+         * off this list would act on a series the server has no record of, and the shelf table
+         * would gain a row pointing at manga 0. The check button's guard is redundant for the
+         * same reason this one is not, and the difference between the two is a test.
+         */
+        $this->assertNotContains(
+            0,
+            $this->page()->instance()->selected,
+            'a filed series contributes no id to the bulk selection',
+        );
+    }
+
+    /**
+     * The library page's rendered HTML.
+     *
+     * A helper because two tests want it and the Livewire call is the noisy part.
+     */
+    private function rendered(bool $enterSelectionMode = false): string
+    {
+        $page = $this->page()->assertOk();
+
+        if ($enterSelectionMode) {
+            $page->call('toggleSelecting');
+        }
+
+        return $page->html();
+    }
 }

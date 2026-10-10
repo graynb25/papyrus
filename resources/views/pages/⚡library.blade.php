@@ -99,6 +99,13 @@ new #[Title('Library')] class extends Component
     {
         $ids = $this->visibleEntries
             ->pluck('manga_id')
+            /*
+             * Nulls dropped, not cast. A series filed from a backup has no manga, and
+             * `(int) null` is 0, which is a real id to everything downstream: it would
+             * be filed onto a shelf, counted in the selection, and sent to a server
+             * looking for manga 0. "Select visible" means the series the reader can act on.
+             */
+            ->filter(fn (mixed $id): bool => $id !== null)
             ->map(fn (mixed $id): int => (int) $id)
             ->all();
 
@@ -581,6 +588,10 @@ new #[Title('Library')] class extends Component
 
         $resolutions = $filtered
             ->filter(static fn (array $entry): bool => ($entry['continue_at'] ?? null) !== null)
+            // Filtered rather than cast: a filed series has no manga, and this map builds
+            // the key everything downstream looks a series up by. `(int) null` is 0, which
+            // would collide with a real id and answer "no resume" for the wrong series.
+            ->filter(static fn (array $entry): bool => $entry['manga_id'] !== null)
             ->mapWithKeys(static fn (array $entry): array => [
                 (int) $entry['manga_id'] => $entry['continue_at'],
             ])
@@ -770,6 +781,10 @@ new #[Title('Library')] class extends Component
     {
         $ids = $this->visibleEntries
             ->pluck('manga_id')
+            // Nulls dropped rather than cast to 0, for the same reason as `selectVisible()`:
+            // every entry in this ledger is keyed by a manga id, and 0 would be a lookup
+            // for a manga that does not exist rather than an empty result.
+            ->filter(fn (mixed $id): bool => $id !== null)
             ->map(fn (mixed $id): int => (int) $id)
             ->all();
 
@@ -1221,13 +1236,28 @@ new #[Title('Library')] class extends Component
         <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" data-bulk-grid>
             @foreach ($this->visibleEntries as $index => $entry)
                 <li class="group relative">
-                    <a
-                        href="{{ route('series', ['manga' => $entry['manga_id']]) }}"
-                        wire:navigate
-                        class="block"
-                        tabindex="-1"
-                        aria-hidden="true"
-                    >
+                    {{--
+                        A series filed from a backup has no Suwayomi manga, so there is no
+                        series page to link to.
+
+                        `route('series', ['manga' => null])` is a UrlGenerationException, not a
+                        missing href: the route has a required parameter and Laravel throws when
+                        it is absent rather than producing a broken URL. Measured in the log the
+                        first time a library page rendered one of these, which is 195 of 867
+                        series on a real import. So the link is conditional, and the cover is
+                        still rendered either way to hold the grid's shape.
+                    --}}
+                    @if ($entry['manga_id'] !== null)
+                        <a
+                            href="{{ route('series', ['manga' => $entry['manga_id']]) }}"
+                            wire:navigate
+                            class="block"
+                            tabindex="-1"
+                            aria-hidden="true"
+                        >
+                    @else
+                        <div class="block">
+                    @endif
                         {{-- 2/3 held by the frame rather than the image, so a
                              cover that has not loaded still reserves its space and
                              the grid does not jump as the page fills. --}}
@@ -1238,7 +1268,11 @@ new #[Title('Library')] class extends Component
                             :vt="true"
                             :progress="($entry['total_chapters'] ?? 0) > 0 && ($entry['unread_chapters'] ?? null) !== null && (($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100) >= 1 ? (int) round(($entry['read_chapters'] / max(1, $entry['total_chapters'])) * 100) : null"
                         ></x-cover.art>
-                    </a>
+                    @if ($entry['manga_id'] !== null)
+                        </a>
+                    @else
+                        </div>
+                    @endif
 
                     {{--
                         Unread, stale, and new-since-check badges.
@@ -1262,7 +1296,9 @@ new #[Title('Library')] class extends Component
                         >{{ $entry['unread_chapters'] }}</span>
                     @endif
 
-                    @php($found = $this->newChapters((int) $entry['manga_id']))
+                    {{-- Null for a filed series: there is no server manga to have new chapters on, and
+                         casting null to 0 would ask about a manga that does not exist. --}}
+                    @php($found = $entry['manga_id'] === null ? null : $this->newChapters($entry['manga_id']))
 
                     @if ($found !== null && $found > 0)
                         <flux:tooltip
@@ -1297,8 +1333,13 @@ new #[Title('Library')] class extends Component
                         The label is the hit area: a bare 20px box is a finger's
                         worth of miss. It sits outside the cover's anchor, because
                         a control inside a link navigates instead of toggling.
+
+                        Not offered for a filed series. Every bulk action is "ask
+                        the server about this manga", and there is no manga, so a
+                        checkbox that appears to work and then does nothing is
+                        worse than no checkbox.
                     --}}
-                    @if ($selecting)
+                    @if ($selecting && $entry['manga_id'] !== null)
                         <label
                             class="absolute bottom-0 end-0 z-20 flex h-12 w-12 cursor-pointer items-center justify-center"
                         >
@@ -1314,14 +1355,27 @@ new #[Title('Library')] class extends Component
                     @endif
 
                     <flux:heading size="sm" class="mt-2.5 truncate font-display font-semibold" level="3">
-                        <a href="{{ route('series', ['manga' => $entry['manga_id']]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
-                            {{ $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']]) }}
-                        </a>
+                        @if ($entry['manga_id'] !== null)
+                            <a href="{{ route('series', ['manga' => $entry['manga_id']]) }}" wire:navigate class="transition-colors hover:text-vermilion-600 dark:hover:text-vermilion-400">
+                                {{ $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']]) }}
+                            </a>
+                        @else
+                            {{-- Plain text, because a link here throws: the series route needs a
+                                 manga id and this series has none. The title is the whole point
+                                 of filing it, so it is still shown. --}}
+                            <span>{{ $entry['title'] !== '' ? $entry['title'] : __('A series from your old app') }}</span>
+                        @endif
                     </flux:heading>
 
                     <flux:text size="xs" class="mt-0.5 truncate text-zinc-500 dark:text-zinc-400">
                         @if (! $entry['has_source_data'])
-                            {{ __('Not on the server') }}
+                            {{--
+                                The reason is shown rather than the generic sentence, because
+                                "Not on the server" describes a state and a reader wants to know
+                                whether to do something about it. A series filed from a backup
+                                knows why: its source is not installed here.
+                            --}}
+                            {{ $entry['unavailable_reason'] ?? __('Not on the server') }}
                         @elseif (! $entry['has_chapter_list'])
                             {{--
                                 Honest, and it was the only thing this card could say.
@@ -1378,7 +1432,16 @@ new #[Title('Library')] class extends Component
                             for that. The floor is bypassed deliberately: pressing it
                             is the reader asking now.
                         --}}
-                        @if ($this->isDue((int) $entry['manga_id']))
+                        {{-- The actions a filed series cannot offer.
+
+                            Checking asks the server for new chapters and filing puts a
+                            series on a shelf, and both need a manga id this series does
+                            not have. Rendering the buttons with an empty id would call
+                            `tryCheckSeries()` with no argument at all, so these are
+                            omitted rather than disabled: a control that cannot work
+                            should not be offered.
+                        --}}
+                        @if ($entry['manga_id'] !== null && $this->isDue((int) $entry['manga_id']))
                             <flux:button
                                 size="xs"
                                 variant="ghost"
@@ -1394,7 +1457,7 @@ new #[Title('Library')] class extends Component
                             </flux:button>
                         @endif
 
-                        @if ($this->shelves->isNotEmpty())
+                        @if ($entry['manga_id'] !== null && $this->shelves->isNotEmpty())
                             @php($filedHere = $this->filedShelves($entry['manga_id']))
                             @php($unfiledHere = $this->unfiledShelves($entry['manga_id']))
 
