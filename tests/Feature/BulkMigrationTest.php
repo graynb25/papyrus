@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\BuildBulkMigration;
 use App\Migration\BulkMover;
 use App\Migration\BulkSourceMatcher;
+use App\Migration\CandidateFinder;
 use App\Migration\SeriesMigrator;
 use App\Models\BulkMigration;
 use App\Models\BulkMigrationItem;
@@ -712,6 +713,303 @@ class BulkMigrationTest extends TestCase
             'in_library' => true,
             'title' => $title,
         ]);
+    }
+
+    /**
+     * The matched count, which is the number the page puts next to "Looked at".
+     *
+     * Survived the mutation check because nothing asserted it at all. Every row below was
+     * PENDING and the run said zero matched, which is a page that contradicts itself.
+     */
+    public function test_the_matched_count_is_reported(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->seriesOnFrom(77, 'Nothing Here', 10);
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $result = $this->matcher()->run($run);
+
+        $this->assertSame(1, $result['matched'], 'one destination listed it, the other did not');
+        $this->assertSame(1, $run->fresh()->series_matched);
+        $this->assertSame(2, $run->fresh()->series_checked);
+    }
+
+    /**
+     * The origin source is gone from the catalogue between picking it and running.
+     *
+     * Without the guard this is a read of a property on null, so the run dies with a type
+     * error and the page watches a run that never finishes. The guard is the difference
+     * between a sentence and a stack trace.
+     */
+    public function test_an_origin_source_that_vanished_says_so(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+
+        Source::query()->where('suwayomi_source_id', self::FROM_SOURCE)->delete();
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+        $run->refresh();
+
+        $this->assertSame(BulkMigration::FAILED, $run->state);
+        $this->assertStringContainsString('moving away from', (string) $run->error);
+    }
+
+    /**
+     * A destination that could not be read is not offered as a move.
+     *
+     * The candidate exists, because a search returned it, but refreshing it 500s, so the
+     * finder marks it `unavailable`. Offering it would be offering a move that fails on
+     * press, and the whole point of the status is to keep that off the list.
+     */
+    public function test_a_destination_that_cannot_be_read_is_not_offered(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        // The search found it; reading it does not work.
+        $this->unknown[] = 2033;
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $item = BulkMigrationItem::query()->where('from_manga_id', 76)->firstOrFail();
+
+        $this->assertSame(
+            BulkMigrationItem::SKIPPED,
+            $item->status,
+            'a destination the reader cannot read is a row that fails when they press it',
+        );
+        $this->assertSame(0, $run->fresh()->series_matched);
+    }
+
+    /**
+     * One source that throws does not cost the reader the rest of the shelf.
+     *
+     * A pass over eighty series is a slice of something bigger. If the destination is
+     * unreachable every series fails the same way, so the run has to finish and say so
+     * rather than dying on the first one and leaving the page watching forever.
+     */
+    public function test_an_unreachable_destination_finishes_the_run_and_reports_every_series(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->seriesOnFrom(77, 'Another One', 12);
+        $this->destination(2033, 'Hiding a Logistics Center', 41);
+
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+        $this->unreachable[] = self::TO_SOURCE;
+
+        $run = $this->startRun();
+        $result = $this->matcher()->run($run);
+        $run->refresh();
+
+        $this->assertSame(BulkMigration::READY, $run->state, 'the run finished rather than dying');
+        $this->assertSame(2, $result['checked'], 'both series were compared');
+        $this->assertNotNull($run->finished_at);
+
+        /*
+         * SKIPPED, not FAILED, and the harness is why that is worth pinning.
+         *
+         * My first version of this asserted FAILED and got none, correctly: `sweepAndRank`
+         * treats a source it cannot search as a source with no candidates, so `findOn()`
+         * returns an empty list and the series reads as not listed there. Which is the right
+         * answer, and was the wrong thing for me to assume without checking.
+         */
+        $this->assertSame(
+            2,
+            BulkMigrationItem::query()->where('status', BulkMigrationItem::SKIPPED)->count(),
+            'every series is accounted for, and none of them is offered a move that cannot happen',
+        );
+
+        $this->assertSame(0, BulkMigrationItem::query()->where('status', BulkMigrationItem::PENDING)->count());
+    }
+
+    /**
+     * Another reader's row must be left exactly as it was.
+     *
+     * The existing `test_an_item_from_another_readers_run_is_not_moved` asserts only that
+     * nothing moved, and it survives dropping `forUser()` outright, because the migrator
+     * refuses the pair for want of an offer either way. What it does not notice is that the
+     * mover then writes REFUSED onto **their** row. The row is the observable that
+     * separates the two checks.
+     */
+    public function test_another_readers_row_is_left_untouched(): void
+    {
+        $run = $this->readyRunWithNoOffers();
+
+        $other = User::factory()->create();
+
+        $theirs = BulkMigrationItem::createFor($other->id, [
+            'bulk_migration_id' => $run->id,
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Not yours',
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        app(BulkMover::class)->move($run, collect([76 => 2033]));
+
+        $this->assertSame(
+            BulkMigrationItem::PENDING,
+            $theirs->fresh()->status,
+            'this reader pressing a button must not write to another reader\'s migration state',
+        );
+    }
+
+    /**
+     * An item belonging to a different run, with a destination that really was offered.
+     *
+     * The offer is real here, which is the point. Without it the migrator refuses and the
+     * test proves nothing; with it, dropping the run filter moves a series through a
+     * comparison the reader never saw and never ticked.
+     */
+    public function test_an_item_from_a_different_run_is_not_moved_even_with_a_real_offer(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        // Run A compares and offers. Run B is a separate, unrelated comparison.
+        $runA = $this->startRun();
+        $this->matcher()->run($runA);
+
+        $runB = $this->readyRunWithNoOffers();
+
+        $item = BulkMigrationItem::query()
+            ->where('bulk_migration_id', $runA->id)
+            ->where('from_manga_id', 76)
+            ->firstOrFail();
+
+        // The reader approves it through run B, which never compared this series.
+        $tally = app(BulkMover::class)->move($runB, collect([76 => 2033]));
+
+        $this->assertSame(0, $tally['moved'], 'run B never showed this series');
+        $this->assertSame(0, SeriesMigration::query()->count());
+        $this->assertSame(BulkMigrationItem::PENDING, $item->fresh()->status);
+    }
+
+    /**
+     * A destination the request names that the row does not.
+     *
+     * Both 2033 and 9999 were genuinely offered for this series, so the migrator's own gate
+     * passes either one. Only the mover's equality check knows which one the reader actually
+     * ticked, and a request that names the other one is a tampered request.
+     */
+    public function test_a_destination_the_row_does_not_name_is_refused_even_when_it_was_offered(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(9999, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [
+            2033 => 'Hiding a Logistics Center',
+            9999 => 'Hiding a Logistics Center',
+        ];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $item = BulkMigrationItem::query()
+            ->where('from_manga_id', 76)
+            ->where('to_manga_id', 2033)
+            ->firstOrFail();
+
+        // The request names 9999. The row says 2033.
+        $tally = app(BulkMover::class)->move($run, collect([76 => 9999]));
+
+        $this->assertSame(0, $tally['moved'], 'the reader ticked 2033, not 9999');
+        $this->assertSame(BulkMigrationItem::PENDING, $item->fresh()->status);
+
+        $migration = SeriesMigration::query()->first();
+
+        $this->assertNull($migration, 'and nothing moved anywhere');
+    }
+
+    /**
+     * Read progress is carried, and the page says how much.
+     *
+     * The tally feeds the completion sentence, so a hardcoded zero reports a move that
+     * carried forty chapters of read state as having carried nothing.
+     */
+    public function test_chapters_carried_is_the_migrations_own_count(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        $tally = app(BulkMover::class)->move($run, collect([76 => 2033]));
+
+        $migration = SeriesMigration::query()->firstOrFail();
+
+        $this->assertSame(1, $tally['moved']);
+        $this->assertSame(
+            (int) $migration->chapters_carried,
+            $tally['chapters_carried'],
+            'the number on the page is the migration\'s own, not a constant',
+        );
+    }
+
+    /**
+     * A title exactly on the bar is ticked; one hair under is not.
+     *
+     * The comparison is `<` and the boundary matters, because the threshold is configurable
+     * and a reader who measures it will set it to the value they saw.
+     */
+    public function test_the_title_threshold_is_exclusive_at_the_boundary(): void
+    {
+        $this->assertTrue(
+            $this->offerable(41, 41, 0.95, null)->isConfident(0.95),
+            'exactly on the bar counts as agreeing',
+        );
+
+        $this->assertFalse(
+            $this->offerable(41, 41, 0.9499, null)->isConfident(0.95),
+            'one ten-thousandth under it does not',
+        );
+    }
+
+    /**
+     * A row that already moved is not offered again.
+     *
+     * `isConfident()` has its own offerability check rather than relying on the page, so a
+     * second press of the same button cannot re-tick what the first press moved.
+     */
+    public function test_an_already_moved_row_is_not_offered_again(): void
+    {
+        $item = $this->offerable(41, 41, 1.0, null);
+        $item->update(['status' => BulkMigrationItem::MOVED]);
+
+        $this->assertFalse(
+            $item->fresh()->isConfident(0.95),
+            'everything else about it still agrees, so only offerability can be refusing it',
+        );
+    }
+
+    /**
+     * The same source twice offers nothing, and asks the server nothing.
+     *
+     * Moving a source onto itself is the one pair the page refuses to build, and the guard
+     * here is the second half of that. Without it the run searches the source it is leaving
+     * and reports its own catalogue back as a destination, which does nothing.
+     */
+    public function test_a_source_moved_onto_itself_offers_nothing(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::FROM_SOURCE] = [76 => 'Hiding a Logistics Center'];
+
+        $found = app(CandidateFinder::class)->findOn(
+            $this->from,
+            ['title' => 'Hiding a Logistics Center', 'chapters' => ['totalCount' => 41], 'author' => 'Life Ruined'],
+            $this->from,
+        );
+
+        $this->assertSame([], $found['candidates']);
+        $this->assertSame(0, $found['meta']['sources_total'], 'and it did not go looking');
     }
 
     private function destination(int $mangaId, string $title, int $chapters, ?string $author = null): void
