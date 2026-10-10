@@ -4,6 +4,8 @@ use App\Jobs\RunBackupImport;
 use App\Models\ImportRun;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -55,6 +57,26 @@ new #[Title('Import a backup')] class extends Component
     public bool $inspectOnly = true;
 
     /**
+     * Whether to keep watching after a dispatch.
+     *
+     * Separate from whether a run exists, because of the gap between the two. The button
+     * presses, the job is queued, and the run row is only created once a worker picks the job
+     * up. For that gap and, on a server with no worker, forever, there is nothing in
+     * `import_runs` to look at. Measured: pressing Inspect showed the toast and then never
+     * showed the result, because the page re-rendered on click with no run to render and
+     * nothing asked it to look again.
+     */
+    public bool $polling = false;
+
+    /**
+     * How long a job may sit before the page says nobody is running the queue.
+     *
+     * Short enough that a reader watching a button that did nothing gets an answer, long
+     * enough that a worker busy on an eleven minute import is not accused of being dead.
+     */
+    public const QUEUE_WAIT_SECONDS = 30;
+
+    /**
      * How long a run may go without touching its row before the page says something.
      *
      * Generous, because a run legitimately goes quiet. Installing 31 extensions is minutes of
@@ -94,6 +116,101 @@ new #[Title('Import a backup')] class extends Component
          * button twice, and the second run re-reads the whole backup for nothing.
          */
         $this->reset('backup', 'path');
+
+        $this->polling = true;
+    }
+
+    /**
+     * Whether the page should keep asking the server what is happening.
+     *
+     * True after a dispatch until a run reaches a finished state. False once one has, which is
+     * how the poll stops rather than running forever, and false before any dispatch, so a page
+     * a reader is only reading costs nothing.
+     */
+    public function shouldPoll(): bool
+    {
+        if (! $this->polling) {
+            return false;
+        }
+
+        $run = $this->activeRun();
+
+        // No run yet. The job is queued and has not been picked up, which is the gap that
+        // hid the inspect result, and on a server with no worker it is permanent.
+        if ($run === null) {
+            return true;
+        }
+
+        return $run->state === ImportRun::RUNNING;
+    }
+
+    /**
+     * Whether this server runs queued work inside the request that dispatched it.
+     *
+     * `sync` is what a fresh Laravel install ships with, and it is fine for a check that takes
+     * 361ms and catastrophic for an import of 1,277 series that takes eleven minutes: the
+     * browser request hangs until something upstream gives up, and the reader sees a page that
+     * stopped responding rather than a page that told them anything.
+     *
+     * Said plainly, before anything is started, because the alternative is finding out with a
+     * real library and an hour of waiting.
+     */
+    public function queueIsInline(): bool
+    {
+        return config('queue.default') === 'sync';
+    }
+
+    /**
+     * Whether an import is sitting in the queue with nothing processing it.
+     *
+     * The direct version of the question {@see stuck()} answers indirectly. `stuck()` needs a
+     * run row to have gone quiet, and the one case that matters most has no run row at all:
+     * the job was queued and no worker ever started, so nothing was ever created to observe.
+     * This looks in the queue instead, and only concludes that when no run is actually going,
+     * so a worker busy on a long import is never accused of being dead.
+     *
+     * Null when the queue is not the database one, because there is no table to read and a
+     * `sync` queue has already run the job by the time this is called anyway.
+     */
+    public function queueStalled(): bool
+    {
+        if (! $this->polling) {
+            return false;
+        }
+
+        /*
+         * A run that is going means a worker is demonstrably working.
+         *
+         * Without this the page would accuse a healthy worker of being dead every time it
+         * looked: an import holds a worker for eleven minutes, and throughout that the app
+         * keeps queueing other work behind it, so the `jobs` table is never empty and never
+         * young. The check for "this run is alive and has been heard from recently" is the
+         * only honest evidence that somebody is doing the work.
+         */
+        $run = $this->activeRun();
+
+        if ($run !== null && $run->state === ImportRun::RUNNING && ! $this->abandoned($run)) {
+            return false;
+        }
+
+        if (config('queue.default') !== 'database' || ! Schema::hasTable('jobs')) {
+            return false;
+        }
+
+        /*
+         * An integer, not a Carbon.
+         *
+         * `created_at` on the `jobs` table is an integer epoch column. Passing a Carbon here
+         * makes the query builder bind it as a datetime *string*, and SQLite sorts by storage
+         * class, so every integer compares less than every string. The condition was therefore
+         * true for every row in the table, whatever its age. Measured: a test asserting that a
+         * job queued a moment ago was not yet abandoned, which the condition said was true.
+         *
+         * The same reason `useDatabase` reads `$job->created_at` rather than trusting a date.
+         */
+        return DB::table('jobs')
+            ->where('created_at', '<', now()->subSeconds(self::QUEUE_WAIT_SECONDS)->getTimestamp())
+            ->exists();
     }
 
     /**
@@ -204,6 +321,26 @@ new #[Title('Import a backup')] class extends Component
     }
 
     /**
+     * Whether a run says it is running and has not been heard from in far too long.
+     *
+     * Not the same question as {@see stuck()}, and deliberately broader. `RunBackupImport`
+     * marks its own run `failed` when it catches a throw, but a worker killed at its timeout,
+     * an out of memory kill, or a machine that went down all leave the row reading `running`
+     * with nothing behind it. Those are not recoverable from inside the process, because
+     * there is no longer a process. So the page treats silence as the end of the run, whatever
+     * caused it, rather than repeating a claim that is no longer true.
+     *
+     * This is also what stops the history from accumulating rows that claim to be working
+     * forever. One was already there: an import that had been dispatched and died an hour
+     * before, still shown as running with the note it had written when it started.
+     */
+    public function abandoned(ImportRun $run): bool
+    {
+        return $run->state === ImportRun::RUNNING
+            && $run->updated_at->diffInSeconds(now()) > self::STUCK_SECONDS;
+    }
+
+    /**
      * The largest file this server will accept, in bytes, or null when it will not accept any.
      *
      * `post_max_size` binds before `upload_max_filesize`, so it is the one that decides whether
@@ -300,9 +437,10 @@ new #[Title('Import a backup')] class extends Component
      */
     public function summary(ImportRun $run): string
     {
-        return match ($run->state) {
-            ImportRun::REFUSED, ImportRun::FAILED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
-            ImportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
+        return match (true) {
+            $this->abandoned($run) => __('This run stopped without finishing. Nothing after its last line was applied, and running the import again costs nothing for what it already did.'),
+            $run->state === ImportRun::REFUSED, $run->state === ImportRun::FAILED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
+            $run->state === ImportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
             default => trans_choice(
                 ':count series imported, :unchanged already up to date, :filed with no source.|:count series imported, :unchanged already up to date, :filed with no source.',
                 $run->applied,
@@ -317,22 +455,24 @@ new #[Title('Import a backup')] class extends Component
 
     public function badgeColour(ImportRun $run): string
     {
-        return match ($run->state) {
-            ImportRun::COMPLETE => 'green',
-            ImportRun::RUNNING => 'blue',
-            ImportRun::FAILED => 'red',
-            ImportRun::REFUSED => 'orange',
+        return match (true) {
+            $this->abandoned($run) => 'orange',
+            $run->state === ImportRun::COMPLETE => 'green',
+            $run->state === ImportRun::RUNNING => 'blue',
+            $run->state === ImportRun::FAILED => 'red',
+            $run->state === ImportRun::REFUSED => 'orange',
             default => 'zinc',
         };
     }
 
     public function stateLabel(ImportRun $run): string
     {
-        return match ($run->state) {
-            ImportRun::COMPLETE => __('Finished'),
-            ImportRun::RUNNING => __('Running'),
-            ImportRun::FAILED => __('Stopped'),
-            ImportRun::REFUSED => __('Refused'),
+        return match (true) {
+            $this->abandoned($run) => __('Stopped'),
+            $run->state === ImportRun::COMPLETE => __('Finished'),
+            $run->state === ImportRun::RUNNING => __('Running'),
+            $run->state === ImportRun::FAILED => __('Stopped'),
+            $run->state === ImportRun::REFUSED => __('Refused'),
             default => $run->state,
         };
     }
@@ -350,27 +490,56 @@ new #[Title('Import a backup')] class extends Component
     >
         <div class="my-6 w-full space-y-6">
             {{--
+                The inline queue warning.
+
+                Always shown when the queue cannot do background work, because unlike the stall
+                warning this one is a standing property of the server rather than something
+                that happened, and pressing the button is what triggers it.
+            --}}
+            @if ($this->queueIsInline())
+                <flux:callout variant="warning" icon="exclamation-triangle">
+                    <x-slot name="heading">{{ __('This server runs its queue inside the request') }}</x-slot>
+
+                    {{ __('An import of a large library takes about ten minutes of requests to other sites. With this setting the whole thing happens inside the browser request, which will very likely time out and leave you thinking it failed. It will probably still finish, but you will not be able to watch it.') }}
+
+                    <code class="mt-2 block font-mono text-sm">QUEUE_CONNECTION=database</code>
+
+                    {{ __('Set that in your .env, then run a worker alongside the site:') }}
+
+                    <code class="mt-2 block font-mono text-sm">php artisan queue:work</code>
+                </flux:callout>
+            @endif
+
+            {{--
                 The queue warning.
 
-                Only when a run is actually stuck, rather than always, because on a server with a
-                worker running it would be a permanent banner about a problem nobody has. The
+                Only when a run is actually stalled, rather than always, because on a server with
+                a worker running it would be a permanent banner about a problem nobody has. The
                 text names the command because the reader looking at this is the one who has to
                 decide how their server is run.
+
+                Two ways to be stuck, and they are not the same. `queueStalled` is the import
+                queued with no worker, so there is no run row to show at all. `stuck` is a run
+                that started and went quiet.
             --}}
-            @if ($this->stuck)
+            @if ($this->queueStalled() || $this->stuck)
                 <flux:callout variant="danger" icon="exclamation-triangle">
                     <x-slot name="heading">{{ __('This import has not moved') }}</x-slot>
 
-                    {{ __('It has sat without reporting anything for several minutes. That almost always means nothing is processing this server queue, so the import was queued and never started.') }}
+                    @if ($this->queueStalled())
+                        {{ __('It is sitting in the queue and nothing is processing it, so the import was queued and never started.') }}
+                    @else
+                        {{ __('It started and then went quiet, which usually means the worker was killed part way through. Nothing after its last line was applied.') }}
+                    @endif
 
                     {{--
                         A plain element rather than a component. There is no code component in
                         the set this app uses, and inventing one that renders in a test and
-                        breaks on the next Flux release is worse than six lines of markup.
+                        breaks on the next Flux release is worse than a few lines of markup.
                     --}}
                     <code class="mt-2 block font-mono text-sm">php artisan queue:work</code>
 
-                    {{ __('Start that in a terminal on the server, then press the button again. The stalled run imported nothing, and running again costs nothing for whatever it already did.') }}
+                    {{ __('Start that in a terminal on the server, then press the button again. Running an import again costs nothing for whatever it already did.') }}
                 </flux:callout>
             @endif
 
@@ -427,20 +596,32 @@ new #[Title('Import a backup')] class extends Component
             </flux:card>
 
             {{-- The run in progress, and the runs already done. --}}
-            <flux:card class="space-y-4 p-4">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <flux:heading level="3">{{ __('Your imports') }}</flux:heading>
+            {{--
+                    The run list, polling itself while there is something to wait for.
 
-                    @if ($this->activeRun()?->state === ImportRun::RUNNING)
-                        <flux:badge size="sm" color="blue" icon="loading">
-                            {{ __('Running') }}
-                        </flux:badge>
-                    @endif
-                </div>
+                    The attribute is bound rather than left on, because a page left polling at
+                    three second intervals forever is a page that costs a request every three
+                    seconds for as long as it stays open. `shouldPoll()` stops it the moment a
+                    run finishes, and starts it the moment a button is pressed.
+                --}}
+                <div class="space-y-4 p-4" @if ($this->shouldPoll()) wire:poll.3s @endif>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <flux:heading level="3">{{ __('Your imports') }}</flux:heading>
+
+                        @if ($this->activeRun()?->state === ImportRun::RUNNING && ! $this->abandoned($this->activeRun()))
+                            <flux:badge size="sm" color="blue" icon="loading">
+                                {{ __('Running') }}
+                            </flux:badge>
+                        @endif
+                    </div>
 
                 @if ($this->runs()->isEmpty())
                     <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                        {{ __('You have not imported anything yet.') }}
+                        @if ($this->polling)
+                            {{ __('Queued. The file will be read in a moment.') }}
+                        @else
+                            {{ __('You have not imported anything yet.') }}
+                        @endif
                     </p>
                 @else
                     <div class="space-y-3">
@@ -495,7 +676,7 @@ new #[Title('Import a backup')] class extends Component
                         @endforeach
                     </div>
                 @endif
-            </flux:card>
+                </div>
         </div>
     </x-pages::settings.layout>
 </section>

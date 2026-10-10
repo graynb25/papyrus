@@ -6,6 +6,7 @@ use App\Jobs\RunBackupImport;
 use App\Models\ImportRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -211,6 +212,155 @@ class ImportPageTest extends TestCase
             ->assertSet('path', '');
     }
 
+    /*
+     * ---------------------------------------------------------------------------
+     * Watching a run that does not exist yet.
+     * ---------------------------------------------------------------------------
+     *
+     * Measured on the real 39.36MB backup: pressing Inspect showed the toast and then never
+     * showed the result. The page re-rendered on click, at which point the job was queued and
+     * had not run, so there was no run row to render, and nothing ever asked the page to look
+     * again. The gap between pressing the button and the worker starting is where the answer
+     * was being lost, and on a server with no worker it is the whole story.
+     */
+
+    public function test_pressing_the_button_starts_polling(): void
+    {
+        Queue::fake();
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        $this->assertTrue($component->instance()->polling);
+        $this->assertTrue($component->instance()->shouldPoll());
+        $component->assertSee(__('Queued. The file will be read in a moment.'));
+    }
+
+    public function test_it_keeps_polling_until_a_run_finishes(): void
+    {
+        Queue::fake();
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        $this->runningRun();
+
+        $this->assertTrue($component->instance()->shouldPoll(), 'a run is going');
+
+        ImportRun::query()->forUser($this->user->id)->update(['state' => ImportRun::COMPLETE]);
+
+        $this->assertFalse(
+            $component->instance()->shouldPoll(),
+            'and stops the moment one finishes, rather than polling forever',
+        );
+    }
+
+    public function test_a_page_that_has_not_dispatched_anything_does_not_poll(): void
+    {
+        $this->runningRun();
+
+        $this->assertFalse($this->page()->instance()->shouldPoll());
+    }
+
+    public function test_a_queued_job_nobody_is_running_is_reported(): void
+    {
+        $this->useDatabaseQueue();
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        // The dispatch was faked, so nothing is really in the queue. Put the job there.
+        $this->queueAJobWaitingFor(now()->subMinutes(2));
+
+        $this->assertTrue($component->instance()->queueStalled());
+
+        // The HTML under assertion was rendered when the button was pressed, which was before
+        // the job existed. Refresh so the callout is actually on the page being checked.
+        $component->call('$refresh')
+            ->assertSee(__('It is sitting in the queue and nothing is processing it'))
+            ->assertSee('php artisan queue:work');
+    }
+
+    public function test_a_freshly_queued_job_is_not_accused_of_being_abandoned(): void
+    {
+        $this->useDatabaseQueue();
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        $this->queueAJobWaitingFor(now());
+
+        $this->assertFalse(
+            $component->instance()->queueStalled(),
+            'a worker that has only just been given work has not failed yet',
+        );
+    }
+
+    public function test_a_worker_busy_on_a_long_run_is_not_accused_of_being_dead(): void
+    {
+        $this->useDatabaseQueue();
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+        $this->runningRun();
+
+        $this->queueAJobWaitingFor(now()->subMinutes(2));
+
+        $this->assertFalse(
+            $component->instance()->queueStalled(),
+            'a run is actually going, so the worker is working rather than absent',
+        );
+    }
+
+    public function test_nothing_is_reported_when_the_queue_is_not_the_database_one(): void
+    {
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        $this->queueAJobWaitingFor(now()->subMinutes(2));
+
+        $this->assertFalse(
+            $component->instance()->queueStalled(),
+            'with a sync queue the job already ran, and there is no jobs table to read',
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A server whose queue cannot do background work.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_sync_queue_is_called_out_before_anything_is_started(): void
+    {
+        /*
+         * `sync` is Laravel's default for a new install, and it runs the job inside the request.
+         *
+         * For a check that is 361ms this costs nothing. For an import of 1,277 series at eleven
+         * minutes it means the browser request hangs until something upstream gives up, and the
+         * reader sees a page that stopped responding rather than a page that told them
+         * anything. Saying so up front is the only version of this that is a warning rather
+         * than an outage.
+         */
+        $this->assertTrue($this->page()->instance()->queueIsInline());
+
+        $this->page()
+            ->assertSee(__('This server runs its queue inside the request'))
+            ->assertSee('QUEUE_CONNECTION=database');
+    }
+
+    public function test_a_proper_queue_is_not_called_out(): void
+    {
+        $this->useDatabaseQueue();
+
+        $this->page()->assertDontSee(__('This server runs its queue inside the request'));
+    }
+
+    public function test_an_inline_queue_still_dispatches(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('path', (string) $this->file)
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class);
+    }
+
     public function test_another_readers_library_is_never_the_target(): void
     {
         /*
@@ -295,6 +445,63 @@ class ImportPageTest extends TestCase
         $run->forceFill(['updated_at' => now()->subHours(3)])->save();
 
         $this->page()->assertDontSee(__('This import has not moved'));
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A run nobody can finish.
+     * ---------------------------------------------------------------------------
+     *
+     * `RunBackupImport` marks its own run failed when it catches a throw. These are the cases
+     * it cannot: the worker killed at its timeout, an out of memory kill, a machine that went
+     * down. All of them leave the row reading `running` with no process behind it, and the page
+     * has to stop believing that, or the history fills with rows claiming to be working.
+     */
+
+    public function test_an_abandoned_run_reads_as_stopped_rather_than_running(): void
+    {
+        $run = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::RUNNING,
+            'file_name' => 'killed.tmb',
+            'progress_note' => '  250 of 1277 series',
+            'started_at' => now()->subHour(),
+        ]);
+
+        $run->forceFill(['updated_at' => now()->subHour()])->save();
+
+        $this->page()
+            ->assertSee(__('This run stopped without finishing.'))
+            ->assertSee(__('Stopped'));
+
+        $this->assertTrue(
+            $this->page()->instance()->abandoned($run->fresh()),
+            'and the page agrees the run is over rather than reporting it as working',
+        );
+    }
+
+    public function test_a_run_that_is_merely_slow_is_not_called_abandoned(): void
+    {
+        $run = $this->runningRun();
+
+        $this->assertFalse($this->page()->instance()->abandoned($run));
+    }
+
+    public function test_a_run_installing_extensions_is_not_called_abandoned(): void
+    {
+        /*
+         * The extension phase reports once at the start and once at the end, and installing 31
+         * of them takes minutes. A run that is working but quiet must not be called abandoned,
+         * or the page would tell a reader their import died while it was succeeding.
+         */
+        $run = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::RUNNING,
+            'progress_note' => 'extensions: 0 already here, 4 installed of 31 attempted',
+            'started_at' => now(),
+        ]);
+
+        $this->assertFalse($this->page()->instance()->abandoned($run));
     }
 
     /*
@@ -402,6 +609,43 @@ class ImportPageTest extends TestCase
             'format' => 'tachimanga',
             'state' => ImportRun::RUNNING,
             'started_at' => now(),
+        ]);
+    }
+
+    /**
+     * Put the page on the queue a deployed server actually uses.
+     *
+     * `phpunit.xml` forces `QUEUE_CONNECTION=sync` so the suite does not need a worker, which
+     * is right for every other test here and wrong for these. These assert on the `jobs`
+     * table, so they have to say so rather than quietly pass against a queue that cannot hold
+     * a job.
+     */
+    private function useDatabaseQueue(): void
+    {
+        config(['queue.default' => 'database']);
+    }
+
+    /**
+     * Put exactly one job in the queue, waiting since the given moment.
+     *
+     * Cleared first because this suite's queries read the whole `jobs` table, and a queue
+     * worker on the developer's machine is writing to that same table outside the test
+     * transaction. Measured: a test asserting "no job is old enough" failed because the dev
+     * worker happened to have an import's worth of work parked in there at the time. The test
+     * is about the row it creates, so it starts from an empty table. The delete is inside the
+     * transaction and rolls back with everything else.
+     */
+    private function queueAJobWaitingFor(\DateTimeInterface $since): void
+    {
+        DB::table('jobs')->delete();
+
+        DB::table('jobs')->insert([
+            'queue' => 'default',
+            'payload' => '{}',
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => $since->getTimestamp(),
+            'created_at' => $since->getTimestamp(),
         ]);
     }
 }

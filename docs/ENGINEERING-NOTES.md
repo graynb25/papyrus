@@ -3589,3 +3589,39 @@ were eliminated.
      than only a way to compile. **A marker file that switches an app from "dev" to "prod" mode
      needs whoever switches back to the other mode to clean it up**, and the recovery path has
      to be the obvious command rather than a file deletion.
+
+193. **SQLite sorts integers before text, so a `Carbon` in a `where()` against an epoch column
+     matches every row.** The `jobs` table stores `created_at` as an integer Unix timestamp.
+     Passing a Carbon to `DB::table('jobs')->where('created_at', '<', now()->subSeconds(30))`
+     makes the query builder bind it as a datetime *string*, and SQLite compares by storage
+     class rather than by value, so every integer sorts before every string. The condition is
+     then true for every row in the table whatever its age. Measured: the check meant to say
+     "nothing is processing this queue" was true unconditionally, and the two tests around it
+     passed for the wrong reason until the third one, asserting a *fresh* job is not yet
+     considered stalled, caught it. Neither an age check nor a date range is the kind of
+     condition that fails loudly when its comparison is wrong; it just answers a question the
+     reader did not ask. **Write the epoch yourself whenever the column is an epoch**, and when
+     a time-based predicate looks too eager, test it with a value it must not match.
+
+194. **Laravel's default queue is `sync`, so a long job runs inside the request that dispatched
+     it.** `php artisan new` writes `QUEUE_CONNECTION=sync`, and it is the right default for
+     most apps. It is wrong for anything measured in minutes. Importing 1,277 series is about
+     eleven minutes of upstream requests; dispatched with `sync`, that entire run happens inside
+     the Livewire request, the browser sits there until something upstream gives up, and the
+     reader sees a page that stopped responding rather than a page that told them anything. It
+     probably still finishes, which is worse, because it also looks broken. `phpunit.xml` here
+     forces `sync` so the suite needs no worker, which means the test suite cannot see this at
+     all unless a test says so out loud. **Any job whose cost is measured in minutes needs the
+     queue configuration asserted deliberately rather than inherited**, and the page that
+     dispatches it should check `config('queue.default')` and say so before the reader finds
+     out the expensive way.
+
+195. **A row written only at the end of a long run cannot be watched while it happens.** The
+     `import_runs` migration said in terms that its counters were "what a page polls while the
+     import is going", and no page did, so nothing polled them and the only route in was a
+     command printing to a terminal. Then a page was built, and it found the row was written
+     once at the end: for eleven minutes a polling page would have shown a run that had started
+     and nothing else. **A table described as progress needs a column that moves while the work
+     moves**, and it has to be a column separate from the final tallies: writing `applied` every
+     25 series would make a run that died at 60% claim it had imported 60% of the library, with
+     no way to tell that apart from one that finished.
