@@ -1,7 +1,17 @@
 # The FrankenPHP configuration a packaged Papyrus serves with.
 #
-# Templated at install time. `{{APP_ROOT}}` is the application root the launcher sets as its
-# working directory, and the one other path is the log file.
+# Templated at install time. `{{APP_ROOT}}` is the application root, `{{APP_PORT}}` and
+# `{{SUWAYOMI_PORT}}` are the two ports this install uses, and `{{LOGS}}` is where the access
+# log goes.
+#
+# The ports are tokens rather than values because a port written into this file and a port
+# held by the launcher are two sources of truth, and when they disagree the symptom is
+# baffling: the launcher polls a port nothing is listening on, the server is running and
+# serving perfectly, and the launcher reports that the web server never became ready. That is
+# not a shape a bug report can be written against.
+#
+# So the launcher resolves this file into the data directory at start, and the launcher is the
+# only thing that knows a port number.
 #
 # Kept in the repository with its tokens intact so the decisions below are reviewable rather
 # than buried in a build script.
@@ -39,7 +49,7 @@
 #
 # It also keeps QUIC out. Left alone, Caddy advertises h1, h2 and h3 on the port, and h3 is
 # always over TLS.
-http://127.0.0.1:8399 {
+http://127.0.0.1:{{APP_PORT}} {
 	# `root` without a `*`. The wildcard form is Caddy module syntax, and using it inside a
 	# block whose directive is nginx-style changed the matcher so that every request answered
 	# 400 with nothing logged. The documented Laravel form is a bare path.

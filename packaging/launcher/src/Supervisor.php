@@ -50,6 +50,15 @@ final class Supervisor
 
     private ?InstanceLock $lock = null;
 
+    /**
+     * The web server's configuration with this install's paths and ports filled in.
+     *
+     * Set by {@see resolveWebConfig()} during start and read by {@see startWebServer()}. Null
+     * before that, in which case the unsubstituted template is used and points at a root of
+     * `{{APP_ROOT}}`, which fails loudly rather than quietly serving nothing.
+     */
+    private ?string $resolvedConfig = null;
+
     public function __construct(
         private readonly string $root,
         private readonly string $dataDirectory,
@@ -320,7 +329,7 @@ final class Supervisor
         $process = new ManagedProcess(
             name: 'web',
             executable: $this->frankenphpExecutable ?? $this->path('runtime', 'bin', 'frankenphp.exe'),
-            arguments: ['run', '--config', $this->caddyfile()],
+            arguments: ['run', '--config', $this->resolvedConfig ?? $this->caddyfile()],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'web.log',
             environment: ['PHPRC' => $this->ini()],
@@ -524,24 +533,62 @@ final class Supervisor
             $say('created '.count($made).' directories for this install');
         }
 
+        $this->resolveWebConfig();
+
         /*
          * The .env is written here rather than in a separate configure step, because the web
          * server cannot answer `/ready` without an app key and the launcher has nothing to poll
          * until there is one.
          */
-        $env = $this->path('runtime', 'php', 'php.ini');
-        $envTarget = $this->dataDirectory.DIRECTORY_SEPARATOR.'.env';
-
-        if (is_file($env) && is_file($this->path('artisan'))) {
+        if (is_file($this->ini()) && is_file($this->path('artisan'))) {
             $this->runArtisan(
                 ['papyrus:configure'],
                 extra: [
-                    '--env' => $envTarget,
+                    '--env' => $this->dataDirectory.DIRECTORY_SEPARATOR.'.env',
                     '--data' => $this->dataDirectory,
                     '--suwayomi' => sprintf('http://127.0.0.1:%d', $this->suwayomiPort),
                 ],
+                logName: 'configure.log',
             );
         }
+    }
+
+    /**
+     * Write the web server's configuration with this install's paths and ports filled in.
+     *
+     * Done here rather than at install time so that the launcher is the only thing holding a
+     * port number. A config file with the port baked into it is a second source of truth, and
+     * when the two disagree the launcher polls a port nothing is listening on while the server
+     * serves perfectly, and reports that the web server never became ready.
+     *
+     * Written to the data directory rather than into the install, so an install folder can be
+     * read-only and so the resolved file is regenerated rather than being stale state.
+     */
+    private function resolveWebConfig(): void
+    {
+        $template = $this->caddyfile();
+
+        $target = $this->dataDirectory.DIRECTORY_SEPARATOR.'frankenphp'.DIRECTORY_SEPARATOR.'Caddyfile';
+
+        @mkdir(dirname($target), 0o777, true);
+
+        $resolved = str_replace(
+            ['{{APP_ROOT}}', '{{APP_PORT}}', '{{SUWAYOMI_PORT}}', '{{LOGS}}'],
+            [
+                // Forward slashes, because the template joins with them for Linux and macOS and
+                // a Windows path arriving with backslashes produces a mixed path that Caddy
+                // accepts at startup and then cannot find a document root under.
+                str_replace('\\', '/', $this->root),
+                (string) $this->appPort,
+                (string) $this->suwayomiPort,
+                str_replace('\\', '/', $this->logDirectory),
+            ],
+            (string) file_get_contents($template),
+        );
+
+        file_put_contents($target, $resolved);
+
+        $this->resolvedConfig = $target;
     }
 
     private function takeLock(): void
