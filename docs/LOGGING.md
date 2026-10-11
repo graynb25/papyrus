@@ -297,22 +297,50 @@ otherwise we are collecting logs from the wrong directory and shipping test arti
 breath. *Verified by:* the app's log appearing in the data directory, and a clean-room run with 0
 files in the install's `storage/`.
 
-**Step 2, layer 1.** The summary file, written by the launcher as it goes. *Verified by:* a
+**Step 1.** Both defects above, in `useStoragePath()` and the build's subtree rule. *Done.*
+
+**Step 2, layer 1.** The summary file, written by the launcher as it goes. *Done.* Verified by a
 startup and a clean stop producing the eight lines above, and a deliberate failure producing one
 clear line rather than a stack trace.
 
-**Step 3, layer 3.** `papyrus health`. *Verified by:* it answers correctly when a process is
-killed, and says which one.
+**Step 3, layer 3.** `papyrus health`. *Done.* Verified against a live four-process install reading
+`overall ok`, and by 10 of 11 mutations killed; the one survivor is inert, since removing the
+`$started` fast path in `isRunning()` leaves the fallback answering the same question correctly.
 
-**Step 4, layer 2.** The normalising collectors. *Verified by:* Suwayomi's logback lines and
-Caddy's JSON landing in the same five-field shape, and by the fact that a defect of the class that
-cost us 12 and 13 leaves a line in the file rather than nothing.
+**Step 4, layer 2.** The normalising collectors. *Done.* Nine sources, five parsers, one
+five-field shape. Verified over logs captured from a real clean-room run rather than samples: four
+defects were found only when real Suwayomi, Caddy and Laravel output met the parsers, including a
+layout that separates logger from message with a space rather than `--`, and a physical line where
+a JVM warning and a logback record are glued together. 17 mutations, 17 killed.
 
-**Step 5, the bundle.** `papyrus diagnostics`, producing the zip. *Verified by:* opening it and
-confirming it contains the library check, not the library.
+**Step 5, the bundle.** `papyrus diagnostics`, producing the directory and, with `--zip`, an
+archive. *Done.* Verified by opening the archive in two independent implementations, one of them
+.NET's, which is not ours and not the one our tests use. It contains no library, no database and no
+environment variable, and it says so in its own README.
 
 Each step is checkable before the next exists, which is the property that mattered during phase 0
 and is worth preserving.
+
+## What the sequence taught, which is worth more than the sequence
+
+Every real defect in these five steps was found by **looking at what was produced** and comparing
+it against the input, or by asking the machine a question whose answer was not assumed. None was
+found by a test failing.
+
+| what was claimed | what was true |
+| --- | --- |
+| the log directory is unwritable | `mkdir` succeeded, because the parent existed |
+| the log directory is unwritable | Windows created `C:\no-such-drive-for-tests\` from nothing |
+| rotation preserves `.1` | rotation overwrites `.1` with the current log |
+| the database is under `<data>/database/` | it is directly under `<data>/` |
+| both workers are dead | both were verifiably running |
+| a healthy install has logs to collect | `queue.log` and `scheduler.log` are empty, and empty is healthy |
+| a missing log is a quiet log | absence and silence are different facts, and only one of them is evidence |
+
+Each row is the same mistake in a different costume: a condition asserted rather than established.
+That is the argument for keeping the mutation checks *and* for reading the output of every layer
+before calling it done. Mutation checking proves the tests pin what was already suspected. Reading
+the output finds what was not, and there were more of the second kind.
 
 ## Two defects this design depends on being fixed first
 

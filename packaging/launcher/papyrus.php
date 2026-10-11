@@ -3,11 +3,13 @@
 /**
  * The packaged Papyrus launcher.
  *
- * Three commands, because that is all a phase 0 install needs:
+ * Five commands, because that is what a phase 0 install needs:
  *
- *   start    bring everything up, wait until it is genuinely usable, then hold
- *   stop     bring it all down, leaving nothing behind
- *   status   say what is running, without changing anything
+ *   start        bring everything up, wait until it is genuinely usable, then hold
+ *   stop         bring it all down, leaving nothing behind
+ *   status       say what is running, without changing anything
+ *   health       the short answer to "is it working", for a reader to paste into a report
+ *   diagnostics  gather everything into one bundle to attach to a bug report
  *
  * ## Why this is plain PHP and not a compiled launcher
  *
@@ -71,6 +73,9 @@ require __DIR__.'/src/ConsoleParser.php';
 require __DIR__.'/src/PhpErrorParser.php';
 require __DIR__.'/src/LauncherParser.php';
 require __DIR__.'/src/Collector.php';
+require __DIR__.'/src/ZipWriter.php';
+require __DIR__.'/src/EnvironmentReport.php';
+require __DIR__.'/src/Bundle.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 $data = getenv('PAPYRUS_DATA') ?: dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
@@ -171,8 +176,50 @@ try {
 
             exit(str_contains($health->render(), 'FAIL') ? 1 : 0);
 
+        case 'diagnostics':
+            /*
+             * The command that produces the one thing a reader is asked to attach.
+             *
+             * It prints the path rather than the contents, because the reader's next action is to
+             * attach the bundle, not to read it. What it does not do is judge: this exits zero
+             * whenever a bundle was written, even an install that is completely broken, because
+             * "did the command work" and "is the install healthy" are different questions and a
+             * tray icon needs to be able to tell them apart.
+             *
+             * --zip also writes a single archive, for a reader attaching to an issue where eight
+             * files is eight drags and any one of them left behind.
+             */
+            $bundle = new Bundle($supervisor, new Prober);
+            $directory = $bundle->write();
+
+            $say('');
+            $say('  Papyrus diagnostics');
+            $say('');
+            $say('  Bundle written to');
+            $say('    '.$directory);
+            $say('');
+            $say('  It contains');
+
+            foreach ($bundle->listing($directory) as $name) {
+                $say('    '.$name);
+            }
+
+            if (in_array('--zip', $argv, true)) {
+                $say('');
+                $say('  One file to attach');
+                $say('    '.$bundle->zip($directory));
+            }
+
+            $say('');
+            $say('  Please attach the whole bundle. Four files chosen at random is a worse');
+            $say('  report than the whole thing, because we cannot tell what is missing from');
+            $say('  what was never there.');
+            $say('');
+
+            exit(0);
+
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health]\n");
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics] [--zip]\n");
 
             exit(2);
     }

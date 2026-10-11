@@ -769,6 +769,18 @@ final class Supervisor
         return $this->logDirectory;
     }
 
+    /**
+     * Where this install lives, as opposed to where it keeps its data.
+     *
+     * The two are different directories in a packaged install and the same one in a checkout, and
+     * a diagnostics report that named only the data directory would send a reader looking in the
+     * wrong place for the reason they installed it.
+     */
+    public function environmentPath(): string
+    {
+        return $this->root;
+    }
+
     public function dataDirectory(): string
     {
         return $this->dataDirectory;

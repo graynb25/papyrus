@@ -145,6 +145,7 @@ const REQUIRED_AFTER_BUILD = [
     'composer.json',
     'package.json',
     'packaging/launcher/papyrus.php',
+    'version.txt',
 
     /*
      * The one dotfile that must ship, and the only reason this list is not purely a set of
@@ -229,6 +230,36 @@ if (! removeTree($into)) {
 }
 
 say('layout', 'cleared');
+
+// --- what this install is ----------------------------------------------------------------
+
+/*
+ * Written after the layout is cleared, because writing it before would be the second bug of exactly
+ * this shape this project has already shipped twice: the build reported success over a file that
+ * was never there, and over a file that had been deleted by a later step.
+ *
+ * A commit hash rather than a version number. A number has to be remembered and bumped, and the
+ * moment it drifts from what shipped, a bug report saying "1.2.3" is worse than no report at all,
+ * because it looks precise. A hash cannot drift, and when the reporter's install says one hash and
+ * the repository says another, that is the end of the guessing.
+ *
+ * Written as "unknown" rather than omitted when there is no git, so a bundle always has a version
+ * line and a reader is never left wondering whether the build simply forgot.
+ */
+$commit = trim((string) shell_exec('git -C '.escapeshellarg($repo).' rev-parse --short HEAD 2>&1'));
+
+if (! preg_match('/^[0-9a-f]{7,40}$/', $commit)) {
+    $commit = 'unknown, built outside a git checkout';
+}
+
+$stamp = (new DateTimeImmutable)->format('Y-m-d H:i:sP');
+
+file_put_contents(
+    $into.DIRECTORY_SEPARATOR.'version.txt',
+    "commit {$commit}".PHP_EOL."built {$stamp}".PHP_EOL,
+);
+
+say('version', $commit);
 
 // --- the PHP and web server runtime -------------------------------------------------
 

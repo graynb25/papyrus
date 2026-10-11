@@ -65,6 +65,20 @@ final class Collector
     }
 
     /**
+     * The process name and file for every log this layer reads.
+     *
+     * Exposed so the bundle does not keep its own copy of the list. Two lists would drift, and the
+     * bundle's job is to report on the processes the collector actually read, so it asks rather
+     * than remembering.
+     *
+     * @return array<string, string> process => file name
+     */
+    public function processes(): array
+    {
+        return $this->sources();
+    }
+
+    /**
      * The collected files that currently exist, for the bundle to include.
      *
      * @return array<int, string>
