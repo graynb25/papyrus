@@ -40,6 +40,7 @@ require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/Prober.php';
 require __DIR__.'/src/ManagedProcess.php';
+require __DIR__.'/src/SuwayomiConfiguration.php';
 
 /*
  * Before Supervisor, and not merely alongside it.

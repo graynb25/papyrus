@@ -348,6 +348,18 @@ final class Supervisor
 
         $say('starting Suwayomi, which takes the longest of the four');
 
+        /*
+         * The root directory and the port are both set before the JVM is started, and both have to
+         * be. Pointed at a root that does not exist, Suwayomi dies inside
+         * ApplicationRootDirKt.getApplicationRootDir before reading anything, which looks exactly
+         * like the property below being ignored.
+         *
+         * TACHIDESK_DIR used to be passed here. Suwayomi does not read it: its root comes from the
+         * system property in suwayomiConfiguration(), and with only the environment variable set a
+         * reader's library went to their Windows profile while this data directory sat empty.
+         */
+        (new SuwayomiConfiguration)->prepare($this->dataDirectory, $this->suwayomiPort);
+
         $process = new ManagedProcess(
             name: 'suwayomi',
             executable: $java,
@@ -356,10 +368,14 @@ final class Supervisor
              * PHP follows the ini, and the two disagreeing makes every Suwayomi timestamp in a
              * diagnostics bundle wrong by the reader's offset. See machineTimezone().
              */
-            arguments: ['-Duser.timezone='.$this->machineTimezone(), '-jar', $jar],
+            arguments: [
+                '-Duser.timezone='.$this->machineTimezone(),
+                '-D'.SuwayomiConfiguration::ROOT_PROPERTY.'='.(new SuwayomiConfiguration)->rootDirectory($this->dataDirectory),
+                '-jar',
+                $jar,
+            ],
             workingDirectory: $this->dataDirectory,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'suwayomi.log',
-            environment: ['TACHIDESK_DIR' => $this->dataDirectory],
         );
 
         $process->start();
