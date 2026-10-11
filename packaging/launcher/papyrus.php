@@ -38,6 +38,23 @@ require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/Prober.php';
 require __DIR__.'/src/ManagedProcess.php';
+
+/*
+ * Before Supervisor, and not merely alongside it.
+ *
+ * `Supervisor::prepareLayout` constructs an `InstallLayout` and catches a `LayoutRefused`, so
+ * loading Supervisor without these two is not a warning, it is a fatal at the first line of a
+ * start: "Class Papyrus\Launcher\InstallLayout not found". Every other class this file requires is
+ * only touched later in the run, which is why the ordering is invisible until the layout step.
+ *
+ * Nothing local catches it. Both the test suite and the clean-room probe require all seven classes
+ * explicitly, so both exercise a Supervisor that has already been handed its dependencies and
+ * cannot tell you this file forgot to. It was found by running `papyrus.php start` in a sandbox
+ * with nothing else loaded, which is the only arrangement a reader ever gets.
+ */
+require __DIR__.'/src/LayoutRefused.php';
+require __DIR__.'/src/InstallLayout.php';
+
 require __DIR__.'/src/Supervisor.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);

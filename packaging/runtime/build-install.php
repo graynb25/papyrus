@@ -114,6 +114,11 @@ const REQUIRED_AFTER_BUILD = [
     'runtime/bin/php.exe',
     'runtime/bin/frankenphp.exe',
     'runtime/ext/php_pdo_sqlite.dll',
+    'runtime/bin/php8ts.dll',
+    'runtime/bin/vcruntime140.dll',
+    'runtime/bin/vcruntime140_1.dll',
+    'runtime/bin/ucrtbase.dll',
+    'runtime/bin/msvcp140.dll',
     'runtime/php/php.ini',
     'runtime/frankenphp/Caddyfile',
     'runtime/cacert.pem',
@@ -248,6 +253,71 @@ foreach (scandir($extracted) ?: [] as $entry) {
 }
 
 say('runtime', $moved.' executables and extensions');
+
+/*
+ * The Visual C++ runtime, staged from the machine rather than from the archive.
+ *
+ * `php.exe` and `frankenphp.exe` are small shims that link against `vcruntime140.dll`,
+ * `vcruntime140_1.dll`, `ucrtbase.dll` and `msvcp140.dll`. The FrankenPHP archive does not ship
+ * them, so a build that copies only what the archive contains produces an install that works on
+ * the machine that built it and nowhere else. This is the defect the Windows Sandbox gate exists
+ * to find, and it found it: the bundled `php.exe` exited with `0xC0000135`, `STATUS_DLL_NOT_FOUND`,
+ * on a clean machine, while every previous check passed on a development machine where those DLLs
+ * are always present in System32.
+ *
+ * Taken from System32 rather than downloaded, because these are part of Windows and are already
+ * present on any machine that could build this. Downloading a redistributable instead would mean
+ * trusting a third party archive for a component that ships with the OS, and would add a network
+ * dependency to a build that otherwise has none.
+ *
+ * Copied into `runtime/bin` rather than relied upon in System32, because the whole point of a
+ * packaged install is that it does not depend on what the host machine happens to have
+ * installed. That is also why the sandbox is the gate: a launcher can only prove this by running
+ * somewhere that has nothing.
+ */
+$redistributables = ['vcruntime140.dll', 'vcruntime140_1.dll', 'ucrtbase.dll', 'msvcp140.dll'];
+
+/*
+ * Searched rather than assumed, because neither obvious directory is reliably right.
+ * `dirname(PHP_BINARY)` is the interpreter running the build, which under a version manager such
+ * as Herd or a phar is a bare directory holding one executable and none of the runtime. System32
+ * is where Windows actually loads them from and always has them, but a build running under a
+ * non standard PHP might not have them there either.
+ */
+$sources = array_filter([
+    dirname(PHP_BINARY),
+    getenv('SystemRoot').DIRECTORY_SEPARATOR.'System32',
+    'C:\Windows\System32',
+]);
+
+$staged = 0;
+
+foreach ($redistributables as $dll) {
+    $copied = false;
+
+    foreach ($sources as $source) {
+        $from = $source.DIRECTORY_SEPARATOR.$dll;
+
+        if (is_file($from) && copy($from, $bin.DIRECTORY_SEPARATOR.$dll)) {
+            $copied = true;
+
+            break;
+        }
+    }
+
+    if (! $copied) {
+        fail(
+            "could not stage {$dll}, and the install cannot run without it.\n\n"
+            .'  Looked in: '.implode(', ', $sources)."\n\n"
+            ."  These are part of Windows and are present on any machine that could build this.\n"
+            ."  Run the Visual C++ redistributable installer if they are genuinely missing.\n"
+        );
+    }
+
+    $staged++;
+}
+
+say('redist', $staged.' Visual C++ runtime files, staged beside the executables');
 
 removeTree($extracted);
 
@@ -532,6 +602,47 @@ if ($bootStatus !== 0 || str_contains($bootText, 'Unable to load dynamic library
 $bootLine = $bootText === '' ? 'artisan --version succeeded silently' : $bootText;
 
 say('boot', $bootLine);
+
+/*
+ * The one check a file listing cannot make, and the one the sandbox proved necessary.
+ *
+ * `php.exe --version` is run from a directory that is not the install, with the install on disk
+ * exactly as it will ship. Windows resolves a program's DLLs from the directory the executable is
+ * in, before it looks in System32, so a copy staged beside it is used and nothing else is
+ * consulted.
+ *
+ * This cannot be checked by listing files. `vcruntime140.dll` absent from the install is a
+ * perfectly complete looking layout, and it is the difference between an install that starts and
+ * one that exits with `0xC0000135` before printing anything. Which is exactly what happened on a
+ * clean machine, after every other check had passed on a development one.
+ */
+$smoke = [];
+$smokeStatus = 1;
+
+exec(
+    sprintf(
+        'cd /d %s && %s --version 2>&1',
+        escapeshellarg(sys_get_temp_dir()),
+        escapeshellarg($bootPhp),
+    ),
+    $smoke,
+    $smokeStatus,
+);
+
+$smokeText = trim(implode("\n", $smoke));
+
+if ($smokeStatus !== 0) {
+    fail(
+        "the staged php.exe cannot run on its own.\n\n"
+        ."  Exit code {$smokeStatus} from a directory outside the install, so nothing in System32\n"
+        ."  could satisfy its imports.\n"
+        .'  '.str_replace("\n", "\n  ", $smokeText)."\n\n"
+        ."  Exit code 0xC0000135 is STATUS_DLL_NOT_FOUND: a side by side DLL is missing. The Visual\n"
+        ."  C++ runtime has to be staged beside php.exe, not merely present on the build machine.\n"
+    );
+}
+
+say('standalone', 'php.exe runs outside the install directory, '.strtok($smokeText, "\n"));
 
 /*
  * As a file, through `php_ini_loaded_file`, rather than as a `-r` snippet.
