@@ -284,12 +284,27 @@ class ConfigureInstall extends Command
             $name = trim(explode('=', $trimmed, 2)[0]);
 
             if (array_key_exists($name, $values)) {
-                $written[] = $name.'='.$values[$name];
+                $written[] = $this->renderSetting($name, $values[$name]);
                 unset($values[$name]);
 
                 continue;
             }
 
+            /*
+             * Copied through verbatim, which is correct, and worth saying why.
+             *
+             * It looks like the branch a foreign setting should be quoted in, and it is not.
+             * `readEnv()` parses every line into `$values`, so a setting this command does not
+             * own still arrives here as a key of `$values` and takes the branch above. Anything
+             * reaching this one is a name `$values` no longer holds, and writing it back exactly
+             * as it was found is the only safe thing to do with a line whose value this command
+             * has not interpreted.
+             *
+             * The bug this replaces was in the branch above, not this one, and the comments
+             * there say so. Two fixes were written before that was established: quoting here
+             * changed no observable behaviour, and the tests could not kill a mutation of it,
+             * which is how a test that pins nothing gets left behind.
+             */
             $written[] = $line;
         }
 
@@ -302,6 +317,53 @@ class ConfigureInstall extends Command
             static fn (string $line): string => rtrim($line),
             $written,
         )).PHP_EOL);
+    }
+
+    /**
+     * Render `name=value`, quoting only the value and only when it has to be quoted.
+     *
+     * ## Why the comment is split off first
+     *
+     * Because quoting a value that has a comment on it turns that comment into part of the
+     * setting, and the application then reads `debug` where the author wrote
+     * `debug # very noisy`, or the other way round.
+     *
+     * ## Where a `#` opens a comment, measured rather than remembered
+     *
+     * Anywhere in the value, with no requirement of whitespace before it. Measured against the
+     * dotenv this ships with, because the guard here has to agree with the parser exactly and a
+     * guard that is stricter or looser corrupts a value without erroring:
+     *
+     *     VALUE=a#b                  parses to  a
+     *     VALUE=a #b                 parses to  a
+     *     VALUE=a# b                 parses to  a
+     *     VALUE=path\to\file # tail  parses to  path\to\file
+     *     VALUE=two words            refuses to parse
+     *
+     * An earlier version of this required whitespace before the `#`, which is wrong by that
+     * table: it would have kept `#b` inside the quotes and changed `a#b` into a two character
+     * value. The test that pins it is test_a_hash_inside_a_value_is_still_a_comment.
+     */
+    private function renderSetting(string $name, string $value): string
+    {
+        $comment = '';
+
+        if (preg_match('~^(.*?)#(.*)$~', trim($value), $matches) === 1) {
+            $value = rtrim($matches[1]);
+
+            /*
+             * The comment is kept as its author wrote it, including the space after the `#`.
+             *
+             * `trim()` on that part looks tidier and quietly rewrites the line: `# and why`
+             * becomes `#and why`. This command is not the author of these lines, and a diff
+             * against a developer's own `.env` should show what changed, not what was tidied.
+             * Only trailing whitespace goes, because `trim($value)` above has already removed
+             * the leading whitespace of the whole value.
+             */
+            $comment = ' #'.rtrim($matches[2]);
+        }
+
+        return $name.'='.$this->quoteIfNeeded($value).$comment;
     }
 
     /**

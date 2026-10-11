@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Dotenv\Parser\Parser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Testing\PendingCommand;
@@ -183,6 +184,80 @@ class ConfigureInstallTest extends TestCase
         );
     }
 
+    /**
+     * A data directory whose path contains a space, which is not an edge case.
+     *
+     * `C:\Program Files\Papyrus` is where a Windows install goes by default, and this project's
+     * own working directory is `C:\Users\<you>\Php Projects`. A Windows path with a space is the
+     * ordinary case, not the unusual one.
+     *
+     * This test exists because every other test here passed while the install was broken on those
+     * paths. The scratch directory is under the system temp dir, whose path has no space, so the
+     * suite, and the sandbox gate with it, could never have found this. The sandbox installs at
+     * `C:\papyrus` for exactly the same reason.
+     *
+     * The assertion is that dotenv can parse what was written, rather than that a quote is
+     * present, so that a future change which quotes in a way dotenv dislikes still fails here.
+     */
+    public function test_a_data_directory_containing_a_space_is_written_parseable(): void
+    {
+        $spaced = $this->scratch.DIRECTORY_SEPARATOR.'papyrus data';
+
+        $this->artisan('papyrus:configure', [
+            '--env-file' => $this->envFile,
+            '--data' => $spaced,
+        ])->assertSuccessful();
+
+        $line = null;
+
+        foreach (File::lines($this->envFile) as $candidate) {
+            if (str_starts_with(trim($candidate), 'DB_DATABASE=')) {
+                $line = trim($candidate);
+            }
+        }
+
+        $this->assertNotNull($line, 'the command must write a DB_DATABASE line');
+
+        $database = $this->envValues()['DB_DATABASE'];
+
+        $this->assertStringContainsString(
+            'papyrus data',
+            $database,
+            'the spaced directory should be the one recorded',
+        );
+
+        // Parsed by dotenv itself, which is what refused it: "Encountered unexpected whitespace".
+        /*
+ * Parsed by dotenv's own parser, which is what raised "Encountered unexpected whitespace"
+ * on a path with a space in it. Not by hand: a regex that a quoted path satisfies and an
+ * unquoted one does not would be a restatement of the rule rather than a check of the
+ * library the install actually depends on.
+ *
+ * A thrown InvalidFileException is the failure being asserted against, so the test fails with
+ * dotenv's own message rather than one written here.
+ */
+        $parsed = [];
+
+        foreach ((new Parser)->parse((string) file_get_contents($this->envFile)) as $entry) {
+            // getValue() is a PhpOption, not a Value, so the unwrap is not optional.
+            $parsed[$entry->getName()] = $entry->getValue()->get()->getChars();
+        }
+
+        $this->assertArrayHasKey(
+            'DB_DATABASE',
+            $parsed,
+            'dotenv must be able to parse what the launcher wrote, otherwise the app refuses to '
+                .'boot with an error that names a parser rather than a path',
+        );
+
+        $this->assertSame(
+            trim($database, "'\""),
+            $parsed['DB_DATABASE'],
+            'and the value dotenv reads back must be the path itself, with the quotes removed by the '
+                .'parser rather than left inside the value',
+        );
+    }
+
     public function test_the_data_directory_is_created(): void
     {
         $data = $this->scratch.'/created-on-purpose';
@@ -203,8 +278,154 @@ class ConfigureInstallTest extends TestCase
     }
 
     /**
+     * A setting this command does not own, whose value contains a space, must survive readable.
+     *
+     * This is the case the byte comparison below used to hide. `CUSTOM_SETTING=keep me` is not
+     * one of this command's keys, so it is written back through the branch that carries lines it
+     * does not own, and that branch was copying the value out verbatim.
+     *
+     * The result is a file dotenv refuses to load, with "Encountered unexpected whitespace at
+     * [keep me]", which kills the whole application rather than the one setting. So the
+     * assertion is that the file parses, and that the value comes back as the author wrote it.
+     */
+    public function test_a_foreign_setting_with_a_space_in_its_value_survives_readable(): void
+    {
+        File::put(
+            $this->envFile,
+            "# a comment that explains things\nAPP_KEY=\nCUSTOM_SETTING=keep me\n# another comment\n",
+        );
+
+        $this->configure()->assertSuccessful();
+
+        $parsed = [];
+
+        foreach ((new Parser)->parse(File::get($this->envFile)) as $entry) {
+            $parsed[$entry->getName()] = $entry->getValue()->get()->getChars();
+        }
+
+        $this->assertSame(
+            'keep me',
+            $parsed['CUSTOM_SETTING'] ?? null,
+            'a value this command does not own must still come back as the author wrote it, '
+                .'quoted if it has to be quoted for the file to load',
+        );
+    }
+
+    /**
+     * An inline comment is not part of the value, and quoting must not swallow it.
+     *
+     * `#` opens a comment only outside quotes. So writing `LOG_LEVEL='debug # very noisy'` turns
+     * the comment into part of the setting, and the application silently reads a level that
+     * nobody set. This is the failure a naive fix for the test above introduces, so it is pinned
+     * here rather than left to be discovered.
+     */
+    public function test_an_inline_comment_on_a_foreign_setting_stays_a_comment(): void
+    {
+        File::put(
+            $this->envFile,
+            "# a comment that explains things\nAPP_KEY=\nLOG_LEVEL=debug # very noisy\n# another comment\n",
+        );
+
+        $this->configure()->assertSuccessful();
+
+        $parsed = [];
+
+        foreach ((new Parser)->parse(File::get($this->envFile)) as $entry) {
+            $parsed[$entry->getName()] = $entry->getValue()->get()->getChars();
+        }
+
+        $this->assertSame(
+            'debug',
+            $parsed['LOG_LEVEL'] ?? null,
+            'the comment must stay outside the quotes, or the setting becomes the comment',
+        );
+    }
+
+    /**
+     * A `#` inside a value opens a comment even with no space before it.
+     *
+     * Measured on the dotenv this ships with, because the comment handling here has to agree with
+     * the parser exactly: `VALUE=a#b` parses to `a`, not to `a#b`.
+     *
+     * This matters because the alternative is a value that changed without error. A guard that
+     * required whitespace before the `#` would look reasonable, would pass every test written
+     * about trailing comments, and would quietly turn a path or an ID containing `#` into
+     * something shorter.
+     */
+    public function test_a_hash_inside_a_value_is_still_a_comment(): void
+    {
+        File::put($this->envFile, "# a comment\nAPP_KEY=\nSITE_TAG=reader#beta\n");
+
+        $this->configure()->assertSuccessful();
+
+        $parsed = [];
+
+        foreach ((new Parser)->parse(File::get($this->envFile)) as $entry) {
+            $parsed[$entry->getName()] = $entry->getValue()->get()->getChars();
+        }
+
+        $this->assertSame(
+            'reader',
+            $parsed['SITE_TAG'] ?? null,
+            'dotenv opens a comment at any #, so this must be split here too or the value '
+                .'comes back as something the author never wrote',
+        );
+    }
+
+    /**
+     * A comment written by the author must still be in the file afterwards.
+     *
+     * Separate from the value assertions on purpose. A fix that quotes the comment into the
+     * value, or drops it while splitting, produces a file that parses and a setting that means
+     * something else. Only reading the text back catches both.
+     */
+    public function test_a_foreign_settings_comment_is_preserved_in_the_file(): void
+    {
+        File::put(
+            $this->envFile,
+            "# a comment that explains things\nAPP_KEY=\nCUSTOM_SETTING=keep me # and why\n# another comment\n",
+        );
+
+        $this->configure()->assertSuccessful();
+
+        $this->assertStringContainsString(
+            '# and why',
+            File::get($this->envFile),
+            'the comment an author wrote must survive this command, since it is documentation '
+                .'and this command is not its author',
+        );
+    }
+
+    /**
+     * A line that already parses is returned exactly as it was found.
+     *
+     * This command owns a handful of settings and passes the rest through. Rewriting a line that
+     * needed nothing makes a diff between a developer's `.env` and a packaged one unreadable for
+     * no benefit, which is the cost this guards against.
+     */
+    public function test_a_readable_foreign_setting_is_not_reformatted(): void
+    {
+        File::put(
+            $this->envFile,
+            "# a comment that explains things\nAPP_KEY=\nSIMPLE=value\n# another comment\n",
+        );
+
+        $this->configure()->assertSuccessful();
+
+        $this->assertStringContainsString('SIMPLE=value', File::get($this->envFile));
+    }
+
+    /**
      * Comments in `.env` are the documentation, and a rewrite that drops them is a regression a
      * reader only notices months later.
+     *
+     * The unrelated line here has a space in its value, so it is now written quoted. That is the
+     * point of the assertion rather than a detail of it: `CUSTOM_SETTING=keep me` left unquoted
+     * is the same parse error that stopped a real install from booting, and a test that insisted
+     * the line came through byte for byte would have been insisting the file stay broken.
+     *
+     * What matters is that the setting survives with the value a reader would expect, which is
+     * checked through dotenv rather than by matching text.
      */
     public function test_comments_and_unrelated_lines_survive(): void
     {
@@ -219,7 +440,11 @@ class ConfigureInstallTest extends TestCase
 
         $this->assertStringContainsString('# a comment that explains things', $text);
         $this->assertStringContainsString('# another comment', $text);
-        $this->assertStringContainsString('CUSTOM_SETTING=keep me', $text);
+
+        // The value on that CUSTOM_SETTING line is checked for readability in
+        // test_a_foreign_setting_with_a_space_in_its_value_survives_readable, which is the same
+        // line for the same reason. Asserting it twice here would only make one failure to fix.
+        $this->assertStringContainsString('CUSTOM_SETTING=', $text);
     }
 
     /**
