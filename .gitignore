@@ -68,6 +68,13 @@ yarn-error.log
 # in app/ reads from it.
 /suwayomi/
 /runtime/
+# Scratch directories a probe or an experiment leaves in the repository root.
+#
+# Added after one of my own probes left a generated .env with a real APP_KEY sitting untracked
+# here. It was never committed, and nothing in the project creates it, so the rule exists purely
+# so that the next scratch directory is not one `git add .` away from a key and a database path
+# going into the repository.
+/.tools/
 # The assembled install that packaging/runtime/build-install.php produces. Roughly 400MB, of
 # which the jar and the JRE are the great majority, and all of it derivable from one command.
 #
