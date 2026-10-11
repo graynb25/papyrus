@@ -46,7 +46,9 @@ declare(strict_types=1);
 
 namespace Papyrus\Runtime;
 
+use DateTimeImmutable;
 use Papyrus\Launcher\Supervisor;
+use Throwable;
 
 /**
  * The application's own files, copied by allowlist rather than denylist.
@@ -231,6 +233,19 @@ if (! removeTree($into)) {
 
 say('layout', 'cleared');
 
+/*
+ * `removeTree()` above deletes the install directory rather than emptying it, so it does not exist
+ * here yet. The first version of this wrote version.txt one line lower and got
+ * "file_put_contents: No such file or directory", then reported the commit as recorded anyway.
+ *
+ * That is the third time this build has reported success over a file that was not there, and the
+ * first two are written up in docs/LOGGING.md. So the write is checked, and the directory is
+ * created first, rather than either being assumed.
+ */
+if (! is_dir($into) && ! mkdir($into, 0o777, true) && ! is_dir($into)) {
+    fail("could not create {$into}");
+}
+
 // --- what this install is ----------------------------------------------------------------
 
 /*
@@ -254,10 +269,12 @@ if (! preg_match('/^[0-9a-f]{7,40}$/', $commit)) {
 
 $stamp = (new DateTimeImmutable)->format('Y-m-d H:i:sP');
 
-file_put_contents(
+if (file_put_contents(
     $into.DIRECTORY_SEPARATOR.'version.txt',
     "commit {$commit}".PHP_EOL."built {$stamp}".PHP_EOL,
-);
+) === false) {
+    fail('could not write '.$into.DIRECTORY_SEPARATOR.'version.txt');
+}
 
 say('version', $commit);
 

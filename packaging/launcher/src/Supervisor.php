@@ -351,7 +351,12 @@ final class Supervisor
         $process = new ManagedProcess(
             name: 'suwayomi',
             executable: $java,
-            arguments: ['-jar', $jar],
+            /*
+             * `-Duser.timezone` is here because the JVM would otherwise follow the machine while
+             * PHP follows the ini, and the two disagreeing makes every Suwayomi timestamp in a
+             * diagnostics bundle wrong by the reader's offset. See machineTimezone().
+             */
+            arguments: ['-Duser.timezone='.$this->machineTimezone(), '-jar', $jar],
             workingDirectory: $this->dataDirectory,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'suwayomi.log',
             environment: ['TACHIDESK_DIR' => $this->dataDirectory],
@@ -1033,13 +1038,14 @@ final class Supervisor
         @mkdir(dirname($target), 0o777, true);
 
         $resolved = str_replace(
-            ['{{RUNTIME}}', '{{LOGS}}', '{{TEMP}}'],
+            ['{{RUNTIME}}', '{{LOGS}}', '{{TEMP}}', '{{TIMEZONE}}'],
             [
                 // Forward slashes, matching the Caddyfile. An ini path is read by the C runtime
                 // rather than by PHP's own path handling, so a mixed path is at best a warning.
                 str_replace('\\', '/', $this->path('runtime')),
                 str_replace('\\', '/', $this->logDirectory),
                 str_replace('\\', '/', $this->dataDirectory.DIRECTORY_SEPARATOR.'tmp'),
+                $this->machineTimezone(),
             ],
             (string) file_get_contents($template),
         );
@@ -1064,6 +1070,37 @@ final class Supervisor
      * that mentions the token syntax by name. Checking the whole file would refuse to start on
      * a perfectly correct configuration.
      */
+    /**
+     * The one timezone all four processes use, which is the launcher's own.
+     *
+     * ## Why the JVM follows the launcher rather than the other way round
+     *
+     * Because they disagreed. The JVM was started with no timezone flag, so it followed the
+     * machine, while the shipped ini pinned PHP to UTC. On any machine not on UTC that put five
+     * hours between Papyrus's own log and Suwayomi's for the same few seconds, and every Suwayomi
+     * timestamp in a diagnostics bundle was shifted by the reader's offset while looking precise.
+     *
+     * ## Why the launcher, and not the machine
+     *
+     * Two reasons, and the first is decisive. Windows will not answer in a form PHP can use: both
+     * `tzutil /g` and the `TimeZoneInformation` registry key answer with a display name, "SA
+     * Pacific Standard Time", which `timezone_open` rejects and which would have made the resolved
+     * ini refuse to start. Asking the machine was tried and does not work.
+     *
+     * The second is ordering. The launcher resolves the ini that the *workers* load, so its own
+     * zone is the only value available before that ini exists. Making it the single source means
+     * the launcher, both workers and the JVM all report the same clock, which is the property that
+     * actually matters: a reader comparing Papyrus's log with Suwayomi's can trust the order.
+     *
+     * On a packaged install, which loads no ini, that is UTC. The trade is that a reader not on
+     * UTC sees Suwayomi logging in UTC rather than in local time. It is stated rather than hidden:
+     * every collected timestamp carries its offset, and `environment.txt` reports the zone.
+     */
+    private function machineTimezone(): string
+    {
+        return date_default_timezone_get() ?: 'UTC';
+    }
+
     private function refuseUnresolvedTokens(string $resolved, string $target): void
     {
         foreach (preg_split('#\R#', $resolved) ?: [] as $line) {
