@@ -9,5 +9,13 @@ parameters:
         - config/
         - database/
         - routes/
+        # The launcher and both build scripts ship. They were absent from this list until a real
+        # install was built and run, which is how two namespace fatals and an unchecked
+        # file_put_contents survived in here: every "PHPStan clean" in this repository's history
+        # covered the five paths above and nothing else, and nobody read that as a gap because
+        # the command exited zero.
+        #
+        # A check that does not look at the code that ships is not a clean result, it is silence.
+        - packaging/
 
     level: 7

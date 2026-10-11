@@ -148,15 +148,15 @@ final class SummaryLog
 
         // Generations are shifted rather than deleted one at a time, so there is never a window
         // where neither file exists and a start loses its own beginning.
-        for ($generation = self::KEEP_GENERATIONS - 1; $generation >= 1; $generation--) {
-            $from = $path.'.'.$generation;
-            $to = $path.'.'.($generation + 1);
-
-            if (is_file($from)) {
-                @rename($from, $to);
-            }
-        }
-
+        //
+        // The shift loop that used to be here was dead code. `KEEP_GENERATIONS` is 1, so it began
+        // at 0 and its `>= 1` test was false before it ran. It was written for a value this
+        // install does not use, which is the opposite of how anything else in this project is
+        // written: code for a hypothetical future sits here looking like it works.
+        //
+        // Keeping more than one generation means changing this method and its tests together, not
+        // a constant, because the two are no longer independent. A generation beyond the kept one
+        // is discarded below rather than left to survive every future rotation.
         @rename($path, $path.'.1');
 
         $this->discardExcessGenerations($path);

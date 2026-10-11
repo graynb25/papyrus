@@ -89,7 +89,7 @@ final class LogbackParser implements LineParser
      */
     private const JNA_MARKER = 'java.lang.System';
 
-    private ?string $date;
+    private string $date;
 
     /** The most recent time of day seen, used to notice the clock passing midnight. */
     private ?int $lastTimeOfDay = null;

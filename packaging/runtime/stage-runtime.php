@@ -37,7 +37,7 @@
 
 declare(strict_types=1);
 
-namespace Papyrus\Runtime;
+namespace Papyrus\Runtime\Stage;
 
 // Pinned deliberately. A floating "latest 25" makes two builds of the same commit differ, and
 // an update to the patch would silently change what ships.
@@ -108,10 +108,25 @@ if (is_dir($destination) && is_file($destination.DIRECTORY_SEPARATOR.'bin'.DIREC
 }
 
 $archive = downloadArchive($destination);
-$digest = hash_file('sha256', $archive);
 
-report('downloaded', formatBytes(filesize($archive)));
-report('sha256', (string) $digest);
+/*
+ * Both of these return false on failure, and a false here used to become a TypeError further down
+ * rather than the message this script means to give: `hash_equals` demands a string, so an archive
+ * that arrived unreadable crashed the stager instead of being refused.
+ */
+$digest = hash_file('sha256', $archive);
+$size = filesize($archive);
+
+if ($digest === false || $size === false) {
+    @unlink($archive);
+
+    fwrite(STDERR, "  the downloaded archive could not be read, refusing to stage it\n");
+
+    exit(1);
+}
+
+report('downloaded', formatBytes($size));
+report('sha256', $digest);
 
 if (! hash_equals(JRE_SHA256, $digest)) {
     // Deleted rather than kept. A mismatched archive left on disk is something the next run,
@@ -520,7 +535,8 @@ function phpRuntimeDirectory(): string
 }
 
 /**
- * @return array{force: bool, into: ?string, help: bool}
+ * @param  list<string>  $arguments
+ * @return array{force: bool, into: string|null, help: bool}
  */
 function parseArguments(array $arguments): array
 {
@@ -533,6 +549,12 @@ function parseArguments(array $arguments): array
             $parsed['help'] = true;
         } elseif (str_starts_with($argument, '--into=')) {
             $parsed['into'] = substr($argument, strlen('--into='));
+
+            if ($parsed['into'] === '') {
+                fwrite(STDERR, "  --into needs a path\n");
+
+                exit(1);
+            }
         } else {
             fwrite(STDERR, "  unrecognised argument {$argument}\n");
 

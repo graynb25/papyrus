@@ -44,7 +44,7 @@
 
 declare(strict_types=1);
 
-namespace Papyrus\Runtime;
+namespace Papyrus\Runtime\Build;
 
 use DateTimeImmutable;
 use Papyrus\Launcher\Supervisor;
@@ -204,13 +204,23 @@ $into = $options['into'] ?? $repo.DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATO
 
 say('install', $into);
 
-foreach (['frankenphp' => 'FrankenPHP archive', 'jar' => 'Suwayomi jar'] as $required => $label) {
-    if (! isset($options[$required])) {
-        fail("no {$label} given, pass --{$required}=<path>");
+/*
+ * Spelled out rather than looped over.
+ *
+ * The loop indexed $options by a variable, which is fine to read and hopeless to analyse: with the
+ * key unknown, every use of an option became string|bool and twenty errors followed from three
+ * lines. Two checks cost less than the twenty.
+ */
+foreach ([
+    ['--frankenphp', 'FrankenPHP archive', $options['frankenphp']],
+    ['--jar', 'Suwayomi jar', $options['jar']],
+] as [$flag, $label, $given]) {
+    if ($given === null) {
+        fail("no {$label} given, pass {$flag}=<path>");
     }
 
-    if (! is_file($options[$required])) {
-        fail("the {$label} is not at {$options[$required]}");
+    if (! is_file($given)) {
+        fail("the {$label} is not at {$given}");
     }
 }
 
@@ -422,7 +432,9 @@ if (! mkdir($suwayomi, 0o777, true) && ! is_dir($suwayomi)) {
 
 copy($options['jar'], $suwayomi.DIRECTORY_SEPARATOR.basename($options['jar']));
 
-say('jar', basename($options['jar']).' at '.formatBytes(filesize($options['jar'])));
+$jarSize = filesize($options['jar']);
+
+say('jar', basename($options['jar']).' at '.formatBytes($jarSize === false ? 0 : $jarSize));
 
 copyTree($jre, $suwayomi.DIRECTORY_SEPARATOR.'runtime');
 
@@ -641,7 +653,23 @@ if (! is_file($resolvedIni)) {
 
 $unresolved = [];
 
-foreach (preg_split('#\R#', (string) file_get_contents($resolvedIni)) ?: [] as $line) {
+/*
+ * Read once, and refuse rather than carry on.
+ *
+ * This used to be `file_get_contents($resolvedIni)` cast to string inside the loop head, which
+ * turns a missing file into an empty string. An empty ini has no tokens, so the check below it
+ * reported "no tokens left, resolved by the launcher itself" about a file that did not exist, and
+ * the only thing that caught it was a later is_file() guard a hundred lines downstream.
+ *
+ * A failure to read the file this script just wrote is not something to carry past quietly.
+ */
+$resolvedIniText = file_get_contents($resolvedIni);
+
+if ($resolvedIniText === false) {
+    fail("could not read the resolved ini at {$resolvedIni}");
+}
+
+foreach (preg_split('#\R#', $resolvedIniText) ?: [] as $line) {
     if (! str_starts_with(ltrim($line), ';') && preg_match('#\{\{[A-Z_]+\}\}#', $line) === 1) {
         $unresolved[] = trim($line);
     }
@@ -652,12 +680,6 @@ if ($unresolved !== []) {
 }
 
 say('resolved ini', 'no tokens left, resolved by the launcher itself');
-
-// Now that the ini is real, boot the application with it. This is the check a file listing cannot
-// make: every file this install needs is present, and it still cannot serve a request.
-if (! is_file($resolvedIni)) {
-    fail("the resolved ini vanished before the boot check, expected it at {$resolvedIni}");
-}
 
 $bootOutput = [];
 $bootStatus = 1;
@@ -746,10 +768,6 @@ say('standalone', 'php.exe runs outside the install directory, '.strtok($smokeTe
  * which file it actually loaded rather than which file was requested. A check that reports on a
  * path it never read is worse than no check, because it produces a specific and wrong answer.
  */
-if (! is_file($resolvedIni)) {
-    fail("the resolved ini vanished before it could be checked, expected it at {$resolvedIni}");
-}
-
 $driverProbe = $into.DIRECTORY_SEPARATOR.'.driver-probe.php';
 
 file_put_contents($driverProbe, <<<'PHP'
@@ -813,7 +831,7 @@ if (! isset($report['ini'], $report['drivers'])) {
     );
 }
 
-$actuallyLoaded = $report['ini'] ?? '';
+$actuallyLoaded = $report['ini'];
 
 if ($actuallyLoaded === '') {
     fail(
@@ -828,12 +846,12 @@ if (! str_contains(strtolower(basename(str_replace('\\', '/', $actuallyLoaded)))
     fail("PHP reported loading '{$actuallyLoaded}', which is not the ini this build resolved");
 }
 
-if (! in_array('sqlite', explode(',', $report['drivers'] ?? ''), true)) {
+if (! in_array('sqlite', explode(',', $report['drivers']), true)) {
     fail(
         "the launcher's resolved ini loads no SQLite driver.\n\n"
         ."  ini      {$actuallyLoaded}\n"
         .'  ext dir  '.($report['dir'] ?? 'unknown')."\n"
-        .'  drivers  '.($report['drivers'] === '' ? 'none' : ($report['drivers'] ?? 'none'))."\n"
+        .'  drivers  '.($report['drivers'] === '' ? 'none' : $report['drivers'])."\n"
     );
 }
 
@@ -1071,6 +1089,8 @@ function copyTree(string $source, string $target, bool $structureOnly = false): 
  *
  * Walked rather than globbed so the result is bounded and ordered. The build holds well over
  * twelve thousand files and the leak check runs against all of them.
+ *
+ * @return list<string>
  */
 function leakedFiles(string $root, string $prefix = ''): array
 {
@@ -1137,21 +1157,53 @@ function removeTree(string $path): bool
 }
 
 /**
- * @return array{frankenphp?: string, jar?: string, jre?: string, into?: string, help: bool}
+ * The flags this script accepts, as given.
+ *
+ * ## Why the flags are named rather than collected by whatever key was typed
+ *
+ * Because `--frobnicate=x` used to be accepted silently: the value landed in the options array,
+ * was never read, and the build carried on. Worse for anything reading this code, a dynamically
+ * keyed array gives a static analyser no way to know which keys exist, so every use of an option
+ * became `string|bool` and twenty errors followed from one assignment.
+ *
+ * Naming them means an unknown flag is refused, and the return type is one the analyser can check.
+ *
+ * @param  list<string>  $arguments
+ * @return array{help: bool, force: bool, into: string|null, jre: string|null, cacert: string|null, frankenphp: string|null, jar: string|null}
  */
 function parseArguments(array $arguments): array
 {
-    $parsed = ['help' => false];
+    /** Every flag this script understands. Anything else is a typo and is refused. */
+    $known = ['into', 'jre', 'cacert', 'frankenphp', 'jar', 'force'];
+
+    $help = false;
+    $flags = [];
 
     foreach (array_slice($arguments, 1) as $argument) {
         if ($argument === '--help' || $argument === '-h') {
-            $parsed['help'] = true;
+            $help = true;
 
             continue;
         }
 
-        if (preg_match('#^--([a-z]+)=(.+)$#', $argument, $matches) === 1) {
-            $parsed[$matches[1]] = $matches[2];
+        if (preg_match('#^--([a-z]+)(?:=(.+))?$#', $argument, $matches) === 1) {
+            $name = $matches[1];
+
+            if (! in_array($name, $known, true)) {
+                fail("unrecognised flag --{$name}. This build accepts: --".implode(', --', $known));
+            }
+
+            if ($name === 'force') {
+                $flags['force'] = true;
+
+                continue;
+            }
+
+            if (! isset($matches[2])) {
+                fail("--{$name} needs a value, as --{$name}=<path>");
+            }
+
+            $flags[$name] = $matches[2];
 
             continue;
         }
@@ -1159,5 +1211,13 @@ function parseArguments(array $arguments): array
         fail("unrecognised argument {$argument}");
     }
 
-    return $parsed;
+    return [
+        'help' => $help,
+        'force' => isset($flags['force']),
+        'into' => $flags['into'] ?? null,
+        'jre' => $flags['jre'] ?? null,
+        'cacert' => $flags['cacert'] ?? null,
+        'frankenphp' => $flags['frankenphp'] ?? null,
+        'jar' => $flags['jar'] ?? null,
+    ];
 }

@@ -109,6 +109,16 @@ final class CaddyJsonParser implements LineParser
      * Caddy writes a Unix timestamp as a float, so the seconds are exact and there is no date to
      * guess. That is the only format in this layer that is unambiguous, and it is worth noting,
      * because the others all had to be given a date from somewhere.
+     *
+     * ## Why the result is checked
+     *
+     * `createFromFormat` returns false when it cannot parse, and this layer's rule is that a line
+     * is never lost. A float that is numeric but out of range, `1.0E+25`, is enough to reach that
+     * and calling `setTimezone()` on false is a fatal, which would take down the whole collection
+     * for a single malformed line in a log we do not control.
+     *
+     * Null is returned instead, which is the same thing every other format that has no usable
+     * timestamp produces, and the collector fills it from the log file rather than inventing one.
      */
     private function timestamp(mixed $ts): ?string
     {
@@ -116,11 +126,17 @@ final class CaddyJsonParser implements LineParser
             return null;
         }
 
-        return DateTimeImmutable::createFromFormat(
+        $parsed = DateTimeImmutable::createFromFormat(
             'U.u',
             (string) $ts,
             new DateTimeZone('UTC'),
-        )->setTimezone(new DateTimeZone(date_default_timezone_get()))
+        );
+
+        if ($parsed === false) {
+            return null;
+        }
+
+        return $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()))
             ->format('Y-m-d\TH:i:s.vP');
     }
 }

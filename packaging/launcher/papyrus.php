@@ -81,7 +81,7 @@ $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 $data = getenv('PAPYRUS_DATA') ?: dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 $logs = $data.DIRECTORY_SEPARATOR.'logs';
 
-/** @var callable(string): void $say */
+/** @var \Closure(string): void $say */
 $say = static function (string $line): void {
     fwrite(STDOUT, $line.PHP_EOL);
 };

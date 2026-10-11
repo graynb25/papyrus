@@ -517,6 +517,9 @@ final class Supervisor
      * `PAPYRUS_ENV` literal repeated at each call site, which is how two of these four were
      * missed in the first place.
      */
+    /**
+     * @return array<string, string>
+     */
     private function applicationEnvironment(): array
     {
         return ['PAPYRUS_ENV' => $this->environmentFile()];
@@ -624,7 +627,7 @@ final class Supervisor
         }
 
         fwrite(STDERR, sprintf(
-            PHP_EOL.'  the application is answering and reporting that it is not ready (%s).' % PHP_EOL
+            PHP_EOL.'  the application is answering and reporting that it is not ready (%s).'.PHP_EOL
             .'  checks: %s'.PHP_EOL
             .'  A failed "key" means the app is not reading the .env this launcher wrote. It is at %s'.PHP_EOL
             .'  and is passed in as PAPYRUS_ENV.'.PHP_EOL.PHP_EOL,
@@ -645,6 +648,10 @@ final class Supervisor
      * root and PHP looks for an ini beside the executable, not beside the script. A packaged
      * runtime that keeps its ini in `runtime/php/` therefore gets none of its extensions
      * unless it is told, and a Laravel without pdo_sqlite cannot boot.
+     */
+    /**
+     * @param  list<string>  $arguments
+     * @param  list<string>  $extra
      */
     private function runArtisan(array $arguments, array $extra = [], string $logName = 'migrate.log'): int
     {
@@ -678,8 +685,7 @@ final class Supervisor
          * whose `DB_DATABASE` points somewhere else entirely, and `/ready` reports
          * `database: false` against an install that looks correctly populated.
          */
-        $inherited = getenv();
-        $environment = is_array($inherited) ? $inherited : [];
+        $environment = getenv() ?: [];
 
         foreach ($this->applicationEnvironment() as $name => $value) {
             $environment[$name] = $value;

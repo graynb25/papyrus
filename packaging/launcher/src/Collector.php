@@ -91,9 +91,12 @@ final class Collector
             return [];
         }
 
-        $files = glob($directory.DIRECTORY_SEPARATOR.'*.txt');
+        $files = glob($directory.DIRECTORY_SEPARATOR.'*.txt') ?: [];
 
-        return $files === false ? [] : array_values(array_map('realpath', $files));
+        // realpath answers false for a file that vanished between the glob and now, which is
+        // possible while a collection is written. Those are dropped rather than handed on as
+        // false, because a caller asking which files to open cannot act on a false.
+        return array_values(array_filter(array_map('realpath', $files)));
     }
 
     /**
@@ -121,7 +124,7 @@ final class Collector
     }
 
     /**
-     * @return array<int, array{level: string, source: string, message: string, timestamp: string}>
+     * Normalise one process log and write it, returning how many records it holds.
      */
     private function collectOne(string $process, string $file): int
     {
@@ -135,7 +138,7 @@ final class Collector
     }
 
     /**
-     * @return array<int, array{level: string, source: string, message: string, timestamp: string}>
+     * @return array<int, array{level: string, source: string, message: string, timestamp: string, process: string|null}>
      */
     private function read(string $process, string $path): array
     {
@@ -158,7 +161,7 @@ final class Collector
     }
 
     /**
-     * @return array<int, array{level: string, source: string, message: string, timestamp: string}>
+     * @return array<int, array{level: string, source: string, message: string, timestamp: string, process: string|null}>
      */
     private function records(string $process, string $path, LineParser $parser, string $date): array
     {

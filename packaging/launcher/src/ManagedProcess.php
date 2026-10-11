@@ -43,10 +43,11 @@ final class ManagedProcess
     public function __construct(
         public readonly string $name,
         private readonly string $executable,
-        /** @var list<string> */
+        /** @var list<string> $arguments */
         private readonly array $arguments,
         private readonly string $workingDirectory,
         private readonly string $logFile,
+        /** @var array<string, string> $environment */
         private readonly array $environment = [],
     ) {}
 
@@ -132,7 +133,7 @@ final class ManagedProcess
         $status = proc_get_status($handle);
 
         $this->handle = $handle;
-        $this->pid = is_int($status['pid'] ?? null) ? $status['pid'] : null;
+        $this->pid = $status['pid'];
         $this->started = true;
     }
 
@@ -151,7 +152,7 @@ final class ManagedProcess
 
         $status = proc_get_status($this->handle);
 
-        return (bool) ($status['running'] ?? false);
+        return $status['running'];
     }
 
     public function pid(): ?int
@@ -264,10 +265,6 @@ final class ManagedProcess
         }
 
         $inherited = getenv();
-
-        if (! is_array($inherited)) {
-            $inherited = [];
-        }
 
         /** @var array<string, string> $merged */
         $merged = [];

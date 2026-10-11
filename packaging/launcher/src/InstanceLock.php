@@ -97,10 +97,17 @@ final class InstanceLock
             return false;
         }
 
+        // getmypid() answers false only when the process has no id, which PHP cannot give
+        // it, but a false reaching startTime() is a TypeError rather than a lock file that
+        // says nothing. Zero is the documented failure value, and a lock with pid 0 is
+        // refused by the reader rather than accepted as a live holder.
+        $pid = getmypid();
+        $pid = $pid === false ? 0 : $pid;
+
         $payload = json_encode([
             'format' => self::FORMAT,
-            'pid' => getmypid(),
-            'startedAt' => ProcessIdentity::startTime(getmypid()),
+            'pid' => $pid,
+            'startedAt' => ProcessIdentity::startTime($pid),
             'acquiredAt' => gmdate('c'),
         ], JSON_PRETTY_PRINT);
 
