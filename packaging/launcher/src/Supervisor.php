@@ -72,6 +72,9 @@ final class Supervisor
      */
     private ?string $resolvedIni = null;
 
+    /** Set once a start, so a polling loop reports an unhappy application exactly once. */
+    private bool $reportedUnready = false;
+
     public function __construct(
         private readonly string $root,
         private readonly string $dataDirectory,
@@ -358,7 +361,11 @@ final class Supervisor
             arguments: ['run', '--config', $this->resolvedConfig ?? $this->caddyfile()],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'web.log',
-            environment: ['PHPRC' => $this->ini()],
+            // Both of these, and neither is optional. PHPRC is how FrankenPHP finds the ini at
+            // all, and PAPYRUS_ENV is how the application finds the `.env` that carries its app
+            // key. With PHPRC alone the server starts and serves, and answers every request with
+            // a 503 from `/ready` because it has no key.
+            environment: ['PHPRC' => $this->ini()] + $this->applicationEnvironment(),
         );
 
         $process->start();
@@ -399,6 +406,7 @@ final class Supervisor
             arguments: ['-c', $this->ini(), $this->path('artisan'), 'queue:work', '--tries=3', '--sleep=1'],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'queue.log',
+            environment: $this->applicationEnvironment(),
         );
 
         $schedule = new ManagedProcess(
@@ -407,6 +415,7 @@ final class Supervisor
             arguments: ['-c', $this->ini(), $this->path('artisan'), 'schedule:work'],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'scheduler.log',
+            environment: $this->applicationEnvironment(),
         );
 
         $queue->start();
@@ -416,6 +425,34 @@ final class Supervisor
         $this->started['scheduler'] = $schedule;
 
         $say('queue worker and scheduler started');
+    }
+
+    /**
+     * The environment every Papyrus process needs, keyed on the `.env` the launcher wrote.
+     *
+     * All four processes need it, and the web server needs it most, because that is where the
+     * failure is invisible. The app boots, has no `APP_KEY`, `/ready` answers 503 with
+     * `"key": false`, and the launcher polls a permanently unready application until it reports
+     * that the web server never started while the server's own log says "server running".
+     *
+     * The queue worker and scheduler fail the same way and worse: a worker with no database
+     * driver pops nothing and exits quietly, and a scheduler with one logs nothing at all. The
+     * install looks perfectly healthy and every download, search and library check silently never
+     * happens.
+     *
+     * Named in one place so a fourth process cannot be added without it. The alternative is a
+     * `PAPYRUS_ENV` literal repeated at each call site, which is how two of these four were
+     * missed in the first place.
+     */
+    private function applicationEnvironment(): array
+    {
+        return ['PAPYRUS_ENV' => $this->environmentFile()];
+    }
+
+    /** The `.env` the launcher wrote, which lives in the data directory rather than the install. */
+    private function environmentFile(): string
+    {
+        return $this->dataDirectory.DIRECTORY_SEPARATOR.'.env';
     }
 
     /**
@@ -465,7 +502,63 @@ final class Supervisor
             $context,
         );
 
-        return is_string($response) && str_contains($response, '"ready"');
+        if (! is_string($response)) {
+            return false;
+        }
+
+        // A 503 with `"not ready"` is the application answering correctly and reporting that it
+        // cannot be used, which is a different thing from the server being unreachable and worth
+        // saying out loud. The symptom it replaced was a launcher that polled a permanently
+        // unready app for a minute and then reported "the web server started but never reported
+        // ready", while the server's log said "server running" and the answer sat in the body.
+        $status = $http_response_header[0] ?? '';
+
+        if (str_contains($response, '"not ready"') || str_contains($response, '"not found"')) {
+            $this->reportUnready($status, $response);
+        }
+
+        return str_contains($response, '"ready"');
+    }
+
+    /**
+     * Say, once, that the app is answering and refusing, and why.
+     *
+     * Without this the only evidence that the application is alive and unhappy is in a response
+     * body the launcher discards. The install then fails with a message about the web server,
+     * which is the one component that was working.
+     *
+     * Reported at most once per start, because this runs in a polling loop and a message printed
+     * sixty times is the same as a message printed never.
+     */
+    private function reportUnready(string $status, string $response): void
+    {
+        if ($this->reportedUnready) {
+            return;
+        }
+
+        $this->reportedUnready = true;
+
+        $checks = [];
+
+        if (preg_match('#"checks":(\{.*?\})#', $response, $matches) === 1) {
+            $decoded = json_decode($matches[1], true);
+
+            if (is_array($decoded)) {
+                foreach ($decoded as $name => $value) {
+                    $checks[] = $name.'='.(is_bool($value) ? ($value ? 'ok' : 'FAILED') : (string) $value);
+                }
+            }
+        }
+
+        fwrite(STDERR, sprintf(
+            PHP_EOL.'  the application is answering and reporting that it is not ready (%s).' % PHP_EOL
+            .'  checks: %s'.PHP_EOL
+            .'  A failed "key" means the app is not reading the .env this launcher wrote. It is at %s'.PHP_EOL
+            .'  and is passed in as PAPYRUS_ENV.'.PHP_EOL.PHP_EOL,
+            $status !== '' ? $status : 'no status line',
+            $checks === [] ? 'none reported' : implode(', ', $checks),
+            $this->environmentFile(),
+        ));
     }
 
     /**
@@ -497,6 +590,28 @@ final class Supervisor
             ['--no-interaction'],
         );
 
+        /*
+         * The environment is merged rather than omitted, and it is the difference between
+         * migrating this install's database and migrating the wrong one.
+         *
+         * `proc_open`'s fifth argument replaces the child's environment outright rather than
+         * adding to it, so it has to carry the inherited set as well or the process loses
+         * `SystemRoot`, `PATH` and `TEMP` and dies before logging anything. See
+         * ManagedProcess::inheritedEnvironment for the same problem solved once.
+         *
+         * Passing this is what makes `artisan migrate` write into the **data directory**. Without
+         * it the command loads the base path's `.env`, finds a database path pointing inside the
+         * install, and creates a 475KB SQLite file there. The launcher then starts a web server
+         * whose `DB_DATABASE` points somewhere else entirely, and `/ready` reports
+         * `database: false` against an install that looks correctly populated.
+         */
+        $inherited = getenv();
+        $environment = is_array($inherited) ? $inherited : [];
+
+        foreach ($this->applicationEnvironment() as $name => $value) {
+            $environment[$name] = $value;
+        }
+
         // The array form on every platform, for the reason in ManagedProcess: a string command on
         // Windows is run through `cmd /c`, whose quoting rules then reinterpret arguments this
         // method has already escaped correctly.
@@ -509,6 +624,7 @@ final class Supervisor
             ],
             $pipes,
             $this->root,
+            $environment,
         );
 
         if (! is_resource($process)) {
@@ -549,6 +665,26 @@ final class Supervisor
      *
      * @param  callable(string): void  $say
      */
+    /**
+     * Run the layout step alone, for the build to verify an install with.
+     *
+     * Exists because the build needs to know that a finished install can be laid out and
+     * configured, and the only trustworthy way to ask that is to run the same code the launcher
+     * runs. Reimplementing the token substitution inside the build instead, which is what a build
+     * script naturally reaches for, proves the build's own copy of the behaviour rather than the
+     * product's, and the two drift apart the first time either is edited.
+     *
+     * Needs no JVM, no port and no Suwayomi, which is what makes it safe to call from a build.
+     * The data directory passed in should be a throwaway: this writes a resolved ini, a Caddyfile
+     * and a real `.env` with a generated APP_KEY into it.
+     */
+    public function prepareLayoutForBuild(): void
+    {
+        $this->prepareLayout(static function (string $line): void {
+            // The build reports its own steps, so this is deliberately silent.
+        });
+    }
+
     private function prepareLayout(callable $say): void
     {
         $layout = new InstallLayout($this->root, $this->dataDirectory);
@@ -567,14 +703,22 @@ final class Supervisor
          * The .env is written here rather than in a separate configure step, because the web
          * server cannot answer `/ready` without an app key and the launcher has nothing to poll
          * until there is one.
+         *
+         * These are written as single `--name=value` arguments rather than as a name and a value
+         * in separate array entries. An associative array reads as though it would produce
+         * `--name value`, and it does, which works only while the option is a plain value option.
+         * `--env` was not: Symfony Console defines it as a global application option, so the
+         * application took the name and the path arrived as a stray argument, and the launcher
+         * refused to start. The command's own tests never saw it because `$this->artisan()`
+         * bypasses argv entirely.
          */
         if (is_file($this->ini()) && is_file($this->path('artisan'))) {
             $this->runArtisan(
                 ['papyrus:configure'],
                 extra: [
-                    '--env' => $this->dataDirectory.DIRECTORY_SEPARATOR.'.env',
-                    '--data' => $this->dataDirectory,
-                    '--suwayomi' => sprintf('http://127.0.0.1:%d', $this->suwayomiPort),
+                    '--env-file='.$this->environmentFile(),
+                    '--data='.$this->dataDirectory,
+                    '--suwayomi='.sprintf('http://127.0.0.1:%d', $this->suwayomiPort),
                 ],
                 logName: 'configure.log',
             );

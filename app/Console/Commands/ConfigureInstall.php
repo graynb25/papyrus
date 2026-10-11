@@ -45,7 +45,7 @@ class ConfigureInstall extends Command
         {--data= : The data directory. Created if missing, and made absolute}
         {--suwayomi=http://127.0.0.1:4567 : Where Suwayomi answers}
         {--app-url= : The URL the app is served on}
-        {--env= : The .env to write. Defaults to the one in the application root}
+        {--env-file= : The .env to write. Defaults to the one in the application root}
         {--report : Print what changed, for the launcher to show or log}';
 
     protected $description = 'Write the .env a packaged install runs on, without ever replacing an existing APP_KEY';
@@ -94,10 +94,23 @@ class ConfigureInstall extends Command
      * where the app is running with no key. And it means the command can be tested without a
      * test touching the developer's own environment file, which is a mistake worth designing
      * out rather than backing up carefully.
+     *
+     * ## Why the option is called `env-file` and not `env`
+     *
+     * Because `--env` is already taken. Symfony Console defines it as a global application
+     * option meaning the environment name, and an application option wins over a command option
+     * of the same name. So a launcher passing `--env <path>` gets the flag consumed by the
+     * application and the path falls through as a stray argument, which the command then rejects
+     * with "No arguments expected". The launcher refused to start and the trace pointed at the
+     * command rather than at the name collision.
+     *
+     * It was invisible to the tests because `$this->artisan()` hands options straight to the
+     * command's input and never parses argv. The command worked under test and failed as a
+     * spawned process, which is the shape of bug that only a real invocation finds.
      */
     private function envPath(): string
     {
-        $given = $this->option('env');
+        $given = $this->option('env-file');
 
         if (is_string($given) && $given !== '') {
             return $given;
@@ -282,13 +295,71 @@ class ConfigureInstall extends Command
 
         // Anything the example gained since the file was written.
         foreach ($values as $name => $value) {
-            $written[] = $name.'='.$value;
+            $written[] = $name.'='.$this->quoteIfNeeded($value);
         }
 
         File::put($path, implode(PHP_EOL, array_map(
             static fn (string $line): string => rtrim($line),
             $written,
         )).PHP_EOL);
+    }
+
+    /**
+     * Quote a value that dotenv would otherwise refuse to parse.
+     *
+     * ## Why this is not optional
+     *
+     * An unquoted value containing whitespace is a parse error, not a literal. Writing
+     * `DB_DATABASE=C:\Program Files\Papyrus\data\database.sqlite` produces an install whose
+     * environment file the framework refuses to load: "Encountered unexpected whitespace", and the
+     * application does not boot at all.
+     *
+     * `C:\Program Files` is where a Windows install goes by default, so this is not an edge case
+     * found on an unusual machine. It is the common case, and it fails at the worst possible
+     * moment: the launcher has written the file, the web server has started, and the app is dead
+     * with an error that names a parser rather than a path.
+     *
+     * Quoting is applied only where it is needed. Always quoting would be tidier and would mean
+     * every value in the file looks different from the developer's own `.env`, which makes a diff
+     * between the two unreadable for no benefit.
+     */
+    private function quoteIfNeeded(string $value): string
+    {
+        // Already quoted by the caller or by the example file. Left alone rather than double
+        // quoted, which would make the value include the quotes.
+        if (str_starts_with($value, '"') || str_starts_with($value, "'")) {
+            return $value;
+        }
+
+        $needsQuoting = str_contains($value, ' ')
+            || str_contains($value, "\t")
+            // A `#` starts a comment in an unquoted value, so a path containing one loses
+            // everything after it. Rare on Windows but free to handle here.
+            || str_contains($value, '#')
+            || $value === '';
+
+        if (! $needsQuoting) {
+            return $value;
+        }
+
+        /*
+         * Single quotes, and no backslash escaping.
+         *
+         * Dotenv does not treat a backslash as an escape inside double quotes, so escaping them
+         * produces a path with doubled separators and the application opens a file that does not
+         * exist. That is worse than an unquoted value, because the quoted form parses cleanly and
+         * so nothing complains: the install builds, the launcher writes the file, and the app
+         * reports `database: false` with a path that looks almost right.
+         *
+         * Single quotes are literal in dotenv, which is what a Windows path needs. They cannot
+         * contain a single quote, so a value with one falls back to double quotes with only the
+         * quote itself escaped, which dotenv does understand.
+         */
+        if (str_contains($value, "'")) {
+            return '"'.str_replace('"', '\\"', $value).'"';
+        }
+
+        return "'".$value."'";
     }
 
     /**

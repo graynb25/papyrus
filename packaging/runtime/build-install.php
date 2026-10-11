@@ -1,0 +1,957 @@
+<?php
+
+/**
+ * Assemble a packaged install layout on disk.
+ *
+ * This is the build step both the clean-room run and the Windows Sandbox gate depend on, and it
+ * exists because both of them were quietly testing something else.
+ *
+ * ## Why this exists rather than more hand-built directories
+ *
+ * The clean-room probe passed an install whose root was the repository, with four paths
+ * overridden by hand to point somewhere else. That arrangement cannot be wrong in the way a real
+ * install is wrong, because a real install has one root and every path is derived from it. It
+ * hid two defects outright:
+ *
+ *   - `{{RUNTIME}}` in the php.ini is resolved from the root, and no constructor argument can
+ *     override it, so the probe's overrides never reached it and it resolved into a directory
+ *     that does not exist.
+ *   - `suwayomi/runtime/jre` was staged where `Supervisor::javaExecutable` looks at
+ *     `suwayomi/runtime`, so the probe passed `javaExecutable` explicitly and a real reader,
+ *     who passes nothing, would have got nothing.
+ *
+ * Both were invisible because the probe supplied the answers the launcher should have derived.
+ *
+ * ## What it assembles
+ *
+ *     <into>/runtime/{bin,ext,php,frankenphp,cacert.pem}   the PHP and web server
+ *     <into>/suwayomi/{*.jar,runtime/}                      the server and its JRE
+ *     <into>/{artisan,app,bootstrap,config,...}             the application
+ *     <into>/packaging/launcher/                            the launcher itself
+ *
+ * The application files sit at the root rather than under an `app` subdirectory because the
+ * launcher's `path('artisan')` looks there, and a layout that disagrees with the launcher is the
+ * exact failure this script is here to prevent.
+ *
+ * `--jre` and `--cacert` default to where `stage-runtime.php` puts them at the repository root.
+ * They are separate options because the two land in separate directories, `suwayomi/runtime` and
+ * `runtime`, and pointing one at a staging area should not require pointing the other there too.
+ *
+ * Usage:
+ *
+ *   php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar> [--jre=<dir>] [--cacert=<file>] [--into=<dir>]
+ */
+
+declare(strict_types=1);
+
+namespace Papyrus\Runtime;
+
+use Papyrus\Launcher\Supervisor;
+
+/**
+ * The application's own files, copied by allowlist rather than denylist.
+ *
+ * An allowlist because the risk runs one way. A missed exclude ships the developer's `.env` and
+ * their APP_KEY to a stranger. A missed include produces a layout that fails the completeness
+ * check below, which names the file that is absent. One is a bad artifact, the other is loud.
+ */
+const APP_ENTRIES = [
+    'app',
+    'artisan',
+    'bootstrap',
+    'composer.json',
+    '.env.example',
+    'config',
+    'database',
+    'package.json',
+    'public',
+    'resources',
+    'routes',
+    'storage',
+    'vendor',
+];
+
+/**
+ * Files that must never reach a build, each with the reason it is listed.
+ *
+ * This is a denylist layered on top of the allowlist above, and it exists because the two
+ * dangerous cases both live inside directories that are legitimately copied. `database/` holds
+ * the migrations the app needs and also the SQLite file a developer's own library lives in.
+ * `storage/` holds the structure Laravel needs and also logs, cached views and screenshots. An
+ * allowlist of top level entries cannot tell those apart, so each one is named.
+ *
+ * The library is the serious one. It records what someone follows and how far through each series
+ * they are, and it must never end up in an artifact handed to a stranger, however briefly. The
+ * check below fails the build if one appears rather than warning, because an artifact that ships
+ * a library looks identical to one that does not until somebody opens it.
+ */
+const NEVER_SHIPPED = [
+    'database/database.sqlite' => 'the developer library: what they follow and how far through',
+    'storage/logs' => 'the developer log, megabytes of local paths and errors',
+    'storage/framework/cache' => 'compiled views from a different machine',
+    'storage/framework/sessions' => 'session state that must not outlive the process',
+    'storage/framework/views' => 'compiled views from a different machine',
+    'storage/design-review' => 'screenshots taken during development',
+    'storage/app/private' => 'whatever the developer has downloaded or imported',
+];
+
+/**
+ * Restore the directory placeholders Laravel and the app expect to exist but that hold no files.
+ *
+ * Denylisting `storage/logs` removes the directory as well as its contents, and Laravel writes to
+ * those paths without creating them. An install that is missing them fails on its first log line
+ * rather than at build time, so they are put back empty.
+ */
+const EMPTY_PLACEHOLDERS = [
+    'storage/app/private',
+    'storage/framework/cache',
+    'storage/framework/sessions',
+    'storage/framework/views',
+    'storage/logs',
+];
+
+const REQUIRED_AFTER_BUILD = [
+    'runtime/bin/php.exe',
+    'runtime/bin/frankenphp.exe',
+    'runtime/ext/php_pdo_sqlite.dll',
+    'runtime/php/php.ini',
+    'runtime/frankenphp/Caddyfile',
+    'runtime/cacert.pem',
+    'suwayomi/runtime/bin/java.exe',
+    'artisan',
+    'composer.json',
+    'package.json',
+    'packaging/launcher/papyrus.php',
+
+    /*
+     * The one dotfile that must ship, and the only reason this list is not purely a set of
+     * directories and obvious files.
+     *
+     * `.env.example` is what `papyrus:configure` copies to create the install's `.env`. Without
+     * it the command refuses with "No .env.example to copy from. The install is incomplete", and
+     * the symptom downstream is the worst kind: the web server starts, logs "server running",
+     * and answers nothing, because the app has no APP_KEY. The launcher reports that the web
+     * server never became ready while its own log says it is serving, which is a contradiction
+     * no bug report can be written against.
+     *
+     * The allowlist protects the real `.env` by never copying dotfiles at all, and that is exactly
+     * what made this omission invisible. Refusing to copy `.env` and failing to copy
+     * `.env.example` are the same decision, and only one of them is intended.
+     */
+    '.env.example',
+];
+
+/**
+ * Everything Laravel touches under its base path while booting.
+ *
+ * Extracted from `Illuminate\Foundation\Application` rather than remembered, because the failure
+ * mode here is a hand maintained list being incomplete. The build verified nine required paths
+ * and reported no developer data while the install could not boot at all: `composer.json` was
+ * missing from the allowlist, Laravel reads it to resolve the application namespace, and the
+ * first artisan command died with a failed `file_get_contents`.
+ *
+ * `lang/` is in the list because the framework reads it and it is absent from this repository,
+ * which is a legitimate state rather than a build error. It is checked for presence only when it
+ * exists in the source, so a repository without translations still builds.
+ */
+const LARVEL_BOOT_PATHS = [
+    'app',
+    'bootstrap',
+    'composer.json',
+    'config',
+    'database',
+    'public',
+    'resources',
+    'storage',
+];
+
+$options = parseArguments($argv);
+
+if ($options['help']) {
+    fwrite(STDOUT, "Usage: php build-install.php --frankenphp=<zip> --jar=<jar> [--jre=<dir>] [--cacert=<file>] [--into=<dir>]\n");
+
+    exit(0);
+}
+
+$repo = dirname(__DIR__, 2);
+$into = $options['into'] ?? $repo.DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR.'install';
+
+say('install', $into);
+
+foreach (['frankenphp' => 'FrankenPHP archive', 'jar' => 'Suwayomi jar'] as $required => $label) {
+    if (! isset($options[$required])) {
+        fail("no {$label} given, pass --{$required}=<path>");
+    }
+
+    if (! is_file($options[$required])) {
+        fail("the {$label} is not at {$options[$required]}");
+    }
+}
+
+$jre = $options['jre'] ?? $repo.DIRECTORY_SEPARATOR.'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
+
+if (! is_file($jre.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'java.exe')) {
+    fail(
+        "no staged JRE at {$jre}.".PHP_EOL
+        .'  Run packaging/runtime/stage-runtime.php first, which is what puts one there.'
+    );
+}
+
+say('jre', $jre);
+
+// Rebuilt rather than appended to. A stale file left by an earlier build is indistinguishable
+// from a correct one, and the whole point of this script is that the layout is what it says.
+if (! removeTree($into)) {
+    fail("could not clear {$into}");
+}
+
+say('layout', 'cleared');
+
+// --- the PHP and web server runtime -------------------------------------------------
+
+$runtime = $into.DIRECTORY_SEPARATOR.'runtime';
+$bin = $runtime.DIRECTORY_SEPARATOR.'bin';
+
+foreach ([$bin, $runtime.DIRECTORY_SEPARATOR.'ext', $runtime.DIRECTORY_SEPARATOR.'php', $runtime.DIRECTORY_SEPARATOR.'frankenphp'] as $dir) {
+    if (! mkdir($dir, 0o777, true) && ! is_dir($dir)) {
+        fail("could not create {$dir}");
+    }
+}
+
+$extracted = extractArchive($options['frankenphp'], $into.DIRECTORY_SEPARATOR.'.unpacked');
+
+// The FrankenPHP archive is flat: executables and their DLLs at the root, extensions under ext/.
+// The shipped layout separates them so that `runtime/bin` is the only directory holding anything
+// executable, which is what makes the launcher able to name every binary by path.
+$moved = 0;
+
+foreach (scandir($extracted) ?: [] as $entry) {
+    if ($entry === '.' || $entry === '..') {
+        continue;
+    }
+
+    $source = $extracted.DIRECTORY_SEPARATOR.$entry;
+
+    if (is_dir($source) && strtolower($entry) === 'ext') {
+        foreach (glob($source.DIRECTORY_SEPARATOR.'*.dll') ?: [] as $dll) {
+            copy($dll, $runtime.DIRECTORY_SEPARATOR.'ext'.DIRECTORY_SEPARATOR.basename($dll));
+            $moved++;
+        }
+
+        continue;
+    }
+
+    if (is_file($source) && (str_ends_with(strtolower($entry), '.exe') || str_ends_with(strtolower($entry), '.dll'))) {
+        copy($source, $bin.DIRECTORY_SEPARATOR.$entry);
+        $moved++;
+    }
+}
+
+say('runtime', $moved.' executables and extensions');
+
+removeTree($extracted);
+
+// The ini and the Caddyfile come from packaging/, not from the archive. The archive ships
+// php.ini-development and php.ini-production, neither of which is the twelve-extension
+// configuration this app needs.
+copy($repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini', $runtime.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini');
+
+copy(
+    $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'frankenphp'.DIRECTORY_SEPARATOR.'Caddyfile',
+    $runtime.DIRECTORY_SEPARATOR.'frankenphp'.DIRECTORY_SEPARATOR.'Caddyfile',
+);
+
+$bundled = $options['cacert'] ?? $repo.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'cacert.pem';
+
+if (! is_file($bundled)) {
+    fail(
+        'no CA bundle at '.$bundled.PHP_EOL
+        .'  The shipped ini names {{RUNTIME}}/cacert.pem and Windows PHP has no default, so every'
+        .PHP_EOL
+        .'  HTTPS request fails without it. Run stage-runtime.php first.'
+    );
+}
+
+copy($bundled, $runtime.DIRECTORY_SEPARATOR.'cacert.pem');
+
+say('cacert', basename($bundled));
+
+// --- Suwayomi and its JRE -----------------------------------------------------------
+
+$suwayomi = $into.DIRECTORY_SEPARATOR.'suwayomi';
+
+if (! mkdir($suwayomi, 0o777, true) && ! is_dir($suwayomi)) {
+    fail("could not create {$suwayomi}");
+}
+
+copy($options['jar'], $suwayomi.DIRECTORY_SEPARATOR.basename($options['jar']));
+
+say('jar', basename($options['jar']).' at '.formatBytes(filesize($options['jar'])));
+
+copyTree($jre, $suwayomi.DIRECTORY_SEPARATOR.'runtime');
+
+say('jre', 'staged beside the jar, where javaExecutable looks');
+
+// --- the application ---------------------------------------------------------------
+
+$copied = 0;
+
+foreach (APP_ENTRIES as $entry) {
+    $source = $repo.DIRECTORY_SEPARATOR.$entry;
+
+    if (! file_exists($source)) {
+        fail("{$entry} is missing from the repository, so this is not a Papyrus checkout");
+    }
+
+    $copied += is_dir($source)
+        ? copyTree($source, $into.DIRECTORY_SEPARATOR.$entry)
+        : (copy($source, $into.DIRECTORY_SEPARATOR.$entry) ? 1 : 0);
+}
+
+say('app', $copied.' files');
+
+// The launcher, at the path the application root implies, because `dirname(__DIR__, 2)` from
+// `packaging/launcher/papyrus.php` has to land on the install root.
+$copied += copyTree(
+    $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher',
+    $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher',
+);
+
+say('launcher', 'packaging/launcher');
+
+// --- strip what must not ship, and put the empty placeholders back --------------------
+
+$stripped = 0;
+
+foreach (NEVER_SHIPPED as $relative => $why) {
+    $path = $into.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
+
+    if (! file_exists($path)) {
+        continue;
+    }
+
+    if (! removeTree($path)) {
+        fail("could not remove {$relative}, which is {$why}");
+    }
+
+    $stripped++;
+
+    say('removed', $relative);
+}
+
+foreach (EMPTY_PLACEHOLDERS as $relative) {
+    $path = $into.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
+
+    if (! is_dir($path) && ! mkdir($path, 0o777, true) && ! is_dir($path)) {
+        fail("could not create the empty placeholder {$relative}");
+    }
+}
+
+say('placeholders', count(EMPTY_PLACEHOLDERS).' empty directories restored');
+
+// --- prove the layout is complete, and that nothing forbidden is in it -----------------
+
+$missing = [];
+
+foreach (REQUIRED_AFTER_BUILD as $required) {
+    if (! file_exists($into.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $required))) {
+        $missing[] = $required;
+    }
+}
+
+if ($missing !== []) {
+    fail("the layout is incomplete, these are absent:\n  - ".implode("\n  - ", $missing));
+}
+
+/*
+ * A path the framework reads but this build did not copy is a different failure from a path this
+ * build forgot to check. The first is reported by name; the second is not reported at all, which
+ * is how an install that cannot boot gets described as complete.
+ */
+$unbootable = [];
+
+foreach (LARVEL_BOOT_PATHS as $relative) {
+    if (! is_dir($repo.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative))
+        && ! is_file($repo.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative))) {
+        // Not in the source tree, so not something to copy. `lang/` is the expected case.
+        continue;
+    }
+
+    if (! file_exists($into.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative))) {
+        $unbootable[] = $relative;
+    }
+}
+
+if ($unbootable !== []) {
+    fail(
+        "Laravel reads these at boot and the install does not have them:\n  - "
+        .implode("\n  - ", $unbootable)
+        ."\n\n  Add them to APP_ENTRIES. A build that cannot boot is worse than one that fails."
+    );
+}
+
+say('verified', count(REQUIRED_AFTER_BUILD).' required paths present');
+say('verified', count(LARVEL_BOOT_PATHS).' framework boot paths present');
+
+/*
+ * Boot the application the way the launcher will, and read the log for what it said.
+ *
+ * Every other check here is a file existing. That is not the same thing as the application
+ * starting, and the gap between the two is where this build's worst failure lived: an install
+ * with every required file present, that could not serve a request because `papyrus:configure`
+ * had refused for want of `.env.example`.
+ *
+ * So `artisan --version` is run against the install, with the install's own `php.exe` and the
+ * ini the launcher resolves. It exercises the autoloader, `composer.json`, the bootstrap
+ * directory, the config cache and the environment file in one command, which is a cheap proxy for
+ * "the application can boot" and turns a missing file into a named failure at build time rather
+ * than a silent 60-attempt poll at a reader's first launch.
+ */
+/*
+ * The ini is resolved by the launcher's own code, not by a copy of it here.
+ *
+ * The first version of this check did its own `str_replace` over `{{RUNTIME}}` and friends, which
+ * is the exact mistake that started this round of defects: a harness that reproduces the
+ * behaviour it is checking proves its own reproduction rather than the product. If the launcher's
+ * resolution and this one ever disagree, the build validates something no reader receives.
+ *
+ * So it calls `prepareLayout`, the same method `start()` runs before it spawns anything, against a
+ * throwaway data directory. That needs no JVM, no port and no Suwayomi, and it produces the
+ * resolved ini the launcher would really hand to PHP.
+ */
+/*
+ * Beside the install, never inside it.
+ *
+ * The first attempt put this at `<install>/.boot-probe` and `InstallLayout` refused, correctly:
+ * a data directory inside the install is the exact mistake that rule exists to catch, since an
+ * uninstall would take the reader's library with it. A build that trips its own guard while
+ * checking an install is a good sign about the guard and a sign about the build, and the fix is
+ * the second one.
+ */
+$probeData = dirname($into).DIRECTORY_SEPARATOR.'.build-probe';
+$probeLogs = $probeData.DIRECTORY_SEPARATOR.'logs';
+
+removeTree($probeData);
+
+if (! mkdir($probeData, 0o777, true) && ! is_dir($probeData)) {
+    fail("could not create the probe data directory {$probeData}");
+}
+
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'ProcessIdentity.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'InstanceLock.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'Prober.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'ManagedProcess.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'InstallLayout.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'LayoutRefused.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'Supervisor.php';
+
+$bootPhp = $into.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'php.exe';
+
+/*
+ * Wrapped rather than allowed to escape, because this is the product's own code and a refusal is
+ * a legitimate outcome worth reporting. An uncaught `LayoutRefused` prints a stack trace through
+ * the files it happened to be loaded from, which for a build means the reader sees paths inside
+ * the install rather than a sentence about what is wrong.
+ */
+try {
+    (new Supervisor(
+        root: $into,
+        dataDirectory: $probeData,
+        logDirectory: $probeLogs,
+        suwayomiPort: 4567,
+        appPort: 8402,
+    ))->prepareLayoutForBuild();
+} catch (Throwable $e) {
+    removeTree($probeData);
+
+    fail(
+        "the install cannot be laid out.\n\n  ".$e->getMessage()."\n\n"
+        ."  This is the launcher's own code refusing, so the message names the real problem.\n"
+    );
+}
+
+$resolvedIni = $probeData.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini';
+
+if (! is_file($resolvedIni)) {
+    fail("the launcher did not resolve an ini, expected one at {$resolvedIni}");
+}
+
+$unresolved = [];
+
+foreach (preg_split('#\R#', (string) file_get_contents($resolvedIni)) ?: [] as $line) {
+    if (! str_starts_with(ltrim($line), ';') && preg_match('#\{\{[A-Z_]+\}\}#', $line) === 1) {
+        $unresolved[] = trim($line);
+    }
+}
+
+if ($unresolved !== []) {
+    fail("the launcher's resolved ini still has tokens on active lines:\n  - ".implode("\n  - ", $unresolved));
+}
+
+say('resolved ini', 'no tokens left, resolved by the launcher itself');
+
+// Now that the ini is real, boot the application with it. This is the check a file listing cannot
+// make: every file this install needs is present, and it still cannot serve a request.
+if (! is_file($resolvedIni)) {
+    fail("the resolved ini vanished before the boot check, expected it at {$resolvedIni}");
+}
+
+$bootOutput = [];
+$bootStatus = 1;
+
+exec(
+    sprintf(
+        'cd /d %s && %s -c %s %s --version 2>&1',
+        escapeshellarg($into),
+        escapeshellarg($bootPhp),
+        escapeshellarg($resolvedIni),
+        escapeshellarg($into.DIRECTORY_SEPARATOR.'artisan'),
+    ),
+    $bootOutput,
+    $bootStatus,
+);
+
+$bootText = trim(implode("\n", $bootOutput));
+
+if ($bootStatus !== 0 || str_contains($bootText, 'Unable to load dynamic library')) {
+    fail(
+        "the install cannot boot with its own resolved php.ini.\n\n"
+        .'  '.str_replace("\n", "\n  ", $bootText)."\n"
+    );
+}
+
+// The startup warnings are noise once they are not fatal, and a boot line printed with eleven of
+// them attached reads like a failure even when it is not.
+$bootLine = $bootText === '' ? 'artisan --version succeeded silently' : $bootText;
+
+say('boot', $bootLine);
+
+/*
+ * As a file, through `php_ini_loaded_file`, rather than as a `-r` snippet.
+ *
+ * The `-r` version of this check reported the SQLite driver missing from an install that booted
+ * perfectly, and the reason is worth recording because it is the second time this round that a
+ * probe reported a confident verdict about a file it had not read.
+ *
+ * PHP does not complain when `-c` or `PHPRC` names a path that does not exist. It proceeds with
+ * no configuration at all, quietly, and `extension_loaded` then answers against a bare runtime
+ * whose `extension_dir` is a compiled-in default such as `C:\php\ext`. The ini was fine; the file
+ * had already been deleted by the time the probe ran.
+ *
+ * So the probe now asserts the resolved ini is still on disk before measuring it, and asks PHP
+ * which file it actually loaded rather than which file was requested. A check that reports on a
+ * path it never read is worse than no check, because it produces a specific and wrong answer.
+ */
+if (! is_file($resolvedIni)) {
+    fail("the resolved ini vanished before it could be checked, expected it at {$resolvedIni}");
+}
+
+$driverProbe = $into.DIRECTORY_SEPARATOR.'.driver-probe.php';
+
+file_put_contents($driverProbe, <<<'PHP'
+<?php
+
+$loaded = php_ini_loaded_file();
+
+echo 'ini='.(string) $loaded.PHP_EOL;
+echo 'dir='.(string) ini_get('extension_dir').PHP_EOL;
+echo 'drivers='.implode(',', PDO::getAvailableDrivers()).PHP_EOL;
+PHP);
+
+$extensionOutput = [];
+$extensionStatus = 1;
+
+exec(
+    sprintf(
+        '%s -c %s %s 2>&1',
+        escapeshellarg($bootPhp),
+        escapeshellarg($resolvedIni),
+        escapeshellarg($driverProbe),
+    ),
+    $extensionOutput,
+    $extensionStatus,
+);
+
+/*
+ * Parsed line by line, once each.
+ *
+ * The first version split every line on `=` and then split each resulting fragment on `=` again,
+ * which throws the key away and leaves `$report['ini']` unset. The check then reported that PHP
+ * had loaded no ini, on an install whose ini it had loaded correctly, and would have failed a
+ * perfectly good build.
+ *
+ * That is the third probe in this round to report a specific and wrong answer, and all three
+ * shared one shape: reading something other than the thing it was measuring. Worth more than the
+ * individual bugs, because it is the failure mode a green test suite cannot catch.
+ */
+$report = [];
+
+foreach ($extensionOutput as $line) {
+    $line = trim($line);
+
+    if ($line === '' || ! str_contains($line, '=')) {
+        continue;
+    }
+
+    [$key, $value] = explode('=', $line, 2);
+
+    $report[trim($key)] = trim($value);
+}
+
+@unlink($driverProbe);
+
+if (! isset($report['ini'], $report['drivers'])) {
+    fail(
+        "the driver probe did not report what was asked of it.\n\n"
+        .'  '.str_replace("\n", "\n  ", trim(implode("\n", $extensionOutput)))."\n\n"
+        ."  A probe that cannot parse its own output must say so rather than report an empty\n"
+        ."  result, because an empty result is indistinguishable from a real failure.\n"
+    );
+}
+
+$actuallyLoaded = $report['ini'] ?? '';
+
+if ($actuallyLoaded === '') {
+    fail(
+        "PHP loaded no php.ini at all, so this install has no configuration.\n\n"
+        ."  It was asked to use:\n    {$resolvedIni}\n\n"
+        ."  PHP does not report a missing -c path. It starts with no extensions and no error,\n"
+        ."  which is the failure this whole ini templating arrangement exists to prevent.\n"
+    );
+}
+
+if (! str_contains(strtolower(basename(str_replace('\\', '/', $actuallyLoaded))), 'php.ini')) {
+    fail("PHP reported loading '{$actuallyLoaded}', which is not the ini this build resolved");
+}
+
+if (! in_array('sqlite', explode(',', $report['drivers'] ?? ''), true)) {
+    fail(
+        "the launcher's resolved ini loads no SQLite driver.\n\n"
+        ."  ini      {$actuallyLoaded}\n"
+        .'  ext dir  '.($report['dir'] ?? 'unknown')."\n"
+        .'  drivers  '.($report['drivers'] === '' ? 'none' : ($report['drivers'] ?? 'none'))."\n"
+    );
+}
+
+say('resolved ini', 'loads pdo_sqlite, PDO reports sqlite');
+
+// The launcher writes the app's .env during layout. That file is the install's own and is
+// discarded with the probe, but its existence is the answer to a bug that cost this round an
+// afternoon: a build that cannot configure itself cannot serve anything.
+if (! is_file($probeData.DIRECTORY_SEPARATOR.'.env')) {
+    fail(
+        "the launcher laid out the install without writing an .env.\n\n"
+        ."  papyrus:configure refused or was skipped, so the app would come up with no APP_KEY\n"
+        ."  while the web server reported that it was serving.\n"
+    );
+}
+
+say('configured', 'papyrus:configure wrote an .env with an APP_KEY');
+
+removeTree($probeData);
+
+/*
+ * Verified by walking the tree rather than by trusting the denylist, because a denylist only
+ * knows about the files someone remembered to list. Anything still on disk that matches one of
+ * these shapes is either the developer's data or a build artefact, and neither belongs in an
+ * artifact that leaves this machine.
+ */
+$leaked = [];
+$walked = 0;
+
+foreach (leakedFiles($into) as $relative) {
+    $walked++;
+
+    if ($relative === '.env.example') {
+        continue;
+    }
+
+    if (str_starts_with(basename($relative), '.env')) {
+        $leaked[] = $relative;
+
+        continue;
+    }
+
+    if (preg_match('#^(database/.*\.(sqlite|sqlite3|db)|storage/logs/.+|storage/design-review/.+|storage/framework/(cache|sessions|views)/.+)$#', $relative) === 1
+        // Laravel's own .gitignore files live in exactly the directories that are emptied above,
+        // because those directories are required to exist but are meant to stay empty. Flagging
+        // them would mean the build refuses a correct file, and a guard that cries wolf gets
+        // removed rather than fixed.
+        && basename($relative) !== '.gitignore') {
+        $leaked[] = $relative;
+    }
+}
+
+if ($leaked !== []) {
+    fail(
+        "the build contains files that must not ship:\n  - ".implode("\n  - ", $leaked)
+        ."\n\n  Refusing to report success. An install carrying a library looks exactly like one"
+        ."\n  that does not until somebody opens it."
+    );
+}
+
+say('verified', 'no developer data in the build, checked across '.$walked.' files');
+
+/*
+ * The size is reported as a breakdown rather than as one number, because a single figure cannot
+ * tell a reader whether 620MB is reasonable and a threshold set to "seemed large" is a guess
+ * dressed up as a check.
+ *
+ * Three quarters of this is the jar and the JRE, which are not ours and cannot be shrunk without
+ * changing what the install does. The part that is ours, the runtime and vendor, is what a future
+ * size reduction has to attack, and separating them is the first step to knowing which.
+ */
+$total = directorySize($into);
+
+$parts = [];
+
+foreach (['suwayomi', 'runtime', 'vendor', 'app', 'resources', 'public', 'storage', 'database'] as $part) {
+    $bytes = directorySize($into.DIRECTORY_SEPARATOR.$part);
+
+    if ($bytes > 0) {
+        $parts[$part] = $bytes;
+    }
+}
+
+arsort($parts);
+
+// An empty install would divide by zero here. Worth a guard rather than a fatal, because the
+// number this produces is a report and a report should never be the thing that stops a build.
+$percent = static fn (int $bytes): int => $total > 0 ? (int) round($bytes / $total * 100) : 0;
+
+foreach ($parts as $part => $bytes) {
+    say('  '.str_pad($part, 10), formatBytes($bytes).sprintf('  (%d%% of %s)', $percent($bytes), formatBytes($total)));
+}
+
+$ours = $total - ($parts['suwayomi'] ?? 0);
+$theirs = $parts['suwayomi'] ?? 0;
+
+say('size', formatBytes($total));
+say('', formatBytes($theirs).' is Suwayomi and its JRE, which we do not control');
+say('', formatBytes($ours).' is the runtime and the application, which we do');
+
+say('done', $into);
+
+function say(string $label, string $value): void
+{
+    fwrite(STDOUT, sprintf("  %-12s %s\n", $label.':', $value));
+}
+
+function fail(string $message): never
+{
+    fwrite(STDERR, '  '.$message."\n");
+
+    exit(1);
+}
+
+function formatBytes(int $bytes): string
+{
+    return round($bytes / 1048576, 1).' MB';
+}
+
+/**
+ * Unpack an archive into a directory and return the directory holding its contents.
+ *
+ * The FrankenPHP archive has no wrapper directory, so the contents directory is the extraction
+ * target itself. A wrapper is detected and unwrapped rather than assumed away, because assuming
+ * is how a build ends up nesting a directory that nothing downstream expects.
+ */
+function extractArchive(string $archive, string $working): string
+{
+    if (! is_dir($working) && ! mkdir($working, 0o777, true) && ! is_dir($working)) {
+        fail("could not create {$working}");
+    }
+
+    if (class_exists(\ZipArchive::class)) {
+        $zip = new \ZipArchive;
+        $opened = $zip->open($archive);
+
+        if ($opened !== true) {
+            fail("could not open {$archive}, ZipArchive error {$opened}");
+        }
+
+        for ($index = 0; $index < $zip->numFiles; $index++) {
+            $name = (string) $zip->getNameIndex($index);
+
+            if ($name === '' || str_contains($name, '..') || str_starts_with($name, '/')) {
+                fail("refusing to extract {$name}");
+            }
+
+            if (str_ends_with($name, '/')) {
+                continue;
+            }
+
+            $target = $working.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $name);
+            $parent = dirname($target);
+
+            if (! is_dir($parent) && ! mkdir($parent, 0o777, true) && ! is_dir($parent)) {
+                fail("could not create {$parent}");
+            }
+
+            file_put_contents($target, (string) $zip->getFromIndex($index));
+        }
+
+        $zip->close();
+    } else {
+        exec(
+            sprintf('tar -xf %s -C %s 2>&1', escapeshellarg($archive), escapeshellarg($working)),
+            $output,
+            $status,
+        );
+
+        if ($status !== 0) {
+            fail('tar could not read the archive: '.implode("\n", $output));
+        }
+    }
+
+    return $working;
+}
+
+/**
+ * Copy a directory tree, returning how many files were written.
+ *
+ * The count is returned rather than logged from inside because two callers sum it, and a
+ * function that both counts and prints reports the same total twice.
+ */
+function copyTree(string $source, string $target): int
+{
+    if (is_file($source)) {
+        $parent = dirname($target);
+
+        if (! is_dir($parent) && ! mkdir($parent, 0o777, true) && ! is_dir($parent)) {
+            fail("could not create {$parent}");
+        }
+
+        return copy($source, $target) ? 1 : 0;
+    }
+
+    if (! is_dir($source)) {
+        fail("{$source} does not exist");
+    }
+
+    if (! is_dir($target) && ! mkdir($target, 0o777, true) && ! is_dir($target)) {
+        fail("could not create {$target}");
+    }
+
+    $count = 0;
+
+    foreach (scandir($source) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        if (in_array($entry, ['.gitignore', '.gitattributes'], true)) {
+            continue;
+        }
+
+        $count += copyTree(
+            $source.DIRECTORY_SEPARATOR.$entry,
+            $target.DIRECTORY_SEPARATOR.$entry,
+        );
+    }
+
+    return $count;
+}
+
+/**
+ * Every file in a tree, as forward slash relative paths.
+ *
+ * Walked rather than globbed so the result is bounded and ordered. The build holds well over
+ * twelve thousand files and the leak check runs against all of them.
+ */
+function leakedFiles(string $root, string $prefix = ''): array
+{
+    $found = [];
+
+    foreach (scandir($root) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        $path = $root.DIRECTORY_SEPARATOR.$entry;
+        $relative = $prefix === '' ? $entry : $prefix.'/'.$entry;
+
+        if (is_dir($path) && ! is_link($path)) {
+            $found = array_merge($found, leakedFiles($path, $relative));
+
+            continue;
+        }
+
+        if (is_file($path)) {
+            $found[] = $relative;
+        }
+    }
+
+    return $found;
+}
+
+function directorySize(string $path): int
+{
+    if (! is_dir($path)) {
+        return is_file($path) ? (int) filesize($path) : 0;
+    }
+
+    $total = 0;
+
+    foreach (scandir($path) ?: [] as $entry) {
+        if ($entry !== '.' && $entry !== '..') {
+            $total += directorySize($path.DIRECTORY_SEPARATOR.$entry);
+        }
+    }
+
+    return $total;
+}
+
+function removeTree(string $path): bool
+{
+    if (! file_exists($path)) {
+        return true;
+    }
+
+    if (is_file($path)) {
+        return @unlink($path);
+    }
+
+    foreach (scandir($path) ?: [] as $entry) {
+        if ($entry !== '.' && $entry !== '..') {
+            if (! removeTree($path.DIRECTORY_SEPARATOR.$entry)) {
+                return false;
+            }
+        }
+    }
+
+    return @rmdir($path);
+}
+
+/**
+ * @return array{frankenphp?: string, jar?: string, jre?: string, into?: string, help: bool}
+ */
+function parseArguments(array $arguments): array
+{
+    $parsed = ['help' => false];
+
+    foreach (array_slice($arguments, 1) as $argument) {
+        if ($argument === '--help' || $argument === '-h') {
+            $parsed['help'] = true;
+
+            continue;
+        }
+
+        if (preg_match('#^--([a-z]+)=(.+)$#', $argument, $matches) === 1) {
+            $parsed[$matches[1]] = $matches[2];
+
+            continue;
+        }
+
+        fail("unrecognised argument {$argument}");
+    }
+
+    return $parsed;
+}

@@ -68,6 +68,17 @@ yarn-error.log
 # in app/ reads from it.
 /suwayomi/
 /runtime/
+# The assembled install that packaging/runtime/build-install.php produces. Roughly 400MB, of
+# which the jar and the JRE are the great majority, and all of it derivable from one command.
+/build/
+# The throwaway data directory build-install.php lays out beside the install, so it can ask the
+# launcher whether it can configure itself. Discarded by the build, but not by git if it is killed
+# midway, and it holds a real .env with a generated APP_KEY.
+/build/.build-probe/
+# Where the staging scripts put things when pointed somewhere other than the repository root.
+# 179MB of Temurin binaries and a CA bundle, which is the same hazard as /build/ and for the same
+# reason: one `git add -A` from a permanent copy of a third-party distribution.
+/.staging-test/
 
 # Local tooling output: browser-gate screenshots and scratch scripts. The probes
 # under .tools/suwayomi/ are kept outside this repository on purpose, because

@@ -370,11 +370,60 @@ instead of quietly falling back to a system one. It copies now.
 ### Staging it reproducibly
 
 `.tools` is scratch and lives outside the repository, so the manual staging above is not a build
-step anyone else can run. `packaging/runtime/stage-jre.php` is: it downloads the pinned archive,
-verifies the digest before extracting anything, strips the archive's single wrapper directory,
-and then checks that `bin/java.exe` exists and `bin/javac.exe` does not. A mismatch deletes the
-download rather than leaving it for the next person to trust by accident. `--force` replaces an
-existing staged JRE, and without it the script reports what is already there and exits.
+step anyone else can run. `packaging/runtime/stage-runtime.php` is: it downloads the pinned
+archive, verifies the digest before extracting anything, strips the archive's single wrapper
+directory, and then checks that `bin/java.exe` exists and `bin/javac.exe` does not. A mismatch
+deletes the download rather than leaving it for the next person to trust by accident. `--force`
+replaces an existing staged JRE, and without it the script reports what is already there and
+exits.
+
+It then stages the CA bundle, which the shipped ini names as `{{RUNTIME}}/cacert.pem` and which
+nothing else provides. This is not optional. Measured against the real runtime with the shipped
+ini and no bundle:
+
+```
+error adding trust anchors from file: .../runtime/cacert.pem
+```
+
+Every HTTPS request fails, and the error names a trust-anchor problem rather than the missing
+file that caused it. With the bundle in place the same request returns `HTTP 200, 188900 bytes`,
+and a self-signed endpoint is still correctly rejected, so verification is fixed rather than
+switched off.
+
+The bundle's digest is pinned too, and that pin is more of a liability than the JRE's, because
+it changes whenever a certificate authority is added or removed. It will go stale. That is the
+correct trade: a bundle that updates itself during a build means two builds of one commit ship
+different trust decisions.
+
+### Two defects the sandbox gate found before it ran
+
+Neither of these needed the sandbox. Both came out of checking that the config the installer
+ships is the config the installer actually uses, which is a smaller job than a sandbox and worth
+doing anyway.
+
+**The shipped php.ini was never substituted.** It is a template, `extension_dir =
+"{{RUNTIME}}/ext"` and it means it. `resolveWebConfig()` filled in the Caddyfile's tokens and
+there was no equivalent for the ini, so the template reached PHP verbatim. PHP does not reject
+that path. It treats the braces as directory name characters, fails to find all twelve
+extensions, and serves an app that cannot open its database. Measured, same runtime both ways:
+
+| | shipped template | resolved |
+| --- | --- | --- |
+| pdo_sqlite | MISSING | loaded |
+| sqlite3 | MISSING | loaded |
+| mbstring, zip, gd, curl, fileinfo, exif | MISSING | loaded |
+| upload_tmp_dir | `{{TEMP}}` | a real path |
+
+The clean-room run had passed while this was true, which is the part worth keeping. The probe
+was substituting the ini itself and pulling it from a scratch cache rather than from
+`packaging/`, so it verified the harness instead of the product. A probe that quietly replaces
+the thing under test is worse than no probe, because it reports success.
+
+**The test suite runs on a different PHP than the product ships.** FrankenPHP bundles PHP
+**8.5.11**. Every one of the 1,509 tests runs on Herd's **8.4**. That is the whole suite
+validated against a runtime the reader will not have, and it is why `curl_close()` reports as
+deprecated in the packaged runtime. Pinning FrankenPHP to an 8.4 build and adding an 8.5 lane are
+both still open.
 
 This is a build script rather than application code, so it is verified by running it end to end
 rather than by the test suite. That is a real gap and it is worth closing with tests for the

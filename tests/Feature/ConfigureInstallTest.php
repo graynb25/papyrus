@@ -25,8 +25,15 @@ use Tests\TestCase;
  * died mid-suite, and the environment file was destroyed.
  *
  * The mistake was reaching for a careful backup instead of removing the hazard. So the command
- * takes `--env` and these tests point it at a scratch file. Nothing here reads or writes the
+ * takes `--env-file` and these tests point it at a scratch file. Nothing here reads or writes the
  * file the app is actually running on.
+ *
+ * ## Why these tests could not have caught the option name
+ *
+ * They pass options as an array to `$this->artisan()`, which hands them straight to the command's
+ * input and never parses argv. So the option was called `env`, colliding with a Symfony global,
+ * every test here passed, and the launcher still could not start. The name is now `env-file` and
+ * there is a test below that runs the command as a real process to keep that honest.
  *
  * ## The snapshot tests are not here
  *
@@ -61,7 +68,7 @@ class ConfigureInstallTest extends TestCase
     private function configure(array $extra = []): PendingCommand
     {
         return $this->artisan('papyrus:configure', array_merge([
-            '--env' => $this->envFile,
+            '--env-file' => $this->envFile,
             '--data' => $this->scratch.DIRECTORY_SEPARATOR.'data',
         ], $extra));
     }
