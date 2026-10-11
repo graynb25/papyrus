@@ -282,9 +282,24 @@ final class InstallLayout
      *
      * Folded unconditionally rather than only on Windows, because these checks exist for
      * Windows paths and a case insensitive comparison is correct for them everywhere.
+     *
+     * ## Why `strtolower` and not `mb_strtolower`
+     *
+     * Because the launcher runs under a bare `php.exe` with no ini, so `mbstring` is not loaded and
+     * `mb_strtolower` is an undefined function. That is not a theoretical concern: the sandbox gate
+     * reached this line and died with "Call to undefined function
+     * Papyrus\Launcher\mb_strtolower()", on the very first line of the layout step, in an install
+     * where every other file was correct.
+     *
+     * `strtolower` is ASCII only, which is the right trade here anyway. The comparison is between
+     * two filesystem paths on the same machine, so the only characters that can differ in case are
+     * ones the filesystem itself treats case insensitively. Folding non-ASCII would change paths
+     * that were never ambiguous, and a wrong refusal is worse than a missed one: this method
+     * exists to stop a reader's library being written inside an install directory, and it should
+     * never refuse a legitimate layout.
      */
     private function comparable(string $path): string
     {
-        return mb_strtolower($this->normalise($path));
+        return strtolower($this->normalise($path));
     }
 }
