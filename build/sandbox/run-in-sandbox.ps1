@@ -480,10 +480,36 @@ foreach ($port in @($appPort, $suwayomiPort)) {
     Check "port $port released" ($null -eq $still)
 }
 
-foreach ($name in @('java', 'frankenphp')) {
-    $left = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
-    Check 'no java process left' ($left.Count -eq 0) "found $($left.Count)"
+# Scoped to this install's root, by process name alone.
+#
+# Checking for "java" or "frankenphp" anywhere on the machine reports a failure for a JVM the
+# reader happened to have open. That is the same mistake this gate made once in the other
+# direction: it checked a machine-wide thing and was satisfied by the wrong evidence.
+# A clean sandbox has no other JVM, so this cannot hide a leak here, and it cannot cry wolf on a
+# machine that happens to have one.
+$survivors = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Contains('C:\papyrus') } |
+    Where-Object {
+        $_.CommandLine.Contains('queue:work') -or
+        $_.CommandLine.Contains('schedule:work') -or
+        $_.CommandLine.Contains('frankenphp') -or
+        $_.CommandLine.Contains('.jar')
+    })
+
+Check 'no papyrus process survived the stop' ($survivors.Count -eq 0) "found $($survivors.Count)"
+
+foreach ($survivor in $survivors) {
+    Say "    left running: $($survivor.ProcessId) $($survivor.Name)"
 }
+
+# The stop command has to say something true.
+#
+# It used to print "Nothing was started by this session, so nothing was stopped" and exit 0 while
+# all four processes kept running. That is a confident wrong answer rather than a failure, and
+# checking only the exit code would have passed it: the command succeeded, and did nothing.
+$stopOutput = Get-Content 'C:\results\launcher-stop.log' -Raw -ErrorAction SilentlyContinue
+Check 'the stop did not claim there was nothing to stop' `
+    ($stopOutput -notmatch 'Nothing was started by this session')
 
 Section 'result'
 
