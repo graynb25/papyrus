@@ -1,9 +1,25 @@
 # Packaging Papyrus for Windows
 
-Status: phase 0 started. Items 0.2 and 0.4 are done and verified on a real Windows machine
-against the real app, and the shipped configs live in `packaging/`. Distribution, signing,
-platforms, backup and publishing are in [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after
-investigating this repository, this machine, and the upstream projects it would ship.
+Status: **phase 0 complete and verified.** A 622.8MB install builds from one command and was run
+end to end in a Windows Sandbox on a machine with no PHP, no Java and no C++ runtime. Thirteen
+defects were found and fixed getting there; the last three existed only off the development
+machine. Distribution, signing, platforms, backup and publishing are in
+[`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
+and the upstream projects it would ship.
+
+The shipped configs live in `packaging/`, and the two build steps are:
+
+```
+php packaging/runtime/stage-runtime.php      the pinned JRE and the CA bundle
+php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar> --into=<dir>
+```
+
+`build-install.php` refuses to finish on a broken install. Beyond checking that files exist, it
+lays the install out using the launcher's own code, boots the application with the launcher's own
+resolved `php.ini`, asks PHP which ini it *actually loaded* rather than which one it was handed,
+confirms `papyrus:configure` produced an `.env` with a key, and runs the staged `php.exe` from a
+directory outside the install to prove it is self sufficient. Each of those is behavioural, and a
+file listing cannot make any of them.
 
 The question is whether a reader can install Papyrus on a Windows machine and have a working
 manga reader without installing PHP, Java, or knowing what Suwayomi is.
@@ -62,6 +78,67 @@ Used throughout this document.
 | **L** | Polish. Real, deferrable. |
 
 ## Phase 0 progress
+
+### Done: the sandbox gate, and the three defects only it could find
+
+Phase 0 is finished. The install builds from one command and runs on a machine with nothing
+installed. Getting there took thirteen defects, and the last three are the reason this section
+exists, because **every check on the development machine passed while all three were present**:
+
+| | Defect | Why nothing local caught it |
+| --- | --- | --- |
+| 11 | The Visual C++ runtime was never staged. `php.exe` is a 200KB shim that links `vcruntime140.dll`; the FrankenPHP archive ships 24 DLLs, all PHP and OpenSSL, and no `vcruntime*`. | Windows keeps them in System32 on every development machine |
+| 12 | `papyrus.php` required five of the seven classes `Supervisor` constructs. `InstallLayout` and `LayoutRefused` were missing, so the first line of any start was a fatal. | Both the test suite and the clean-room probe `require` all seven explicitly, so neither can see the entry point forgot |
+| 13 | `InstallLayout::comparable()` used `mb_strtolower`. The launcher runs under a bare `php.exe` with no ini, so mbstring is not loaded and the function does not exist. | Herd's `php.ini` loads mbstring |
+
+The symptoms in a clean guest were, in order: `exit code 0xC0000135` (`STATUS_DLL_NOT_FOUND`) with
+no output at all, then `Class "Papyrus\Launcher\InstallLayout" not found`, then `Call to undefined
+function mb_strtolower()`. Each one is a fatal in a different component, and each one is invisible
+from a machine that supplies the missing piece.
+
+Two of them are the launcher's own design constraint being violated. The launcher must keep
+working when the application does not, so it can assume **no extension at all**, including the ones
+the application itself relies on. `mb_strtolower` was the only such use; the app's own uses are
+fine, because the app always runs with the resolved ini.
+
+Changed to `strtolower`, which is the better call independently: the comparison is between two
+filesystem paths on one machine, so only ASCII case can differ, and a false refusal here is worse
+than a missed one.
+
+**What the gate actually asserts**, from `build/sandbox/run-in-sandbox.ps1`:
+
+```
+no java on PATH, no php on PATH, no Java installed
+all required files present, exactly one suwayomi jar
+no database, no .env and no logs shipped
+bundled php.exe runs standalone                      PHP 8.5.11 ZTS Visual C++ 2022 x64
+13 directories created, Suwayomi answering
+database migrated, no database written into the install
+the app reports ready
+queue worker and scheduler started
+Papyrus is running at http://127.0.0.1:<port>
+suwayomi answers graphql                             v2.4.2366
+https works with the bundled trust store            200
+all four processes stopped, both ports released
+```
+
+An empty library in the sandbox is the **correct** result, not a symptom. No database and no
+extensions ship, so a clean machine shows an empty library by design.
+
+**What this gate cost to get right, and why it is worth the trouble.** Four separate probes wrote
+a confident and wrong answer during phase 0, each reading something other than what it measured: a
+clean-room run that substituted the `php.ini` it was meant to be testing, a driver probe that
+measured a file it had already deleted, a second driver probe that mis-parsed its own output, and
+an HTTPS probe that was handed no CA bundle at all and reported the resulting success. In every
+case the test suite was correct and the probe was not, which is the failure mode a green suite
+structurally cannot catch.
+
+The sandbox run had the same problem twice more, both in the runner rather than the install: it
+hard-coded app port 8402 while the launcher chooses its own free port and announces it, and it
+treated a `start` command still serving after four minutes as a hang when a foreground process
+holding and serving *is* the success case. The second one made a healthy install look broken for
+ten minutes. The runner now reads the port from the launcher's own output and treats a running
+process as success.
 
 ### Done and verified: 0.2, the FrankenPHP gate
 
