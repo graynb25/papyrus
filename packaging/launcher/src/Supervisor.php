@@ -75,6 +75,9 @@ final class Supervisor
     /** Set once a start, so a polling loop reports an unhappy application exactly once. */
     private bool $reportedUnready = false;
 
+    /** Created on demand, since a `status` or `health` call never needs it. */
+    private ?SummaryLog $summary = null;
+
     public function __construct(
         private readonly string $root,
         private readonly string $dataDirectory,
@@ -182,14 +185,41 @@ final class Supervisor
      */
     public function start(callable $say): array
     {
+        /*
+         * The summary log is opened before anything else, including the lock.
+         *
+         * Because the first thing a reader needs is proof the launcher was reached at all. A
+         * failure before this point leaves nothing anywhere, and "nothing happened" and "the app
+         * never started" are indistinguishable from a log that was never created.
+         */
+        $summary = $this->summary();
+
+        $summary->record('papyrus', sprintf(
+            'starting, install %s, data %s',
+            $this->root,
+            $this->dataDirectory,
+        ));
+
         $this->prepareLayout($say);
+
+        $summary->record('papyrus', 'layout ready');
+
         $this->takeLock();
 
         try {
             $this->startSuwayomi($say);
+            $summary->record('suwayomi', sprintf('ready on port %d', $this->suwayomiPort));
+
             $this->migrate($say);
+            $summary->record('papyrus', 'database current');
+
             $this->startWebServer($say);
+            $summary->record('web', sprintf('serving on http://127.0.0.1:%d, ready', $this->appPort));
+
             $this->startWorkers($say);
+            $summary->record('papyrus', 'queue worker and scheduler started');
+
+            $summary->record('papyrus', sprintf('ready at http://127.0.0.1:%d', $this->appPort));
 
             return array_keys($this->started);
         } catch (\Throwable $e) {
@@ -197,6 +227,15 @@ final class Supervisor
             // before rethrowing. Leaving Suwayomi running with no web server is the state a
             // reader cannot diagnose and we can.
             $this->stopAll($say);
+
+            // Recorded before rethrowing, because a thrown exception in a terminal window is the
+            // one message that never reaches a log file, and this is the reader's only record
+            // that the install tried and failed.
+            $summary->problem('papyrus', sprintf(
+                'did not start: %s (see the collected logs in %s)',
+                $e->getMessage(),
+                $this->logDirectory,
+            ));
 
             throw $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), 0, $e);
         }
@@ -227,6 +266,22 @@ final class Supervisor
         if ($this->lock !== null) {
             $this->lock->release();
             $this->lock = null;
+        }
+
+        /*
+         * The stop line, and the single most useful line in the file.
+         *
+         * When a reader says "it crashed", this is what answers whether the exit was orderly
+         * without them having to describe how it ended. A stop that reports four processes is a
+         * different conversation from one that reports it had to kill something.
+         */
+        if ($outcomes !== []) {
+            $this->summary()->record('papyrus', sprintf(
+                'stopped cleanly, %d process%s: %s',
+                count($outcomes),
+                count($outcomes) === 1 ? '' : 'es',
+                implode(', ', array_keys($outcomes)),
+            ));
         }
 
         return $outcomes;
@@ -678,6 +733,211 @@ final class Supervisor
      * The data directory passed in should be a throwaway: this writes a resolved ini, a Caddyfile
      * and a real `.env` with a generated APP_KEY into it.
      */
+    /**
+     * The ports this install uses, for the health command.
+     *
+     * Read from the supervisor rather than re-derived, because the launcher is the only thing that
+     * knows them. A health command that guessed 4567 and 8402 would report a Suwayomi that had
+     * chosen a different free port as missing, which is how a diagnostic becomes a second source
+     * of truth and disagrees with the first.
+     */
+    public function suwayomiPort(): int
+    {
+        return $this->suwayomiPort;
+    }
+
+    public function appPort(): int
+    {
+        return $this->appPort;
+    }
+
+    public function logDirectory(): string
+    {
+        return $this->logDirectory;
+    }
+
+    public function dataDirectory(): string
+    {
+        return $this->dataDirectory;
+    }
+
+    /**
+     * Where this install's database actually is.
+     *
+     * Read out of the `.env` the launcher wrote, not derived. Guessing a path is how health came
+     * to report a database as missing while `/ready` reported the same database open and healthy:
+     * the real file is `<data>/database.sqlite`, not `<data>/database/database.sqlite`. A
+     * diagnostic that guesses is a second source of truth, and it disagreed with the first.
+     *
+     * Falls back to the data directory root, which is where it actually lives, so a missing or
+     * unreadable `.env` degrades to the right answer rather than to a wrong one.
+     */
+    public function databaseFile(): string
+    {
+        $env = $this->environmentFile();
+
+        if (is_file($env)) {
+            $contents = (string) @file_get_contents($env);
+
+            // Single quotes first, because that is what papyrus:configure writes for a path with
+            // a space in it, and double quotes are not what it emits. Unquoted is last because it
+            // cannot hold a path with whitespace anyway.
+            foreach (["/^DB_DATABASE\s*=\s*'(.*)'\s*$/m", '/^DB_DATABASE\s*=\s*"(.*)"\s*$/m', '/^DB_DATABASE\s*=\s*(\S+)\s*$/m'] as $pattern) {
+                if (preg_match($pattern, $contents, $matches) === 1 && trim($matches[1]) !== '') {
+                    return trim($matches[1]);
+                }
+            }
+        }
+
+        return $this->dataDirectory.DIRECTORY_SEPARATOR.'database.sqlite';
+    }
+
+    /**
+     * Whether one of the four processes is actually up, whoever started it.
+     *
+     * ## Why this cannot ask this object
+     *
+     * `$started` only holds processes this particular Supervisor instance launched. A `health` or
+     * `status` process is a different instance, so it has an empty array and every worker looks
+     * dead. The first run of `papyrus health` against a live install reported both workers as
+     * NOT RUNNING while `/ready` returned 200 and both processes were verifiably alive.
+     *
+     * So the question is answered from the operating system instead: the launcher passes the
+     * command line each worker is started with, and any process running that command under this
+     * install is that worker. That is true across sessions, which is the case that matters, since
+     * a reader running `health` is by definition in a different session from the one that started
+     * Papyrus.
+     */
+    public function isRunning(string $name): bool
+    {
+        if (isset($this->started[$name]) && $this->started[$name]->isRunning()) {
+            return true;
+        }
+
+        $marker = match ($name) {
+            'queue' => 'queue:work',
+            'scheduler' => 'schedule:work',
+            'suwayomi' => basename($this->locateJar() ?? 'Suwayomi-Server'),
+            'web' => 'frankenphp',
+            default => null,
+        };
+
+        if ($marker === null) {
+            return false;
+        }
+
+        /*
+         * A temporary script file, run with `-File`, rather than `-Command`.
+         *
+         * `-Command` needs the PowerShell source wrapped in double quotes for the shell, and the
+         * source itself contains double quotes in both the WMI filter and the `-like` pattern.
+         * Escaping that nest correctly is possible and was tried, and it silently returned nothing
+         * on a machine where the identical command worked when pasted into a shell, which is the
+         * worst possible failure: health reporting both workers dead while they were running.
+         *
+         * `-File` has no quoting layer at all. The script takes the pattern as an argument, so
+         * there is exactly one place a value could need escaping and it is not inside a string in
+         * two languages at once.
+         *
+         * WMIC was the cheap alternative and is gone: this machine has no `wmic` at all, so the
+         * obvious implementation reports everything dead on any Windows build that has deprecated
+         * it. `health` is asked for precisely when something is already wrong, and a diagnostic
+         * that reports all four processes broken because its own query tool is missing is worse
+         * than one that is slow.
+         */
+        $script = tempnam(sys_get_temp_dir(), 'papyrus-probe-');
+
+        if ($script === false) {
+            return false;
+        }
+
+        file_put_contents($script, implode(PHP_EOL, [
+            'param([string]$Pattern)',
+            '$ErrorActionPreference = "SilentlyContinue"',
+            'Get-CimInstance Win32_Process |',
+            '  Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Pattern) } |',
+            '  Select-Object -First 1 -ExpandProperty ProcessId',
+        ]));
+
+        $output = [];
+        $status = 1;
+
+        @exec(
+            sprintf(
+                'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File %s %s 2>NUL',
+                escapeshellarg($script),
+                escapeshellarg($marker),
+            ),
+            $output,
+            $status,
+        );
+
+        @unlink($script);
+
+        foreach ($output as $line) {
+            if (trim($line) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * What `/ready` says, as the health command needs it.
+     *
+     * Returns null when nothing is listening, which is different from a 503, which is the app
+     * answering and refusing. The distinction is the whole reason this returns the status code
+     * rather than a boolean.
+     *
+     * @return array{status: int, checks: array{key: bool, database: bool, pending_migrations: int}}|null
+     */
+    public function readiness(): ?array
+    {
+        if (! $this->prober->isPortTaken($this->appPort)) {
+            return null;
+        }
+
+        $context = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
+
+        $response = @file_get_contents(
+            sprintf('http://127.0.0.1:%d/ready', $this->appPort),
+            false,
+            $context,
+        );
+
+        if (! is_string($response)) {
+            return null;
+        }
+
+        $status = 0;
+
+        if (preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0] ?? '', $matches) === 1) {
+            $status = (int) $matches[1];
+        }
+
+        $decoded = json_decode($response, true);
+
+        if (! is_array($decoded)) {
+            return ['status' => $status, 'checks' => ['key' => false, 'database' => false, 'pending_migrations' => -1]];
+        }
+
+        return [
+            'status' => $status,
+            'checks' => [
+                'key' => (bool) ($decoded['checks']['key'] ?? false),
+                'database' => (bool) ($decoded['checks']['database'] ?? false),
+                'pending_migrations' => (int) ($decoded['checks']['pending_migrations'] ?? -1),
+            ],
+        ];
+    }
+
+    /** The summary log, for the health command and for the messages `start` writes. */
+    public function summary(): SummaryLog
+    {
+        return $this->summary ??= new SummaryLog($this->logDirectory);
+    }
+
     public function prepareLayoutForBuild(): void
     {
         $this->prepareLayout(static function (string $line): void {

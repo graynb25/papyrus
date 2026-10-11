@@ -72,13 +72,32 @@ const APP_ENTRIES = [
 ];
 
 /**
+ * Never copied out of `storage/`, because everything in it is per developer and per machine.
+ *
+ * ## Why this is a subtree rule rather than more entries in a denylist
+ *
+ * Because `storage/` is by definition writable state. Laravel writes caches, compiled views,
+ * sessions, logs, uploaded files and test scratch into it, and a developer's copy of it holds
+ * whatever their last test run and their last import left behind. There is no file in it that
+ * belongs in a reader's install, so the whole subtree is replaced with empty directories.
+ *
+ * The previous version listed six specific paths under `storage/` and missed
+ * `storage/framework/testing/`, which shipped a cover image and a Livewire temporary upload from
+ * the test suite. That is the shape of the problem rather than an instance of it: a list of paths
+ * someone remembered, one more entry to forget each time something new lands there, and a build
+ * that reported success while doing it.
+ *
+ * This also removes the need for the `storage/app/private` entry that was there to stop a
+ * developer's downloads shipping, and for the log and cache entries beside it.
+ */
+const NEVER_COPY_STORAGE = true;
+
+/**
  * Files that must never reach a build, each with the reason it is listed.
  *
- * This is a denylist layered on top of the allowlist above, and it exists because the two
- * dangerous cases both live inside directories that are legitimately copied. `database/` holds
- * the migrations the app needs and also the SQLite file a developer's own library lives in.
- * `storage/` holds the structure Laravel needs and also logs, cached views and screenshots. An
- * allowlist of top level entries cannot tell those apart, so each one is named.
+ * Outside `storage/`, so this stays a denylist, because the allowlist cannot be applied the same
+ * way: `database/` holds the migrations the app genuinely needs alongside the SQLite file a
+ * developer's own library lives in, and an allowlist there would drop the migrations.
  *
  * The library is the serious one. It records what someone follows and how far through each series
  * they are, and it must never end up in an artifact handed to a stranger, however briefly. The
@@ -87,12 +106,10 @@ const APP_ENTRIES = [
  */
 const NEVER_SHIPPED = [
     'database/database.sqlite' => 'the developer library: what they follow and how far through',
-    'storage/logs' => 'the developer log, megabytes of local paths and errors',
-    'storage/framework/cache' => 'compiled views from a different machine',
-    'storage/framework/sessions' => 'session state that must not outlive the process',
-    'storage/framework/views' => 'compiled views from a different machine',
+    'database/database.sqlite-journal' => 'a journal left beside the library',
+    'database/database.sqlite-wal' => 'a write ahead log left beside the library',
+    'database/database.sqlite-shm' => 'shared memory state left beside the library',
     'storage/design-review' => 'screenshots taken during development',
-    'storage/app/private' => 'whatever the developer has downloaded or imported',
 ];
 
 /**
@@ -104,6 +121,7 @@ const NEVER_SHIPPED = [
  */
 const EMPTY_PLACEHOLDERS = [
     'storage/app/private',
+    'storage/app/public',
     'storage/framework/cache',
     'storage/framework/sessions',
     'storage/framework/views',
@@ -374,7 +392,7 @@ foreach (APP_ENTRIES as $entry) {
     }
 
     $copied += is_dir($source)
-        ? copyTree($source, $into.DIRECTORY_SEPARATOR.$entry)
+        ? copyTree($source, $into.DIRECTORY_SEPARATOR.$entry, $entry === 'storage')
         : (copy($source, $into.DIRECTORY_SEPARATOR.$entry) ? 1 : 0);
 }
 
@@ -418,6 +436,26 @@ foreach (EMPTY_PLACEHOLDERS as $relative) {
 }
 
 say('placeholders', count(EMPTY_PLACEHOLDERS).' empty directories restored');
+
+/*
+ * Prove the storage subtree really is empty, rather than trusting the copy that made it so.
+ *
+ * The rule that skips it is one line, and a one line rule that fails silently is the exact failure
+ * this build exists to prevent. `storage/framework/testing/` shipped a cover image and a Livewire
+ * temporary upload before the rule existed, and the build reported success while doing it, so the
+ * check is a walk rather than an assumption.
+ */
+$storageFiles = leakedFiles($into.DIRECTORY_SEPARATOR.'storage');
+
+if ($storageFiles !== []) {
+    fail(
+        "the install's storage directory is not empty, which means developer state shipped:\n  - "
+        .implode("\n  - ", array_slice($storageFiles, 0, 10))
+        ."\n\n  storage/ is recreated at first start and must never be copied."
+    );
+}
+
+say('verified', 'storage is empty, nothing per developer shipped in it');
 
 // --- prove the layout is complete, and that nothing forbidden is in it -----------------
 
@@ -930,10 +968,18 @@ function extractArchive(string $archive, string $working): string
  *
  * The count is returned rather than logged from inside because two callers sum it, and a
  * function that both counts and prints reports the same total twice.
+ *
+ * `$structureOnly` creates the directory and its subdirectories without copying any file. It is
+ * used for `storage/`, which a developer has filled with their own state and which the install
+ * recreates empty at first start.
  */
-function copyTree(string $source, string $target): int
+function copyTree(string $source, string $target, bool $structureOnly = false): int
 {
     if (is_file($source)) {
+        if ($structureOnly) {
+            return 0;
+        }
+
         $parent = dirname($target);
 
         if (! is_dir($parent) && ! mkdir($parent, 0o777, true) && ! is_dir($parent)) {
@@ -965,6 +1011,7 @@ function copyTree(string $source, string $target): int
         $count += copyTree(
             $source.DIRECTORY_SEPARATOR.$entry,
             $target.DIRECTORY_SEPARATOR.$entry,
+            $structureOnly,
         );
     }
 

@@ -60,7 +60,17 @@ return [
 
         'single' => [
             'driver' => 'single',
-            'path' => storage_path('logs/laravel.log'),
+            /*
+             * A forward slash rather than `logs/laravel.log`.
+             *
+             * `storage_path()` returns a Windows path with backslashes, so appending a relative
+             * path with forward slashes produces a mixed separator. PHP's own file handling does
+             * not care, and neither does the log driver, but the path is printed into support
+             * material and asked to be typed, and a reader who copies `storage\logs/laravel.log`
+             * into a search box on a French keyboard has to think about it. Joining with the
+             * directory separator produces one that reads correctly everywhere.
+             */
+            'path' => storage_path('logs').DIRECTORY_SEPARATOR.'laravel.log',
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
         ],

@@ -119,6 +119,27 @@ if (($packagedEnvironment = getenv('PAPYRUS_ENV')) !== false
      * APP_ENV is set in the process environment. Naming the file would be undone by that.
      */
     $app->useEnvironmentPath(dirname($packagedEnvironment));
+
+    /*
+     * Storage goes to the data directory too, and for the same three reasons as the environment
+     * file: the install may be read only under Program Files, an uninstall must not take the
+     * reader's files with it, and the launcher collects logs from the data directory only.
+     *
+     * Without this the application's own log is written to `<install>/storage/logs/laravel.log`,
+     * which is a directory the install may not be able to write to, which an uninstall deletes,
+     * and which nothing collects. The install then looks healthy while the one file a bug report
+     * needs is missing. Measured on a complete run: 0 files reached the data directory's storage
+     * tree, all six directories of which `InstallLayout` had just created them.
+     *
+     * Set next to `useEnvironmentPath` rather than in a service provider, because both have to be
+     * in place before anything reads them, and because this file is the only place that runs
+     * unconditionally for both a web request and an artisan command.
+     */
+    $dataDirectory = dirname($packagedEnvironment);
+
+    if (is_dir($dataDirectory.DIRECTORY_SEPARATOR.'storage')) {
+        $app->useStoragePath($dataDirectory.DIRECTORY_SEPARATOR.'storage');
+    }
 }
 
 return $app;

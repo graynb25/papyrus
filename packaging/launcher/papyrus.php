@@ -55,6 +55,8 @@ require __DIR__.'/src/ManagedProcess.php';
 require __DIR__.'/src/LayoutRefused.php';
 require __DIR__.'/src/InstallLayout.php';
 
+require __DIR__.'/src/SummaryLog.php';
+require __DIR__.'/src/Health.php';
 require __DIR__.'/src/Supervisor.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
@@ -132,8 +134,32 @@ try {
 
             exit(0);
 
+        case 'health':
+            /*
+             * The command a reader is asked to run before filing a bug.
+             *
+             * It changes nothing and answers in a second, because "is it working" should never
+             * require opening a log file, and because a reader who can run one command and paste
+             * the output has given us most of what we need before writing a word.
+             *
+             * Exits non-zero when something is wrong, so a script or a future tray icon can branch
+             * on it rather than parsing the table.
+             */
+            $health = new Health(
+                $supervisor,
+                new Prober,
+                $supervisor->summary(),
+            );
+
+            $say('');
+            $say('  Papyrus health');
+            $say('');
+            $say($health->render());
+
+            exit(str_contains($health->render(), 'FAIL') ? 1 : 0);
+
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status]\n");
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health]\n");
 
             exit(2);
     }
