@@ -3,7 +3,8 @@
 Status: **phase 0 complete and verified.** A 622.8MB install builds from one command and was run
 end to end in a Windows Sandbox on a machine with no PHP, no Java and no C++ runtime. Thirteen
 defects were found and fixed getting there; the last three existed only off the development
-machine. Distribution, signing, platforms, backup and publishing are in
+machine. Item 0.9, the unified logging that makes any of this diagnosable, is designed in
+[`LOGGING.md`](LOGGING.md). Distribution, signing, platforms, backup and publishing are in
 [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
 and the upstream projects it would ship.
 
