@@ -78,6 +78,19 @@ final class Supervisor
     /** Created on demand, since a `status` or `health` call never needs it. */
     private ?SummaryLog $summary = null;
 
+    /**
+     * Overrides how process liveness is determined, for tests.
+     *
+     * @param  (callable(string): bool)|null  $probe  Null restores the real answer.
+     */
+    public function useLivenessProbe(?callable $probe): void
+    {
+        $this->livenessProbe = $probe;
+    }
+
+    /** @var (callable(string): bool)|null */
+    private $livenessProbe = null;
+
     public function __construct(
         private readonly string $root,
         private readonly string $dataDirectory,
@@ -814,6 +827,18 @@ final class Supervisor
             return true;
         }
 
+        /*
+         * An injected liveness answer, before the operating system is asked.
+         *
+         * The OS query is correct and unfakeable in production, which makes it untestable: a
+         * health test asserting that a missing worker is reported as missing would find this
+         * machine's real workers and report them as running. It did exactly that, and three tests
+         * failed for a reason that had nothing to do with the code under test.
+         */
+        if ($this->livenessProbe !== null) {
+            return ($this->livenessProbe)($name);
+        }
+
         $marker = match ($name) {
             'queue' => 'queue:work',
             'scheduler' => 'schedule:work',
@@ -881,55 +906,6 @@ final class Supervisor
         }
 
         return false;
-    }
-
-    /**
-     * What `/ready` says, as the health command needs it.
-     *
-     * Returns null when nothing is listening, which is different from a 503, which is the app
-     * answering and refusing. The distinction is the whole reason this returns the status code
-     * rather than a boolean.
-     *
-     * @return array{status: int, checks: array{key: bool, database: bool, pending_migrations: int}}|null
-     */
-    public function readiness(): ?array
-    {
-        if (! $this->prober->isPortTaken($this->appPort)) {
-            return null;
-        }
-
-        $context = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
-
-        $response = @file_get_contents(
-            sprintf('http://127.0.0.1:%d/ready', $this->appPort),
-            false,
-            $context,
-        );
-
-        if (! is_string($response)) {
-            return null;
-        }
-
-        $status = 0;
-
-        if (preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0] ?? '', $matches) === 1) {
-            $status = (int) $matches[1];
-        }
-
-        $decoded = json_decode($response, true);
-
-        if (! is_array($decoded)) {
-            return ['status' => $status, 'checks' => ['key' => false, 'database' => false, 'pending_migrations' => -1]];
-        }
-
-        return [
-            'status' => $status,
-            'checks' => [
-                'key' => (bool) ($decoded['checks']['key'] ?? false),
-                'database' => (bool) ($decoded['checks']['database'] ?? false),
-                'pending_migrations' => (int) ($decoded['checks']['pending_migrations'] ?? -1),
-            ],
-        ];
     }
 
     /** The summary log, for the health command and for the messages `start` writes. */

@@ -117,7 +117,7 @@ final class Health
             return;
         }
 
-        $readiness = $this->supervisor->readiness();
+        $readiness = $this->prober->readiness($port);
 
         if ($readiness === null) {
             $this->add('web', 'listening on '.$port.' but /ready did not answer', false);

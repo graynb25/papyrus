@@ -158,6 +158,27 @@ final class SummaryLog
         }
 
         @rename($path, $path.'.1');
+
+        $this->discardExcessGenerations($path);
+    }
+
+    /**
+     * Remove anything beyond the generations this install keeps.
+     *
+     * Without this, a stale `.2` or `.3` survives every rotation forever. It costs nothing to
+     * keep one generation and everything to keep an unknown number, because `files()` sweeps
+     * every match into the diagnostics bundle, so one leftover from a build that once kept more
+     * would be attached to every support request that reader ever sends.
+     */
+    private function discardExcessGenerations(string $path): void
+    {
+        foreach (glob($path.'.*') ?: [] as $candidate) {
+            $suffix = substr($candidate, strlen($path) + 1);
+
+            if (ctype_digit($suffix) && (int) $suffix > self::KEEP_GENERATIONS) {
+                @unlink($candidate);
+            }
+        }
     }
 
     /**

@@ -19,7 +19,22 @@ namespace Papyrus\Launcher;
  * start, on a machine that is busy starting it. The first attempt is quick because most
  * failures are immediate, and it slows to a floor because most successes are slow.
  */
-final class Prober
+/**
+ * Asks questions about the machine, over the network and the filesystem.
+ *
+ * ## Why this is not final
+ *
+ * So a test can subclass it and say what the machine answers. Every method here does real I/O, and
+ * a health test that cannot control its answers is a health test that reports whatever this
+ * machine happens to be doing at the time. That already happened: a suite asserting that a
+ * *missing* worker is reported as missing found the real workers running and failed for reasons
+ * that had nothing to do with the code under test.
+ *
+ * Extending is preferred over a production seam for that, because a seam in the class under test
+ * is a permanent affordance for tests and this is not: the base class stays exactly what it is and
+ * only a test knows it was subclassed.
+ */
+class Prober
 {
     private const FASTEST_MS = 100;
 
@@ -84,6 +99,58 @@ final class Prober
         $decoded = json_decode($response, true);
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * What the application's own readiness endpoint says.
+     *
+     * Lives here rather than on the Supervisor because asking the app how it is is the same kind
+     * of question as asking Suwayomi whether it is answering, and putting it on the Supervisor put
+     * an HTTP request inside the class that owns process lifecycle. It also made the all healthy
+     * case untestable: a test could control every answer except this one, because this one reached
+     * past the Prober that was being stubbed.
+     *
+     * Returns null when nothing is listening, which is different from a 503, which is the app
+     * answering and refusing. That distinction is the whole reason the status is returned rather
+     * than a boolean: a reader told "the web server is not listening" looks at the launcher, and
+     * one told "the app says it is not ready" looks at the app.
+     *
+     * @return array{status: int, checks: array{key: bool, database: bool, pending_migrations: int}}|null
+     */
+    public function readiness(int $port): ?array
+    {
+        if (! $this->isPortTaken($port)) {
+            return null;
+        }
+
+        $context = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
+
+        $response = @file_get_contents(sprintf('http://127.0.0.1:%d/ready', $port), false, $context);
+
+        if (! is_string($response)) {
+            return null;
+        }
+
+        $status = 0;
+
+        if (preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0] ?? '', $matches) === 1) {
+            $status = (int) $matches[1];
+        }
+
+        $decoded = json_decode($response, true);
+
+        if (! is_array($decoded)) {
+            return ['status' => $status, 'checks' => ['key' => false, 'database' => false, 'pending_migrations' => -1]];
+        }
+
+        return [
+            'status' => $status,
+            'checks' => [
+                'key' => (bool) ($decoded['checks']['key'] ?? false),
+                'database' => (bool) ($decoded['checks']['database'] ?? false),
+                'pending_migrations' => (int) ($decoded['checks']['pending_migrations'] ?? -1),
+            ],
+        ];
     }
 
     public function waitFor(
