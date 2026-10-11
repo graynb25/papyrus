@@ -259,4 +259,33 @@ class CrossProcessStopTest extends TestCase
             'normalising separators to forward slashes produces a token that matches nothing',
         );
     }
+
+    public function test_every_entry_point_that_builds_a_supervisor_also_requires_the_finder(): void
+    {
+        /*
+         * The require lists are a second dependency graph, and nothing exercised it.
+         *
+         * The launcher has no autoloader, so `papyrus.php` and `build-install.php` both name
+         * their dependencies by hand. When `stopAll` began constructing a ProcessFinder, neither
+         * list was updated, and the suite did not notice, because the tests reach Supervisor
+         * through Composer's autoloader and never through those requires.
+         *
+         * A build would have fataled at the construction rather than at the use, which is the
+         * worst place for it: the message would name a missing class rather than the launcher
+         * decision that needed one, and every test would be green throughout.
+         */
+        foreach ([
+            dirname(__DIR__, 2).'/packaging/launcher/papyrus.php',
+            dirname(__DIR__, 2).'/packaging/runtime/build-install.php',
+        ] as $file) {
+            $source = (string) file_get_contents($file);
+
+            $this->assertStringContainsString(
+                'ProcessFinder.php',
+                $source,
+                basename($file).' must require ProcessFinder, because Supervisor constructs one in'
+                    .' its own constructor and this file has no autoloader to find it with',
+            );
+        }
+    }
 }

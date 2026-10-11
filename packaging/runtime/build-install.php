@@ -607,10 +607,26 @@ if (! mkdir($probeData, 0o777, true) && ! is_dir($probeData)) {
 
 require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
     .DIRECTORY_SEPARATOR.'ProcessIdentity.php';
+/*
+ * Every dependency of Supervisor, named, because this file has no autoloader for them.
+ *
+ * ProcessFinder is here for the same reason the other seven are, and it was missing when
+ * `stopAll` began asking the operating system which processes belong to an install. Supervisor's
+ * constructor builds one, so a build whose require list had not been updated would fatal at the
+ * construction rather than at the use, which is the worst place for it: the build would fail
+ * while assembling an install that readers never see fail, and the message would name a class
+ * rather than the launcher decision that needed it.
+ *
+ * The full suite did not catch it either, because the tests reach Supervisor through Composer's
+ * autoloader and never through these requires. That is the gap worth naming: a file that lists its
+ * dependencies by hand is a second, unexercised dependency graph.
+ */
 require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
     .DIRECTORY_SEPARATOR.'InstanceLock.php';
 require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
     .DIRECTORY_SEPARATOR.'Prober.php';
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
+    .DIRECTORY_SEPARATOR.'ProcessFinder.php';
 require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
     .DIRECTORY_SEPARATOR.'ManagedProcess.php';
 require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
