@@ -39,6 +39,7 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/Prober.php';
+require __DIR__.'/src/ProcessFinder.php';
 require __DIR__.'/src/ManagedProcess.php';
 require __DIR__.'/src/SuwayomiConfiguration.php';
 
@@ -124,10 +125,18 @@ try {
             }
 
         case 'stop':
+            /*
+             * Reach for both halves of the install, not only what this process started.
+             *
+             * This command is documented as the one that brings everything down when the
+             * application is too broken to explain itself, and the tray icon is documented as
+             * calling it. Both arrive as their own process, which is why it has to find the
+             * running processes rather than ask its own empty list. See Supervisor::stopAll.
+             */
             $outcomes = $supervisor->stopAll($say);
 
             if ($outcomes === []) {
-                $say('Nothing was started by this session, so nothing was stopped.');
+                $say('Nothing belonging to this install is running, so nothing was stopped.');
 
                 exit(0);
             }
@@ -135,6 +144,10 @@ try {
             foreach ($outcomes as $name => $outcome) {
                 if ($outcome === 'killed') {
                     $say(sprintf('%s did not stop politely and had to be killed.', $name));
+                }
+
+                if ($outcome === 'still running' || $outcome === 'could not be stopped') {
+                    $say(sprintf('%s did not stop. Something outside Papyrus may be holding it.', $name));
                 }
             }
 

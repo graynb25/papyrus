@@ -79,6 +79,20 @@ final class Supervisor
     private ?SummaryLog $summary = null;
 
     /**
+     * Asks the operating system which processes are this install's.
+     *
+     * A property rather than a constructor argument because almost nothing needs it: `start` has
+     * handles for everything it started and never asks. Only `stop` from a second process does,
+     * and tests need to be able to answer without one.
+     */
+    private ProcessFinder $finder;
+
+    public function useProcessFinder(?ProcessFinder $finder): void
+    {
+        $this->finder = $finder ?? new ProcessFinder;
+    }
+
+    /**
      * Overrides how process liveness is determined, for tests.
      *
      * @param  (callable(string): bool)|null  $probe  Null restores the real answer.
@@ -124,6 +138,51 @@ final class Supervisor
         private ?Prober $prober = null,
     ) {
         $this->prober = $prober ?? new Prober;
+        $this->finder = new ProcessFinder;
+    }
+
+    /**
+     * The tokens that identify one of the four processes as belonging to *this* install.
+     *
+     * Two per process, and never one. The install root is what stops a `stop` reaching into
+     * another install, and the role marker is what stops it reaching into this install's web
+     * server when it was asked for the queue worker.
+     *
+     * Returned as a list rather than joined into one string, because on Windows every argument is
+     * quoted and so a joined string containing a space can never match. Measured here rather than
+     * assumed; see {@see ProcessFinder}.
+     *
+     * @return list<string>
+     */
+    private function tokensFor(string $name): array
+    {
+        $role = match ($name) {
+            'queue' => 'queue:work',
+            'scheduler' => 'schedule:work',
+            'web' => 'frankenphp',
+            // The jar's own name rather than the Suwayomi directory, because the directory is
+            // named `suwayomi` and a reader who keeps their library there would have any process
+            // with that word on its command line matched.
+            'suwayomi' => $this->locateJar() !== null ? basename((string) $this->locateJar()) : null,
+            default => null,
+        };
+
+        if ($role === null) {
+            return [];
+        }
+
+        // The root exactly as this install knows it, with no normalisation at all.
+        //
+        // Normalising the separators to forward slashes looked tidy and was wrong, measured
+        // against a live worker. `proc_open` puts the path on the child's command line as it was
+        // given, so what CIM holds is the backslash form:
+        //
+        //     "...php.exe" "-c" "...\php.ini" "D:\Program Files\Papyrus\artisan" "queue:work"
+        //
+        // A forward slash token matches none of that and finds nothing, silently. A token that
+        // finds nothing is the same output as a token that found a machine with nothing running,
+        // which is why this could have shipped looking correct.
+        return [$this->root, $role];
     }
 
     /**
@@ -255,7 +314,25 @@ final class Supervisor
     }
 
     /**
-     * Stop everything that was started, newest first, and report what each needed.
+     * Stop everything this install is running, newest first, and report what each needed.
+     *
+     * Both halves matter, and the second half is the one that was missing.
+     *
+     * Processes this process started are stopped through their handles, which is the polite
+     * path and the only one that can ask a process to unwind. Processes another process started
+     * cannot be reached that way at all, because {@see ManagedProcess::stop()} needs a
+     * `proc_open` handle and a `stop` command from a reader has none.
+     *
+     * That made `stop` work only inside the exact process that ran `start`, while its own help
+     * text described it as the command that brings everything down when the application is too
+     * broken to tell you what happened. The sandbox gate is what caught it: it started the
+     * install, ran `stop` from a second process, and found both ports still held and the JVM
+     * still alive, with the launcher reporting that nothing had been started by this session.
+     *
+     * So the second half asks the operating system which processes are this install's, matched
+     * on the install root **and** the role marker together. Both, because on its own a role
+     * marker like `queue:work` matches any Laravel worker on the machine, and killing a
+     * developer's own checkout because a reader typed `stop` is the worst thing this could do.
      *
      * @param  (callable(string): void)|null  $say
      * @return array<string, string> Process name to how it ended.
@@ -275,6 +352,26 @@ final class Supervisor
         }
 
         $this->started = [];
+
+        /*
+         * The four in the order stopAll has always used, and for the same reason: scheduler and
+         * queue are the ones writing to the database, so they go first.
+         *
+         * Skipped entirely when this process held the handle for that name. Re-finding a process
+         * that has just been stopped politely and terminating it anyway would report a kill for
+         * every process on every stop, which turns the one line a reader sends with a bug report
+         * into four that say the wrong thing.
+         */
+        foreach (['scheduler', 'queue', 'web', 'suwayomi'] as $name) {
+            if (isset($outcomes[$name])) {
+                continue;
+            }
+
+            foreach ($this->finder->find($this->tokensFor($name)) as $pid) {
+                $outcomes[$name] = $this->finder->terminate($pid);
+                $say(sprintf('%s: %s (pid %d, found rather than started here)', $name, $outcomes[$name], $pid));
+            }
+        }
 
         if ($this->lock !== null) {
             $this->lock->release();
