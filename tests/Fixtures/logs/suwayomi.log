@@ -1,0 +1,88 @@
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by com.sun.jna.Native in an unnamed module (file:/C:/Users/<you>20:14:37.171 [main] INFO suwayomi.tachidesk.server.ServerSetup -- Running Suwayomi-Server v2.4.2366
+20:14:37.487 [main] INFO suwayomi.tachidesk.server.util.AppMutex -- Mutex status is clear, Resuming startup.
+20:14:37.587 [main] INFO Migration -- Running migrations, previous version 3, target version 3
+20:14:37.612 [main] INFO com.zaxxer.hikari.HikariDataSource -- Suwayomi-DB-Pool - Starting...
+20:14:38.025 [main] INFO com.zaxxer.hikari.pool.HikariPool -- Suwayomi-DB-Pool - Added connection conn11: url=jdbc:h2:C:\Users\<you>\AppData\Local\Tachidesk/database user=
+20:14:38.027 [main] INFO com.zaxxer.hikari.HikariDataSource -- Suwayomi-DB-Pool - Start completed.
+20:14:38.065 [main] INFO suwayomi.tachidesk.server.database.DBManager -- Using H2 database version 2.4.0
+20:14:38.219 [main] INFO de.neonew.exposed.migrations.RunMigrations -- Running migrations on database jdbc:h2:C:\Users\<you>\AppData\Local\Tachidesk/database
+20:14:38.311 [main] INFO de.neonew.exposed.migrations.RunMigrations -- Database version before migrations: 65
+20:14:38.311 [main] INFO de.neonew.exposed.migrations.RunMigrations -- Migrations finished successfully
+20:14:38.312 [main] INFO Migration -- Migrations finished successfully
+20:14:38.351 [DefaultDispatcher-worker-4] INFO suwayomi.tachidesk.server.ServerSetup -- Socks Proxy changed - enabled=false address=: , username=[REDACTED], password=[REDACTED]
+20:14:39.065 [main] INFO io.javalin.Javalin -- Static file handler added: StaticFileConfig(hostedPath=/, directory=C:\Users\<you>\AppData\Local\Temp\Tachidesk\webUI-serve, location=EXTERNAL, precompressMaxSize=-1, aliasCheck=suwayomi.tachidesk.server.util.WebInterfaceManager$$Lambda/0x00000000826908f8@1536ea40, headers={Cache-Control=max-age=0}, skipFileFunction=null, mimeTypes={}, roles=[]). File system location: 'file:///C:/Users/<you>/AppData/Local/Temp/Tachidesk/webUI-serve/'
+20:14:39.097 [DefaultDispatcher-worker-13] INFO suwayomi.tachidesk.server.util.WebInterfaceManager setupWebUI(flavor= WebUI, servedFlavor= WebUI, channel= kotlinx.coroutines.flow.StateFlowImpl@33d748ea) -- found webUI files - version= r3518
+20:14:39.681 [DefaultDispatcher-worker-5] INFO dorkbox.systemTray.SystemTray -- Successfully loaded
+20:14:40.459 [main] INFO io.javalin.Javalin -- Starting Javalin ...
+20:14:40.683 [main] INFO io.javalin.Javalin -- 
+       __                  ___          _____
+      / /___ __   ______ _/ (_)___     /__  /
+ __  / / __ `/ | / / __ `/ / / __ \      / /
+/ /_/ / /_/ /| |/ / /_/ / / / / / /     / /
+\____/\__,_/ |___/\__,_/_/_/_/ /_/     /_/
+
+       https://javalin.io/documentation
+
+20:14:40.683 [main] INFO io.javalin.Javalin -- Javalin started in 416ms \o/
+20:14:40.685 [main] INFO io.javalin.Javalin -- Listening on http://0.0.0.0:4567/
+20:14:40.699 [main] INFO io.javalin.Javalin -- You are running Javalin 7.2.3 (released August 11, 2026).
+20:14:40.714 [main] INFO suwayomi.tachidesk.server.JavalinSetup -- Server is available at:
+  http://127.0.0.1:4567
+  http://192.0.2.2:4567
+  http://192.0.2.3:4567
+20:14:43.471 [DefaultDispatcher-worker-13] INFO suwayomi.tachidesk.server.util.WebInterfaceManager -- Serving SPA files for WEBUI
+20:14:43.472 [DefaultDispatcher-worker-13] INFO suwayomi.tachidesk.server.util.WebInterfaceManager isLocalWebUIValid(flavor= WebUI, path= C:\Users\<you>\AppData\Local\Tachidesk/webUI) -- Verifying WebUI files...
+20:14:44.794 [DefaultDispatcher-worker-4] INFO suwayomi.tachidesk.server.util.WebInterfaceManager isLocalWebUIValid(flavor= WebUI, path= C:\Users\<you>\AppData\Local\Tachidesk/webUI) -- Validation succeeded - md5: local= 4300ee013d23873539e4437f6dae3a19; expected= 4300ee013d23873539e4437f6dae3a19
+20:14:47.417 [DefaultDispatcher-worker-13] ERROR suwayomi.tachidesk.graphql.server.TachideskGraphQLServer -- GraphQL execution failed due to
+suwayomi.tachidesk.server.user.UnauthorizedException: Unauthorized
+	at suwayomi.tachidesk.server.user.UserTypeKt.requireUser(UserType.kt:23)
+	at suwayomi.tachidesk.graphql.directives.RequireAuthDirectiveWiring.onField$lambda$0(RequireAuthDirectiveWiring.kt:28)
+	at graphql.execution.ExecutionStrategy.invokeDataFetcher(ExecutionStrategy.java:512)
+	at graphql.execution.ExecutionStrategy.fetchField(ExecutionStrategy.java:466)
+	at graphql.execution.ExecutionStrategy.fetchField(ExecutionStrategy.java:404)
+	at graphql.execution.ExecutionStrategy.resolveFieldWithInfo(ExecutionStrategy.java:360)
+	at graphql.execution.ExecutionStrategy.getAsyncFieldValueInfo(ExecutionStrategy.java:325)
+	at graphql.execution.AsyncExecutionStrategy.execute(AsyncExecutionStrategy.java:58)
+	at graphql.execution.Execution.executeOperation(Execution.java:220)
+	at graphql.execution.Execution.execute(Execution.java:139)
+	at graphql.GraphQL.execute(GraphQL.java:620)
+	at graphql.GraphQL.lambda$parseValidateAndExecute$5(GraphQL.java:549)
+	at java.base/java.util.concurrent.CompletableFuture.uniComposeStage(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.thenCompose(Unknown Source)
+	at graphql.EngineRunningState.compose(EngineRunningState.java:91)
+	at graphql.GraphQL.parseValidateAndExecute(GraphQL.java:544)
+	at graphql.GraphQL.lambda$executeAsync$1(GraphQL.java:504)
+	at java.base/java.util.concurrent.CompletableFuture.uniComposeStage(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.thenCompose(Unknown Source)
+	at graphql.EngineRunningState.compose(EngineRunningState.java:91)
+	at graphql.GraphQL.lambda$executeAsync$2(GraphQL.java:493)
+	at graphql.EngineRunningState.engineRun(EngineRunningState.java:202)
+	at graphql.GraphQL.executeAsync(GraphQL.java:485)
+	at com.expediagroup.graphql.server.execution.GraphQLRequestHandler.execute(GraphQLRequestHandler.kt:108)
+	at com.expediagroup.graphql.server.execution.GraphQLRequestHandler.executeRequest$suspendImpl(GraphQLRequestHandler.kt:85)
+	at com.expediagroup.graphql.server.execution.GraphQLRequestHandler.executeRequest(GraphQLRequestHandler.kt)
+	at com.expediagroup.graphql.server.execution.GraphQLServer$execute$2.invokeSuspend(GraphQLServer.kt:62)
+	at com.expediagroup.graphql.server.execution.GraphQLServer$execute$2.invoke(GraphQLServer.kt)
+	at com.expediagroup.graphql.server.execution.GraphQLServer$execute$2.invoke(GraphQLServer.kt)
+	at kotlinx.coroutines.intrinsics.UndispatchedKt.startUndispatched(Undispatched.kt:66)
+	at kotlinx.coroutines.intrinsics.UndispatchedKt.startUndispatchedOrReturn(Undispatched.kt:43)
+	at kotlinx.coroutines.CoroutineScopeKt.coroutineScope(CoroutineScope.kt:848)
+	at com.expediagroup.graphql.server.execution.GraphQLServer.execute$suspendImpl(GraphQLServer.kt:49)
+	at com.expediagroup.graphql.server.execution.GraphQLServer.execute(GraphQLServer.kt)
+	at suwayomi.tachidesk.graphql.controller.GraphQLController$execute$1$1.invokeSuspend(GraphQLController.kt:26)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:124)
+	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:89)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:586)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:798)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:717)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+20:14:48.226 [JettyServerThreadPool-147] WARN suwayomi.tachidesk.global.impl.util.Jwt -- Received invalid token
+com.auth0.jwt.exceptions.JWTDecodeException: The token was expected to have 3 parts, but got 0.
+	at com.auth0.jwt.TokenUtils.wrongNumberOfParts(TokenUtils.java:45)
+	at com.auth0.jwt.TokenUtils.splitToken(TokenUtils.java:23)
+	at com.auth0.jwt.JWTDecoder.<init>(JWTDecoder.java:37)
+	at com.auth0.jwt.JWTVerifier.verify(JWTVerifier.java:451)
+	at suwayomi.tachidesk.global.impl.util.Jwt.verifyJwt(Jwt.kt:90)

@@ -1,0 +1,5 @@
+2026-10-11 16:00:44  papyrus   INFO      starting, 4 processes to start
+2026-10-11 16:00:44  papyrus   PROBLEM   could not reach 127.0.0.1:4567 after 60s
+2026-10-11 16:00:44  papyrus   INFO      suwayomi answering, version v2.4.2366
+2026-10-11 16:00:44  web       PROBLEM   nothing is listening on port 8402, so /ready cannot answer
+2026-10-11 16:00:44  papyrus   PROBLEM   first line second line

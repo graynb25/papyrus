@@ -59,6 +59,19 @@ require __DIR__.'/src/SummaryLog.php';
 require __DIR__.'/src/Health.php';
 require __DIR__.'/src/Supervisor.php';
 
+/*
+ * Layer 2. ParsedLine and LineParser come first because every parser below type hints them, and
+ * the launcher has no autoloader: these are plain requires, and the order is the dependency order.
+ */
+require __DIR__.'/src/ParsedLine.php';
+require __DIR__.'/src/LineParser.php';
+require __DIR__.'/src/LogbackParser.php';
+require __DIR__.'/src/CaddyJsonParser.php';
+require __DIR__.'/src/ConsoleParser.php';
+require __DIR__.'/src/PhpErrorParser.php';
+require __DIR__.'/src/LauncherParser.php';
+require __DIR__.'/src/Collector.php';
+
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 $data = getenv('PAPYRUS_DATA') ?: dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 $logs = $data.DIRECTORY_SEPARATOR.'logs';

@@ -1,0 +1,42 @@
+
+ INFO Preparing database. 
+
+ Creating migration table .. 23.34ms DONE
+
+ INFO Running migrations. 
+
+ 0001_01_01_000000_create_users_table .. 8.81ms DONE
+ 0001_01_01_000001_create_cache_table .. 1.74ms DONE
+ 0001_01_01_000002_create_jobs_table .. 5.61ms DONE
+ 2024_01_01_000000_create_passkeys_table .. 21.00ms DONE
+ 2025_08_14_170933_add_two_factor_columns_to_users_table .. 2.26ms DONE
+ 2026_09_29_000001_add_tenancy_columns_to_users_table .. 2.30ms DONE
+ 2026_09_29_000002_create_user_settings_table .. 1.76ms DONE
+ 2026_09_29_000003_create_series_states_table .. 2.81ms DONE
+ 2026_09_29_000004_create_chapter_states_table .. 3.22ms DONE
+ 2026_09_29_000005_create_notes_table .. 2.36ms DONE
+ 2026_09_29_000006_create_series_covers_table .. 1.80ms DONE
+ 2026_09_29_000007_create_reader_profiles_table .. 1.40ms DONE
+ 2026_09_29_000008_create_source_healths_table .. 2.11ms DONE
+ 2026_09_29_000009_create_source_preferences_table .. 1.57ms DONE
+ 2026_09_29_000010_create_user_sources_table .. 1.22ms DONE
+ 2026_09_29_000011_create_extension_stores_table .. 1.49ms DONE
+ 2026_09_29_000012_create_user_extension_stores_table .. 2.05ms DONE
+ 2026_09_29_000013_create_sources_table .. 2.99ms DONE
+ 2026_09_29_000014_create_search_tables .. 5.76ms DONE
+ 2026_09_29_000015_add_consecutive_empty_to_source_healths_table .. 1.01ms DONE
+ 2026_09_29_000016_create_library_categories .. 9.25ms DONE
+ 2026_09_30_000017_create_downloads_table .. 2.36ms DONE
+ 2026_09_30_000018_create_series_migrations_tables .. 5.81ms DONE
+ 2026_09_30_000019_create_anilist_media_table .. 1.95ms DONE
+ 2026_09_30_000020_create_library_checks_table .. 2.73ms DONE
+ 2026_09_30_000021_add_reader_settings_to_categories .. 2.87ms DONE
+ 2026_10_01_000022_make_notes_one_per_target .. 0.76ms DONE
+ 2026_10_01_000023_add_search_filter_columns .. 3.75ms DONE
+ 2026_10_01_000024_add_sources_skipped_to_search_runs .. 1.32ms DONE
+ 2026_10_02_000025_create_anilist_accounts_table .. 1.70ms DONE
+ 2026_10_09_000001_create_import_tables .. 6.55ms DONE
+ 2026_10_09_000002_file_series_without_a_source .. 22.47ms DONE
+ 2026_10_09_000003_add_progress_to_import_runs .. 2.08ms DONE
+ 2026_10_09_000004_create_bulk_migrations_tables .. 4.20ms DONE
+
