@@ -144,9 +144,25 @@ final class Supervisor
     /**
      * The tokens that identify one of the four processes as belonging to *this* install.
      *
-     * Two per process, and never one. The install root is what stops a `stop` reaching into
+     * Two per process, and never one. The data directory is what stops a `stop` reaching into
      * another install, and the role marker is what stops it reaching into this install's web
      * server when it was asked for the queue worker.
+     *
+     * ## Why the data directory and not the install root
+     *
+     * Because two launchers can share one install root with different data directories: the
+     * lock lives in the data directory, so they do not exclude each other, and both start. Their
+     * four processes then carry an identical install root, so a matcher keyed on it would have
+     * `stop` on one install terminate the workers of the other, which is the worst thing a stop
+     * can do.
+     *
+     * The data directory cannot collide that way, because it is where the lock is. And every one
+     * of the four carries it on its own command line, which is the only place a matcher can look:
+     *
+     *     queue     php -c <DATA>\php\php.ini <ROOT>\artisan queue:work
+     *     scheduler php -c <DATA>\php\php.ini <ROOT>\artisan schedule:work
+     *     web       frankenphp run --config <DATA>\frankenphp\Caddyfile
+     *     suwayomi  java -D...rootDir=<DATA>\suwayomi -jar <ROOT>\suwayomi\....jar
      *
      * Returned as a list rather than joined into one string, because on Windows every argument is
      * quoted and so a joined string containing a space can never match. Measured here rather than
@@ -159,6 +175,9 @@ final class Supervisor
         $role = match ($name) {
             'queue' => 'queue:work',
             'scheduler' => 'schedule:work',
+            // The resolved config rather than the executable name, because `--config` names this
+            // install's resolved Caddyfile, which lives in the data directory, and every other
+            // frankenphp on the machine is somebody else's business.
             'web' => 'frankenphp',
             // The jar's own name rather than the Suwayomi directory, because the directory is
             // named `suwayomi` and a reader who keeps their library there would have any process
@@ -171,7 +190,7 @@ final class Supervisor
             return [];
         }
 
-        // The root exactly as this install knows it, with no normalisation at all.
+        // The data directory exactly as this install knows it, with no normalisation at all.
         //
         // Normalising the separators to forward slashes looked tidy and was wrong, measured
         // against a live worker. `proc_open` puts the path on the child's command line as it was
@@ -182,7 +201,7 @@ final class Supervisor
         // A forward slash token matches none of that and finds nothing, silently. A token that
         // finds nothing is the same output as a token that found a machine with nothing running,
         // which is why this could have shipped looking correct.
-        return [$this->root, $role];
+        return [$this->dataDirectory, $role];
     }
 
     /**

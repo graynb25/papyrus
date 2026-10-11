@@ -212,9 +212,9 @@ class CrossProcessStopTest extends TestCase
          * Measured against a live worker, and the opposite of what the code used to do.
          *
          * proc_open puts a path on the child's command line as it was given, so what CIM holds
-         * for a worker started from an install root is the backslash form:
+         * for a worker started with a data directory is the backslash form:
          *
-         *     "...\php.exe" "-c" "...\php.ini" "D:\Program Files\Papyrus\artisan" "queue:work"
+         *     "...\php.exe" "-c" "C:\Users\<you>\Papyrus Data\php\php.ini" "...\artisan" "queue:work"
          *
          * Normalising the separators produces a token matching none of that, and a token that
          * matches nothing returns the same empty list as a token that found a machine with
@@ -248,15 +248,54 @@ class CrossProcessStopTest extends TestCase
         $code = (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $body);
 
         $this->assertStringContainsString(
-            'return [$this->root, $role];',
+            'return [$this->dataDirectory, $role];',
             $code,
-            'the install root must be sent exactly as this install knows it',
+            'the data directory must be sent exactly as this install knows it',
         );
 
         $this->assertStringNotContainsString(
-            "str_replace('\\\\', '/', \$this->root)",
+            "str_replace('\\\\', '/', \$this->dataDirectory)",
             $code,
             'normalising separators to forward slashes produces a token that matches nothing',
+        );
+    }
+
+    public function test_the_matcher_keys_on_the_data_directory_and_not_the_install_root(): void
+    {
+        /*
+         * Two launchers can share one install root with different data directories.
+         *
+         * The lock lives in the data directory, so they do not exclude each other and both start.
+         * Their four processes then carry an identical install root, so a matcher keyed on the
+         * root would have `stop` on one install terminate the workers of the other.
+         *
+         * Keyed on the data directory this cannot happen, because the data directory is where the
+         * lock is, and every one of the four processes carries it on its own command line.
+         */
+        $supervisor = (string) file_get_contents(
+            dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
+        );
+
+        $start = strpos($supervisor, 'private function tokensFor');
+        $end = strpos((string) $supervisor, 'private function ini()', $start);
+
+        $code = (string) preg_replace(
+            ['#/\*.*?\*/#s', '#//[^\n]*#'],
+            '',
+            substr((string) $supervisor, $start, (int) $end - $start),
+        );
+
+        $this->assertStringNotContainsString(
+            '$this->root',
+            $code,
+            'the install root is shared by two installs of one install, so it cannot identify '
+                .'which processes belong to this one',
+        );
+
+        $this->assertStringContainsString(
+            '$this->dataDirectory',
+            $code,
+            'the data directory is unique per install and is on every process command line',
         );
     }
 
