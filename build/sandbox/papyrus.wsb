@@ -25,6 +25,17 @@
     The guest cannot write back to a read only mount, and a run whose output only exists inside a
     disposable machine is not much of a gate. Results go to a writable mapped folder so they
     survive the sandbox closing.
+
+    ## The results folder must exist before this is launched
+
+    Windows Sandbox will not create a mapped folder that is missing on the host. It fails to
+    mount, the guest never reaches its logon command, and it closes with no error shown and no
+    process left behind to look at.
+
+    That is the worst failure this gate has: it looks exactly like a slow boot, so a watcher
+    polling for a report sits there reporting "guest booting" for ten minutes. The folder is
+    created by the host before launching. Delete build/sandbox-results to clear old results and
+    the next launch silently does nothing.
   -->
 
   <VGpu>Disable</VGpu>
