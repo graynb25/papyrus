@@ -34,6 +34,22 @@ final class InstallLayout
      * because of trap 219: the ini pointing `sys_temp_dir` at a directory nobody created made
      * the first command that shelled out fail with a Symfony Process complaint about a
      * temporary file, which reads as a bug in that command and is not one.
+     *
+     * ## What is not here, and why
+     *
+     * `database` and `exports` were, and both were wrong.
+     *
+     * `exports` belonged to Suwayomi, which used to write them wherever its root happened to be.
+     * Its root is now pinned to `suwayomi/` below, so its exports go there.
+     *
+     * `database` was never right for anything. Laravel's SQLite file is `<data>/database.sqlite`,
+     * a file, not a directory, and Suwayomi's is `<data>/suwayomi/database.mv.db`. The directory
+     * was created, stayed empty through a complete run, and read as though something were missing
+     * from it. An empty directory named after data is the same shape of problem as a log named
+     * after something that does not exist: it looks like evidence and is not.
+     *
+     * `suwayomi` is here because Suwayomi's root is pinned there and the layout should say so
+     * before anything starts, rather than a directory appearing on the first successful boot.
      */
     private const DATA_SUBDIRECTORIES = [
         'storage',
@@ -45,8 +61,7 @@ final class InstallLayout
         'storage/framework/sessions',
         'storage/framework/views',
         'storage/logs',
-        'database',
-        'exports',
+        'suwayomi',
         'tmp',
         'logs',
     ];

@@ -63,8 +63,7 @@ class InstallLayoutTest extends TestCase
             'storage/framework/sessions',
             'storage/framework/views',
             'storage/logs',
-            'database',
-            'exports',
+            'suwayomi',
             'tmp',
             'logs',
         ] as $relative) {
@@ -75,6 +74,29 @@ class InstallLayoutTest extends TestCase
         }
 
         $this->assertNotEmpty($made);
+    }
+
+    /**
+     * Two directories that are gone, and why.
+     *
+     * An empty directory named after data is the same shape of problem as an empty log named after
+     * something that does not exist: it looks like evidence of a fault and is not one. Both of
+     * these stayed empty through complete runs.
+     *
+     * `database/` was never the SQLite file, which is `<data>/database.sqlite`. `exports/` belongs
+     * to Suwayomi, whose root is now `suwayomi/`.
+     */
+    public function test_no_directory_is_created_that_looks_like_data_and_is_not(): void
+    {
+        $made = $this->layout('C:/Program Files/Papyrus')->prepare(static fn (string $line): null => null);
+
+        $this->assertDirectoryDoesNotExist($this->scratch.DIRECTORY_SEPARATOR.'data'.DIRECTORY_SEPARATOR.'database');
+        $this->assertDirectoryDoesNotExist($this->scratch.DIRECTORY_SEPARATOR.'data'.DIRECTORY_SEPARATOR.'exports');
+
+        foreach ($made as $relative) {
+            $this->assertStringNotContainsString('database', $relative);
+            $this->assertStringNotContainsString('exports', $relative);
+        }
     }
 
     public function test_preparing_twice_is_safe_and_creates_nothing_new(): void
