@@ -61,7 +61,21 @@ function Say([string]$line) {
 
 $source = 'C:\build\install'
 $root = 'C:\papyrus'
-$data = 'C:\papyrus-data'
+
+# With a space, deliberately.
+#
+# This was `C:\papyrus-data`, which is the path that made this gate unable to see the worst bug
+# it existed to find. A data directory whose path contains a space produced an install whose
+# .env dotenv refused to load, so the whole application was dead with an error naming a parser
+# rather than a path, and the launcher reported that the database could not be migrated.
+#
+# It survived because nothing here had a space in it. The unit tests use a temp directory, whose
+# path has none either. `C:\Users\you\AppData\Local\Programs\Papyrus\data` is where a real
+# install puts this, and every path this gate chose was a path no reader is on.
+#
+# One space is the whole point: an install that works at `C:\papyrus-data` says nothing about one
+# that works where Windows puts it by default.
+$data = 'C:\papyrus data'
 $appPort = 8402
 
 # Not 4567. Deliberately not the default, and this is the reason.
@@ -388,6 +402,20 @@ Section 'the database is in the data directory, not the install'
 
 $dataDb = Test-Path (Join-Path $data 'database.sqlite')
 Check 'database created in the data directory' $dataDb
+
+# The check above can be satisfied by a database at a path with no space in it, so it says
+# nothing about the path a reader is on. This one cannot be satisfied by accident, and it is the
+# difference between a gate that checks a spaced path and a gate that merely intends to.
+Check 'the data directory path really does contain a space' ($data -like '* *') $data
+
+# And the .env the launcher wrote must be one dotenv can read back. Read with the same parser the
+# application uses, because the failure this covers is "Encountered unexpected whitespace", which
+# is reported by the parser and not by anything else.
+$envText = Get-Content (Join-Path $data '.env') -Raw -ErrorAction SilentlyContinue
+$dbLine = ($envText -split "`n" | Where-Object { $_ -like 'DB_DATABASE=*' } | Select-Object -First 1)
+
+Check 'the .env quotes a database path containing a space' `
+    ($null -ne $dbLine -and $dbLine -match "^DB_DATABASE='.+'$") $(if ($dbLine) { $dbLine } else { 'no DB_DATABASE line' })
 
 $installDb = @(Get-ChildItem (Join-Path $root 'database') -Filter '*.sqlite' -ErrorAction SilentlyContinue)
 Check 'no database written into the install' ($installDb.Count -eq 0) "found $($installDb.Count)"
