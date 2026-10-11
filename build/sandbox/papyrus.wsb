@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+
+  <!--
+    The Windows Sandbox gate for a packaged Papyrus install.
+
+    ## What this is for
+
+    Everything else has been verified on a machine that has PHP, Java and Herd installed, with
+    PATH scrubbed as a proxy for "nothing is installed". That is a good proxy and it is not the
+    thing. A reader's machine has none of them, and this is the only check that can say so.
+
+    ## Why the install is copied rather than run in place
+
+    A mapped folder is read only to the guest, and the framework writes compiled packages and
+    services into `bootstrap/cache` inside the application root. Running from the mount would fail
+    on that, and the failure would say nothing about self containment. So the install is copied to
+    `C:\papyrus` first, which also matches a real install being somewhere the user can write to.
+
+    A genuinely read only install directory, as in Program Files, is a separate question and is
+    not answered by this gate. It is called out rather than quietly assumed.
+
+    ## Why there is a separate results folder
+
+    The guest cannot write back to a read only mount, and a run whose output only exists inside a
+    disposable machine is not much of a gate. Results go to a writable mapped folder so they
+    survive the sandbox closing.
+  -->
+
+  <VGpu>Disable</VGpu>
+  <Networking>Default</Networking>
+
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Users\<you>\Php Projects\papyrus\build</HostFolder>
+      <SandboxFolder>C:\build</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Users\<you>\Php Projects\papyrus\build\sandbox-results</HostFolder>
+      <SandboxFolder>C:\results</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\build\sandbox\run-in-sandbox.ps1</Command>
+  </LogonCommand>
+
+</Configuration>

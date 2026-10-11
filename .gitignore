@@ -70,11 +70,24 @@ yarn-error.log
 /runtime/
 # The assembled install that packaging/runtime/build-install.php produces. Roughly 400MB, of
 # which the jar and the JRE are the great majority, and all of it derivable from one command.
-/build/
+#
+# Named rather than blanket excluding /build/, because the sandbox gate lives there too and a
+# blanket rule takes it with it. Git will not descend into an excluded directory, so once
+# /build/ was excluded the gate existed only on the machine that wrote it: anyone who cloned this
+# repository got no gate at all, and the gate is the only check that runs on a machine with
+# nothing installed.
+/build/install/
+# What a sandbox run leaves behind. Readable from the host, useless in the repository.
+/build/sandbox-results/
 # The throwaway data directory build-install.php lays out beside the install, so it can ask the
 # launcher whether it can configure itself. Discarded by the build, but not by git if it is killed
 # midway, and it holds a real .env with a generated APP_KEY.
 /build/.build-probe/
+# A scratch data directory the launcher is pointed at while health and supervisor behaviour is
+# exercised by hand. It holds a database, logs and a lock file, none of which belong in a
+# repository, and it appears the first time anyone runs the launcher from the repository root.
+/build/health-data/
+/build/health-start.*
 # Where the staging scripts put things when pointed somewhere other than the repository root.
 # 179MB of Temurin binaries and a CA bundle, which is the same hazard as /build/ and for the same
 # reason: one `git add -A` from a permanent copy of a third-party distribution.
