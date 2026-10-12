@@ -32,7 +32,25 @@
 
 param(
     [switch] $Status,
-    [switch] $Stop
+    [switch] $Stop,
+    # Prints the verdict for one command line, read from stdin, and exits. Exists so the rule can be
+    # tested against fixed inputs instead of against whatever workers happen to be running on the
+    # test machine, which is the mistake HealthTest documents having already made once.
+    #
+    # stdin and not an argument, because a Windows process command line is mostly spaces and quotes
+    # and passing one as an argv value splits it at the first space. That happened while writing
+    # this: the rule was asked about `C:\...\php84\php.exe` on its own, found no `artisan` in it, and
+    # answered not-ours about a worker that is unambiguously ours. A test that fed the rule a
+    # truncated input would have passed against a rule that is simply wrong.
+    [switch] $Explain,
+
+    # Prints the interpreter this script would start a worker with, and exits.
+    #
+    # Its own switch because it is the thing worth asserting. A worker started through Herd's
+    # `php.bat` comes up, appears in the process list, and drains nothing, so "is a worker running"
+    # is true and "is the queue being served" is false. That is the whole subject of this script, and
+    # it is worth a test that can say which interpreter gets used without starting anything.
+    [switch] $WhichPhp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,11 +60,69 @@ $ErrorActionPreference = 'Stop'
 # "no database" against a checkout that has a 5MB one.
 $repo = Split-Path -Parent $PSScriptRoot
 
-# Herd's PHP, because this is a Herd site and its extensions are what the app needs. Falling back to
-# whatever `php` resolves to keeps it working on a machine without Herd.
-$php = (Get-Command php -ErrorAction SilentlyContinue).Source
+<#
+ # A real `php.exe`, and never a batch wrapper.
+ #
+ # The first version took `(Get-Command php).Source`, which on this machine is Herd's `php.bat`. The
+ # worker it started came up, showed up in the process list, and drained nothing: six jobs sat
+ # unreserved for twenty-five minutes with a healthy-looking `queue:work` running, and the database
+ # had no WAL file beside it, which is what proved nothing had it open at all.
+ #
+ # Replacing that with the interpreter itself drained all six in about a second and brought the WAL
+ # back. So the wrapper is not a slower way to run the same thing, it is a different thing that
+ # leaves a worker running and idle, which is the precise failure this script exists to prevent.
+ #
+ # Herd's layout is `bin/php.bat` wrapping `bin/php84/php.exe`, so the real interpreter is found
+ # beside it.
+#>
+function Resolve-PHPExecutable {
+    $configured = $env:PAPYRUS_PHP
+
+    if ($configured -and (Test-Path $configured)) {
+        return $configured
+    }
+
+    $onPath = (Get-Command php -ErrorAction SilentlyContinue).Source
+
+    # Already a real interpreter, which is the ordinary case on a machine without a wrapper.
+    if ($onPath -and $onPath -match '\.exe$') {
+        return $onPath
+    }
+
+    $candidates = @()
+
+    if ($onPath) {
+        # Beside the wrapper: Herd puts php.bat in bin and the interpreter in bin/php84.
+        $bin = Split-Path -Parent $onPath
+        $candidates += @(Get-ChildItem (Join-Path $bin 'php*') -Filter 'php.exe' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName })
+    }
+
+    $candidates += @(
+        'C:\php\php.exe',
+        'C:\xampp\php\php.exe',
+        'C:\laragon\bin\php\php.exe',
+        'C:\Program Files\PHP\php.exe'
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    return $null
+}
+
+$php = Resolve-PHPExecutable
+
 if (-not $php) {
-    Write-Output '  php is not on PATH. This script needs the PHP that serves this checkout.'
+    Write-Output '  No PHP interpreter found.'
+    Write-Output ''
+    Write-Output '  This script needs php.exe itself, not a wrapper around it, because a worker'
+    Write-Output '  started through a batch wrapper can run without draining anything.'
+    Write-Output ''
+    Write-Output '  Set PAPYRUS_PHP to the interpreter and try again, for example:'
+    Write-Output ''
+    Write-Output '      $env:PAPYRUS_PHP = "C:\Users\you\.config\herd\bin\php84\php.exe"'
     exit 1
 }
 
@@ -67,34 +143,71 @@ $wanted = [ordered]@{
 <#
  # Which workers belong to this checkout.
  #
- # Matched on the artisan command and on the packaged install being excluded, and deliberately NOT on
- # the repository path appearing in the command line. A worker started as `artisan queue:work` has no
- # path in its arguments at all, because artisan resolves the working directory itself. The real
- # command line is `php84\php.exe artisan queue:work --tries=3 --sleep=1`, and not one character of it
- # names the project, so requiring the path reported "not running" over a worker that was running.
+ # Matched on the artisan command, and deliberately NOT on the repository path appearing in the
+ # command line. A worker started as `artisan queue:work` has no path in its arguments at all,
+ # because artisan resolves the working directory itself. The real command line is
+ # `php84\php.exe artisan queue:work --tries=3 --sleep=1`, and not one character of it names the
+ # project, so requiring the path reported "not running" over a worker that was running.
  #
- # That is the same shape of confident wrong answer as the missing queue check this script exists
- # beside, which is why it is called out here rather than left to be discovered again.
+ # ## What this gets wrong, which it got wrong the first time as well
  #
- # The packaged install is excluded because it is the trap this whole script is about: it runs a
- # worker, it drains a different database, and from outside it is indistinguishable from one that
- # would have drained this checkout's.
-#>
+ # A worker belonging to a *different install* looks exactly like one that would have drained this
+ # checkout's, and it is the trap this whole script exists to describe. The first version excluded
+ # two known install paths by name, `build\install` and `packaging\launcher`, which covered every
+ # install that existed when it was written.
+ #
+ # Then Papyrus was actually installed, and its worker appeared:
+ #
+ #     "...AppData\Local\Papyrus\php\php.ini" "...\Programs\Papyrus\artisan" "queue:work"
+ #
+ # Not one of the two exclusions matched it. This script reported `ok queue pid 6448` over a
+ # checkout that had no worker at all, with six jobs sitting unreserved for seven minutes, which is
+ # the exact failure it was written to surface. Naming the paths you happen to know about is not a
+ # rule; it is a list that goes stale the moment anything new exists.
+ #
+ # ## The rule that does not go stale
+ #
+ # This checkout's own workers are started with a bare relative `artisan`, so they carry **no
+ # directory in front of it**. Any worker whose command line has a path-qualified artisan is by
+ # construction running some other install's code against some other install's database, whatever
+ # that path turns out to be. That holds for `%LOCALAPPDATA%\Programs\Papyrus`, for `build\install`,
+ # and for an install that does not exist yet.
+ #>
+# The rule, as a function, so it can be asked about a command line rather than only about whatever
+# happens to be running. `-Explain` calls it directly, which is how the test exercises it without
+# depending on what this machine is doing at the time.
+function Test-CheckoutWorkerCommandLine {
+    param([string] $CommandLine)
+
+    if (-not $CommandLine) { return $false }
+    if ($CommandLine -notlike '*artisan*') { return $false }
+    if ($CommandLine -notlike '*queue:work*' -and $CommandLine -notlike '*schedule:work*') { return $false }
+
+    # A path-qualified artisan is another install's. See above.
+    if ($CommandLine -match '[\\/]artisan') { return $false }
+
+    return $true
+}
+
 function Get-Workers {
     Get-CimInstance Win32_Process -Filter "Name='php.exe'" -ErrorAction SilentlyContinue |
-        Where-Object {
-            $cmd = $_.CommandLine
-
-            $cmd -and
-            $cmd -like '*artisan*' -and
-            $cmd -notlike '*build\install*' -and
-            $cmd -notlike '*packaging\launcher*' -and
-            ($cmd -like '*queue:work*' -or $cmd -like '*schedule:work*')
-        } |
+        Where-Object { Test-CheckoutWorkerCommandLine $_.CommandLine } |
         ForEach-Object {
             $kind = if ($_.CommandLine -like '*queue:work*') { 'queue' } else { 'scheduler' }
             [pscustomobject]@{ Kind = $kind; Pid = $_.ProcessId }
         }
+}
+
+if ($WhichPhp) {
+    Write-Output $php
+    exit 0
+}
+
+if ($Explain) {
+    $line = [Console]::In.ReadToEnd().Trim()
+    $verdict = Test-CheckoutWorkerCommandLine $line
+    Write-Output ("{0}|{1}" -f $(if ($verdict) { 'checkout' } else { 'not-ours' }), $line)
+    exit 0
 }
 
 $running = Get-Workers

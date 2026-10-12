@@ -373,6 +373,13 @@ FAIL  queue      NOT DRAINING, 1 queued and the oldest has been due for 70 minut
 
 `packaging/dev-workers.ps1 -Status` reports the same thing for this checkout.
 
+**One trap on a Herd machine.** `php` on `PATH` is `herd\bin\php.bat`, a batch wrapper, and a worker
+started through it comes up, appears in the process list, and drains nothing. Six jobs sat unreserved
+for twenty-five minutes beside a perfectly healthy-looking `queue:work`, and the database had no
+write-ahead log beside it, which is what showed that nothing had it open at all. The script resolves
+`herd\bin\php84\php.exe` instead, and refuses with instructions rather than starting through a
+wrapper. If you start a worker by hand, use the interpreter rather than whatever `php` resolves to.
+
 **Do not set `QUEUE_CONNECTION=sync` to avoid this.** It is the one-line fix and it is a trap.
 `CheckLibrary` guards its self-re-booking chain with a static depth, so under `sync` the chain stops
 after about two slices: a full library check checks roughly a hundred series, stops, and reports
