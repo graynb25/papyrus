@@ -650,8 +650,32 @@ final class Supervisor
          * not crash, it pops nothing and exits quietly, and a scheduler without it logs
          * nothing at all. The app looks completely healthy and every download, search and
          * library check silently never happens.
+         *
+         * And **PHPRC as well as the flag**, which is the half that was missing and which took
+         * the whole install down.
+         *
+         * `schedule:work` does not run the schedule itself. It shells out to `artisan
+         * schedule:run`, and it builds that command from `PHP_BINARY` with no `-c` of its own,
+         * because Laravel assumes it inherited a configured interpreter. It did not: this
+         * launcher's own PHP loads no ini at all, so the child found none, loaded no extensions,
+         * and died on its first query with
+         *
+         *     PDOException: could not find driver
+         *     sqlite:...\AppData\Local\Papyrus\database.sqlite
+         *
+         * The failure was invisible in three places at once. The supervisor reported all four
+         * processes healthy, because the child dies inside a parent that is still alive. The
+         * child wrote to a temp file under `tmp/` rather than to the log, so `scheduler.log`
+         * was a wall of stack trace with no explanation of what had gone wrong. And it recurred
+         * every ten seconds, because `schedule:run` is what dispatches the work.
+         *
+         * `PHPRC` is the documented way to tell a PHP interpreter where its ini is, and an
+         * environment variable is inherited by every grandchild. FrankenPHP has had it all along
+         * for exactly this reason; the two workers had only the flag.
          */
         $php = $this->phpExecutable ?? $this->path('runtime', 'bin', 'php.exe');
+
+        $environment = ['PHPRC' => $this->ini()] + $this->applicationEnvironment();
 
         $queue = new ManagedProcess(
             name: 'queue',
@@ -659,7 +683,7 @@ final class Supervisor
             arguments: ['-c', $this->ini(), $this->path('artisan'), 'queue:work', '--tries=3', '--sleep=1'],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'queue.log',
-            environment: $this->applicationEnvironment(),
+            environment: $environment,
         );
 
         $schedule = new ManagedProcess(
@@ -668,7 +692,7 @@ final class Supervisor
             arguments: ['-c', $this->ini(), $this->path('artisan'), 'schedule:work'],
             workingDirectory: $this->root,
             logFile: $this->logDirectory.DIRECTORY_SEPARATOR.'scheduler.log',
-            environment: $this->applicationEnvironment(),
+            environment: $environment,
         );
 
         $queue->start();

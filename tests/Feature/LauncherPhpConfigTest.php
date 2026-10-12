@@ -593,4 +593,143 @@ class LauncherPhpConfigTest extends TestCase
 
         @rmdir($path);
     }
+
+    /**
+     * A process that will spawn children must say where its ini is, not only point at it itself.
+     *
+     * ## What was broken, and it took the whole install down
+     *
+     * The queue worker and the scheduler were both started with `-c <ini>`, and both worked. But
+     * `schedule:work` does not run the schedule: it shells out to `artisan schedule:run`, building
+     * that command from `PHP_BINARY` with no `-c` of its own, because Laravel assumes it inherited
+     * a configured interpreter.
+     *
+     * It had not. This launcher's own PHP loads no ini at all, so the grandchild found none, loaded
+     * no extensions, and died on its first query:
+     *
+     *     PDOException: could not find driver
+     *     sqlite:...\AppData\Local\Papyrus\database.sqlite
+     *
+     * Which is the exact symptom this file's own docblock describes arriving "four layers away",
+     * through a door nobody was watching. And it was invisible in three places at once: the
+     * supervisor reported all four processes healthy because the child dies inside a live parent,
+     * the child wrote to a temp file under `tmp/` rather than to `scheduler.log`, and it recurred
+     * every ten seconds because `schedule:run` is what dispatches the work.
+     *
+     * FrankenPHP had `PHPRC` all along, for exactly this reason. The two workers had only the flag.
+     *
+     * ## Why this reads the source
+     *
+     * Because `startWorkers()` starts real processes, and a test that spawns a real scheduler to
+     * assert an environment variable is a test that needs luck and leaves one behind when it
+     * fails. The property is a statement about what is written down, so it is asserted against
+     * what is written down.
+     */
+    public function test_every_process_that_spawns_children_is_told_where_its_ini_is(): void
+    {
+        $source = (string) file_get_contents(
+            dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
+        );
+
+        // Comments stripped, for the reason the rest of this suite reads code rather than prose:
+        // this bug is one where the code looked right and the comment explained it away. A test
+        // that also matched the prose could be satisfied by a paragraph.
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $source);
+
+        preg_match_all('/new ManagedProcess\((.*?)\n\s*\);/s', $code, $blocks);
+
+        $this->assertNotEmpty(
+            $blocks[1],
+            'no ManagedProcess was found, so this test would pass for the wrong reason',
+        );
+
+        // `schedule:work` is the one that shells out. `queue:work` is held to the same rule
+        // because a job that dispatches another job is the same problem one level down, and
+        // because two processes written differently is how this started.
+        $spawns = ['queue:work', 'schedule:work'];
+
+        $checked = 0;
+
+        foreach ($blocks[1] as $block) {
+            if (! str_contains($block, $spawns[0]) && ! str_contains($block, $spawns[1])) {
+                continue;
+            }
+
+            $checked++;
+
+            $this->assertStringContainsString(
+                'PHPRC',
+                $this->environmentGivenTo($block, $code),
+                'this process runs an artisan command that spawns children, and PHPRC is the only '
+                    .'thing its children inherit. Without it a grandchild finds no ini, loads no '
+                    .'extensions, and dies on its first query with "could not find driver".',
+            );
+        }
+
+        $this->assertSame(
+            count($spawns),
+            $checked,
+            'one of the workers that spawn children was not found at all, so the loop above '
+                .'checked nothing about it',
+        );
+    }
+
+    /**
+     * The environment a `ManagedProcess` was actually given, following one local variable.
+     *
+     * Both workers deliberately share one array rather than repeating it, which is the right
+     * choice and means a naive "does this block contain PHPRC" reading sees neither. Resolving the
+     * hop keeps the sharing and keeps the assertion honest, and it still fails if a block is handed
+     * something that turns out to be neither the array nor a variable.
+     */
+    private function environmentGivenTo(string $block, string $code): string
+    {
+        // Written inline: the array is right there in the block.
+        if (preg_match('/environment:\s*(\[.*?\])\s*,/s', $block, $inline)) {
+            return $inline[1];
+        }
+
+        // A local variable, resolved from where it is assigned.
+        if (preg_match('/environment:\s*(\$[A-Za-z_]\w*)/', $block, $reference)) {
+            $name = preg_quote($reference[1], '/');
+
+            if (preg_match('/'.$name.'\s*=\s*(\[.*?\])\s*(?:\+|;)/s', $code, $assignment)) {
+                return $assignment[1];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * And the ini it points at is the resolved one, not the template.
+     *
+     * Belongs with the above because `PHPRC` pointing at the template is worse than no `PHPRC`:
+     * PHP starts, finds `extension_dir = "{{RUNTIME}}/ext"`, fails every extension, and answers
+     * exactly as it does with no ini at all. That is the version of this bug the other half of
+     * this file exists to prevent, arriving by a different route.
+     */
+    public function test_the_ini_the_workers_are_pointed_at_is_resolved_rather_than_the_template(): void
+    {
+        $source = (string) file_get_contents(
+            dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
+        );
+
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $source);
+
+        preg_match('/\$environment = (\[[^;]*?\][^;]*?);/s', $code, $assignment);
+
+        $this->assertNotEmpty(
+            $assignment,
+            'the workers no longer share one environment, so this test is checking something that '
+                .'has moved',
+        );
+
+        $this->assertStringContainsString(
+            "'PHPRC' => \$this->ini()",
+            $assignment[1],
+            'PHPRC must name the resolved ini. $this->ini() falls back to the unresolved template, '
+                .'and a grandchild pointed at the template loads no extensions either.',
+        );
+    }
 }

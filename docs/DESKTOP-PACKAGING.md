@@ -123,6 +123,14 @@ local checks supplied it.
 | 20 | `health` asked whether a `queue:work` process existed, so a bulk library check sat unreserved for 70 minutes behind a worker that was draining a different database | a worker for the packaged install is running, and from outside it is indistinguishable from one that would have drained the checkout's jobs table |
 | 21 | A fresh install prints "Papyrus did not start. The lines above say why." over no lines at all, because `cmd.exe` refused to execute the runtime and said only "Access is denied." | antivirus scans a freshly written 623MB install before letting any of it execute, and for that window `cmd.exe` refuses `php.exe`. The application is not failing, so nothing in the application can report it, and the one message that does appear points at the wrong layer |
 | 22 | `stop` reported all four processes dead and left Suwayomi's embedded browser running, holding `jcef_helper.exe` open inside the data directory | the browser is launched by the JVM rather than by the launcher, so it is never in the list of processes the launcher started, and nothing ever looked for it |
+| 23 | The packaged install's scheduler dispatched nothing. `artisan schedule:run`, the process that actually runs the schedule, died every ten seconds with `PDOException: could not find driver`, and 182 attempts had failed without a word reaching the reader or the log's own summary | `schedule:work` does not run the schedule. It shells out to `schedule:run`, building that command from `PHP_BINARY` with no `-c` of its own, because Laravel assumes it inherited a configured interpreter. The launcher passed `-c` to `schedule:work` and nothing to the child, and this launcher's own PHP loads no ini at all, so the grandchild found none, loaded no extensions, and died on its first query |
+
+**23 is the fourth "it worked, just not for the reader", and the quietest one yet.** Nothing crashed,
+all four processes reported healthy, and the schedule simply never ran. Three separate silences
+stacked: the supervisor saw a live parent and had no reason to look at its children; the child wrote
+its stack trace to a temp file under `tmp/` rather than to `scheduler.log`, where nobody was reading;
+and it recurred every ten seconds, which looks like a log line rather than an outage. The one
+process that was obviously wrong, `schedule:run`, was never in the list of processes anything checked.
 
 **18 and 19 are both "it worked, just not for the reader".** Neither crashes and neither stops
 anything from starting, which is exactly why both survived.

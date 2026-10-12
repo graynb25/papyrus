@@ -4091,3 +4091,59 @@ ull tells the checker the generator
     wraps.** Process presence, a path on an exclusion list, and a resolved command are three
     different questions from "is this install's queue being served", and each was answered by the
     cheapest question available. Ask the question that cannot be answered by something else.
+
+224. **A flag configures the process you pass it to. An environment variable configures everything
+    it spawns.**
+    The packaged install's scheduler had been dispatching nothing for as long as it had been
+    installed. `artisan schedule:run`, the process that actually runs the schedule, died every ten
+    seconds with
+
+        PDOException: could not find driver
+        sqlite:...\AppData\Local\Papyrus\database.sqlite
+
+    and had failed 182 times, in an install whose `health` reported all four processes healthy.
+
+    The cause is one level down from where anyone looks. `schedule:work` does not run the schedule.
+    It shells out to `schedule:run`, building that command from `PHP_BINARY`, and it passes no `-c`
+    of its own, because Laravel assumes it inherited a configured interpreter. The launcher had been
+    careful. Both `queue:work` and `schedule:work` were given `-c <ini>` explicitly, with a comment
+    explaining that a worker without `pdo_sqlite` pops nothing and exits quietly. The care stopped at
+    the edge of the process it was applied to.
+
+    And the edge was exactly the problem, because **this launcher's own PHP loads no ini at all**. It
+    is invoked with no `-c` and no `PHPRC`, which is why the launcher cannot touch a database itself
+    and has to shell out for anything that can. Every grandchild it started therefore inherited a
+    bare interpreter, found no ini, loaded no extensions, and died on its first query.
+
+    The fix is `PHPRC` on both workers, which is the documented way to tell a PHP interpreter where
+    its ini is, and which is inherited through arbitrarily many generations. FrankenPHP has had it
+    all along, for exactly this reason. The two workers had only the flag, because the flag was the
+    thing that had been thought about.
+
+    Measured, on the real install, over a 60 second window: `could not find driver` went from 2 per
+    25 seconds to 0, and `scheduler.log` changed from a wall of stack trace to
+
+        2026-10-12 22:03:00 Running [App\Jobs\SyncDownloads] .. 320.88ms DONE
+        2026-10-12 22:03:10 Running [App\Jobs\SyncDownloads] .. 2.28ms DONE
+        2026-10-12 22:03:20 Running [App\Jobs\SyncDownloads] .. 2.86ms DONE
+
+    which is the part that matters. `SyncDownloads` had never once run. The install was not degraded,
+    it was a reader app with downloads switched off, reporting itself healthy throughout.
+
+    Three silences stacked, and each is worth naming on its own:
+
+    - **A supervisor watches the processes it started, not the processes they start.** The child
+      dies inside a parent that is still alive, so the parent's liveness says nothing at all. This is
+      the same lesson as 223 arriving from a different direction: liveness is not participation.
+    - **A stack trace in a log nobody reads is a log nobody wrote.** The grandchild's output went to
+      a temp file under `tmp/`, not to `scheduler.log`, so the file a person would open was the one
+      that was clean.
+    - **Every ten seconds looks like a log line rather than an outage.** A scheduled job failing
+      silently is the quietest failure in any queue system, because a task that never fires produces
+      no event at all. Nothing to alert on, nothing to notice.
+
+    The general shape: **when you configure how a process behaves, ask how many processes that
+    configuration is supposed to reach, and verify the answer at the far end rather than at the
+    start call.** Counting start calls is not the same as counting processes, and the difference is
+    where children live. Where a parent shells out to something that then does the real work, the
+    environment is the only channel that reaches it, and a command line argument reaches nothing.
