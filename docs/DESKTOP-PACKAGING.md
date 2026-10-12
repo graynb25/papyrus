@@ -106,6 +106,67 @@ Changed to `strtolower`, which is the better call independently: the comparison 
 filesystem paths on one machine, so only ASCII case can differ, and a false refusal here is worse
 than a missed one.
 
+### Done: four more defects, found the same way
+
+All four were present while the gate, the suite and the clean-room probe were green. They share one
+cause: each is invisible from the machine that was missing the condition, and none of the three
+local checks supplied it.
+
+| | Defect | Why nothing local caught it |
+| --- | --- | --- |
+| 14 | `stop` could not stop anything. It needs a `proc_open` handle it created itself, so a `stop` from another process found an empty list, printed "Nothing was started by this session, so nothing was stopped" and exited **0** | every local test called `stopAll()` inside the process that had started them, which is the only case that worked |
+| 15 | `ProcessFinder` missing from the build's require list, so a build would have fataled in `Supervisor`'s constructor | the tests reach Supervisor through Composer's autoloader and never through those hand-written requires |
+| 16 | A data directory whose path contains a space produced an unbootable install: the `.env` `DB_DATABASE` was written unquoted and dotenv refused to load it | nothing in this project has a space in its paths, including this repository's own root |
+| 17 | The stop matcher keyed on the install root, so two installs of one install would have killed each other's workers | two launchers sharing a root is a supported configuration and nothing tested it |
+
+**14 is the one worth dwelling on**, because it is the most consequential kind of wrong: not a
+crash but a confident success. `stop` is documented as the command a reader runs when the
+application is too broken to explain itself, and as one of the three a phase 2 tray icon calls. A
+reader who ran it was told everything was fine while all four processes kept running. It exits 0 in
+both cases, because "there was nothing to stop" and "I could not reach the processes" are the same
+answer to a program that has no way to tell them apart.
+
+The gate found it by starting an install, running `stop` from a second process, and finding both
+ports still held and the JVM still alive. It now also asserts that the stop did **not** print the
+sentence that reports having found nothing, because checking only the exit code proves nothing: that
+exit code was correct for both outcomes.
+
+**15 is defect 12 again, one layer out.** `Supervisor`'s constructor builds a `ProcessFinder`, so
+it is a dependency of merely constructing one rather than only of calling `stopAll`. `papyrus.php`
+was updated when the class was added and `packaging/runtime/build-install.php` was not, because it
+names its dependencies by hand. A hand-maintained list is a second dependency graph, and it had no
+check on it at all; there is one now.
+
+**16 is the one this repository was uniquely unable to see**, and it is worth stating plainly: this
+project's own working directory is `C:\Users\<you>\Php Projects`. Every test used a system temp
+directory, the clean-room probe used a path with no space, and the gate used `C:\papyrus-data`. The
+unit tests are not wrong and the design is not wrong; the paths simply were never the paths anyone
+is on.
+
+**17 follows from where the lock lives.** Two launchers sharing an install root with different data
+directories do not exclude each other, because the lock is in the data directory. The matcher now
+keys on the data directory, which cannot collide that way, and which all four processes already
+carry on their own command line: the workers through `-c <data>/php/php.ini`, the web server through
+`--config <data>/frankenphp/Caddyfile`, and Suwayomi through its `rootDir` property. That was
+measured on four real processes rather than argued.
+
+### Running the gate
+
+Windows Sandbox will not start a second guest while one is open, and the message goes to a window
+nobody is watching. Close the window and check for `vmmemWindowsSandbox` before launching again
+rather than trusting the clock.
+
+Three things about it fail silently, and each is recorded in `build/sandbox/papyrus.wsb` so it does
+not have to be rediscovered:
+
+- `build/sandbox-results` must exist on the host before launching. A missing mapped folder is never
+  created, the guest closes with no error, and it looks exactly like a slow boot.
+- The runner must not be edited while a guest is booting. It is read from the mapped folder at
+  logon, so editing or committing it in the first minute of a run means the guest executes a
+  half-written file.
+- Every path passed to `Start-Process` has to be quoted. This is defect 16's mechanism one level
+  down, and it appeared four times in a single afternoon, each time as a confident wrong answer.
+
 **What the gate actually asserts**, from `build/sandbox/run-in-sandbox.ps1`:
 
 ```
@@ -120,11 +181,42 @@ queue worker and scheduler started
 Papyrus is running at http://127.0.0.1:<port>
 suwayomi answers graphql                             v2.4.2366
 https works with the bundled trust store            200
+papyrus diagnostics writes its five files and collects its logs
+no line lost collecting suwayomi output              209 collected, 209 in the source
 all four processes stopped, both ports released
+the stop did not claim there was nothing to stop
 ```
 
 An empty library in the sandbox is the **correct** result, not a symptom. No database and no
 extensions ship, so a clean machine shows an empty library by design.
+
+**The gate runs at the paths a reader gets.** It installs to `C:\Program Files\Papyrus` with its data
+at `C:\papyrus data`, and asks for Suwayomi on 4571 rather than 4567. That is not decoration, and it
+is worth saying why, because the gate was green on every one of these for its whole existence:
+
+| What the gate used | What a reader has | What that hid |
+| --- | --- | --- |
+| `C:\papyrus` | `C:\Program Files\Papyrus` | a space in the Caddyfile document root, `extension_dir`, the artisan path and the jar path |
+| `C:\papyrus-data` | `...\Programs\Papyrus\data` | an `.env` whose `DB_DATABASE` could not be quoted, so dotenv refused to load it and the whole application was dead |
+| port 4567 | whatever is free | an install that could not start on any port but the default, passing the check written to catch exactly that |
+
+Each row is a condition asserted rather than established. The rule that follows is now checked by
+the gate about itself, because "intended to test the hard case" and "did" are different claims and
+only the second one is falsifiable:
+
+```
+the data directory path really does contain a space     C:\papyrus data
+the install root path really does contain a space        C:\Program Files\Papyrus
+the .env quotes a database path containing a space       DB_DATABASE='C:\papyrus data\database.sqlite'
+```
+
+Moving the gate onto those paths immediately broke **two of its own checks**, which is the argument
+for doing it. The ini probe passed its path to `Start-Process` unquoted, and PowerShell joins an
+argument list with spaces without quoting, so PHP received `C:\papyrus` and `data\php\php.ini` as
+two arguments and reported `Could not open input file: data\php\php.ini`, naming a file that does not
+exist. And the `.env` check split on a newline, leaving a carriage return on each line, so `$` never
+matched and it rejected `DB_DATABASE='C:\papyrus data\database.sqlite'`, which is exactly right. A
+check that fails on correct output is worse than no check, because it is believed.
 
 **What this gate cost to get right, and why it is worth the trouble.** Four separate probes wrote
 a confident and wrong answer during phase 0, each reading something other than what it measured: a

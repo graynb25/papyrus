@@ -318,6 +318,14 @@ archive. *Done.* Verified by opening the archive in two independent implementati
 .NET's, which is not ours and not the one our tests use. It contains no library, no database and no
 environment variable, and it says so in its own README.
 
+**Step 6, the clean machine.** The Windows Sandbox gate, which is the only check in this project
+that runs where nothing is installed. *Done*, and it is where four further defects were found, all
+of them invisible to steps 1 to 5 because all three had paths and ports in common that no reader
+has. *Verified by* an install coming up at `C:\Program Files\Papyrus` with its data at
+`C:\papyrus data`, Suwayomi answering on 4571, a diagnostics bundle with no line lost from 209
+collected, and `stop` from a second process leaving both ports released and no process behind.
+`docs/DESKTOP-PACKAGING.md` has the defect list and the gate's own operating instructions.
+
 Each step is checkable before the next exists, which is the property that mattered during phase 0
 and is worth preserving.
 
@@ -336,11 +344,53 @@ found by a test failing.
 | both workers are dead | both were verifiably running |
 | a healthy install has logs to collect | `queue.log` and `scheduler.log` are empty, and empty is healthy |
 | a missing log is a quiet log | absence and silence are different facts, and only one of them is evidence |
+| a reader's data can never be at `C:\papyrus-data` | `C:\Program Files\Papyrus` is where an installer puts it, and the space in it produced an install that would not boot |
+| the gate runs on a realistic path | it ran at `C:\papyrus-data`, which has no space in it, for its whole existence |
+| the gate proves the install starts anywhere | it asked for port 4567, so an install that worked nowhere else passed the check written to catch that |
+| `stop` reports what it did | it printed "nothing to stop" and exited 0 with all four processes running |
+| a `stop` that exits 0 worked | exit 0 is correct for "there was nothing" and for "I could not reach them", and the program cannot tell them apart |
+| the build's require list is complete | the tests reach Supervisor through an autoloader and never through those requires |
+| an empty stderr means something failed quietly | PHP writes a `-r` parse error to **stdout**, so the silence was never evidence of anything |
 
 Each row is the same mistake in a different costume: a condition asserted rather than established.
 That is the argument for keeping the mutation checks *and* for reading the output of every layer
 before calling it done. Mutation checking proves the tests pin what was already suspected. Reading
 the output finds what was not, and there were more of the second kind.
+
+The last four rows have something in common that the earlier ones do not: **every local check was
+green, and the green was the problem.** Not a flaky test or a wrong assertion, but three
+independent checks sharing a blind spot, because they all ran on the same paths and the same ports.
+A suite that agrees with itself is not evidence when the thing it is measuring is the environment.
+
+The remedy is the same one that found the rest: make the harness state the condition it depends on,
+and then check that it is true. The sandbox gate now asserts that its own install root and data
+directory contain a space, because "intended to test the hard case" and "did" are different claims
+and only the second is falsifiable.
+
+### The failure mode a green suite structurally cannot catch
+
+Worth separating out, because it is the one that cost the most here.
+
+A probe that returns a confident wrong answer is more dangerous than a crash, because a crash stops
+the work and a wrong answer does not. Four were written in the course of the packaging work and
+three more during the logging work:
+
+| the probe | what it actually measured |
+| --- | --- |
+| finding an install's processes | a PowerShell script that never ran, because PowerShell refuses a `-File` argument that does not end in `.ps1`, and whose stdout carried the resulting complaint |
+| confirming a spaced path works | an extension directory that did not exist, so PHP correctly loaded nothing and the space was innocent |
+| making an install read only | an `icacls` deny that removed execute as well as write, so `php.exe` could not start and a working install looked broken |
+| measuring where PHP sends a parse error | a work directory whose own space made `-c` fail first, hiding what was being measured about `-r` |
+
+The first is the instructive one. `tempnam()` returns a name with no extension, the script was
+never executed, and the output that came back was PowerShell's startup banner beside its
+complaint. That reads as a probe that ran and found nothing. It survived four wrong diagnoses,
+because the output was never empty, and a plausible-looking result is much harder to distrust than
+an obvious one.
+
+The rule is short: **a matcher for a specific thing, and a matcher that matched nothing, produce
+identical output when that thing is absent.** Every probe needs a positive control, and a control
+that also came back empty tells you the probe is broken rather than the subject.
 
 ## Two defects this design depends on being fixed first
 

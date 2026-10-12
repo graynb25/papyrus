@@ -435,6 +435,54 @@ missing: `allowsRegistration()` existed and was unit tested, and nothing called 
 
 ## Commands
 
+### The packaged launcher
+
+A packaged install is driven by `packaging/launcher/papyrus.php`, which is plain PHP and depends
+on nothing but PHP itself, so it keeps working when the application does not. From a checkout you
+can run it directly:
+
+```bash
+php packaging/launcher/papyrus.php start        # bring all four processes up, then hold
+php packaging/launcher/papyrus.php stop         # bring them all down
+php packaging/launcher/papyrus.php status       # what this session started
+php packaging/launcher/papyrus.php health       # the short answer to "is it working"
+php packaging/launcher/papyrus.php diagnostics  # gather everything into one bundle
+```
+
+`start` holds the terminal open on purpose. The children are not daemons and that process is what
+keeps them alive, so returning would be a stop dressed as an exit. Ctrl+C is the ordinary way down.
+
+****`stop` works from a different terminal than the one that ran `start`,** which is what makes it
+usable from a tray icon or a script. It finds the install's processes through the operating system
+rather than through handles it does not have, and it names each one it could not stop.
+
+It always exits 0, including when a process refuses to stop, because a stop that brought three of
+four down is not a total failure and a script should not treat it as one. It says which process
+survived and prints why it thinks that happened.
+
+`health` exits non-zero when something is wrong, so a script can branch on it rather than parse the
+table. `diagnostics` exits **zero whenever a bundle was written**, even for an install that is
+completely broken, because "did the command work" and "is the install healthy" are different
+questions. Pass `--zip` for one file to attach rather than eight.
+
+A packaged install is configured entirely through environment variables, and the launcher is the
+single source of truth for all of them:
+
+| | |
+| --- | --- |
+| `PAPYRUS_ROOT` | the install directory |
+| `PAPYRUS_DATA` | where the reader's library, database and logs live |
+| `PAPYRUS_SUWAYOMI_PORT` | defaults to 4567 |
+| `PAPYRUS_APP_PORT` | defaults to 8000 |
+
+`PAPYRUS_DATA` must be outside the install, so an uninstall cannot take the library with it.
+`InstallLayout` refuses a data directory inside the install rather than allowing it. Everything the
+launcher writes goes there, including the resolved `php.ini` and Caddyfile, so the install directory
+itself needs no write access and can live under Program Files. See
+[`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md).
+
+### Application commands
+
 ```bash
 php artisan suwayomi:check        # connectivity, auth mode, version, drift against the snapshot
 php artisan suwayomi:schema:dump  # re-introspect and commit, with a field diff
@@ -457,6 +505,24 @@ vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
 `composer test` runs all three. PHPStan needs the memory limit, since the default 128M
 crashes its parallel workers.
+
+### The sandbox gate
+
+A fourth gate runs a packaged install inside Windows Sandbox, on a machine with no PHP, no Java
+and an empty user profile. It is the only check here that runs where a reader runs, and it has
+found four defects that the suite, the clean-room probe and the gate itself all reported as green.
+
+```bash
+# from a checkout, after building an install into build/install
+mkdir build/sandbox-results
+& "$env:WINDIR\System32\WindowsSandbox.exe" build\sandbox\papyrus.wsb
+```
+
+Results land in `build/sandbox-results/sandbox-report.txt`. Windows Sandbox runs one guest at a
+time, so close the window and check for `vmmemWindowsSandbox` before launching again rather than
+trusting the clock; three ways of running it wrong fail with no output at all, and each is recorded
+in [`build/sandbox/papyrus.wsb`](build/sandbox/papyrus.wsb).
+[`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) lists what it asserts and what it found.
 
 There is a fifth gate and it is not a command: open the page. Three bugs in this project
 passed the whole suite and showed up on the first click.
