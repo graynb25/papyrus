@@ -313,6 +313,39 @@ class BundleTest extends TestCase
         putenv('PAPYRUS_TEST_SECRET_TOKEN=do-not-leak-me');
         putenv('MY_API_KEY=also-secret');
 
+        /*
+         * A PATH segment of our own, rather than one that happens to be on this machine.
+         *
+         * The version of this that walked the real PATH failed on a GitHub Windows runner, and the
+         * runner was right and the test was wrong. setup-php installs PHP at `C:\tools\php`, which
+         * is on PATH, and the report legitimately says:
+         *
+         *     loaded configuration    C:\tools\php\php.ini
+         *
+         * So a real PATH segment appeared in a report that is not dumping the environment, and the
+         * assertion "no PATH segment may ever appear" was too strong. The report names the paths it
+         * deliberately asked the operating system for: the install root, the data directory, PHP's
+         * own ini. Any of those can sit inside a PATH entry on some machine.
+         *
+         * A segment that exists nowhere removes the collision and strengthens the test. It is a
+         * harmless name, so it covers the case the loop was written for, and if anything ever reads
+         * `getenv('PATH')` this exact string comes out on every machine, rather than only on one
+         * whose PATH does not collide with its own PHP.
+         */
+        $sentinel = 'Z:\\papyrus-test-only-path-segment';
+        $original = (string) getenv('PATH');
+
+        /*
+         * Set before the render, and this ordering is the whole test.
+         *
+         * Written the other way round first, with the sentinel put in place after the report had
+         * already been produced, the assertion was true by construction and a `getenv('PATH')`
+         * mutation sailed through it: the report could not have contained a segment that was not in
+         * the environment when it was written. It passed against the exact leak it was written to
+         * catch, which is the failure mode this project keeps paying for.
+         */
+        putenv('PATH='.$sentinel.';'.$original);
+
         try {
             $report = (new EnvironmentReport($this->supervisor(), $this->fastProber()))->render();
 
@@ -320,26 +353,13 @@ class BundleTest extends TestCase
             $this->assertStringNotContainsString('also-secret', $report);
             $this->assertStringContainsString('No environment variables', $report);
 
-            /*
-             * The PATH segments themselves.
-             *
-             * A mutation that added `getenv('PATH')` survived the version of this test that only
-             * looked for secrets. PATH is not a secret, which is exactly the point: whether a value
-             * may be reported is not decided by how sensitive it looks, it is decided by whether
-             * anyone chose to name it, and only this assertion covers the harmless names.
-             */
-            foreach (array_slice(explode(DIRECTORY_SEPARATOR, (string) getenv('PATH')), 0, 8) as $segment) {
-                if (strlen($segment) < 5) {
-                    continue;
-                }
-
-                $this->assertStringNotContainsString(
-                    $segment,
-                    $report,
-                    'a PATH segment reached the report, so an environment variable is being read',
-                );
-            }
+            $this->assertStringNotContainsString(
+                $sentinel,
+                $report,
+                'a PATH segment reached the report, so an environment variable is being read',
+            );
         } finally {
+            putenv('PATH='.$original);
             putenv('PAPYRUS_TEST_SECRET_TOKEN');
             putenv('MY_API_KEY');
         }
