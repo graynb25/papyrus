@@ -60,7 +60,19 @@ function Say([string]$line) {
 }
 
 $source = 'C:\build\install'
-$root = 'C:\papyrus'
+
+# With a space, deliberately, for the same reason the data directory has one.
+#
+# `C:\Program Files\Papyrus` is where a Windows installer puts this by default. This gate copied
+# to `C:\papyrus`, so the install root was the last path in the whole system that no reader is
+# on, and it is the one that reaches the most: the Caddyfile document root, the extension
+# directory in php.ini, the artisan path on both workers' command lines, and the jar path the
+# JVM is started with.
+#
+# The data directory got a space first and the gate immediately broke two of its own checks on
+# it, which is the argument for doing this too. A harness whose paths all avoid the awkward case
+# is not a weaker harness, it is a different one.
+$root = 'C:\Program Files\Papyrus'
 
 # With a space, deliberately.
 #
@@ -236,7 +248,12 @@ $startLog = 'C:\results\launcher-start.log'
 
 # Started detached so this script keeps control and can keep reporting. The launcher outlives this
 # script by design, since it leaves four processes running that the probe section then exercises.
-$startProcess = Start-Process -FilePath $launcherPhp -ArgumentList @($launcher, 'start') -NoNewWindow -PassThru `
+#
+# Quoted because the install root now has a space in it, and Start-Process joins an argument list
+# with spaces without quoting. Unquoted, PHP receives "C:\Program" and "Files\Papyrus\...\papyrus.php"
+# and reports "Could not open input file: Files\...", which names a file that does not exist and
+# reads as a broken install. The same applies to the stop call below.
+$startProcess = Start-Process -FilePath $launcherPhp -ArgumentList @('"' + $launcher + '"', 'start') -NoNewWindow -PassThru `
     -RedirectStandardOutput $startLog -RedirectStandardError 'C:\results\launcher-start.err'
 
 Say "  launcher started, pid $($startProcess.Id), watching its output"
@@ -326,6 +343,8 @@ if (Test-Path $resolvedIni) {
     # -ArgumentList with spaces without quoting.
     #
     # Unquoted, PHP receives "C:\papyrus" and "data\php\php.ini" as two arguments and reports
+    # that split. With the install root now spaced too, the same argument splitting applies to
+    # the launcher path and to every path passed to a child process, so the rule is general.
     # "Could not open input file: data\php\php.ini", which names the wrong file and looks like a
     # broken install. This gate ran clean for its whole life only because C:\papyrus-data had no
     # space in it, so the one path this harness had never exercised was the path the rest of the
@@ -415,6 +434,11 @@ Check 'database created in the data directory' $dataDb
 # nothing about the path a reader is on. This one cannot be satisfied by accident, and it is the
 # difference between a gate that checks a spaced path and a gate that merely intends to.
 Check 'the data directory path really does contain a space' ($data -like '* *') $data
+
+# And the install root, which is the path Windows chooses by default and the last one in this
+# system that had no space in it. Checked for the same reason: "intended to use a spaced path"
+# and "used one" are different claims, and only the second is falsifiable.
+Check 'the install root path really does contain a space' ($root -like '* *') $root
 
 # And the .env the launcher wrote must be one dotenv can read back. Read with the same parser the
 # application uses, because the failure this covers is "Encountered unexpected whitespace", which
@@ -509,7 +533,7 @@ if (Test-Path $bundle) {
 
 Section 'stopping'
 
-$stopProcess = Start-Process -FilePath $launcherPhp -ArgumentList @($launcher, 'stop') -NoNewWindow -Wait -PassThru `
+$stopProcess = Start-Process -FilePath $launcherPhp -ArgumentList @('"' + $launcher + '"', 'stop') -NoNewWindow -Wait -PassThru `
     -RedirectStandardOutput 'C:\results\launcher-stop.log' -RedirectStandardError 'C:\results\launcher-stop.err'
 
 Get-Content 'C:\results\launcher-stop.log' -ErrorAction SilentlyContinue | ForEach-Object { Say "    $_" }
@@ -530,7 +554,7 @@ foreach ($port in @($appPort, $suwayomiPort)) {
 # A clean sandbox has no other JVM, so this cannot hide a leak here, and it cannot cry wolf on a
 # machine that happens to have one.
 $survivors = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine.Contains('C:\papyrus') } |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($root) } |
     Where-Object {
         $_.CommandLine.Contains('queue:work') -or
         $_.CommandLine.Contains('schedule:work') -or

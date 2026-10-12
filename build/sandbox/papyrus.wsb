@@ -15,7 +15,9 @@
     A mapped folder is read only to the guest, and the framework writes compiled packages and
     services into `bootstrap/cache` inside the application root. Running from the mount would fail
     on that, and the failure would say nothing about self containment. So the install is copied to
-    `C:\papyrus` first, which also matches a real install being somewhere the user can write to.
+    `C:\Program Files\Papyrus` first, which is where a Windows installer puts one by default, so
+    the paths the launcher and the application actually use are the awkward ones rather than the
+    convenient ones.
 
     A genuinely read only install directory, as in Program Files, is a separate question and is
     not answered by this gate. It is called out rather than quietly assumed.
