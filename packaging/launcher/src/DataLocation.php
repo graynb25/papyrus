@@ -54,6 +54,28 @@ final class DataLocation
      */
     public function resolve(string $root): array
     {
+        $local = $this->localRoot();
+
+        if ($local !== null && $this->inside($root, $local)) {
+            /*
+             * An install the installer put here.
+             *
+             * `%LOCALAPPDATA%\Programs\Papyrus` is where the installer writes, so an install found
+             * under `%LOCALAPPDATA%` was put there deliberately and the reader expects their data
+             * in one predictable place. That is `%LOCALAPPDATA%\Papyrus`, not a `papyrus-data`
+             * folder beside the program: a reader looking for their library looks in their own
+             * AppData, and a folder beside the program is not there.
+             *
+             * This is checked before writability, because a per-user install is writable and would
+             * otherwise always take the portable branch.
+             */
+            return [
+                'path' => $local.DIRECTORY_SEPARATOR.'Papyrus',
+                'reason' => 'this install is under your AppData, so this is where Windows keeps '
+                    .'your own data, rather than beside the program',
+            ];
+        }
+
         $portable = dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 
         if ($this->canWrite($portable)) {
@@ -63,11 +85,9 @@ final class DataLocation
             ];
         }
 
-        $local = getenv('LOCALAPPDATA');
-
-        if (is_string($local) && trim($local) !== '') {
+        if ($local !== null) {
             return [
-                'path' => rtrim($local, '\\/').DIRECTORY_SEPARATOR.'Papyrus',
+                'path' => $local.DIRECTORY_SEPARATOR.'Papyrus',
                 'reason' => 'the install is somewhere that cannot be written to, so this is under '
                     .'%LOCALAPPDATA% where Windows keeps a reader\'s own data',
             ];
@@ -82,6 +102,38 @@ final class DataLocation
             'path' => $portable,
             'reason' => 'no writable location was found, so Papyrus will say where it tried',
         ];
+    }
+
+    /**
+     * `%LOCALAPPDATA%` for this user, or null when the machine does not have one.
+     *
+     * Read from the environment rather than derived, because Windows owns this location and a
+     * profile can be moved. A hard-coded path would put a reader's data somewhere their profile is
+     * not, which is the exact failure this project spent a phase fixing.
+     */
+    private function localRoot(): ?string
+    {
+        $local = getenv('LOCALAPPDATA');
+
+        if (! is_string($local) || trim($local) === '') {
+            return null;
+        }
+
+        return rtrim($local, '\\/');
+    }
+
+    /**
+     * Whether a path is inside another, comparing case-insensitively as Windows does.
+     *
+     * The separator on the end of the parent matters, or `C:\Users\<you>\AppDataLocal` counts
+     * as being inside `C:\Users\<you>\AppData`, and that reader's data goes to the wrong place.
+     */
+    public function inside(string $path, string $parent): bool
+    {
+        $normalised = str_replace('/', '\\', $path);
+        $boundary = rtrim(str_replace('/', '\\', $parent), '\\').'\\';
+
+        return stripos($normalised, $boundary) === 0;
     }
 
     /**

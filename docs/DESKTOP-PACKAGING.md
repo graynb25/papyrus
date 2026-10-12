@@ -118,6 +118,36 @@ local checks supplied it.
 | 15 | `ProcessFinder` missing from the build's require list, so a build would have fataled in `Supervisor`'s constructor | the tests reach Supervisor through Composer's autoloader and never through those hand-written requires |
 | 16 | A data directory whose path contains a space produced an unbootable install: the `.env` `DB_DATABASE` was written unquoted and dotenv refused to load it | nothing in this project has a space in its paths, including this repository's own root |
 | 17 | The stop matcher keyed on the install root, so two installs of one install would have killed each other's workers | two launchers sharing a root is a supported configuration and nothing tested it |
+| 18 | `Papyrus.cmd` shipped with bare LF line endings, and `cmd.exe` ran it and printed nothing | the file was written and the process it starts ran, so every check that asked "did it start" said yes; nothing asked whether a human could read the output |
+| 19 | The generated `.env` carries `SUWAYOMI_USERNAME=''`, so an install could not read anything from a Suwayomi that requires a login, and nothing said so | every check that exists asks Suwayomi `aboutServer`, which is not behind a login, so `health` printed six green lines over an install that refused every query the app made |
+
+**18 and 19 are both "it worked, just not for the reader".** Neither crashes and neither stops
+anything from starting, which is exactly why both survived.
+
+18 is the sharper one. `cmd.exe` parses batch files by CRLF; with bare LF it still launches the
+command and loses the output, so the one file a reader ever double-clicks opened a console that
+filled with progress they could not read. It was found by redirecting that file's output to a file
+and measuring it: 0 bytes, while running the same launcher directly produced 610 bytes in ten
+seconds. `build-install.php` now normalises the endings and fails the build if any bare LF survives,
+because the source can come back with LF from an editor, a checkout setting, or another platform.
+
+19 is the one that reached a reader. The launcher knows Suwayomi's URL and port and has no way to
+know a password, so it writes the URL and leaves the credentials as the empty strings
+`.env.example` ships. Against `AuthMode.UI_LOGIN` every query the application makes is refused, so
+every series reads "Not on the server" and no cover or chapter count can be fetched. The library is
+intact and fully visible throughout, which is what made it look like data loss rather than a
+configuration gap.
+
+It stayed invisible because the one function that talks to Suwayomi at startup asks `aboutServer`,
+and `aboutServer` carries no `@RequireAuth`. `suwayomiAnswers()` returned true, `/ready` answered
+200, and `papyrus health` was green. A check that only exercises the one endpoint which never needed
+credentials cannot see this, and there were three of them.
+
+The launcher now probes `{ sources { totalCount } }`, which is behind the login, and refuses to
+start when it is refused and no credentials are configured, naming the file to edit. It never
+prompts: PHP on Windows cannot mask console input without a dependency, so a prompt would put the
+password on screen and in scrollback. It also refuses **only** when all three of those hold, so an
+inconclusive probe starts the install rather than stopping a working one.
 
 **14 is the one worth dwelling on**, because it is the most consequential kind of wrong: not a
 crash but a confident success. `stop` is documented as the command a reader runs when the
@@ -661,12 +691,60 @@ First run, no Suwayomi detected on 4567
 
 | # | Item | Sev | Notes |
 | --- | --- | --- | --- |
-| 2.1 | Inno Setup shell | M | Around 1MB of tool, produces one exe. Silent flags `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` are well documented. |
+| 2.1 | Inno Setup shell | M | **Done.** One exe, per user, no elevation, silent flags as documented. See below. |
 | 2.2 | Shortcuts, Start Menu, file associations | M | Associating `.tachibk` and `.tmb` so a reader can double-click a backup is a small thing that makes the product feel finished. |
 | 2.3 | Atomic upgrade | **S** | Run from `app/1.4.0/` and `app/1.5.0/` with a `current` pointer. Extract, run migrations, flip. Otherwise a running app can never be updated. See bite 4. |
 | 2.4 | Single instance guard | H | Lockfile owned by the launcher. Recover stale locks by checking whether the pid is alive. Never by process name. |
 | 2.5 | Firewall prompt | L | Binding to `127.0.0.1` only should avoid it. Worth verifying, because a prompt on first run is a bad first impression. |
 | 2.6 | Auto-update | M | One artifact containing all three runtimes, not three update channels. See bite 6. |
+
+### 2.1 done: the installer
+
+`packaging/installer/papyrus.iss`, compiled by `build-installer.php`, which reads `VERSION` and
+passes the number in rather than carrying a copy of it.
+
+**Per user, not per machine.** `PrivilegesRequired=lowest`, installing to
+`%LOCALAPPDATA%\Programs\Papyrus`. A reader app whose first act is "allow this app to make changes
+to your computer" has made a bad first impression to buy the ability for somebody else to upgrade
+it later. The install is self contained and, measured across a full run, writes nothing at runtime:
+0 of 12,635 files changed.
+
+**The library is never inside the install.** Data lives at `%LOCALAPPDATA%\Papyrus`, which is a
+different folder from `%LOCALAPPDATA%\Programs\Papyrus`, so uninstalling removes code and leaves
+the reader's library. That is what makes item 0.12 true by construction rather than by remembering
+to skip a directory.
+
+This needed one change outside the installer. `DataLocation` chose a sibling `papyrus-data` folder
+whenever the install was writable, and a per-user install **is** writable, so it would have taken
+the portable branch and put the library in `papyrus-data` beside the program. A reader looking for
+their library looks in their own AppData. So the rule now reads:
+
+| Shape | Data goes to |
+| --- | --- |
+| Install is under `%LOCALAPPDATA%` | `%LOCALAPPDATA%\Papyrus`, it was installed deliberately |
+| Otherwise, and a sibling is writable | beside the install, so the folder stays movable |
+| Otherwise | `%LOCALAPPDATA%\Papyrus`, the install cannot be written to |
+
+The "inside AppData" test is checked before the writability test. That ordering is the whole
+decision: without it a per-user install always takes the portable branch. It compares with a
+trailing separator, because a prefix match on `C:\Users\<you>\AppData` and `C:\Users\<you>\AppDataLocal`
+sends one reader's data somewhere they will never look, and that check passes while being wrong.
+
+**Two things the plan did not ask for and the build needed anyway.**
+
+| Gap | What it was |
+| --- | --- |
+| No way to start Papyrus | There was no `.cmd`, no shortcut target and no launcher binary. Item 2.1 cannot produce a Start Menu entry pointing at nothing, so `packaging/launcher/Papyrus.cmd` is the one thing a reader ever runs, and the build checks it landed on the install root. |
+| No version number | `build-install.php` stamped only a commit hash, and wrote in a comment that a version number is worse because it drifts. It is now read from `VERSION` in the repository root, the single place it is written by hand. The hash is kept alongside it, because they answer different questions. |
+
+**The entry point holds a console window open, and that is not the finished behaviour.** `start`
+is the supervisor: it brings the four processes up, waits until they are usable, then holds the
+terminal and watches them. Closing the window stops the app, which is deliberate, because the
+children are not daemons. So the shortcut opens a window and keeps it. That is what is true today.
+The tray icon (0.8) is what replaces it, and it calls the same three commands.
+
+**Compression is not solid.** 623MB of already-compressed payload: the jar, the JRE and the PHP
+runtime are zipped already, so a solid LZMA2 block spends minutes to save very little.
 
 ## The five bites, investigated
 

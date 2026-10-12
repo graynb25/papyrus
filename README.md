@@ -267,6 +267,35 @@ They share no storage and neither one will work on the other. Typing your Suwayo
 username into the Papyrus login gets `Please include an '@' in the email address`, which
 is the correct answer to a question you were not asking.
 
+### Suwayomi's credentials, in a packaged install
+
+The launcher writes `SUWAYOMI_URL` and knows the port, because it starts Suwayomi itself. It cannot
+know a password, so it does not invent one, and it does not ask for one either: PHP on Windows
+cannot mask console input without a dependency, so a prompt would put the password on screen and in
+your scrollback.
+
+So they go in the `.env` in your **data directory**, next to your library:
+
+```
+SUWAYOMI_USERNAME=papyrus
+SUWAYOMI_PASSWORD=the-password-you-registered
+```
+
+For an unattended install, set `SUWAYOMI_USERNAME` and `SUWAYOMI_PASSWORD` in the environment
+instead and the launcher picks them up from there and passes them to the application.
+
+If Suwayomi is running in a mode that requires signing in and neither is set, **the launcher refuses
+to start** and names the file to edit. That is deliberate, and it is worth knowing why:
+
+> Without this check the install starts, serves your library, and every series reads "Not on the
+> server". The launcher reports it is running, `/ready` answers 200, and `papyrus health` prints
+> six green lines, because every check that exists asks Suwayomi `aboutServer`, which is not behind
+> a login. An install that looks healthy and silently refuses every query is worse than one that
+> says what is wrong.
+
+Your library is never at risk from this. It lives outside the install, and the check runs before
+anything is migrated.
+
 ### Making your first account
 
 This is the supported way into the app on a single reader install.
@@ -452,7 +481,7 @@ php packaging/launcher/papyrus.php diagnostics  # gather everything into one bun
 `start` holds the terminal open on purpose. The children are not daemons and that process is what
 keeps them alive, so returning would be a stop dressed as an exit. Ctrl+C is the ordinary way down.
 
-****`stop` works from a different terminal than the one that ran `start`,** which is what makes it
+**`stop` works from a different terminal than the one that ran `start`,** which is what makes it
 usable from a tray icon or a script. It finds the install's processes through the operating system
 rather than through handles it does not have, and it names each one it could not stop.
 
@@ -480,6 +509,36 @@ single source of truth for all of them:
 launcher writes goes there, including the resolved `php.ini` and Caddyfile, so the install directory
 itself needs no write access and can live under Program Files. See
 [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md).
+
+### The Windows installer
+
+A packaged install can be built into one `.exe`:
+
+```bash
+php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar>   # the install itself
+php packaging/installer/build-installer.php                             # the installer for it
+```
+
+The result lands in `build/dist/Papyrus-<version>-setup.exe`. Version numbers come from `VERSION` in
+the repository root, which is the only place one is written by hand; the build copies it into
+`version.txt` beside the commit hash, and the installer is named from it.
+
+It installs **per user**, to `%LOCALAPPDATA%\Programs\Papyrus`, with no elevation prompt. Silent
+install is `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`.
+
+**Your library is not inside the install.** Data goes to `%LOCALAPPDATA%\Papyrus`, so uninstalling
+removes the program and leaves what you follow. Uninstalling also stops Papyrus first, through
+`papyrus.php stop`, so it does not fail halfway through on files the JVM is holding. It exits 0
+whether or not the stop worked: refusing to uninstall would be worse than a running process.
+
+The Start Menu entry points at `Papyrus.cmd`, which opens a console window and keeps it. `start`
+holds the terminal because the children are not daemons, so closing the window stops the app. That
+is what the launcher does today; the tray icon is what replaces it.
+
+Build inputs are fetched rather than kept. `stage-runtime.php` downloads the pinned JRE and CA
+bundle and verifies both against published digests, and `stage-frankenphp.php` does the same for
+the FrankenPHP archive, against a digest this project measured and committed because FrankenPHP
+publishes none for that asset.
 
 ### Application commands
 

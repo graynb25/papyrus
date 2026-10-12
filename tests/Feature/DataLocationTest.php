@@ -41,6 +41,63 @@ class DataLocationTest extends TestCase
         $this->assertStringContainsString('beside the install', $choice['reason']);
     }
 
+    public function test_an_install_under_local_app_data_uses_local_app_data(): void
+    {
+        /*
+         * The shape the installer produces.
+         *
+         * `%LOCALAPPDATA%\Programs\Papyrus` is where the installer writes, and it is writable, so
+         * without this rule it takes the portable branch and puts the reader's data in a
+         * `papyrus-data` folder beside the program. A reader looking for their library looks in
+         * their own AppData, and it is not there.
+         */
+        $local = getenv('LOCALAPPDATA');
+
+        if (! is_string($local) || $local === '') {
+            $this->assertTrue(true, 'no LOCALAPPDATA here, the installed case cannot be exercised');
+
+            return;
+        }
+
+        $installed = $local.DIRECTORY_SEPARATOR.'Programs'.DIRECTORY_SEPARATOR.'Papyrus';
+
+        // Writable, so this is only correct because the inside check comes before the write check.
+        $choice = (new DataLocation(fn (string $path): bool => true))->resolve($installed);
+
+        $this->assertSame(
+            $local.DIRECTORY_SEPARATOR.'Papyrus',
+            $choice['path'],
+            'an installed copy keeps its data in one predictable place under the reader\'s own AppData',
+        );
+
+        $this->assertStringNotContainsString('Programs', $choice['path'], 'not beside the program');
+    }
+
+    public function test_a_folder_merely_starting_with_local_app_data_is_not_inside_it(): void
+    {
+        /*
+         * The separator on the end of the parent is the whole test.
+         *
+         * Without it, `C:\Users\<you>\AppDataLocal` counts as being inside `C:\Users\<you>\AppData`,
+         * and that reader's data goes to a place they will never look. It is a prefix match on two
+         * unrelated folders, which is the shape of a check that passes.
+         */
+        $this->assertTrue(
+            (new DataLocation)->inside('C:\\Users\\reader\\AppData\\Programs\\Papyrus', 'C:\\Users\\reader\\AppData'),
+            'a real subfolder is inside',
+        );
+
+        $this->assertFalse(
+            (new DataLocation)->inside('C:\\Users\\reader\\AppDataLocal', 'C:\\Users\\reader\\AppData'),
+            'a sibling folder with a longer name is not inside',
+        );
+
+        $this->assertFalse(
+            (new DataLocation)->inside('C:\\Users\\reader\\AppData', 'C:\\Users\\reader\\AppData'),
+            'a path is not inside itself',
+        );
+    }
+
     public function test_an_install_that_cannot_be_written_to_uses_local_app_data(): void
     {
         $beside = dirname('C:\\Program Files\\Papyrus').DIRECTORY_SEPARATOR.'papyrus-data';
@@ -128,18 +185,20 @@ class DataLocationTest extends TestCase
          * A probe that creates the directory in order to test it leaves an empty directory behind
          * when the answer turns out to be no, which is the residue this project has been bitten by
          * in other places.
+         *
+         * Under the repository rather than the system temp directory, because the temp directory
+         * is inside `%LOCALAPPDATA%` and a root there is an installed install, which takes a
+         * different branch and would make this pass without testing the rejection.
          */
-        $root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-dataloc-'.getmypid();
+        $root = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR.'dataloc-'.getmypid();
         $beside = dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 
         @mkdir($root, 0o777, true);
 
         try {
-            // The sibling is deliberately not writable, so the answer is the fallback.
             $choice = (new DataLocation(fn (string $path): bool => $path !== $beside))->resolve($root);
 
             $this->assertNotSame($beside, $choice['path']);
-
             $this->assertDirectoryDoesNotExist(
                 $beside,
                 'choosing where data lives must not create the directory it rejected',
@@ -157,8 +216,14 @@ class DataLocationTest extends TestCase
          * A candidate that does not exist yet is normal, so asking `is_writable` about it directly
          * would say no for the wrong reason and the portable branch would never be taken on any
          * machine where the data directory has not been created.
+         *
+         * Under the repository for the same reason as above: a root inside `%LOCALAPPDATA%` is an
+         * installed install and never reaches the walk up at all.
          */
-        $root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-walkup-'.getmypid().DIRECTORY_SEPARATOR.'Papyrus';
+        $root = dirname(__DIR__, 2)
+            .DIRECTORY_SEPARATOR.'build'
+            .DIRECTORY_SEPARATOR.'walkup-'.getmypid()
+            .DIRECTORY_SEPARATOR.'Papyrus';
         $beside = dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 
         $this->assertDirectoryDoesNotExist($beside, 'the data directory does not exist yet');

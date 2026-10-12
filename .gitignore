@@ -84,6 +84,14 @@ yarn-error.log
 # repository got no gate at all, and the gate is the only check that runs on a machine with
 # nothing installed.
 /build/install/
+# The installer that packaging/installer/build-installer.php compiles. Around 600MB, and it is the
+# assembled install with the whole payload run through LZMA2, so it is both larger and less useful
+# in a repository than the install directory it came from.
+#
+# Named separately rather than folded into the /build/install rule above, because the two are
+# produced by different commands and somebody debugging why the installer is stale needs to be able
+# to delete one and keep the other.
+/build/dist/
 # What a sandbox run leaves behind. Readable from the host, useless in the repository.
 /build/sandbox-results/
 # The throwaway data directory build-install.php lays out beside the install, so it can ask the

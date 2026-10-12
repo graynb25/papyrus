@@ -373,6 +373,16 @@ Two rules that matter more than the scheme:
   version, migrate a copy, then flip. That is phase 2 item 2.3 and it is severe for a reason
   that has nothing to do with tidiness.
 
+The number lives in one file, `VERSION` at the repository root, and it is `x.y.z` with nothing else
+in it. `build-install.php` copies it into the install's `version.txt` next to the commit hash, and
+`build-installer.php` names the installer from it.
+
+Both are recorded, because they answer different questions. The hash is what a build **is**, it
+cannot drift, and it is what ends the guessing when a reporter's install disagrees with the
+repository. The number is what a reader can **see**, which is why a bug report starts with it and
+why refusing to have one costs more than the drift it avoids. A number that disagrees with
+`VERSION` cannot be produced by the build, because nothing else writes one.
+
 ### Deprecation, and how a release gets noticed
 
 Declare support windows out loud rather than letting them lapse:
