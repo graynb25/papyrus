@@ -41,6 +41,7 @@ require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/Prober.php';
 require __DIR__.'/src/ProcessFinder.php';
 require __DIR__.'/src/ManagedProcess.php';
+require __DIR__.'/src/DataLocation.php';
 require __DIR__.'/src/SuwayomiConfiguration.php';
 
 /*
@@ -80,7 +81,20 @@ require __DIR__.'/src/EnvironmentReport.php';
 require __DIR__.'/src/Bundle.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
-$data = getenv('PAPYRUS_DATA') ?: dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
+
+/*
+ * Where the data goes, and whether anybody chose it or we did.
+ *
+ * `$dataChosen` rather than testing the environment variable again further down, because "the
+ * reader set this" and "we picked this" are different situations and the reader deserves to be
+ * told which one they are in. A portable install keeps its data on whatever the folder is on; an
+ * installed one cannot, and says so rather than refusing with a bare unwritable path.
+ */
+$dataChosen = is_string($explicit = getenv('PAPYRUS_DATA')) && $explicit !== '';
+
+$decision = (new DataLocation)->resolve($root);
+
+$data = $dataChosen ? $explicit : $decision['path'];
 $logs = $data.DIRECTORY_SEPARATOR.'logs';
 
 /** @var \Closure(string): void $say */
@@ -101,6 +115,22 @@ $command = $argv[1] ?? 'status';
 try {
     switch ($command) {
         case 'start':
+            /*
+             * Where the data went, before anything else.
+             *
+             * A reader who cannot find their library will look in the install folder first, and a
+             * reader who cannot find their logs will ask where to attach them from. One line here
+             * answers both, and it is the only place it is true, because this is the process that
+             * decided it.
+             *
+             * Said once, on start, and not by the summary log: a reader who cannot start Papyrus
+             * at all is exactly the reader who needs to be told.
+             */
+            $say($dataChosen
+                ? 'Your data directory is '.$data.', set by PAPYRUS_DATA.'
+                : 'Your data directory is '.$data.', '.$decision['reason'].'.');
+            $say('');
+
             $supervisor->start($say);
             $say('');
             $say(sprintf(
