@@ -339,16 +339,28 @@ if ($null -eq $appPort) {
 # starting. Checking it before the start is checking a file that does not exist yet, which is how
 # the first two runs of this gate reported a failure against the wrong ini.
 if (Test-Path $resolvedIni) {
-    # Quoted, because the data directory now has a space in it and Start-Process joins
-    # -ArgumentList with spaces without quoting.
+    # Quoted, and the reason is two separate bugs rather than one.
     #
-    # Unquoted, PHP receives "C:\papyrus" and "data\php\php.ini" as two arguments and reports
-    # that split. With the install root now spaced too, the same argument splitting applies to
-    # the launcher path and to every path passed to a child process, so the rule is general.
-    # "Could not open input file: data\php\php.ini", which names the wrong file and looks like a
-    # broken install. This gate ran clean for its whole life only because C:\papyrus-data had no
-    # space in it, so the one path this harness had never exercised was the path the rest of the
-    # run now uses.
+    # The `-r` argument has to be quoted because it contains a space, and unquoted PHP receives
+    # `-r echo` and treats PHP_VERSION; as a stray argument. Measured, with Start-Process and
+    # both streams redirected:
+    #
+    #     unquoted   exit 255   stdout 82 bytes   stderr 0 bytes
+    #                 "Parse error: syntax error, unexpected end of file"
+    #     quoted     exit 0     stdout  6 bytes   stderr  0 bytes   "8.5.11"
+    #
+    # Note stderr is empty in the failing case too. PHP writes that parse error to STDOUT, so an
+    # empty stderr here was never evidence of anything. An earlier note in this file treated the
+    # silence as unexplained, on the assumption that a parse error would go to stderr. That
+    # assumption was wrong, and it sent the investigation looking for a second fault that was
+    # never there.
+    #
+    # The `-c` path is quoted separately, because the data directory now contains a space and
+    # Start-Process joins -ArgumentList with spaces without quoting. Unquoted, PHP receives
+    # "C:\papyrus" and "data\php\php.ini" as two arguments and reports "Could not open input
+    # file: data\php\php.ini", which names a file that does not exist and reads as a broken
+    # install. This gate ran clean for its whole life only because C:\papyrus-data had no space
+    # in it.
     $version = Invoke-Captured $launcherPhp @('-c', '"' + $resolvedIni + '"', '-r', '"echo PHP_VERSION;"') 'php-resolved-ini'
     Say "  bundled PHP with the launcher's resolved ini: $($version.Out.Trim())"
     Check 'the launchers resolved ini loads cleanly' ($version.Code -eq 0) "exit $($version.Code)"
