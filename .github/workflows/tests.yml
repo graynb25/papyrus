@@ -45,6 +45,18 @@ jobs:
           php-version: '8.4'
           tools: composer:v2
           coverage: none
+          # Named explicitly, and the reason is that Linux enables these by default and Windows does
+          # not. The first Windows run failed before a single test executed: `composer install`
+          # refused three locked packages because `ext-fileinfo` was absent, which is why
+          # `league/flysystem` and `league/mime-type-detection` could not be installed.
+          #
+          # `fileinfo` is the one Composer actually names, and adding only it would be fixing the
+          # error rather than the cause: a Windows runner simply has a smaller default set than a
+          # Linux one, so the next runner image would produce the next missing extension. This list
+          # is what the packaged runtime's own php.ini loads, which is the authoritative answer to
+          # "what does this application need", and asking for those means CI and the shipped
+          # artifact agree about what PHP is.
+          extensions: fileinfo, mbstring, curl, gd, intl, zip, exif, sodium, pdo_sqlite, sqlite3, openssl
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
