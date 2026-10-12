@@ -322,7 +322,15 @@ if ($null -eq $appPort) {
 # starting. Checking it before the start is checking a file that does not exist yet, which is how
 # the first two runs of this gate reported a failure against the wrong ini.
 if (Test-Path $resolvedIni) {
-    $version = Invoke-Captured $launcherPhp @('-c', $resolvedIni, '-r', '"echo PHP_VERSION;"') 'php-resolved-ini'
+    # Quoted, because the data directory now has a space in it and Start-Process joins
+    # -ArgumentList with spaces without quoting.
+    #
+    # Unquoted, PHP receives "C:\papyrus" and "data\php\php.ini" as two arguments and reports
+    # "Could not open input file: data\php\php.ini", which names the wrong file and looks like a
+    # broken install. This gate ran clean for its whole life only because C:\papyrus-data had no
+    # space in it, so the one path this harness had never exercised was the path the rest of the
+    # run now uses.
+    $version = Invoke-Captured $launcherPhp @('-c', '"' + $resolvedIni + '"', '-r', '"echo PHP_VERSION;"') 'php-resolved-ini'
     Say "  bundled PHP with the launcher's resolved ini: $($version.Out.Trim())"
     Check 'the launchers resolved ini loads cleanly' ($version.Code -eq 0) "exit $($version.Code)"
 } else {
@@ -412,7 +420,13 @@ Check 'the data directory path really does contain a space' ($data -like '* *') 
 # application uses, because the failure this covers is "Encountered unexpected whitespace", which
 # is reported by the parser and not by anything else.
 $envText = Get-Content (Join-Path $data '.env') -Raw -ErrorAction SilentlyContinue
+
+# Trimmed, because splitting on "`n" leaves the carriage return on the end of every line and `$`
+# does not match before one. The first version of this check rejected
+# DB_DATABASE='C:\papyrus data\database.sqlite', which is exactly right, and reported it as a
+# defect: a check that fails on correct output is worse than no check, because it is believed.
 $dbLine = ($envText -split "`n" | Where-Object { $_ -like 'DB_DATABASE=*' } | Select-Object -First 1)
+$dbLine = if ($null -eq $dbLine) { $null } else { $dbLine.Trim() }
 
 Check 'the .env quotes a database path containing a space' `
     ($null -ne $dbLine -and $dbLine -match "^DB_DATABASE='.+'$") $(if ($dbLine) { $dbLine } else { 'no DB_DATABASE line' })

@@ -36,6 +36,17 @@
     polling for a report sits there reporting "guest booting" for ten minutes. The folder is
     created by the host before launching. Delete build/sandbox-results to clear old results and
     the next launch silently does nothing.
+
+    ## Do not edit the runner while a guest is booting
+
+    The runner is read from this same mapped folder at logon, which is a minute or two after the
+    window appears. Editing run-in-sandbox.ps1 in that window, or committing it, means the guest
+    runs whatever the file happened to be when it opened it, or fails to parse it and closes with
+    no progress file and no error.
+
+    That happened twice in a row while working on this gate, and both times it looked like the
+    machine was simply slow to start. Commit first, then launch, then leave both alone until the
+    report appears.
   -->
 
   <VGpu>Disable</VGpu>
