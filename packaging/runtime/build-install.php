@@ -147,6 +147,17 @@ const REQUIRED_AFTER_BUILD = [
     'composer.json',
     'package.json',
     'packaging/launcher/papyrus.php',
+
+    /*
+     * The shortcut target, checked rather than assumed.
+     *
+     * A Start Menu entry pointing at a file that is not there is an icon that fails when a reader
+     * clicks it, which is the first thing they will do and the least likely thing anybody
+     * reproduces before reporting it. The build is the only place that can know, cheaply, whether
+     * the thing the installer points at exists.
+     */
+    'Papyrus.cmd',
+
     'version.txt',
 
     /*
@@ -259,17 +270,26 @@ if (! is_dir($into) && ! mkdir($into, 0o777, true) && ! is_dir($into)) {
 // --- what this install is ----------------------------------------------------------------
 
 /*
+ * A commit hash, and a version number, and neither is a substitute for the other.
+ *
+ * The hash cannot drift: it is read from the checkout that is being built, so a bug report saying
+ * "1.2.3" has an exact referent and when the reporter's install says one hash and the repository
+ * says another, that is the end of the guessing.
+ *
+ * The number exists because the installer cannot be built without one, and because a reader in a
+ * bug report says what they can see. The drift objection to a version number is real and it is
+ * answered by having exactly one: `VERSION` in the repository root is the only place it is written
+ * by hand, the build copies it here, and the installer reads it from here rather than carrying its
+ * own copy. A number that disagrees with `VERSION` cannot be produced by this build.
+ *
+ * Written as "unknown" rather than omitted for the hash when there is no git, so a bundle always
+ * has a version line and a reader is never left wondering whether the build simply forgot. A
+ * missing `VERSION` is a different thing: it is a checkout error, and it fails the build, because
+ * an install stamped "unknown" is indistinguishable from a build that lost track of itself.
+ *
  * Written after the layout is cleared, because writing it before would be the second bug of exactly
  * this shape this project has already shipped twice: the build reported success over a file that
  * was never there, and over a file that had been deleted by a later step.
- *
- * A commit hash rather than a version number. A number has to be remembered and bumped, and the
- * moment it drifts from what shipped, a bug report saying "1.2.3" is worse than no report at all,
- * because it looks precise. A hash cannot drift, and when the reporter's install says one hash and
- * the repository says another, that is the end of the guessing.
- *
- * Written as "unknown" rather than omitted when there is no git, so a bundle always has a version
- * line and a reader is never left wondering whether the build simply forgot.
  */
 $commit = trim((string) shell_exec('git -C '.escapeshellarg($repo).' rev-parse --short HEAD 2>&1'));
 
@@ -277,16 +297,28 @@ if (! preg_match('/^[0-9a-f]{7,40}$/', $commit)) {
     $commit = 'unknown, built outside a git checkout';
 }
 
+$versionFile = $repo.DIRECTORY_SEPARATOR.'VERSION';
+
+if (! is_file($versionFile)) {
+    fail('VERSION is missing from the repository root, so this install could not be given a version');
+}
+
+$version = trim((string) file_get_contents($versionFile));
+
+if (! preg_match('/^\d+\.\d+\.\d+$/', $version)) {
+    fail('VERSION must hold three numbers and nothing else, and it holds: '.($version === '' ? 'nothing' : $version));
+}
+
 $stamp = (new DateTimeImmutable)->format('Y-m-d H:i:sP');
 
 if (file_put_contents(
     $into.DIRECTORY_SEPARATOR.'version.txt',
-    "commit {$commit}".PHP_EOL."built {$stamp}".PHP_EOL,
+    "version {$version}".PHP_EOL."commit {$commit}".PHP_EOL."built {$stamp}".PHP_EOL,
 ) === false) {
     fail('could not write '.$into.DIRECTORY_SEPARATOR.'version.txt');
 }
 
-say('version', $commit);
+say('version', $version.' ('.$commit.')');
 
 // --- the PHP and web server runtime -------------------------------------------------
 
@@ -467,6 +499,52 @@ $copied += copyTree(
 
 say('launcher', 'packaging/launcher');
 
+/*
+ * `Papyrus.cmd` onto the install root, with CRLF line endings, whatever the checkout had.
+ *
+ * It lives in `packaging/launcher/` in the repository, beside the launcher it wraps, because that
+ * is where it belongs in version control. It has to land on the install root because it derives the
+ * install root from its own location with `%~dp0`: one directory too deep and every path in it is
+ * wrong by two levels, and the failure is "The system cannot find the path specified", which names
+ * neither Papyrus nor the install and reads as a broken shortcut rather than a misplaced file.
+ *
+ * The endings are normalised here rather than only fixed in the source, because `cmd.exe` parses a
+ * batch file by CRLF and a file with bare LF still runs: it launches the command and loses the
+ * output. The one file every reader double-clicks opened a console that filled with progress they
+ * could not read. It survived because the process really did start, so every check that asked "did
+ * it start" said yes, and nobody asked whether a human could read it.
+ *
+ * Found by redirecting that file's output to a file and measuring it: 0 bytes, while running the
+ * same launcher directly produced 610 bytes in ten seconds.
+ *
+ * The source can come back with bare LF from an editor, from `core.autocrlf false`, or from a
+ * checkout on another platform, so this is checked rather than assumed.
+ */
+$cmd = $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'Papyrus.cmd';
+
+if (! file_exists($cmd)) {
+    fail('packaging/launcher/Papyrus.cmd is missing, so an install would have no way to be started');
+}
+
+$installedCmd = $into.DIRECTORY_SEPARATOR.'Papyrus.cmd';
+$cmdLines = file($cmd, FILE_IGNORE_NEW_LINES);
+
+if ($cmdLines === false) {
+    fail('could not read '.DIRECTORY_SEPARATOR.'Papyrus.cmd from the repository');
+}
+
+if (file_put_contents($installedCmd, implode("\r\n", $cmdLines)."\r\n") === false) {
+    fail('could not write '.$installedCmd);
+}
+
+$bareLf = preg_match_all("/(?<!\r)\n/", (string) file_get_contents($installedCmd));
+
+if ($bareLf !== 0) {
+    fail('Papyrus.cmd was written with '.$bareLf.' bare line feed(s). cmd.exe will run it and hide its output.');
+}
+
+say('entry point', 'Papyrus.cmd, '.count($cmdLines).' lines, CRLF');
+
 // --- strip what must not ship, and put the empty placeholders back --------------------
 
 $stripped = 0;
@@ -605,36 +683,68 @@ if (! mkdir($probeData, 0o777, true) && ! is_dir($probeData)) {
     fail("could not create the probe data directory {$probeData}");
 }
 
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'ProcessIdentity.php';
 /*
- * Every dependency of Supervisor, named, because this file has no autoloader for them.
+ * The launcher's own files, in the order papyrus.php declares them.
  *
- * ProcessFinder is here for the same reason the other seven are, and it was missing when
- * `stopAll` began asking the operating system which processes belong to an install. Supervisor's
- * constructor builds one, so a build whose require list had not been updated would fatal at the
- * construction rather than at the use, which is the worst place for it: the build would fail
- * while assembling an install that readers never see fail, and the message would name a class
- * rather than the launcher decision that needed it.
+ * Three approaches were tried here and the first two are worth recording, because both looked
+ * correct and both were wrong in a way the build reported precisely.
  *
- * The full suite did not catch it either, because the tests reach Supervisor through Composer's
- * autoloader and never through these requires. That is the gap worth naming: a file that lists its
- * dependencies by hand is a second, unexercised dependency graph.
+ * The original was a hand written list of eight classes. `SuwayomiCredentials` was added to the
+ * launcher, the list was not updated, and the build failed with "Class not found" while assembling
+ * an install no reader would ever see fail. The comment above that list had predicted exactly this
+ * and called it "a second, unexercised dependency graph". It was right and the list was still
+ * there. Describing a hazard is not the same as removing it.
+ *
+ * The replacement globbed the whole directory and required everything, on the reasoning that order
+ * does not matter because no class extends another. That reasoning checked for `extends` and
+ * missed `implements`: `CaddyJsonParser implements LineParser`, and an interface has to exist
+ * before the class that names it. The build died on the first parser it reached, sorted alphabetically,
+ * with a fatal that names neither the ordering rule nor the build.
+ *
+ * So the order comes from `papyrus.php`, which already has it, and this file stops maintaining a
+ * second copy. What is added here is the check: every file in `src` must appear in that list, or
+ * the build fails naming the one that does not. A file that is only ever reached through a type
+ * hint needs no ordering, so papyrus.php may reasonably leave it out, and this check is what stops
+ * that omission from becoming the next "Class not found".
  */
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'InstanceLock.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'Prober.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'ProcessFinder.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'ManagedProcess.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'InstallLayout.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'LayoutRefused.php';
-require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src'
-    .DIRECTORY_SEPARATOR.'Supervisor.php';
+$launcherSrc = $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'src';
+$launcherEntry = $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'papyrus.php';
+
+if (! is_file($launcherEntry)) {
+    fail('packaging/launcher/papyrus.php is missing from the install, so nothing can be loaded');
+}
+
+$declared = (string) file_get_contents($launcherEntry);
+
+preg_match_all(
+    "/require\s+__DIR__\s*\.\s*'\/src\/([A-Za-z0-9_]+\.php)'\s*;/",
+    $declared,
+    $matches,
+);
+
+$ordered = $matches[1];
+
+if ($ordered === []) {
+    fail('papyrus.php declares no src requires, so the launcher dependency order could not be read');
+}
+
+$onDisk = array_map('basename', glob($launcherSrc.DIRECTORY_SEPARATOR.'*.php') ?: []);
+
+sort($onDisk);
+
+$missing = array_values(array_diff($onDisk, $ordered));
+
+if ($missing !== []) {
+    fail(
+        'these launcher files exist but papyrus.php does not require them: '.implode(', ', $missing).'. '
+        .'Add them to its require list, in dependency order, or this build is assembling an install '
+        .'that would fatal on the first run.'
+    );
+}
+
+foreach ($ordered as $file) {
+    require_once $launcherSrc.DIRECTORY_SEPARATOR.$file;
+}
 
 $bootPhp = $into.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'php.exe';
 

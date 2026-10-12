@@ -304,27 +304,43 @@ class CrossProcessStopTest extends TestCase
         /*
          * The require lists are a second dependency graph, and nothing exercised it.
          *
-         * The launcher has no autoloader, so `papyrus.php` and `build-install.php` both name
-         * their dependencies by hand. When `stopAll` began constructing a ProcessFinder, neither
-         * list was updated, and the suite did not notice, because the tests reach Supervisor
-         * through Composer's autoloader and never through those requires.
+         * The launcher has no autoloader, so `papyrus.php` names its dependencies by hand. When
+         * `stopAll` began constructing a ProcessFinder, that list was not updated, and the suite
+         * did not notice, because the tests reach Supervisor through Composer's autoloader and
+         * never through those requires.
          *
          * A build would have fataled at the construction rather than at the use, which is the
          * worst place for it: the message would name a missing class rather than the launcher
          * decision that needed one, and every test would be green throughout.
+         *
+         * `build-install.php` kept a second copy of the same list, which is why this went wrong a
+         * second time when `SuwayomiCredentials` arrived. It does not have one now, and the second
+         * half of this test is what stops it getting one back.
          */
-        foreach ([
-            dirname(__DIR__, 2).'/packaging/launcher/papyrus.php',
-            dirname(__DIR__, 2).'/packaging/runtime/build-install.php',
-        ] as $file) {
-            $source = (string) file_get_contents($file);
+        $entryPoint = dirname(__DIR__, 2).'/packaging/launcher/papyrus.php';
+        $build = dirname(__DIR__, 2).'/packaging/runtime/build-install.php';
 
-            $this->assertStringContainsString(
-                'ProcessFinder.php',
-                $source,
-                basename($file).' must require ProcessFinder, because Supervisor constructs one in'
-                    .' its own constructor and this file has no autoloader to find it with',
-            );
-        }
+        $this->assertStringContainsString(
+            'ProcessFinder.php',
+            (string) file_get_contents($entryPoint),
+            'papyrus.php must require ProcessFinder, because Supervisor constructs one in its own'
+                .' constructor and this file has no autoloader to find it with',
+        );
+
+        $buildSource = (string) file_get_contents($build);
+
+        $this->assertStringNotContainsString(
+            "DIRECTORY_SEPARATOR.'ProcessFinder.php'",
+            $buildSource,
+            'build-install.php must take the launcher dependency order from papyrus.php rather than'
+                .' keeping its own copy. A second copy is a second graph nobody exercises, and it has'
+                .' now been wrong twice',
+        );
+
+        $this->assertStringContainsString(
+            "DIRECTORY_SEPARATOR.'papyrus.php'",
+            $buildSource,
+            'build-install.php must read the order from somewhere, and papyrus.php is where it is',
+        );
     }
 }

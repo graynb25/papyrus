@@ -43,6 +43,7 @@ require __DIR__.'/src/ProcessFinder.php';
 require __DIR__.'/src/ManagedProcess.php';
 require __DIR__.'/src/DataLocation.php';
 require __DIR__.'/src/SuwayomiConfiguration.php';
+require __DIR__.'/src/SuwayomiCredentials.php';
 
 /*
  * Before Supervisor, and not merely alongside it.

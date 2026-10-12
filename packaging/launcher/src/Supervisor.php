@@ -301,6 +301,9 @@ final class Supervisor
             $this->startSuwayomi($say);
             $summary->record('suwayomi', sprintf('ready on port %d', $this->suwayomiPort));
 
+            $this->assertSuwayomiIsReadable($say);
+            $summary->record('suwayomi', 'accepts this install');
+
             $this->migrate($say);
             $summary->record('papyrus', 'database current');
 
@@ -648,13 +651,20 @@ final class Supervisor
      * Named in one place so a fourth process cannot be added without it. The alternative is a
      * `PAPYRUS_ENV` literal repeated at each call site, which is how two of these four were
      * missed in the first place.
-     */
-    /**
+     *
+     * The Suwayomi credentials travel with it as well. An unattended install supplies them as
+     * environment variables and never writes them to disk, so without this the application would
+     * see the URL the launcher resolved and none of the credentials, and would go back to refusing
+     * every query for a reason it could not name.
+     *
      * @return array<string, string>
      */
     private function applicationEnvironment(): array
     {
-        return ['PAPYRUS_ENV' => $this->environmentFile()];
+        return ['PAPYRUS_ENV' => $this->environmentFile()] + (new SuwayomiCredentials(
+            environmentFile: $this->environmentFile(),
+            environment: $this->launcherEnvironment(),
+        ))->childEnvironment();
     }
 
     /** The `.env` the launcher wrote, which lives in the data directory rather than the install. */
@@ -693,6 +703,93 @@ final class Supervisor
         );
 
         return is_string($response) && str_contains($response, 'aboutServer');
+    }
+
+    /**
+     * Refuse to start when this install cannot read anything from Suwayomi.
+     *
+     * Placed between Suwayomi coming up and the database being migrated, because either side of
+     * that gap is too late or too early. Before it, Suwayomi is not answering and the answer would
+     * be meaningless. After it, the web server is serving a library that says every series is
+     * missing, and the reader has to work out why.
+     *
+     * The refusal is not the interesting part; the fact that nothing else in the launcher notices
+     * this is. `suwayomiAnswers()` above returns true against a Suwayomi that will refuse every
+     * query the application makes, because it asks `aboutServer`, which is not `@RequireAuth`.
+     * That check and `papyrus health` both stayed green through a whole evening of this.
+     */
+    private function assertSuwayomiIsReadable(callable $say): void
+    {
+        $say('checking that Suwayomi will answer this install');
+
+        $refusal = (new SuwayomiCredentials(
+            environmentFile: $this->environmentFile(),
+            environment: $this->launcherEnvironment(),
+            probe: fn (string $query): ?string => $this->suwayomiGraphQL($query),
+        ))->refusal();
+
+        /*
+         * Null means either "there is no problem" or "there was no way to find out", and both let
+         * the install start. Refusing on an inconclusive probe would stop a working install over a
+         * network blip, which is a worse failure than the one being guarded against.
+         */
+        if ($refusal === null) {
+            return;
+        }
+
+        throw new RuntimeException(PHP_EOL.$refusal.PHP_EOL);
+    }
+
+    /**
+     * The launcher's own environment, as an array.
+     *
+     * Read once and passed in rather than have SuwayomiCredentials reach for `getenv()` itself, so
+     * the precedence between an inherited variable and the `.env` can be tested by handing it a
+     * different array rather than by mutating the process a test suite is sharing.
+     *
+     * @return array<string, string>
+     */
+    private function launcherEnvironment(): array
+    {
+        $values = [];
+
+        foreach (['SUWAYOMI_USERNAME', 'SUWAYOMI_PASSWORD'] as $name) {
+            $value = getenv($name);
+
+            if (is_string($value)) {
+                $values[$name] = $value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * One unauthenticated GraphQL POST, returning the body or null when it could not be made.
+     *
+     * Null rather than an empty string, because "Suwayomi did not answer" and "Suwayomi answered
+     * with nothing" lead to different conclusions and collapsing them makes the first look like the
+     * second, which is a pass rather than a refusal.
+     */
+    private function suwayomiGraphQL(string $query): ?string
+    {
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/json\r\n",
+                'content' => json_encode(['query' => $query]),
+                'timeout' => 10,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $response = @file_get_contents(
+            sprintf('http://127.0.0.1:%d/api/graphql', $this->suwayomiPort),
+            false,
+            $context,
+        );
+
+        return is_string($response) ? $response : null;
     }
 
     /**
