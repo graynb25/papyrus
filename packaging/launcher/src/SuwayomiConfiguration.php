@@ -105,20 +105,80 @@ final class SuwayomiConfiguration
             );
         }
 
-        $this->writePort($this->configurationFile($dataDirectory), $port);
+        $this->setValue($this->configurationFile($dataDirectory), 'server.port', (string) $port);
+
+        /*
+         * Only backupPath is set, and the other backup settings are left exactly as Suwayomi
+         * wrote them.
+         *
+         * Suwayomi already defaults to a daily backup with 14 day retention, measured on the file
+         * it writes:
+         *
+         *     server.backupInterval = 1  # default: 1 ; range: [0, +∞] ; 0 == disabled
+         *     server.backupTTL      = 14 # default: 14 ; range: [0, +∞] ; Backup retention in days
+         *     server.backupTime     = "00:00" # default: "00:00" ; Daily backup time (HH:MM)
+         *
+         * So writing them would change nothing and would rewrite lines carrying metadata Suwayomi
+         * uses to judge whether its own file is out of date. Midnight and 03:17 are also different
+         * minutes on purpose: this project's own snapshot runs at 03:17, and a backup that
+         * collides with it competes for the same disk at the same moment.
+         */
+        $this->setValue(
+            $this->configurationFile($dataDirectory),
+            'server.backupPath',
+            $this->escapeHocon($this->backupDirectory($dataDirectory)),
+        );
     }
 
     /**
-     * Put one number into an existing HOCON file, or make the file if it is not there.
+     * Where Suwayomi writes its own daily library backup.
+     *
+     * Left empty, Suwayomi keeps its backup inside its own root, which is inside the data
+     * directory and therefore fine, so this is belt and braces rather than a repair. It is set
+     * anyway so that a reader looking for their library backup finds every backup in one place,
+     * next to Papyrus's own snapshots, which are the other half of the same story.
+     *
+     * The directory is created rather than left for Suwayomi to create at 03:17, because a backup
+     * that has never run cannot tell a reader its path works.
+     */
+    private function backupDirectory(string $dataDirectory): string
+    {
+        $path = $this->rootDirectory($dataDirectory).DIRECTORY_SEPARATOR.'backups';
+
+        if (! is_dir($path)) {
+            @mkdir($path, 0o777, true);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Quote a HOCON value, since a Windows path is full of backslashes.
+     *
+     * HOCON reads a bare `C:\Users\<you>` as an escaped string with unquoted keys, and the install
+     * then reads a path that does not exist. Measured on the file Suwayomi itself writes, every
+     * path-valued setting is double quoted.
+     */
+    private function escapeHocon(string $value): string
+    {
+        return '"'.str_replace('\\', '\\\\', $value).'"';
+    }
+
+    /**
+     * Put one setting into an existing HOCON file, or add it if it is not there.
+     *
+     * One method for every setting rather than one for the port, because the reasoning below about
+     * trailing comments applies equally to `server.backupPath`, and a second copy of it would be a
+     * second thing to get wrong.
      *
      * @throws RuntimeException when the file cannot be read or written
      */
-    private function writePort(string $path, int $port): void
+    private function setValue(string $path, string $key, string $value): void
     {
         $existing = is_file($path) ? @file_get_contents($path) : false;
 
         if ($existing === false && is_file($path)) {
-            throw new RuntimeException('Could not read '.$path.', so the port was not changed.');
+            throw new RuntimeException('Could not read '.$path.', so '.$key.' was not changed.');
         }
 
         $contents = is_string($existing) ? $existing : "# Written by Papyrus. Suwayomi expands this.\n";
@@ -130,21 +190,28 @@ final class SuwayomiConfiguration
          * user's file is out of date. Replacing `server.port = 4567 # default: 4567 ; range:
          * [1, 65535]` wholesale drops that metadata, which is the one thing this method must not
          * do. So the value is captured, replaced, and everything after it is put back.
+         *
+         * Through preg_replace_callback rather than preg_replace, because the replacement string
+         * of preg_replace is itself a template: a backslash in it is an escape, so the doubled
+         * separators of a Windows path came out single. HOCON reads `\` inside a quoted string as
+         * the start of an escape sequence and rejects `"\s"`, so that wrote a path Suwayomi cannot
+         * parse, and it did so quietly, into a backup setting nobody reads until a backup is
+         * missing. A callback hands the value over as a string with no interpretation of it.
          */
-        $replaced = preg_replace(
-            '/^(server\.port\s*=\s*)\S+(.*)$/m',
-            '${1}'.$port.'${2}',
+        $replaced = preg_replace_callback(
+            '/^('.preg_quote($key, '/').'\s*=\s*)(\S+|"[^"]*")(.*)$/m',
+            static fn (array $matches): string => $matches[1].$value.$matches[3],
             $contents,
             1,
             $count,
         );
 
         if ($replaced === null || $count === 0) {
-            $replaced = rtrim($contents, "\r\n")."\nserver.port = ".$port."\n";
+            $replaced = rtrim($contents, "\r\n")."\n".$key.' = '.$value."\n";
         }
 
         if (@file_put_contents($path, $replaced) === false) {
-            throw new RuntimeException('Could not write '.$path.', so Suwayomi would keep its own port.');
+            throw new RuntimeException('Could not write '.$path.', so '.$key.' was not changed.');
         }
     }
 }

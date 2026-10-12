@@ -176,6 +176,186 @@ class SuwayomiConfigurationTest extends TestCase
         $this->assertSame($first, filesize($configuration->configurationFile($this->scratch)));
     }
 
+    // ---------------------------------------------------------------- the backup half
+
+    /**
+     * Suwayomi is told where to put its own daily library backup.
+     *
+     * Suwayomi already takes one daily with 14 day retention, and this project can read the
+     * `.tachibk` files it writes, so the library half of the backup story needs no work from us
+     * beyond pointing it at a folder. Without this it writes into its own root, which happens to be
+     * inside the data directory anyway, so nothing is lost: what changes is that a reader looking
+     * for their backups finds them in one place rather than two.
+     */
+    public function test_the_backup_path_is_written_and_the_directory_exists(): void
+    {
+        $configuration = $this->configuration();
+
+        $configuration->prepare($this->scratch, 4567);
+
+        $contents = (string) file_get_contents($configuration->configurationFile($this->scratch));
+
+        $this->assertMatchesRegularExpression(
+            '/^server\.backupPath = ".+"$/m',
+            $contents,
+            'the path has to be quoted, because a bare Windows path is not a HOCON string',
+        );
+
+        $expected = $configuration->rootDirectory($this->scratch).DIRECTORY_SEPARATOR.'backups';
+
+        $this->assertDirectoryExists(
+            $expected,
+            'created rather than left for 03:17, because a backup that has never run cannot tell a '
+                .'reader its path works',
+        );
+    }
+
+    /**
+     * The separators are doubled, which is the difference between a path Suwayomi can read and
+     * one it cannot.
+     *
+     * HOCON treats a backslash inside a quoted string as the start of an escape sequence, so
+     * `"C:\Users\<you>"` is rejected and `"C:\\Users\\me"` is the path. Getting this wrong fails
+     * silently and late: the setting is written, the file parses, and the backup simply never
+     * appears where it was pointed.
+     *
+     * This was a real defect in the first version of this change, caught by a probe rather than a
+     * test: the value is doubled by `escapeHocon()` and then handed to `preg_replace()`, whose
+     * replacement string is itself a template, so a backslash in it is an escape and the doubling
+     * was undone on the way out.
+     */
+    public function test_windows_separators_in_a_written_path_are_doubled(): void
+    {
+        $configuration = $this->configuration();
+
+        $configuration->prepare($this->scratch, 4567);
+
+        $contents = (string) file_get_contents($configuration->configurationFile($this->scratch));
+
+        preg_match('/^server\.backupPath = "(.*)"$/m', $contents, $matches);
+
+        $this->assertNotEmpty($matches, 'the path has to be written, quoted, on its own line');
+
+        $value = $matches[1];
+
+        $this->assertStringContainsString(
+            'C:',
+            $value,
+            'sanity: the value read back is the path and not something else',
+        );
+
+        /*
+         * Every backslash appears in a pair, checked by walking the string rather than with a
+         * pattern. The first version of this used a regex that got the character class backwards
+         * and rejected the correct value, which is a test that fails on right and passes on wrong.
+         */
+        $length = strlen($value);
+        $single = 0;
+        $pairs = 0;
+
+        for ($i = 0; $i < $length; $i++) {
+            if ($value[$i] !== '\\') {
+                continue;
+            }
+
+            if (($value[$i + 1] ?? '') !== '\\') {
+                $single++;
+                $i++;
+
+                continue;
+            }
+
+            $pairs++;
+            $i++;
+        }
+
+        $this->assertSame(
+            0,
+            $single,
+            'a single backslash inside the quotes is an unterminated escape sequence to HOCON, and '
+                .'it would be rejected when Suwayomi reads the file',
+        );
+
+        $this->assertGreaterThan(
+            0,
+            $pairs,
+            'the path does contain separators, so this test is measuring something',
+        );
+    }
+
+    /**
+     * Everything the backup settings already say for themselves is left alone.
+     *
+     * Suwayomi writes `backupInterval = 1`, `backupTTL = 14` and `backupTime = "00:00"` with
+     * comments describing their ranges, and uses those comments to decide whether its own file is
+     * out of date. Rewriting them would change nothing and would discard the metadata, which is the
+     * one thing this class must not do.
+     */
+    public function test_the_backup_settings_suwayomi_already_set_are_untouched(): void
+    {
+        $configuration = $this->configuration();
+        $path = $configuration->configurationFile($this->scratch);
+
+        @mkdir(dirname($path), 0o777, true);
+
+        $original = <<<'HOCON'
+        # Written by Suwayomi.
+        server {
+          port = 4567
+        }
+        server.port = 4567 # default: 4567 ; range: [1, 65535]
+        server.backupInterval = 1 # default: 1 ; range: [0, +oo] ; 0 == disabled
+        server.backupTTL = 14 # default: 14 ; range: [0, +oo] ; Backup retention in days
+        server.backupTime = "00:00" # default: "00:00" ; Daily backup time (HH:MM)
+        server.address = "0.0.0.0"
+        HOCON;
+
+        file_put_contents($path, $original);
+
+        $configuration->prepare($this->scratch, 4999);
+
+        $after = (string) file_get_contents($path);
+
+        $this->assertStringContainsString(
+            'server.backupInterval = 1 # default: 1 ; range: [0, +oo] ; 0 == disabled',
+            $after,
+        );
+
+        $this->assertStringContainsString('server.backupTTL = 14 # default: 14', $after);
+        $this->assertStringContainsString(
+            'server.backupTime = "00:00" # default: "00:00" ; Daily backup time (HH:MM)',
+            $after,
+        );
+        $this->assertStringContainsString('server.address = "0.0.0.0"', $after);
+    }
+
+    /**
+     * Preparing repeatedly settles, rather than escaping further each time.
+     *
+     * The escaping is applied to the value being written, so an already escaped file must be
+     * matched and replaced with the same escaped string rather than with a doubly escaped one. A
+     * start that rewrites this file every time would leave a reader with `C:\\\\Users` after the
+     * third launch, and nothing would say so.
+     */
+    public function test_preparing_repeatedly_settles_on_one_value(): void
+    {
+        $configuration = $this->configuration();
+        $path = $configuration->configurationFile($this->scratch);
+
+        $configuration->prepare($this->scratch, 4999);
+        $first = (string) file_get_contents($path);
+
+        for ($i = 0; $i < 4; $i++) {
+            $configuration->prepare($this->scratch, 4999);
+        }
+
+        $this->assertSame(
+            $first,
+            (string) file_get_contents($path),
+            'four starts must produce the same file as one, or every start rewrites it',
+        );
+    }
+
     // ---------------------------------------------------------------- failure has to be loud
 
     /**
