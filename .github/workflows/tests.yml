@@ -11,7 +11,27 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Windows, and not Linux, which is the whole reason this file exists in this shape.
+    #
+    # Papyrus ships as a Windows executable. There is no Linux artifact, no Linux build, and no
+    # Linux reader: the installer is Inno Setup, the runtime is frankenphp.exe against php.exe, the
+    # entry point is a batch file, the packaged JRE is a Windows JRE, and the data directory is
+    # `%LOCALAPPDATA%\Papyrus`. Every claim the packaging layer makes is a claim about Windows.
+    #
+    # Running it on Linux was worse than useless rather than merely incomplete. `ProcessFinder`
+    # shells out to PowerShell, so every process-matching test found nothing and passed
+    # vacuously. `PapyrusCmdTest` skips, because there is no `cmd.exe`. And four tests failed
+    # outright, because they assert `%LOCALAPPDATA%` and a `C:` drive letter, which is the shape of
+    # test that keeps the project honest on the only platform it has.
+    #
+    # So there were twenty-four consecutive red runs, every one of them a Linux runner failing to
+    # be Windows. The fix is to run the tests on the platform they are about.
+    #
+    # This is deliberately one job and not a matrix. A Linux job with the Windows-only tests
+    # excluded would be green and would mean nothing: it would cover the Laravel layer, which is
+    # the part least likely to break, and skip the packaging layer, which is the part this project
+    # has actually been getting wrong.
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code

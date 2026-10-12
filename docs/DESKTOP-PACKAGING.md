@@ -121,6 +121,8 @@ local checks supplied it.
 | 18 | `Papyrus.cmd` shipped with bare LF line endings, and `cmd.exe` ran it and printed nothing | the file was written and the process it starts ran, so every check that asked "did it start" said yes; nothing asked whether a human could read the output |
 | 19 | The generated `.env` carries `SUWAYOMI_USERNAME=''`, so an install could not read anything from a Suwayomi that requires a login, and nothing said so | every check that exists asks Suwayomi `aboutServer`, which is not behind a login, so `health` printed six green lines over an install that refused every query the app made |
 | 20 | `health` asked whether a `queue:work` process existed, so a bulk library check sat unreserved for 70 minutes behind a worker that was draining a different database | a worker for the packaged install is running, and from outside it is indistinguishable from one that would have drained the checkout's jobs table |
+| 21 | A fresh install prints "Papyrus did not start. The lines above say why." over no lines at all, because `cmd.exe` refused to execute the runtime and said only "Access is denied." | antivirus scans a freshly written 623MB install before letting any of it execute, and for that window `cmd.exe` refuses `php.exe`. The application is not failing, so nothing in the application can report it, and the one message that does appear points at the wrong layer |
+| 22 | `stop` reported all four processes dead and left Suwayomi's embedded browser running, holding `jcef_helper.exe` open inside the data directory | the browser is launched by the JVM rather than by the launcher, so it is never in the list of processes the launcher started, and nothing ever looked for it |
 
 **18 and 19 are both "it worked, just not for the reader".** Neither crashes and neither stops
 anything from starting, which is exactly why both survived.
@@ -183,6 +185,64 @@ test asserting "an unknown sentence is not a verdict" passed anyway, because eve
 made happened to match a named prefix. The verdict is now a table of pairs, and a test reads the
 probe's own source for the sentences it can print and requires a verdict for each, so a vocabulary
 change cannot reach the default without failing something.
+
+**21 and 22 were both found by the one thing that had never been done: running the cycle.**
+
+Every check until now started the application from a working tree with a working data directory. The
+install, the uninstall and the empty first run had never been exercised as one sequence, and each of
+these is invisible from inside an install that already works.
+
+**21 is the worst message in the project**, and it is three lines long. A fresh install prints:
+
+```
+Papyrus did not start. The lines above say why.
+
+Keeping this window open so they can be read, or copied into a bug report.
+```
+
+There are no lines above. What is above, written by `cmd.exe` to stderr, is:
+
+```
+Access is denied.
+```
+
+That is Windows declining to execute `runtime\bin\php.exe`, which is what antivirus software does
+while it scans a freshly written 623MB install, and it does it for long enough that a reader
+double-clicking the shortcut straight after installing hits it. The application never ran, so
+nothing in the application could report anything, and the one message that does appear sends the
+reader, and anyone reading over their shoulder, to the wrong layer entirely. The cause is not
+Papyrus failing. It is the operating system refusing to run the interpreter Papyrus is written in.
+
+The two cases are told apart now. `Papyrus.cmd` runs the runtime with `-n` first, which costs about
+a fortieth of a second and answers whether the file can execute at all rather than whether Papyrus is
+configured. When it cannot, it names the file and says what to do about it. The old message is kept
+for the case it is actually correct for, which is the launcher refusing and printing its own reason.
+
+What a test could and could not have caught here was worth recording. Asserting on the text of a
+batch file would have passed against the version that produced this, so
+`tests/Feature/PapyrusCmdTest.php` builds a scratch install and runs the real file in it. An
+unrunnable runtime is a **directory** named `php.exe`, which satisfies the existing `if exist` check
+and is then refused by `cmd.exe`, which is the antivirus case exactly. Five mutations against that
+file are killed, and the assertion that matters most is a negative one: "the lines above say why" is
+the message being removed, and a test that only checked for the new wording would have passed against
+a script printing both.
+
+**22 is smaller and was hiding behind it.** Once the install ran, `stop` reported all four processes
+dead and an orphaned Suwayomi browser helper was still running, holding `jcef_helper.exe` open inside
+the reader's data directory. Deleting that directory afterwards failed with "Access is denied", for a
+file nothing was using any more.
+
+The reason is structural rather than accidental. The browser is launched by the JVM, so it is never
+in the list of processes the launcher started, and the only way to find it is the matcher the other
+four already use. Nothing listed it.
+
+That list and the list of matcher tokens are two separate lists, and a name in the first with no
+entry in the second is searched for with an empty token list, which matches nothing and prints
+nothing. So the failure mode is a process silently never stopped, and a stop line that looks
+complete, which is defect 14's shape a second time. The test asserts the property across both lists
+rather than naming the entry, because "nothing can be added to one of these without the other" is
+the thing worth protecting, and a test that named the fifth entry would have to be edited for the
+sixth.
 
 **14 is the one worth dwelling on**, because it is the most consequential kind of wrong: not a
 crash but a confident success. `stop` is documented as the command a reader runs when the
@@ -741,8 +801,8 @@ passes the number in rather than carrying a copy of it.
 **Per user, not per machine.** `PrivilegesRequired=lowest`, installing to
 `%LOCALAPPDATA%\Programs\Papyrus`. A reader app whose first act is "allow this app to make changes
 to your computer" has made a bad first impression to buy the ability for somebody else to upgrade
-it later. The install is self contained and, measured across a full run, writes nothing at runtime:
-0 of 12,635 files changed.
+it later. The install is self contained and, measured across a full install, run and uninstall,
+writes nothing at runtime: 12,641 files, 0 added, 0 removed, 0 changed.
 
 **The library is never inside the install.** Data lives at `%LOCALAPPDATA%\Papyrus`, which is a
 different folder from `%LOCALAPPDATA%\Programs\Papyrus`, so uninstalling removes code and leaves
@@ -771,6 +831,43 @@ sends one reader's data somewhere they will never look, and that check passes wh
 | --- | --- |
 | No way to start Papyrus | There was no `.cmd`, no shortcut target and no launcher binary. Item 2.1 cannot produce a Start Menu entry pointing at nothing, so `packaging/launcher/Papyrus.cmd` is the one thing a reader ever runs, and the build checks it landed on the install root. |
 | No version number | `build-install.php` stamped only a commit hash, and wrote in a comment that a version number is worse because it drifts. It is now read from `VERSION` in the repository root, the single place it is written by hand. The hash is kept alongside it, because they answer different questions. |
+
+### 2.1 verified: the whole cycle, at last
+
+Marked done for a long time before it had ever been run end to end. Every check started the
+application from a working tree, so the install, the first run and the uninstall had never happened
+as one sequence, and the harness that was supposed to prove them aborted every time at the same
+place and the abort was blamed on the harness.
+
+It was not the harness. It was demanding a Suwayomi library, which needs Suwayomi to have accepted a
+login, which a fresh install by definition cannot, because a fresh install has no credentials for it.
+The test required the thing it was testing to depend on a precondition the thing it was testing
+cannot satisfy. Requiring Papyrus's own `database.sqlite` instead, which Laravel's migrations create
+during boot with no dependency on Suwayomi at all, fixed a test bug and exposed two product bugs
+underneath it, which are 21 and 22 above.
+
+What the cycle measures now, on the real installer, every claim checked against the filesystem:
+
+| Claim | Result |
+| --- | --- |
+| Installs per user with no elevation | exit 0 in 74s, 12,641 files under `%LOCALAPPDATA%\Programs\Papyrus` |
+| The shortcut points at something that is there | `Papyrus.lnk`, target exists |
+| Data goes to `%LOCALAPPDATA%\Papyrus` and not beside the program | no `papyrus-data` beside the program, ever |
+| A reader can read what the entry point printed | 1,023 bytes through `cmd.exe`, which is the CRLF claim measured rather than assumed |
+| It actually serves | `/ready` 200, `{"key":true,"database":true,"pending_migrations":0}` |
+| `stop` leaves nothing holding a port | both ports free, no JVM |
+| **Uninstalling leaves the library** | `database.sqlite` byte identical, `31BCF847...` before and after |
+| Nothing left behind | 0 stray directories, 0 shortcuts |
+
+The library line is the one that matters and it is a hash, not an existence check. A test that only
+checked the file still existed would pass while the uninstaller quietly emptied it.
+
+Two things it does not yet cover, so they are written down rather than assumed away. It does not
+test an **upgrade**, because there is no upgrade path yet (item 2.3), and the first version a reader
+installs over will be the one that has never been replaced. And it measures the install as a *fresh*
+one: the case where a reader already has a library at a different path is not exercised, and
+`DataLocation` choosing `%LOCALAPPDATA%\Papyrus` for a reader whose library is in `Documents` is an
+empty library with no explanation attached, which is its own problem.
 
 **The entry point holds a console window open, and that is not the finished behaviour.** `start`
 is the supervisor: it brings the four processes up, waits until they are usable, then holds the

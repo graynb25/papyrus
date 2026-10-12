@@ -183,6 +183,21 @@ final class Supervisor
             // named `suwayomi` and a reader who keeps their library there would have any process
             // with that word on its command line matched.
             'suwayomi' => $this->locateJar() !== null ? basename((string) $this->locateJar()) : null,
+            /*
+             * Suwayomi's embedded browser, which is the only one of these that is not a child of a
+             * process this class started.
+             *
+             * It is extracted into the data directory on first run and launched by the JVM, so it is
+             * not in `$started` and survives a stop that reported all four other processes dead. The
+             * cost is not a stray process: it holds `jcef_helper.exe` open inside the reader's data
+             * directory, so the directory cannot be deleted afterwards. "Access is denied" on a
+             * folder the reader is trying to empty, for a file nothing is using any more.
+             *
+             * The name is safe to match on. It is Suwayomi's own binary, nothing else on a machine
+             * is called `jcef_helper`, and the data directory is the second token, so another
+             * install's helper is not matched either.
+             */
+            'kcef' => 'jcef_helper',
             default => null,
         };
 
@@ -405,12 +420,16 @@ final class Supervisor
          * The four in the order stopAll has always used, and for the same reason: scheduler and
          * queue are the ones writing to the database, so they go first.
          *
+         * Then the embedded browser, which belongs to Suwayomi and so goes after Suwayomi itself.
+         * It is last because it is the one that is usually already gone, and a name that finds
+         * nothing prints nothing.
+         *
          * Skipped entirely when this process held the handle for that name. Re-finding a process
          * that has just been stopped politely and terminating it anyway would report a kill for
          * every process on every stop, which turns the one line a reader sends with a bug report
          * into four that say the wrong thing.
          */
-        foreach (['scheduler', 'queue', 'web', 'suwayomi'] as $name) {
+        foreach (['scheduler', 'queue', 'web', 'suwayomi', 'kcef'] as $name) {
             if (isset($outcomes[$name])) {
                 continue;
             }

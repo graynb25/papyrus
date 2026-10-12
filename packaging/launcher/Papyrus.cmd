@@ -54,6 +54,43 @@ if not exist "%PAPYRUS_LAUNCHER%" (
     exit /b 1
 )
 
+rem ## Why there is a check that "exists" does not cover
+rem
+rem A fresh install of this is 623MB of freshly written binaries, and antivirus software scans them
+rem before it lets any of them execute. During that window cmd.exe refuses the runtime and writes one
+rem line to stderr: "Access is denied." No file name, no path, and no mention of the app that was
+rem being started.
+rem
+rem Without the check below, that produced this, which is the whole bug:
+rem
+rem     Access is denied.
+rem
+rem     Papyrus did not start. The lines above say why.
+rem
+rem The line above is true and useless. The reason is not the app failing, it is Windows declining to
+rem run the interpreter the app is written in, and "the lines above" is cmd.exe's opinion about a
+rem layer Papyrus does not own. A reader who files that as a bug report sends us antivirus software
+rem we had no way to know about, which is the most expensive kind of report to receive.
+rem
+rem So the two cases are told apart. `-n` is the cheapest possible PHP: no ini, no extensions, which
+rem is what makes this a question about whether the file can execute at all rather than about whether
+rem Papyrus is configured. It costs about a fortieth of a second.
+"%PAPYRUS_PHP%" -n > nul 2>&1
+if errorlevel 1 (
+    echo Papyrus cannot start: Windows refused to run the PHP runtime at
+    echo   "%PAPYRUS_PHP%"
+    echo.
+    echo The file is present and complete, but something will not let it execute.
+    echo On a first run this is almost always antivirus software, which scans a new
+    echo copy of 600MB of binaries before allowing any of them to run.
+    echo.
+    echo Waiting a minute and starting again usually works. If it does not, exclude
+    echo this folder from your antivirus and reinstall.
+    echo.
+    pause
+    exit /b 1
+)
+
 "%PAPYRUS_PHP%" "%PAPYRUS_LAUNCHER%" start
 set "PAPYRUS_EXIT=%ERRORLEVEL%"
 

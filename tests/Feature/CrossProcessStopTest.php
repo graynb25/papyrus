@@ -299,6 +299,73 @@ class CrossProcessStopTest extends TestCase
         );
     }
 
+    public function test_every_process_the_stop_loop_looks_for_has_a_token_it_can_match_on(): void
+    {
+        /*
+         * The stop loop is a list of names, and `tokensFor` is a separate list of names. A name in
+         * the first with no case in the second is looked for with an empty token list, and an empty
+         * token list matches nothing and prints nothing. So it is a process that is silently never
+         * stopped, and the stop line looks complete.
+         *
+         * That is exactly how the embedded browser was missed. Suwayomi's `kcef` helper is launched
+         * by the JVM rather than by this class, so it is never in `$started` and has to be found by
+         * the matcher, and nothing found it. It survived every stop holding `jcef_helper.exe` open
+         * inside the reader's data directory, which is what made that directory refuse to delete
+         * afterwards with "Access is denied". It was found by running a real install, uninstalling
+         * it, and then failing to empty a folder nothing was using any more.
+         *
+         * Asserted over both lists rather than naming `kcef`, because the property worth protecting
+         * is "nothing can be added to one of these without the other", and a test that named the
+         * fifth entry would have had to be edited for the sixth.
+         *
+         * Read as code with the comments stripped, for the reason the two tests above give: the
+         * failure mode was code that looked right next to a comment that explained it away.
+         */
+        $source = (string) file_get_contents(
+            dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
+        );
+
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $source);
+
+        $this->assertSame(
+            1,
+            preg_match("/foreach \(\[([^\]]*)\] as \\\$name\)/", $code, $loop),
+            'the stop loop must be a literal list, or this test cannot read it',
+        );
+
+        preg_match_all("/'([a-z]+)'/", $loop[1], $wanted);
+
+        $this->assertNotEmpty($wanted[1], 'the stop loop parsed to nothing, so this would pass for the wrong reason');
+
+        $start = strpos($code, 'private function tokensFor');
+        $end = strpos($code, 'private function ini()', $start);
+
+        $this->assertIsInt($start, 'tokensFor must exist, or nothing builds the stop tokens');
+
+        $matcher = substr($code, $start, (int) $end - $start);
+
+        foreach ($wanted[1] as $name) {
+            $this->assertMatchesRegularExpression(
+                "/'".preg_quote($name, '/')."'\s*=>/",
+                $matcher,
+                "the stop loop looks for {$name}, so tokensFor must have a token for it. "
+                    .'Without one it is searched for with an empty list, which matches nothing and '
+                    .'reports nothing, and the process survives every stop.',
+            );
+        }
+
+        /*
+         * And the reason the last one is worth a test of its own: it is not in `$started` and never
+         * was, so it has no other route out. Asserted so that removing it does not quietly restore
+         * the undeletable data directory while every other test still passes.
+         */
+        $this->assertContains(
+            'kcef',
+            $wanted[1],
+            'the embedded browser has to be in the stop loop, or it outlives the install',
+        );
+    }
+
     public function test_every_entry_point_that_builds_a_supervisor_also_requires_the_finder(): void
     {
         /*
