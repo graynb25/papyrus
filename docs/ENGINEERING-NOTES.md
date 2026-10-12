@@ -4041,3 +4041,53 @@ ull tells the checker the generator
     looked for `#[Url` with a backslash under `-SimpleMatch`, matched nothing anywhere, and reported
     `browse` as a second instance of the same bug until its declaration was read directly. **A grep
     that cannot match what is there is not evidence that what is there is absent.**
+
+222. **A test that runs on a platform the product does not exist on is worse than no test.**
+    CI ran on `ubuntu-latest` for twenty-four consecutive pushes, every one red, while the product
+    was a Windows executable: an Inno Setup installer, `frankenphp.exe` against `php.exe`, a batch
+    file entry point, a Windows JRE, and data in `%LOCALAPPDATA%\Papyrus`.
+
+    The failures were honest and were all the same shape: four tests asserting `%LOCALAPPDATA%` and
+    a `C:` drive letter, which do not exist on Linux. Moving to `windows-latest` cleared three of
+    four immediately.
+
+    The fourth is the reason it matters. `ProcessFinder` shells out to PowerShell, so on Linux every
+    process-matching test found nothing and **passed vacuously**. `PapyrusCmdTest` skipped outright,
+    because there is no `cmd.exe`. A green run on the wrong platform would have reported the
+    packaging layer as covered while testing none of it.
+
+    Windows runners also enable a smaller default PHP extension set: `composer install` refused three
+    locked packages because `ext-fileinfo` was absent, which is why the suite never started. The
+    extensions are now named explicitly, taken from the packaged runtime's own `php.ini` so CI and
+    the shipped artifact agree about what PHP is.
+
+    The general shape: **a check on the wrong platform does not fail loudly, it passes quietly, and
+    the tests that would have caught the bug are the ones it skips.** One job, not a matrix, on
+    purpose: a Linux job with the Windows-only tests excluded would be green and would cover the
+    layer least likely to break.
+
+223. **A process that exists is not a process doing this install's work.**
+    The same mistake three times in this project, in three layers, and each time it reported success.
+
+    `health` asked whether a `queue:work` process was running. One was, belonging to the packaged
+    install, draining a different database, while a bulk library check sat unreserved for seventy
+    minutes. The check now asks whether a job that is **due** has been taken, which is a thing a
+    foreign worker cannot fake.
+
+    Then `packaging/dev-workers.ps1`, written to fix that, excluded two install paths **by name**.
+    Those were the two installs that existed when it was written. Papyrus was then actually
+    installed, its worker appeared, neither exclusion matched, and the script reported
+    `ok queue pid 6448` over a checkout with no worker at all, with six jobs unreserved for
+    twenty-five minutes. The rule is now a shape: this checkout's workers carry a bare relative
+    `artisan`, so any path-qualified `artisan` is another install's, whatever that path turns out to
+    be.
+
+    Then the same script started workers through Herd's `php.bat`. A worker through the wrapper comes
+    up, appears in the process list, and drains nothing. The evidence that it was never connected at
+    all was that no write-ahead log sat beside the database. Swapping in `php84\php.exe` drained all
+    six jobs in about a second.
+
+    The general shape: **liveness is not participation, and a batch wrapper is not the thing it
+    wraps.** Process presence, a path on an exclusion list, and a resolved command are three
+    different questions from "is this install's queue being served", and each was answered by the
+    cheapest question available. Ask the question that cannot be answered by something else.
