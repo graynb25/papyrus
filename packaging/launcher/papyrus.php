@@ -217,9 +217,21 @@ try {
             $say('');
             $say('  Papyrus health');
             $say('');
-            $say($health->render());
 
-            exit(str_contains($health->render(), 'FAIL') ? 1 : 0);
+            $report = $health->render();
+
+            /*
+             * One render, and the exit code taken from the same string that was printed.
+             *
+             * Calling `render()` twice re-runs every check, so the table a reader reads and the
+             * code a script branches on can disagree: the queue was re-measured between the two and
+             * the second pass said something different. Health printed "something is wrong" and
+             * exited zero, which is the one combination that makes `health` useless to the script
+             * the comment above promises it is for.
+             */
+            $say($report);
+
+            exit(str_contains($report, 'FAIL') ? 1 : 0);
 
         case 'diagnostics':
             /*

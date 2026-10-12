@@ -103,6 +103,14 @@ yarn-error.log
 # repository, and it appears the first time anyone runs the launcher from the repository root.
 /build/health-data/
 /build/health-start.*
+# What packaging/dev-workers.ps1 writes when it starts the queue and the scheduler for this
+# checkout. They are a running process's output, so they change every few seconds and are of no
+# interest to anybody reading the repository; the answer they would give is what `-Status` prints.
+# Named rather than a blanket /build/dev-* so a stray directory there is still visible.
+build/dev-queue.log
+build/dev-queue.log.err
+build/dev-scheduler.log
+build/dev-scheduler.log.err
 # Where the staging scripts put things when pointed somewhere other than the repository root.
 # 179MB of Temurin binaries and a CA bundle, which is the same hazard as /build/ and for the same
 # reason: one `git add -A` from a permanent copy of a third-party distribution.

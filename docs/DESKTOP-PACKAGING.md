@@ -120,6 +120,7 @@ local checks supplied it.
 | 17 | The stop matcher keyed on the install root, so two installs of one install would have killed each other's workers | two launchers sharing a root is a supported configuration and nothing tested it |
 | 18 | `Papyrus.cmd` shipped with bare LF line endings, and `cmd.exe` ran it and printed nothing | the file was written and the process it starts ran, so every check that asked "did it start" said yes; nothing asked whether a human could read the output |
 | 19 | The generated `.env` carries `SUWAYOMI_USERNAME=''`, so an install could not read anything from a Suwayomi that requires a login, and nothing said so | every check that exists asks Suwayomi `aboutServer`, which is not behind a login, so `health` printed six green lines over an install that refused every query the app made |
+| 20 | `health` asked whether a `queue:work` process existed, so a bulk library check sat unreserved for 70 minutes behind a worker that was draining a different database | a worker for the packaged install is running, and from outside it is indistinguishable from one that would have drained the checkout's jobs table |
 
 **18 and 19 are both "it worked, just not for the reader".** Neither crashes and neither stops
 anything from starting, which is exactly why both survived.
@@ -148,6 +149,40 @@ start when it is refused and no credentials are configured, naming the file to e
 prompts: PHP on Windows cannot mask console input without a dependency, so a prompt would put the
 password on screen and in scrollback. It also refuses **only** when all three of those hold, so an
 inconclusive probe starts the install rather than stopping a working one.
+
+20 cost the longest of the three, and it is the same shape as 19 a second time: a check that asks
+the wrong question and gets a confident yes.
+
+`health` asked whether a `queue:work` process existed. It did, and it belonged to the packaged
+install, draining `Documents\Papyrus\data` while the site in front of the reader was the repository
+served by Herd on port 80. A bulk library check sat in `database/database.sqlite` with
+`reserved_at` null and `available_at` 70 minutes in the past, and the library page read `Checked 0 of
+670 series` the entire time. Six green lines, including the one about the queue.
+
+So process presence is the wrong question and the queue table is the right one. `health` now asks
+whether a job that is **due** has been taken, which a worker that exists cannot fake: it is one
+query, and a due unreserved job older than a minute is a failure that names its own cause. The
+count of rows is deliberately not the test, because `CheckLibrary` re-books itself on a three second
+delay and a working queue is routinely non-empty.
+
+Two details cost time and are worth keeping.
+
+The probe has to be a child process. The launcher's own interpreter loads no `php.ini`, so it has no
+`pdo_sqlite` at all, and `php_ini_loaded_file()` is empty while `extension_dir` is the compiled-in
+`C:\php\ext`. Measured, not assumed.
+
+And it has to read the **resolved** ini in the data directory, not the template in the install. The
+first version read the template, started PHP against it, and got eleven warnings about `{{RUNTIME}}`
+followed by `could not find driver`. It reported "not checked", which is honest, and the eleven
+warnings in front of it are what made the log unreadable. A probe that reports on a file it did not
+read is worse than no probe, because it produces a specific and wrong answer.
+
+**And the test written to protect the default could not fail.** The verdict was a list of healthy
+prefixes, so an unrecognised sentence fell through to "not healthy", which is the safe answer. A
+test asserting "an unknown sentence is not a verdict" passed anyway, because every assertion it
+made happened to match a named prefix. The verdict is now a table of pairs, and a test reads the
+probe's own source for the sentences it can print and requires a verdict for each, so a vocabulary
+change cannot reach the default without failing something.
 
 **14 is the one worth dwelling on**, because it is the most consequential kind of wrong: not a
 crash but a confident success. `stop` is documented as the command a reader runs when the

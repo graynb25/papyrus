@@ -216,6 +216,32 @@ final class Supervisor
     }
 
     /**
+     * The ini, for a caller outside this class that has to start a PHP process.
+     *
+     * {@see Health} does, and it cannot guess: the resolved ini lives in the data directory, its
+     * path depends on the layout, and a caller that reconstructed it would be a third
+     * implementation of "where the ini is". Public so that there is one answer rather than two.
+     */
+    public function resolvedIniPath(): string
+    {
+        return $this->ini();
+    }
+
+    /**
+     * The packaged PHP, for a caller that has to start it.
+     *
+     * {@see Health} does, and the reason is that the launcher's own interpreter cannot read the
+     * queue table: it loads no ini, so it has no `pdo_sqlite`. Asking the install's own PHP means
+     * the diagnostic uses the same interpreter and the same extensions the application does, rather
+     * than a second arrangement that answers a slightly different question.
+     */
+    public function phpExecutable(): string
+    {
+        return $this->phpExecutable
+            ?? $this->path('runtime', 'bin', 'php.exe');
+    }
+
+    /**
      * The ini as it ships, before substitution.
      *
      * Checked rather than assumed, because the failure of getting it wrong is a missing

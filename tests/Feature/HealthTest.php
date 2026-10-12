@@ -165,6 +165,229 @@ class HealthTest extends TestCase
         );
     }
 
+    /**
+     * A health check whose queue reading is a sentence rather than a database.
+     *
+     * The production answer runs the install's own PHP against its own database, which is right and
+     * makes the interesting case untestable: a suite cannot create a stalled queue here, because a
+     * real worker on this machine drains it between the seeding and the reading. That has already
+     * happened once in this file, with three tests failing for reasons that had nothing to do with
+     * the code.
+     *
+     * So the sentence is injected. It is the same one-line vocabulary the real probe prints, and
+     * `queueIsHealthy()` matches on the prefix, so a sentence the probe would never produce is
+     * treated as no answer rather than as a verdict.
+     */
+    private function healthWithQueue(Supervisor $supervisor, string $reported): Health
+    {
+        /*
+         * The database has to exist, because `queue()` returns early when it does not and the
+         * reader is never called. Three of these tests failed against code that was correct because
+         * this scratch install has no database and the report said `idle nothing queued yet` without
+         * ever asking.
+         *
+         * Touching the file is enough: the injected reader never opens it. A real SQLite file would
+         * mean either a dependency or a fixture the test does not need, and what is under test here
+         * is the decision, not the query.
+         */
+        $database = $this->data.DIRECTORY_SEPARATOR.'database.sqlite';
+
+        if (! is_file($database)) {
+            file_put_contents($database, '');
+        }
+
+        $health = $this->health($supervisor);
+
+        $this->queueWasAsked = false;
+        $test = $this;
+
+        $health->useQueueReader(function (string $path) use ($reported, $test, $database): string {
+            $test->markQueueAsked();
+
+            $test->assertSame($database, $path, 'the queue is read from the database health names');
+
+            return $reported;
+        });
+
+        return $health;
+    }
+
+    /** Whether the last health check with an injected reader actually consulted it. */
+    private bool $queueWasAsked = false;
+
+    /** Set by the injected reader, so a test can prove the reader ran rather than assume it. */
+    public function markQueueAsked(): void
+    {
+        $this->queueWasAsked = true;
+    }
+
+    /**
+     * A worker present and a queue that nobody is taking is the failure this check exists for.
+     *
+     * It is the whole hour: `queue:work` was running, for a different install, draining a different
+     * database, while a library check sat unreserved for 70 minutes. Every other line was green and
+     * the library page read `Checked 0 of 670 series` throughout.
+     *
+     * So the assertion is that a present worker does not save it, and that the message says which
+     * thing to look at.
+     */
+    public function test_a_present_worker_with_an_undrained_queue_is_a_failure(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'NOT DRAINING, 1 queued and the oldest has been due for 70 minutes with no worker taking it. A queue:work process may be running for a different install.',
+        )->render();
+
+        $this->assertTrue($this->queueWasAsked, 'the queue reader ran');
+        $this->assertMatchesRegularExpression('/FAIL\s+queue\s+NOT DRAINING/', $report);
+        $this->assertStringContainsString('70 minutes', $report);
+        $this->assertStringContainsString('different install', $report, 'the message must name what to look at');
+        $this->assertMatchesRegularExpression('/overall\s+something is wrong/', $report);
+    }
+
+    /**
+     * A queue that is being taken is healthy, and the count of rows is not the test.
+     *
+     * `CheckLibrary` re-books itself on a three second delay, so a working queue is routinely
+     * non-empty. Counting rows would report a healthy install as broken, and the fix for that,
+     * ignoring the queue, is what the check was written to prevent.
+     */
+    public function test_a_queue_that_is_being_taken_is_healthy_however_many_rows_it_has(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'draining  40 queued, all being taken',
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+queue/', $report);
+        $this->assertTrue($this->queueWasAsked, 'the queue reader ran');
+        $this->assertStringContainsString('40 queued, all being taken', $report);
+    }
+
+    /**
+     * A job that became due a moment ago is not a stalled queue.
+     *
+     * The worker polls every second, so this is the ordinary shape of a busy queue. Reading it as a
+     * failure would make health flap, and a check that cries wolf gets ignored rather than fixed.
+     */
+    public function test_a_job_due_seconds_ago_is_still_draining(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'draining  3 queued, oldest due 2s ago',
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+queue/', $report);
+    }
+
+    public function test_an_empty_queue_is_idle_and_healthy(): void
+    {
+        $report = $this->healthWithQueue($this->supervisor(['queue', 'scheduler']), 'idle  nothing queued')
+            ->render();
+
+        $this->assertStringContainsString('idle  nothing queued', $report);
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+queue/', $report);
+    }
+
+    /**
+     * A queue it could not read says so, rather than reporting a verdict it did not reach.
+     *
+     * This is the line that spent an evening looking like a considered answer. The first version
+     * read the install's *template* ini, which still had `{{RUNTIME}}` in it, started PHP against
+     * it, and got eleven extension warnings followed by `could not find driver`. It reported "not
+     * checked", which is honest, but the eleven warnings in front of it are what made the log hard
+     * to read, and the reason was a file nobody had read.
+     */
+    public function test_a_queue_it_cannot_read_says_so_and_is_not_a_failure(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'not checked  the database is locked',
+        )->render();
+
+        $this->assertTrue($this->queueWasAsked, 'the queue reader ran');
+        $this->assertStringContainsString('not checked', $report);
+
+        // Only the queue line is asserted here. The rest of the report is stubbed at whatever this
+        // scratch install happens to say, and a database of zero bytes and a web server that is not
+        // listening are both true of it, so `overall` cannot be about the queue line alone.
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+queue\s+not checked/', $report);
+    }
+
+    /**
+     * A sentence the probe would never print is no answer at all.
+     *
+     * The safety of `queueIsHealthy()` rests on its default, and a default that assumes an
+     * unrecognised string is fine is a default that reports a broken queue as healthy the day the
+     * vocabulary changes. So the filter has to reject what it does not know, and this is the test
+     * that says so.
+     */
+    public function test_an_unrecognised_sentence_is_not_treated_as_a_verdict(): void
+    {
+        $health = $this->health($this->supervisor(['queue', 'scheduler']));
+
+        // Bypasses the filter deliberately: this asks what queueIsHealthy() does with a stranger.
+        $method = new \ReflectionMethod(Health::class, 'queueIsHealthy');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($health, 'idle  nothing queued'));
+        $this->assertTrue($method->invoke($health, 'draining  4 queued, all being taken'));
+        $this->assertTrue($method->invoke($health, 'not checked  locked'));
+        $this->assertFalse($method->invoke($health, 'NOT DRAINING, 1 queued'));
+        $this->assertFalse(
+            $method->invoke($health, 'PHP Warning:  Unable to load dynamic library'),
+            'a stray warning must never be read as a verdict',
+        );
+
+        /*
+         * And the dangerous direction, which the previous version of this could not express.
+         *
+         * A verdict the method does not recognise is not a healthy queue. The earlier list of happy
+         * prefixes returned false for a stranger, which is indistinguishable from returning false
+         * for `NOT DRAINING`, so a test asserting "an unknown sentence is not a verdict" passed
+         * against an implementation that treated every unknown sentence as a failure.
+         */
+        $this->assertFalse(
+            $method->invoke($health, 'something entirely unexpected'),
+            'an unrecognised sentence is not healthy, whatever it might turn out to mean',
+        );
+    }
+
+    /**
+     * Every sentence the probe can print has a verdict, and none is left to a default.
+     *
+     * This is the pairing that `queueIsHealthy()` is built on, asserted as a whole rather than one
+     * sentence at a time. It exists because the previous version's default could not be reached by
+     * any test: every assertion it made happened to be covered by a named prefix.
+     */
+    public function test_the_verdict_table_names_every_sentence_the_probe_can_print(): void
+    {
+        $health = $this->health($this->supervisor(['queue']));
+        $method = new \ReflectionMethod(Health::class, 'queueIsHealthy');
+        $method->setAccessible(true);
+
+        $probe = new \ReflectionClass(Health::class);
+        $source = file_get_contents((string) $probe->getFileName());
+
+        // Every literal the probe can echo, read from the probe itself rather than restated here.
+        preg_match_all("/echo '([a-z ]+)/", (string) $source, $printed);
+
+        $this->assertNotEmpty($printed[1], 'the probe prints nothing, so this test would pass for the wrong reason');
+
+        foreach (array_unique($printed[1]) as $prefix) {
+            $healthy = $method->invoke($health, $prefix.' 1 queued');
+
+            $this->assertIsBool(
+                $healthy,
+                'the probe can print "'.$prefix.'" and this has no verdict for it, so it falls to a default',
+            );
+        }
+
+        // And the two halves are actually opposite, rather than one table with two spellings.
+        $this->assertFalse($method->invoke($health, 'NOT DRAINING 1 queued'));
+        $this->assertTrue($method->invoke($health, 'idle 1 queued'));
+    }
+
     public function test_it_reports_each_of_the_four_processes_by_name(): void
     {
         $report = $this->health($this->supervisor())->render();

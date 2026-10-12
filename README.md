@@ -335,9 +335,49 @@ serving leaves a run reading `running` for ever.
 at 27.6s and a job killed at its timeout leaves no record at all. `composer dev` does not honour
 it: it runs `queue:listen --tries=1 --timeout=0`, so start the worker by hand.
 
-`php artisan schedule:work` is **not** needed. The work that used to depend on the scheduler
-books its own next pass through the queue, and `docs/ENGINEERING-NOTES.md` records what broke
-when it was left to the scheduler alone.
+Start both, which is the supported way, and is what `packaging/dev-workers.ps1` does:
+
+```powershell
+powershell -File packaging/dev-workers.ps1          # start them
+powershell -File packaging/dev-workers.ps1 -Status  # what is up, changing nothing
+powershell -File packaging/dev-workers.ps1 -Stop    # stop them
+```
+
+**`schedule:work` is needed for two things and only two**, which is why it was easy to leave out:
+the daily `VACUUM INTO` database snapshot at 03:17, and the sweep that dispatches bulk library
+checks to readers who did not press the button. It is not needed for the work that books its own
+next pass through the queue; `docs/ENGINEERING-NOTES.md` records what broke when that was left to
+the scheduler alone.
+
+### How to tell the queue is not being served
+
+This has been the most expensive hour in the project's history, so it is worth being precise about
+why it is invisible.
+
+**A `queue:work` process existing tells you nothing.** A packaged install runs one, it drains
+*its* database, and from outside it is indistinguishable from one that would have drained yours. A
+bulk library check then sits in `jobs` with `reserved_at` null and the page reads `Checked 0 of 670
+series` for ever. Every other part of the system looks fine.
+
+```bash
+php artisan queue:work --timeout=300   # in a terminal, if you want to see why
+```
+
+A packaged install's `papyrus health` reads the queue table rather than the process list, and says
+so in words:
+
+```
+FAIL  queue      NOT DRAINING, 1 queued and the oldest has been due for 70 minutes with no
+                 worker taking it. A queue:work process may be running for a different install.
+```
+
+`packaging/dev-workers.ps1 -Status` reports the same thing for this checkout.
+
+**Do not set `QUEUE_CONNECTION=sync` to avoid this.** It is the one-line fix and it is a trap.
+`CheckLibrary` guards its self-re-booking chain with a static depth, so under `sync` the chain stops
+after about two slices: a full library check checks roughly a hundred series, stops, and reports
+that nothing more is due without ever having looked. That is worse than a stalled bar, because it
+looks like success.
 
 ## How the code is laid out
 
