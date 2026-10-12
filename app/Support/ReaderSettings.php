@@ -47,6 +47,12 @@ class ReaderSettings
     /** One page at a time, advanced explicitly. */
     public const MODE_PAGED = 'paged';
 
+    /** Chapter list oldest first, which is how a series is meant to be read. */
+    public const ORDER_OLDEST = 'asc';
+
+    /** Chapter list newest first, for a reader chasing a late chapter. */
+    public const ORDER_NEWEST = 'desc';
+
     /**
      * @return array<string, mixed>
      */
@@ -55,6 +61,18 @@ class ReaderSettings
         return [
             // 'vertical' or 'paged'. Anything else falls back to vertical.
             'mode' => self::MODE_VERTICAL,
+
+            /*
+             * Chapter list order on a series page.
+             *
+             * Here rather than on the page component, and that is the whole point of it. It sits
+             * beside `mode` because it is chosen in the same pair of buttons and behaves the same
+             * way. It was a plain Livewire property, so it reset to oldest every time the reader
+             * navigated away and came back, while the mode buttons either side of it remembered.
+             * A reader who sorts a long series newest-first, opens another series, and comes back
+             * gets oldest-first again, with nothing on screen saying a choice was ever made.
+             */
+            'chapter_order' => self::ORDER_OLDEST,
 
             /*
              * Column width as a percentage of the viewport. 100 is "as wide as
@@ -372,6 +390,18 @@ class ReaderSettings
         // An unknown mode is vertical, not an error and not paged.
         if (! in_array($settings['mode'], [self::MODE_VERTICAL, self::MODE_PAGED], true)) {
             $settings['mode'] = self::MODE_VERTICAL;
+        }
+
+        /*
+         * And an unknown order is oldest first.
+         *
+         * Clamped here rather than at each write for the same reason the rest are: a value can
+         * arrive from a shelf edited elsewhere, or from a series row written before this setting
+         * existed, and `array_reverse` on something that is neither 'asc' nor 'desc' would silently
+         * give the reader the other order with nothing saying so.
+         */
+        if (! in_array($settings['chapter_order'], [self::ORDER_OLDEST, self::ORDER_NEWEST], true)) {
+            $settings['chapter_order'] = self::ORDER_OLDEST;
         }
 
         $settings['width'] = (int) $this->between(

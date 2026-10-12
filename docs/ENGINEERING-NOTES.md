@@ -3995,3 +3995,49 @@ ull tells the checker the generator
     creates it**, and the consumer of that promise is rarely the thing that looks broken. The
     installer has to create every path a config names, and the check that proves it is to run
     something that shells out, because that is the first thing to notice.
+
+220. **Two controls in one button group must have the same lifetime, and nothing enforces that.**
+    A reader sorted a series' chapter list newest-first, opened another series, came back, and got
+    oldest-first. The reading-mode buttons either side of it, in the same group, remembered.
+
+    The cause was two correct decisions. `setReadingMode` writes through `ReaderSettings`, into the
+    same column the mode is read back from, so it survives a navigation by construction. `setOrder`
+    assigned a Livewire property, which survives a re-render and nothing else. Neither was wrong. The
+    defect was only ever visible in the comparison, and there was no check anywhere that says two
+    controls a reader would expect to behave alike must.
+
+    What let it survive is that a reset is indistinguishable from a choice. The button is
+    highlighted from the property, so a forgotten value looks exactly like a freshly made one, and
+    nothing on screen says a choice was lost.
+
+    The general shape: **a highlighted control is not evidence that a choice was remembered**, and
+    the test has to read the value back on a fresh mount rather than off the component that set it.
+    Asserting on the same instance passes against the original code, because the property is set.
+    That test is the whole thing here: the first version of it would have passed and the reader
+    would still have lost their sort.
+
+221. **Making a value reachable from the URL means clamping it on the way in.**
+    The library page's shelf, sort and search were plain Livewire properties, driven by `$set(...)`
+    and `wire:model`. They went into the URL so they would survive navigation, which is what
+    `browse`, `health`, `search` and `sources` already do with `#[Url]`.
+
+    There is a `normalise()` on that page whose own comment says a sort of `"title; drop table"`
+    must never reach the query builder, and it ran from `updated()` and `setPage()`. Both are
+    reached only by interacting with the page. So the moment the values became typeable, a shelf id
+    belonging to somebody else arrived unvalidated, and the filter is applied in PHP, so nothing
+    broke: the library filtered down to nothing and the page said "This shelf is empty" about a
+    shelf the reader never had.
+
+    No crash, no injection, no error. A wrong answer about the reader's own data, which is worse
+    than an empty page.
+
+    The general shape: **every path that can set a value needs the validation that value assumes,
+    and a validation reachable from one path is not reachable from another.** The path that existed
+    when the check was written was the only one anybody imagined, which is the same shape as the
+    known-installs exclusion list in `packaging/dev-workers.ps1` that went stale the moment Papyrus
+    was actually installed.
+
+    Worth recording next to it: the audit that found this nearly got it wrong the other way. It
+    looked for `#[Url` with a backslash under `-SimpleMatch`, matched nothing anywhere, and reported
+    `browse` as a second instance of the same bug until its declaration was read directly. **A grep
+    that cannot match what is there is not evidence that what is there is absent.**

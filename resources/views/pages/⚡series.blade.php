@@ -8,6 +8,7 @@ use App\Models\Source;
 use App\Support\ChapterNotes;
 use App\Support\ImageUrl;
 use App\Support\ReadingState;
+use App\Support\ReaderSettings;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
@@ -47,7 +48,31 @@ new #[Title('Series')] class extends Component
     {
         $this->manga = $manga;
 
+        $this->hydrateOrder();
+
         $this->requestFetchIfIncomplete();
+    }
+
+    /**
+     * Start from the reader's saved chapter order, not from oldest every time.
+     *
+     * ## Why this cannot be a property default
+     *
+     * `public string $order = 'asc';` is the right declaration for a value that only has to survive
+     * a re-render, and the wrong one for a value a reader has chosen. This was the second: a reader
+     * sorted a series newest-first, opened another series, came back, and got oldest-first with
+     * nothing on screen saying a choice had been made.
+     *
+     * The mode buttons beside it did not have that problem, because `setReadingMode` writes through
+     * `ReaderSettings` and the buttons read from it. Two buttons, side by side, in one group, with
+     * one remembering and one not.
+     *
+     * So the order is read from the same place the mode is read from, and `setOrder` writes to the
+     * same place `setReadingMode` writes to. One group of buttons, one lifetime.
+     */
+    public function hydrateOrder(): void
+    {
+        $this->order = $this->readingSettings()['chapter_order'];
     }
 
     /**
@@ -188,10 +213,13 @@ new #[Title('Series')] class extends Component
     }
 
     /**
-     * Ascending, which is Mihon's default and the order a reader wants when
-     * catching up.
+     * Ascending, which is Mihon's default and the order a reader wants when catching up.
+     *
+     * A starting value only. The reader's actual choice is loaded by `hydrateOrder()` and written by
+     * `setOrder()`, both of which go through `ReaderSettings`, so the declaration is what a series
+     * with no saved choice looks like and not what it always reverts to.
      */
-    public string $order = 'asc';
+    public string $order = ReaderSettings::ORDER_OLDEST;
 
     /**
      * Hide chapters from scanlators the reader has excluded.
@@ -573,12 +601,29 @@ new #[Title('Series')] class extends Component
         unset($this->state, $this->chapterStates, $this->readCount);
     }
 
+    /**
+     * Sort this series' chapter list.
+     *
+     * Written through ReaderSettings for the same reason `setReadingMode` is: a plain Livewire
+     * property survives a re-render but not a navigation, and a reader who chose an order expects it
+     * to still be there when they come back to the series. Being the second of two toggles in one
+     * button group to behave differently from the first is the kind of thing nobody reports as a
+     * bug and everybody works around.
+     */
     public function setOrder(string $order): void
     {
-        if (in_array($order, ['asc', 'desc'], true)) {
-            $this->order = $order;
-            $this->page = 1;
+        if (! in_array($order, [ReaderSettings::ORDER_OLDEST, ReaderSettings::ORDER_NEWEST], true)) {
+            return;
         }
+
+        $this->order = $order;
+        $this->page = 1;
+
+        app(ReaderSettings::class)->setSeriesOverride(
+            auth()->user(),
+            $this->manga,
+            ['chapter_order' => $order],
+        );
     }
 
     /**

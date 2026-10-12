@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new #[Title('Library')] class extends Component
@@ -29,7 +30,19 @@ new #[Title('Library')] class extends Component
     /** Current page. Reset whenever a filter changes, see updated(). */
     public int $page = 1;
 
-    /** The shelf being viewed, or null for the whole library. */
+    /**
+     * The shelf being viewed, or null for the whole library.
+     *
+     * In the URL, which is what makes the shelf survive opening a series and coming back. It did
+     * not, and the failure is the same one the series page's chapter order had: a reader picks
+     * "Reading", opens the next chapter of something in it, comes back, and is in the whole library
+     * again with nothing on screen saying a shelf had ever been chosen.
+     *
+     * The default is omitted from the URL, so an unfiltered library is still `/library` and not
+     * `/library?shelf=`. Same rule as the search page's filters and the sources page's view: a
+     * state that is not a choice should not be in the address.
+     */
+    #[Url(as: 'shelf', except: null)]
     public ?int $shelf = null;
 
     /**
@@ -38,10 +51,21 @@ new #[Title('Library')] class extends Component
      * `recent` is last read then date added, which is the order `entries()` already
      * returns. `unread` puts the series with the most waiting at the top, which is
      * the order a reader wants on the days they came here to read.
+     *
+     * In the URL for the same reason as the shelf above it. `recent` is omitted so the default is
+     * a clean `/library`.
      */
+    #[Url(as: 'sort', except: 'recent')]
     public string $sort = 'recent';
 
-    /** Title search, matched against the source titles. */
+    /**
+     * Title search, matched against the source titles.
+     *
+     * In the URL as `q`, to match the search page so a link means the same thing wherever it is
+     * read. `history: false` because this is bound with a 300ms debounce, and without it every
+     * pause in typing pushes an entry the reader then has to walk back through.
+     */
+    #[Url(as: 'q', except: '', history: false)]
     public string $search = '';
 
     /** Draft name for a new shelf. */
@@ -596,6 +620,24 @@ new #[Title('Library')] class extends Component
      */
     public function mount(): void
     {
+        /*
+         * Clamp whatever arrived in the address, before anything reads it.
+         *
+         * `normalise()` used to run only from `updated()` and `setPage()`, which is enough when
+         * these three can only be set by clicking on the page. `#[Url]` means they can now also
+         * arrive typed, and a shelf id belonging to somebody else, or a sort nobody offers, would
+         * reach the page unvalidated.
+         *
+         * It is called before the empty-library early return below, because that return is about
+         * whether to show a toast and must not also be the thing that decides whether the filters
+         * were checked.
+         *
+         * Without it, `/library?shelf=999` filtered the library down to nothing and said "This
+         * shelf is empty" about a shelf the reader never had. A wrong answer about their own data,
+         * which is worse than an empty page.
+         */
+        $this->normalise();
+
         if ($this->totalAll > 0) {
             return;
         }
