@@ -290,6 +290,139 @@ class HealthTest extends TestCase
     }
 
     /**
+     * A health check whose scheduler silence is a number rather than a file.
+     *
+     * The production answer is the scheduler log's own modification time, which is the right thing
+     * to measure and cannot be produced on demand: a suite cannot make this machine's real scheduler
+     * go quiet without breaking the install the tests are supposed to be about. So the age is
+     * injected, exactly as the queue sentence is, and the decision built on top of it is what is
+     * under test.
+     *
+     * The log is touched because `scheduler()` returns early when there is no log at all, and the
+     * injected reader is never asked. That early return is deliberate and has its own test below, so
+     * without it these four would pass for the wrong reason.
+     */
+    private function healthWithSchedulerAge(Supervisor $supervisor, ?int $age): Health
+    {
+        $logs = $this->data.DIRECTORY_SEPARATOR.'logs';
+
+        if (! is_dir($logs)) {
+            mkdir($logs, 0o777, true);
+        }
+
+        file_put_contents($logs.DIRECTORY_SEPARATOR.'scheduler.log', '');
+
+        $health = $this->health($supervisor);
+
+        $health->useSchedulerAgeReader(fn (): ?int => $age);
+
+        return $health;
+    }
+
+    /**
+     * A scheduler that is alive but no longer dispatching is the failure this check exists for.
+     *
+     * It is the second time the same mistake has cost an evening, and the second time process
+     * presence was the whole answer. `health` reported `scheduler running schedule:work` for six
+     * minutes over a scheduler that had stopped: the process was there, burning 0.016 seconds of CPU
+     * across ten seconds, its log frozen at 2,017 lines, and not one `schedule:run` child spawned in
+     * a sampled 32 seconds. Downloads kept draining through the queue, so the install looked busy.
+     *
+     * The assertion that matters is that the process being *present* does not rescue it.
+     */
+    public function test_a_present_scheduler_that_has_stopped_dispatching_is_a_failure(): void
+    {
+        $report = $this->healthWithSchedulerAge(
+            $this->supervisor(['queue', 'scheduler']),
+            400,
+        )->render();
+
+        $this->assertStringContainsString('ok    scheduler  running', $report, 'the process is present, which is what liveness would have stopped at');
+        $this->assertMatchesRegularExpression('/FAIL\s+schedule\s+NOT DISPATCHING/', $report);
+        $this->assertStringContainsString('400s', $report, 'the message must say how long it has been silent');
+        $this->assertStringContainsString(
+            'series are never refreshed',
+            $report,
+            'the message must name what the reader is losing, as every other failure line does',
+        );
+        $this->assertMatchesRegularExpression('/overall\s+something is wrong/', $report);
+    }
+
+    /**
+     * A scheduler that wrote a moment ago is healthy, and the count of lines is not the test.
+     *
+     * `SyncDownloads` writes every ten seconds, so a log that grew steadily is the ordinary shape.
+     */
+    public function test_a_scheduler_that_wrote_recently_is_dispatching(): void
+    {
+        $report = $this->healthWithSchedulerAge(
+            $this->supervisor(['queue', 'scheduler']),
+            3,
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
+        $this->assertStringContainsString('dispatching, last wrote 3s ago', $report);
+    }
+
+    /**
+     * A few missed intervals is noise, not an outage.
+     *
+     * The threshold is four of the shortest interval, so a pause of a couple of seconds, a slow
+     * sample or a machine that was briefly busy must not produce a failure. A check that cries wolf
+     * is a check that gets ignored, which is the same as no check at all.
+     */
+    public function test_a_scheduler_a_couple_of_intervals_behind_is_still_healthy(): void
+    {
+        $report = $this->healthWithSchedulerAge(
+            $this->supervisor(['queue', 'scheduler']),
+            40,
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
+    }
+
+    /**
+     * A scheduler that has never written is not a fault, and saying so is not a verdict.
+     *
+     * A fresh install has no scheduler log until something is scheduled, so the absence of one is
+     * the ordinary starting state rather than evidence of anything.
+     */
+    public function test_a_scheduler_that_has_never_written_is_not_a_failure(): void
+    {
+        $logs = $this->data.DIRECTORY_SEPARATOR.'logs';
+
+        if (! is_dir($logs)) {
+            mkdir($logs, 0o777, true);
+        }
+
+        @unlink($logs.DIRECTORY_SEPARATOR.'scheduler.log');
+
+        $report = $this->health($this->supervisor(['queue', 'scheduler']))->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
+        $this->assertStringContainsString('has not written anything yet', $report);
+    }
+
+    /**
+     * A log it could not read says so rather than reporting a verdict it did not reach.
+     *
+     * This matters because `null` means "unknown" and both of the readings it could be confused with
+     * are worse than saying nothing: read as healthy it hides a wedged scheduler, read as a failure
+     * it invents one on a machine where the file happens to be locked. The log really is held open by
+     * the scheduler on Windows, which is how this came up.
+     */
+    public function test_a_scheduler_log_it_cannot_read_is_not_treated_as_a_verdict(): void
+    {
+        $report = $this->healthWithSchedulerAge(
+            $this->supervisor(['queue', 'scheduler']),
+            null,
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
+        $this->assertStringContainsString('could not be read', $report);
+    }
+
+    /**
      * A queue it could not read says so, rather than reporting a verdict it did not reach.
      *
      * This is the line that spent an evening looking like a considered answer. The first version

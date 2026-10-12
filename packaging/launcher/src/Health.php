@@ -68,6 +68,27 @@ final class Health
     }
 
     /**
+     * How many seconds ago the scheduler last wrote to its log, for tests only.
+     *
+     * `null` means it could not be determined, which the report treats as "not checked" rather than
+     * as healthy or as a fault, for the same reason `queue()` does: a check that cannot answer must
+     * not be reported as an answer.
+     *
+     * @var (callable(): ?int)|null
+     */
+    private $schedulerAgeReader = null;
+
+    /**
+     * Replace the scheduler silence reading. For tests only, for the reason above.
+     *
+     * @param  (callable(): ?int)|null  $reader
+     */
+    public function useSchedulerAgeReader(?callable $reader): void
+    {
+        $this->schedulerAgeReader = $reader;
+    }
+
+    /**
      * The report, as the reader sees it.
      */
     public function render(): string
@@ -79,6 +100,7 @@ final class Health
         $this->web();
         $this->workers();
         $this->queue();
+        $this->scheduler();
         $this->database();
         $this->logs();
 
@@ -194,6 +216,107 @@ final class Health
                 $running,
             );
         }
+    }
+
+    /**
+     * How long the scheduler may be silent before it is called wedged.
+     *
+     * Four of the shortest interval. `SyncDownloads` runs every ten seconds and writes a line every
+     * time, so at this threshold four consecutive dispatches have been missed. Tight enough that a
+     * reader is told inside a minute, loose enough that a slow sample or a paused laptop does not
+     * produce a false alarm.
+     */
+    private const SCHEDULER_SILENCE_SECONDS = 45;
+
+    /**
+     * Whether the scheduler is actually dispatching, as distinct from existing.
+     *
+     * ## Why the line above it is not enough
+     *
+     * `workers()` asks whether a `schedule:work` process exists, and it said "running" for six
+     * minutes over a scheduler that had stopped dispatching at all. Measured on a real install: the
+     * process was alive, using 0.016 seconds of CPU across ten seconds, with its log frozen at
+     * 2,017 lines and not one `schedule:run` child spawned in a sampled 32 seconds. Every other line
+     * was green. It looked exactly like the install after the `PHPRC` fix, because the install *was*
+     * fine; one process in it had stopped looping and nothing could tell.
+     *
+     * This is the same lesson as the queue line, arriving through the other door. Liveness is not
+     * participation. A scheduler that has wedged is the more expensive of the two failures, because
+     * downloads still drain through the queue and so the install looks busy while series are never
+     * refreshed.
+     *
+     * ## Why the log's own modification time rather than a timestamp inside it
+     *
+     * Because parsing the timestamps would be wrong by five hours. The scheduler renders them at
+     * UTC+5 while this process runs at UTC, so an age computed from `date()` against a parsed line
+     * reports a healthy scheduler as silent since yesterday. A file's modification time is a unix
+     * timestamp and does not care what timezone anyone renders it in, which is the whole reason to
+     * prefer it here.
+     *
+     * And what the log contains is not needed: the question is whether anything is still being
+     * written, which is the question the modification time answers directly, without depending on a
+     * line format that Laravel is free to change.
+     *
+     * ## What this does not prove
+     *
+     * It proves the scheduler is writing. It does not prove a dispatch succeeded, because a failing
+     * dispatch also writes. It is the cheap half of the question and it is the half that was missing;
+     * the expensive half is what `queue()` already does with the jobs table.
+     */
+    private function scheduler(): void
+    {
+        $log = $this->supervisor->logDirectory().DIRECTORY_SEPARATOR.'scheduler.log';
+
+        if (! is_file($log)) {
+            // Nothing has been scheduled yet, which is not a fault. A fresh install has no log.
+            $this->add('schedule', 'not checked  the scheduler has not written anything yet', true);
+
+            return;
+        }
+
+        $age = $this->schedulerAgeReader !== null
+            ? ($this->schedulerAgeReader)()
+            : $this->schedulerLogAge($log);
+
+        if ($age === null) {
+            $this->add(
+                'schedule',
+                'not checked  the scheduler log could not be read, so this says nothing either way',
+                true,
+            );
+
+            return;
+        }
+
+        $this->add(
+            'schedule',
+            $age <= self::SCHEDULER_SILENCE_SECONDS
+                ? 'dispatching, last wrote '.$age.'s ago'
+                : 'NOT DISPATCHING, the scheduler has written nothing for '.$age.'s, so series are '
+                    .'never refreshed',
+            $age <= self::SCHEDULER_SILENCE_SECONDS,
+        );
+    }
+
+    /**
+     * Seconds since the scheduler last wrote, or null when it cannot be told.
+     *
+     * `clearstatcache()` because PHP caches the previous answer for the same path, and health is run
+     * repeatedly against a file that is changing underneath it. A stale mtime here would report a
+     * live scheduler as wedged, which is the failure this whole check exists to prevent, so it would
+     * be a check that manufactures the bug it is looking for.
+     */
+    private function schedulerLogAge(string $log): ?int
+    {
+        clearstatcache(true, $log);
+
+        $modified = @filemtime($log);
+
+        if ($modified === false) {
+            return null;
+        }
+
+        return max(0, time() - $modified);
     }
 
     /**

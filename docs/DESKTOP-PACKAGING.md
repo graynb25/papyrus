@@ -124,6 +124,19 @@ local checks supplied it.
 | 21 | A fresh install prints "Papyrus did not start. The lines above say why." over no lines at all, because `cmd.exe` refused to execute the runtime and said only "Access is denied." | antivirus scans a freshly written 623MB install before letting any of it execute, and for that window `cmd.exe` refuses `php.exe`. The application is not failing, so nothing in the application can report it, and the one message that does appear points at the wrong layer |
 | 22 | `stop` reported all four processes dead and left Suwayomi's embedded browser running, holding `jcef_helper.exe` open inside the data directory | the browser is launched by the JVM rather than by the launcher, so it is never in the list of processes the launcher started, and nothing ever looked for it |
 | 23 | The packaged install's scheduler dispatched nothing. `artisan schedule:run`, the process that actually runs the schedule, died every ten seconds with `PDOException: could not find driver`, and 182 attempts had failed without a word reaching the reader or the log's own summary | `schedule:work` does not run the schedule. It shells out to `schedule:run`, building that command from `PHP_BINARY` with no `-c` of its own, because Laravel assumes it inherited a configured interpreter. The launcher passed `-c` to `schedule:work` and nothing to the child, and this launcher's own PHP loads no ini at all, so the grandchild found none, loaded no extensions, and died on its first query |
+| 24 | `health` reported `scheduler running schedule:work` for six minutes over a scheduler that had stopped dispatching entirely. Downloads kept draining through the queue, so the install looked busy and nothing was wrong with any line | the scheduler's health line was process presence, which is the same mistake the queue line had already been corrected for. Both lines were written together, three lines apart, and correcting one left the other saying the thing the file's own docblock exists to warn against |
+
+**24 is the correction that was half made, and it is worth being precise about what is and is not
+known.** The check now measures whether the scheduler is still writing rather than whether a process
+exists, with a threshold of four missed intervals. What is **not** known is why that particular
+scheduler stopped looping. It was alive, idle rather than spinning at 0.016 seconds of CPU across
+ten seconds, with its log frozen and not one `schedule:run` child spawned in a sampled 32 seconds.
+Fifty-one held `framework/schedule-*` cache mutexes were found and cleared on the way to diagnosing
+it, and clearing them did not restore dispatching, so they are not the cause either. The sequence
+that preceded it involved several launcher starts and stops against one install, which leaves a
+scheduler that a later launcher finds rather than starts, so the most likely explanation is an
+artefact of that rather than something a reader would meet. It is recorded here as a check that could
+not see it, not as a cause found.
 
 **23 is the fourth "it worked, just not for the reader", and the quietest one yet.** Nothing crashed,
 all four processes reported healthy, and the schedule simply never ran. Three separate silences

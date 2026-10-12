@@ -4147,3 +4147,63 @@ ull tells the checker the generator
     start call.** Counting start calls is not the same as counting processes, and the difference is
     where children live. Where a parent shells out to something that then does the real work, the
     environment is the only channel that reaches it, and a command line argument reaches nothing.
+
+225. **A fix applied to one occurrence of a pattern leaves the other occurrences in place, and the
+    other occurrences are usually nearby.**
+    `Health::workers()` emits two lines, for `queue` and `scheduler`, from the same loop and in the
+    same shape. Both asked whether a process existed. The queue half was found to be worthless and
+    replaced with a real question, whether a job that was due had been taken, read from the jobs
+    table. The scheduler half was three lines away, written by the same loop, and said the same thing.
+
+    It stayed wrong for long enough to matter. On a real install a scheduler stopped dispatching:
+    the process alive, 0.016 seconds of CPU across ten seconds, its log frozen at 2,017 lines, and not
+    one `schedule:run` child spawned in a sampled 32 seconds. `health` said
+
+        ok    scheduler  running  schedule:work
+
+    for six minutes, and every other line was green. Nothing crashed and nothing was lost loudly. The
+    schedule that refreshes series metadata simply never ran again, and the only reason it was found
+    at all is that the same log I was reading for something else had stopped moving.
+
+    The file's own docblock, written when the queue half was fixed, opens by explaining that the queue
+    worker and the scheduler "write nothing at all when healthy, which is correct behaviour and the
+    worst possible diagnostic", and says those lines are "the liveness signal for exactly the
+    processes that cannot report their own death". The code said the opposite, on the second line,
+    while the comment above it described the problem correctly. **The explanation had been written
+    down next to the bug and had been believed about the other line.**
+
+    Three things follow, and only the first is about code.
+
+    First: **when a check is replaced, find every other place the same check is made.** Not by
+    searching for the pattern, which finds the text rather than the intent, but by asking what else
+    this code already believes, and then going and looking. Two lines from a corrected line is close
+    enough that a reviewer reads it as covered.
+
+    Second: **a comment describing a hazard is not a fix for it, and it can actively hide the hazard.**
+    The comment said the diagnostic problem was understood. Having written down that you understand a
+    problem, it is easy to stop looking, and the remaining instance of the problem then reads as
+    already dealt with. This is the inverse of the stale-list trap in 221, and worse: a list is at
+    least honest about being a list.
+
+    Third, and the part that made this cheap to fix: **prefer a filesystem fact to a parsed string
+    when the two clocks disagree.** The obvious implementation reads the newest line out of
+    `scheduler.log` and subtracts it from `time()`. That is wrong by five hours here, because the
+    scheduler renders its timestamps at UTC+5 while the launcher runs at UTC, and the result would
+    report a perfectly healthy scheduler as silent since yesterday. A file's modification time is a
+    unix timestamp and does not care which timezone anyone prints it in. `filemtime()` against
+    `time()` is timezone-independent, needs no parsing, and does not break when Laravel changes the
+    line format.
+
+    And the part worth keeping from the diagnosis, which is a trap rather than a fix: **fifty-one
+    held `framework/schedule-*` cache mutexes looked exactly like the answer.** `SyncDownloads` is
+    `everyTenSeconds()->withoutOverlapping()->onOneServer()`, Laravel's default overlap expiry is
+    1440 minutes, and a scheduler that stopped with a mutex held would skip every later tick in
+    silence, which is precisely the symptom. It was a good hypothesis and it was wrong. Clearing all
+    fifty-eight rows changed nothing, and the dispatching did not resume. `withoutOverlapping()` with
+    a day-long default expiry remains a latent hazard on an install that is killed mid-job, but it is
+    not what happened here, and writing it up as the cause would have been the more interesting story
+    and the wrong one.
+
+    The general shape: **a check that has been corrected is evidence that the pattern was understood,
+    and therefore evidence that a second instance of it is probably still there.** The cost of fixing
+    one is that the neighbourhood stops being suspicious.
