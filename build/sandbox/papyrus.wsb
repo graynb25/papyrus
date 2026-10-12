@@ -47,6 +47,17 @@
     That happened twice in a row while working on this gate, and both times it looked like the
     machine was simply slow to start. Commit first, then launch, then leave both alone until the
     report appears.
+
+    ## Only one guest at a time, and a closed window is not a finished one
+
+    Windows Sandbox refuses to start a second instance while one is open, and it says so in a
+    message that goes to a window nobody is watching. Launching again a minute or two after a
+    previous run finished does not work either: the previous virtual machine has not released its
+    resources yet, and the new one never appears.
+
+    Three consecutive runs died this way, each with no progress file and no error, and each looked
+    exactly like a slow boot. Close the window and wait for the guest process to go before
+    launching again, and check for vmmemWindowsSandbox rather than trusting the clock.
   -->
 
   <VGpu>Disable</VGpu>
