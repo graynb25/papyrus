@@ -222,6 +222,31 @@ if ($options['help']) {
 $repo = dirname(__DIR__, 2);
 $into = $options['into'] ?? $repo.DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR.'install';
 
+/*
+ * Refuse a relative install root, because it fails twenty lines later and says nothing useful.
+ *
+ * `Supervisor::path()` joins the root onto whatever it is resolving, so a relative root produces
+ * relative paths in every file the launcher writes. The build then copies 12,000 files, validates
+ * 20 required paths, stages the JRE, reports `resolved ini: no tokens left`, and finally fails with
+ * `the install cannot boot with its own resolved php.ini`. That message is about a php.ini whose
+ * `extension_dir` reads `build/install/runtime/ext`, which is a correct path from the repository and
+ * a wrong one from inside the install, and nothing in that sentence points at the cause.
+ *
+ * It is worth an hour to work that out from the build's own output, so it is refused here instead,
+ * where the sentence can name the fix.
+ */
+if (! preg_match('#^[A-Za-z]:[\\\\/]#', $into) && ! str_starts_with($into, '\\\\')) {
+    fail(
+        "the install root must be an absolute path, and {$into} is relative.\n\n"
+        ."  It is copied verbatim into the php.ini the launcher resolves, and PHP reads\n"
+        ."  `extension_dir` relative to the install rather than to your shell.\n\n"
+        ."  Pass an absolute path. This build prints the default it would have used:\n"
+        ."    --into=<an absolute path to a build directory>\n"
+        ."  Omitted entirely, --into defaults to the build directory beside this repository,\n"
+        .'  which is already absolute.'
+    );
+}
+
 say('install', $into);
 
 /*

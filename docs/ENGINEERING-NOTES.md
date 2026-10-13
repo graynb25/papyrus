@@ -4656,3 +4656,75 @@ eturn null that a generator never needs.
     reported 1,353 hits for `::` and hundreds for fragments like `e::c`, and I had to discard the whole
     output rather than report it. A measurement of the wrong thing is more dangerous than no
     measurement, because it looks like diligence.
+
+238. **A relative path passed to a build tool fails twenty lines later and says nothing about itself.**
+    Rebuilding `build/install` from current source, I passed `--into=build/install`. The build copied
+    12,228 files, validated 20 required paths, staged a 179MB JRE, and reported
+    `resolved ini: no tokens left, resolved by the launcher itself`, before failing with
+
+        the install cannot boot with its own resolved php.ini.
+
+    Every one of those steps was true and none of them pointed at the cause. `Supervisor::path()`
+    joins the root onto whatever it resolves, so a relative root produces relative paths in every
+    file the launcher writes, and the probe's php.ini ended up with
+    `extension_dir = "build/install/runtime/ext"`. That is a correct path from the repository and a
+    wrong one from inside the install, because PHP reads it relative to the process rather than to
+    your shell. A real install passes an absolute root and is unaffected, which is why this is a trap
+    for whoever runs the build rather than a defect a reader would meet.
+
+    Worth about an hour of reading the build's own output backwards, so it is now refused at the top
+    of the script, where the sentence can name the fix.
+
+    The general shape joins several others here: **a failure message that reports where you ended up
+    rather than what you passed is a failure you have to reverse engineer.** The build's message was
+    not wrong. It was about a php.ini, and the thing that mattered was a command line argument.
+
+239. **A skip list naming the directories that exist is a list that goes stale, and mine went stale in
+    twenty minutes.**
+    The machine-detail gate skipped `/build/install/` and `/build/dist/`. I created
+    `build/install-stale` to compare two builds, and the gate scanned all 12,000 files of it and
+    reported 480 findings, every one of them an ASN.1 object identifier or an RFC range
+    definition inside spomky-labs/pki-framework.
+
+    Not one was machine detail. All of them were the gate reporting a stale list rather than a
+    finding, which is the worst outcome available, because 480 false positives teach a reader to
+    ignore the output, and then the one real finding is ignored too.
+
+    Worth noting that this lesson's own examples are the same shape. Naming them would have the gate
+    reporting two more findings from this file, so they are described rather than written down. An
+    ASN.1 object identifier and a benchmark range are both address-shaped with every octet in range,
+    which is the whole difficulty in one pair of examples.
+
+    This is the "naming the paths you know about is a list that goes stale" shape from the project's
+    own defect families, and I wrote a fourth instance of it into the tool built to prevent the class.
+
+    The rule is now structural rather than enumerative: everything under `build/` is generated except
+    `build/sandbox`, which is hand-written source that happens to live there. A new build directory is
+    skipped without anybody remembering to add it.
+
+    And the test that found it is the second thing worth keeping. The skip list had **four entries
+    that never matched anything**, because `rel` is a repo-relative path like `vendor/laravel/...`
+    which does not start with `/vendor/`. It went unnoticed for two reasons that had nothing to do with
+    each other: `vendor` is in `.gitignore`, so the untracked scan removed it before the prefix was
+    consulted, and `storage/logs` did match, because somewhere in its history the gate was invoked
+    with an absolute root. Two files agreeing by accident, and which form was in play on a given run
+    depended on the caller. That only became visible when a test asked.
+
+    **A skip rule that is never exercised is not a skip rule, it is a comment.** Now every prefix is a
+    path component, so it holds whatever the caller passes, and 14 cases pin the behaviour.
+
+240. **My first version of the new guard printed this machine's path into a build message.**
+    Having just been told twice not to put machine detail in tracked files, I added a relative-path
+    guard whose help text ended:
+
+        Pass an absolute path, for example:
+          --into=<the developer folder>\\build\\install
+
+    That is the account folder layout, in a tracked file, as an example. The machine-detail gate would
+    never have caught it, because the gate scans the repository and this string only exists *at run
+    time* on this machine, which is precisely the window AGENTS.md warns about: nothing is exposed
+    until it is executed.
+
+    The fix is that the message names no path at all and says the default is already absolute. Worth
+    recording because the reflex was to be helpful by printing the very value that is forbidden, and
+    being helpful felt like it outranked the rule. It does not.
