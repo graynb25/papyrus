@@ -18,7 +18,20 @@ rem the finished behaviour a desktop app should have. It is what is true today, 
 rem comment is better than a silent wrapper that looks finished and is not.
 rem
 rem The tray icon (roadmap item 0.8) is what replaces this: it holds the supervisor without a
-rem window and opens the browser at the right moment. Until then, this is the honest shape of it.
+rem window. Until then, this is the honest shape of it, apart from the browser, which this now does
+rem open.
+rem
+rem ## Why it opens the browser
+rem
+rem `--open` tells the launcher to open the address it just bound, once it has confirmed the app is
+rem genuinely usable. It is here rather than in the launcher unconditionally for two reasons: the
+rem clean-room gate runs the same command on a machine with no browser, and anybody scripting a start
+rem does not want a window appearing.
+rem
+rem It was worth adding rather than documenting the port. The port is not a constant: it is 8000 by
+rem default, 8402 under the gate, and whatever the reader sets. A document can only state the common
+rem case, and a reader who guessed wrong got ERR_CONNECTION_REFUSED from a perfectly healthy install
+rem with no way to tell a broken app from a wrong address.
 rem
 rem ## Why the failure path pauses
 rem
@@ -91,7 +104,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PAPYRUS_PHP%" "%PAPYRUS_LAUNCHER%" start
+"%PAPYRUS_PHP%" "%PAPYRUS_LAUNCHER%" start --open
 set "PAPYRUS_EXIT=%ERRORLEVEL%"
 
 if not "%PAPYRUS_EXIT%"=="0" (

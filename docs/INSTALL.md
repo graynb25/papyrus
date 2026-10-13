@@ -38,7 +38,9 @@ below, because it is the single most common reason a first launch does nothing.
 4. Choose whether to put a shortcut on your desktop. Either is fine.
 5. Finish. Papyrus starts on its own.
 
-When it is ready, your browser opens on **`http://127.0.0.1:8000`**.
+When it is ready, Papyrus opens your browser for you at the address it bound to, which is usually
+**`http://127.0.0.1:8000`**. The address is also printed in the window, and it is worth reading rather
+than guessing: the port is not fixed, because the clean-room gate uses 8402 and you can set your own.
 
 That address is local to your machine. Papyrus is a server you run yourself, and by default nothing
 outside your computer can reach it. Do not port-forward it unless you understand what you are

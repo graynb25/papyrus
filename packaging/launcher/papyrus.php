@@ -38,6 +38,7 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
+require __DIR__.'/src/BrowserLauncher.php';
 require __DIR__.'/src/Prober.php';
 require __DIR__.'/src/ProcessFinder.php';
 require __DIR__.'/src/ManagedProcess.php';
@@ -135,10 +136,53 @@ try {
 
             $supervisor->start($say);
             $say('');
-            $say(sprintf(
-                'Papyrus is running at http://127.0.0.1:%d',
-                (int) (getenv('PAPYRUS_APP_PORT') ?: 8000),
-            ));
+
+            /*
+             * One source for the port, read from the supervisor rather than from the environment
+             * again.
+             *
+             * The URL printed below used to be rebuilt from `getenv('PAPYRUS_APP_PORT')`, which is
+             * the same expression the supervisor's constructor used, so they agreed by coincidence
+             * rather than by construction. A URL that disagrees with the port actually bound is worse
+             * than no URL, because a reader who follows it is told the app is broken.
+             */
+            $url = sprintf('http://127.0.0.1:%d', $supervisor->appPort());
+
+            $say(sprintf('Papyrus is running at %s', $url));
+
+            /*
+             * Open the browser, so nobody has to know or guess the port.
+             *
+             * Opt-in rather than always, because this same command is run by the clean-room gate on a
+             * machine with no browser worth opening, and by anyone scripting a start. `Papyrus.cmd`
+             * is the thing that passes it, and that is the one a reader runs.
+             */
+            if (in_array('--open', $argv, true)) {
+                /*
+                 * The wording is deliberately not "Opened your browser."
+                 *
+                 * Because there is no way to know that happened. `cmd /c start` hands the URL to the
+                 * shell and returns, and it returns success in at least one situation where nothing
+                 * opened at all: a process with no interactive desktop, where it silently does
+                 * nothing. Measured here, running the exact command from this shell: zero browser
+                 * processes before, zero after, exit code fine.
+                 *
+                 * So this reports what it did, which is ask, and the address stays on screen either
+                 * way because that is the part a reader can act on. Saying "opened" would be the most
+                 * expensive kind of wrong answer available here: a reader whose browser genuinely did
+                 * not open would be told it did.
+                 *
+                 * For a reader double-clicking the shortcut this still opens the browser, because a
+                 * shortcut has an interactive desktop. This is the shape of the thing working, not of
+                 * the thing failing.
+                 */
+                if ((new BrowserLauncher)->open($url)) {
+                    $say('Asked your browser to open it.');
+                } else {
+                    $say('Could not open a browser from here. The address above is all you need.');
+                }
+            }
+
             $say('Press Ctrl+C to stop it.');
 
             // Hold the terminal open. The children are not daemons and this process is what
@@ -277,7 +321,7 @@ try {
             exit(0);
 
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics] [--zip]\n");
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics] [--zip] [--open]\n");
 
             exit(2);
     }
