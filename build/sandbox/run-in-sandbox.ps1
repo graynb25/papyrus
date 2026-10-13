@@ -315,6 +315,80 @@ if (-not $startProcess.HasExited) {
     if ($null -ne $reportedPort) {
         $appPort = $reportedPort
     }
+
+    # ---------------------------------------------------------------------------------------
+    # Is the scheduler actually dispatching?
+    #
+    # Everything above this point can pass with a scheduler that has never once run, and did. The
+    # launcher prints "queue worker and scheduler started" whether or not either of them can reach a
+    # database, which is exactly what happened: `schedule:work` shells out to `schedule:run` without
+    # passing it the ini, the grandchild loads no extensions, and it dies every ten seconds with
+    # "could not find driver". 182 times, with `health` reporting all four processes healthy, in an
+    # install whose downloads silently never happened.
+    #
+    # So this gate, the only check in the project that runs on a machine with nothing installed, would
+    # have passed over the worst defect in its history. It checked that the process existed and never
+    # asked whether it did anything. Liveness is not participation.
+    #
+    # Measured by the log's modification time rather than by parsing a timestamp out of it, for the
+    # same reason the health check does: the scheduler renders timestamps at UTC+5 while this guest
+    # runs at UTC, so an age computed from a parsed line would be wrong by five hours. A file's mtime is
+    # a unix timestamp and does not care.
+    #
+    # Two samples with a gap between them, because one sample cannot tell "not dispatching" from "has
+    # not started yet". The gap is longer than the ten second schedule interval, so a working scheduler
+    # must have written something during it.
+    Section 'is the scheduler dispatching'
+
+    $schedulerLog = Join-Path $data 'logs\scheduler.log'
+    $firstStamp = $null
+    $firstSize = -1
+
+    if (Test-Path $schedulerLog) {
+        $firstStamp = (Get-Item $schedulerLog).LastWriteTimeUtc
+        $firstSize = (Get-Item $schedulerLog).Length
+        Say "  scheduler.log is $firstSize bytes, last written $($firstStamp.ToString('HH:mm:ss')) UTC"
+    } else {
+        Say "  no scheduler.log at $schedulerLog yet"
+    }
+
+    Start-Sleep -Seconds 35
+
+    if (-not (Test-Path $schedulerLog)) {
+        Check 'the scheduler is dispatching' $false 'no scheduler.log after 35 seconds of running'
+    } else {
+        $secondStamp = (Get-Item $schedulerLog).LastWriteTimeUtc
+        $secondSize = (Get-Item $schedulerLog).Length
+        $grew = $secondSize -gt $firstSize
+        $moved = $secondStamp -gt $firstStamp
+
+        Say "  after 35s it is $secondSize bytes, last written $($secondStamp.ToString('HH:mm:ss')) UTC"
+
+        Check 'the scheduler is dispatching' ($grew -and $moved) `
+            "grew=$grew mtimeAdvanced=$moved, a working scheduler writes every 10s"
+
+        if (-not $grew) {
+            # The failure a reader would report is "my downloads never happen", so name it here
+            # rather than leaving a bare boolean in a log file.
+            Say '  the scheduler process is up but is writing nothing. Downloads and the library check'
+            Say '  will silently never run, and nothing else in this gate would have noticed.'
+
+            if (Test-Path $schedulerLog) {
+                Say '  the tail of scheduler.log, which is where the reason usually is:'
+                Get-Content $schedulerLog -Tail 12 | ForEach-Object { Say "    $_" }
+            }
+        }
+    }
+
+    # And the launcher's own verdict, so a wedge is caught even if the log happens to be growing.
+    $healthOut = Join-Path $data 'logs\health.txt'
+    $healthText = & (Join-Path $root 'runtime\bin\php.exe') (Join-Path $root 'packaging\launcher\papyrus.php') health 2>&1 | Out-String
+    foreach ($line in ($healthText -split "`n")) {
+        if ($line -match '\S') { Say "  $_" }
+    }
+
+    Check 'health reports the scheduler dispatching' ($healthText -match 'schedule\s+dispatching') `
+        'the health line is what a reader is shown, so it has to be right and not merely the process'
 } else {
     Say "  launcher exited with code $($startProcess.ExitCode)"
 

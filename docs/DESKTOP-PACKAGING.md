@@ -541,7 +541,7 @@ memory:
 | 0.7 | Data location under `%LOCALAPPDATA%` | done | `DataLocation.php`, with a portable branch beside the program. Live install at `%LOCALAPPDATA%\Papyrus` |
 | 0.8 | Launcher: tray, start, stop, open browser | **partly done** | `Papyrus.cmd` starts, stops and reports. **No tray icon and no native binary.** The plan called for a 5 to 10MB Go or C# binary; what exists is a batch file. Deliberate, since the batch file is what the clean sandbox could prove, and a native binary would need its own gate |
 | 0.9 | One place for four processes' logs | done | `SummaryLog` writes the one-line-per-process summary; nine parsers normalise the nine native formats; `papyrus diagnostics` bundles them |
-| 0.10 | Clean-sandbox verification | done, **but not re-run since** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked, 549 lines. Last ran 2026-10-11, which is before the `PHPRC` fix, the health check and the process-identity fix. Those three are exactly the kind of change the gate exists for and it has not seen them |
+| 0.10 | Clean-sandbox verification | done, **and re-run** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Re-run 2026-10-13: PASS, 53 assertions**, on a fresh guest with no Java, no PHP on PATH and no Java installed |
 | 0.11 | Decide the Suwayomi runtime shape | done | The `jlink` question was answered by staging rather than building: a pinned JRE is staged beside the jar at build time and digest verified. 353.6 MB of the 623 MB install is Suwayomi and its JVM, none of it ours |
 | 0.12 | Uninstall must not delete the library | done | `papyrus.iss` contains **zero** `[UninstallDelete]` directives. The full install, run, uninstall cycle was run with the library hashed either side and it came back byte identical |
 | | `VACUUM INTO` snapshot job | done | `SnapshotDatabase` behind `papyrus:snapshot`, scheduled `dailyAt('03:17')` |
@@ -550,26 +550,30 @@ memory:
 | 0.3 | Process supervisor for four processes | done | Verified across install, run and upgrade on a real install |
 | 0.4 | Readiness probe | done | `/ready`, and the health check reports its status, app key and database separately |
 
-**The exit gate has a caveat worth stating plainly.** "Runs in a clean Windows sandbox with nothing
-preinstalled" was demonstrated on 2026-10-11 and has not been repeated since. Three launcher changes
-landed after it, one of which fixed a scheduler that had never worked in any install at all. The gate
-is the only check here that runs on a machine with nothing installed, and it has not seen the change
-that was most likely to matter to it.
+**The gate, and what it had never seen.** "Runs in a clean Windows sandbox with nothing preinstalled"
+was demonstrated on 2026-10-11, and not again until 2026-10-13, by which time three launcher changes
+had landed. Launch it with
 
-**It also cannot be run from this machine as it stands**, checked rather than assumed:
+    WindowsSandbox.exe build\sandbox\papyrus.wsb
 
-| | |
-| --- | --- |
-| Virtualization present in firmware | yes |
-| `HypervisorPresent` | yes |
-| `System32\SystemSandbox.exe` | **absent**, so Windows Sandbox is not installed |
-| Feature state | needs elevation to query, and this session has none |
+which mounts `build\` into the guest, copies the install to `C:\Program Files\Papyrus` there, and
+writes `build\sandbox-results\sandbox-report.txt` back. It takes about seven minutes.
 
-So re-running the gate is not a five minute job here; it needs a machine with Windows Sandbox turned
-on, which needs an administrator. Everything else on this list is either done or is documentation,
-and this is the one item on it that needs something this environment does not have. It is also the
-item most likely to find a real defect, since a scheduler that had never once worked is precisely the
-kind of thing a working install hides.
+**It had a hole exactly where the worst defect was.** Thirty-eight assertions and not one of them
+asked whether the scheduler was doing anything. It checked that `queue worker and scheduler started`
+appeared in the launcher's output, which the launcher prints whether or not either process can reach a
+database, and then moved on. The `PHPRC` defect therefore passed straight through the one check in
+this project that runs on a machine with nothing installed, 182 failures and all.
+
+The gate now samples `scheduler.log`'s modification time twice, 35 seconds apart, and fails if it did
+not both grow and advance, because the schedule fires every ten seconds and a working scheduler cannot
+go that long without writing. It also runs `health` and asserts the line a reader is actually shown
+says dispatching, so a wedge is caught even if the log happens to be growing for some other reason.
+Measured on the re-run: 1450 bytes to 1694 bytes, mtime advanced, and `health` agreed.
+
+**Mtime, not a parsed timestamp, for the same reason the health check uses one.** The scheduler renders
+timestamps at UTC+5 while the guest runs at UTC, so an age computed from a line inside the log would be
+wrong by five hours and would report a working scheduler as silent since yesterday.
 
 | # | Item | Sev | Notes |
 | --- | --- | --- | --- |
