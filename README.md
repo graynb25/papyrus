@@ -298,11 +298,27 @@ anything is migrated.
 
 ### Making your first account
 
-This is the supported way into the app on a single reader install.
+The supported way into the app is the **Sign up** link on the login page.
 
-`single` mode is the default and it **disables registration**, which is the point: it is a
-one-reader install, and an open sign-up form is a hole in one. So there is no "Sign up"
-link and `/register` answers 404. That leaves a command:
+`single` mode is the default and it does **not** leave registration open, which is the point: it
+is a one-reader install, and a permanently open sign-up form is a hole in one. What it does instead
+is open sign-up *while nobody has signed up yet*, and close it the moment the first account exists.
+A brand new install therefore has a door, and it has exactly one.
+
+So the flow is:
+
+1. Open Papyrus. The login page shows **Sign up** while the install is unclaimed.
+2. Create your account. There is no email verification, it is all local.
+3. Sign-up closes itself. From now on `/register` answers 404 and the link is gone, so nobody else
+   can join your install.
+
+Your address is recorded as `PAPYRUS_LOCAL_READER` in your `.env` and offered back on the login
+form, so you only ever type a password. **Your password is not recorded anywhere.** Papyrus keeps
+a hash and no copy that could sign you in, so use **Forgot your password?** if you lose it rather
+than expecting the installer to know it.
+
+Lost the account entirely, or scripting a second install? The command still exists and is still
+the right tool for an unattended one:
 
 ```bash
 php artisan users:create --email=you@example.com --name="Your Name"

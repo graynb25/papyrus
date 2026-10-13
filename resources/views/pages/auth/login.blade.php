@@ -1,3 +1,19 @@
+@php
+    /*
+     * Both answers this page needs, resolved once and above the form, because the sign-up link at the
+     * bottom and the pre-filled address in the middle are the same question asked twice and must not
+     * be able to disagree.
+     *
+     * The remembered address is read only while registration is open, which is the only state in
+     * which it was ever written. A record read after the account exists could be stale: wipe the
+     * database and it would offer an address that no longer belongs to anybody.
+     */
+    $registration = app(App\Support\Registration::class);
+    $rememberedEmail = $registration->isOpen()
+        ? app(App\Support\LocalReaderAccount::class)->email()
+        : null;
+@endphp
+
 <x-layouts::auth.reading-room :title="__('Log in')">
     {{--
         A failed sign-in shakes the card. The animation runs once on the
@@ -18,7 +34,7 @@
             <flux:input
                 name="email"
                 :label="__('Email address')"
-                :value="old('email')"
+                :value="old('email', $rememberedEmail)"
                 type="email"
                 required
                 autofocus
@@ -56,14 +72,19 @@
         </form>
 
         {{--
-            The sign-up link only when the deployment mode actually has registration.
+            The sign-up link only while there is somebody who is allowed to sign up.
 
             It was unconditional, so a single-user install pointed at an endpoint that
             `RegistrationMustBeAllowed` answers with a 404. Which of the two was wrong is
             worth stating: the mode was the documented behaviour and the link was the bug,
             so the link goes rather than the rule.
+
+            The question is now `Registration::isOpen()` rather than the deployment mode alone,
+            because a `single` install opens sign-up until its first account exists. The same
+            object answers for the middleware, so the link and the endpoint cannot disagree,
+            which is lesson 227: two implementations of one question, disagreeing silently.
         --}}
-        @if (app(App\Support\Deployment::class)->allowsRegistration())
+        @if ($registration->isOpen())
             <div class="space-x-1 text-sm text-center rtl:space-x-reverse text-zinc-600 dark:text-zinc-400">
                 <span>{{ __('Don\'t have an account?') }}</span>
                 <flux:link :href="route('register')" wire:navigate>{{ __('Sign up') }}</flux:link>

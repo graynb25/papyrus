@@ -57,6 +57,19 @@ wait for it rather than closing the window.
 Then:
 
 1. **Create an account.** This is local, on your machine. There is no email verification.
+
+   The sign-up link is on the login page, and it is only there while nobody has signed up yet. Make
+   your account, and sign-up closes itself behind you: a single-reader install answers `404` to
+   `/register` from then on, so nobody else can join. That is deliberate, and it is why the link
+   disappears rather than leading to an error.
+
+   Your address is written to `PAPYRUS_LOCAL_READER` in your `.env`, and the login form offers it
+   back to you next time. Your password is not written anywhere. Papyrus stores it as a hash and
+   keeps no copy that could sign you in, so if you forget it, use **Forgot your password?** rather
+   than expecting the installer to know it.
+
+   Lost the account entirely? `php artisan users:create --email=you@example.com` makes another one.
+   It prints a generated password once, which is the only time it exists.
 2. **Point Papyrus at a source.** It ships with no list of manga sites, on purpose. Without one,
    search returns nothing and that is not a fault. See **[SOURCES.md](SOURCES.md)**, which is the
    one page you cannot skip.

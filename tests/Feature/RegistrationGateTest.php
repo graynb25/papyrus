@@ -40,22 +40,58 @@ class RegistrationGateTest extends TestCase
 
     // The rule holds ------------------------------------------------------
 
-    public function test_single_mode_closes_the_registration_page(): void
+    /**
+     * A fresh single-user install is the case that had no way in at all.
+     *
+     * `single` mode closed registration, which is right, and that left a new install with no route to
+     * its first account because the only one was the form just closed. The answer had been a console
+     * command, so the reader had to open a terminal before the application they had installed was
+     * usable. The form is open while nobody has registered, which is not the same as open.
+     */
+    public function test_an_unclaimed_single_install_offers_the_registration_page(): void
     {
+        $this->inMode(Deployment::SINGLE);
+
+        $this->get(route('register'))->assertOk();
+    }
+
+    public function test_an_unclaimed_single_install_creates_its_first_account(): void
+    {
+        $this->inMode(Deployment::SINGLE);
+
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'first@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('users', ['email' => 'first@example.test']);
+    }
+
+    /**
+     * And the moment it has one, it is shut again. This is the property the mode exists for, so it
+     * is asserted after the real route rather than against the method that decides it.
+     */
+    public function test_a_claimed_single_install_closes_the_registration_page(): void
+    {
+        User::factory()->create();
+
         $this->inMode(Deployment::SINGLE);
 
         $this->get(route('register'))->assertNotFound();
     }
 
-    public function test_single_mode_closes_the_registration_post(): void
+    public function test_a_claimed_single_install_closes_the_registration_post(): void
     {
+        /*
+         * The POST is the one that matters. A GET that 404s while the POST still works would hide the
+         * form and leave the hole open, which is the shape a lazy fix takes.
+         */
+        User::factory()->create();
+
         $this->inMode(Deployment::SINGLE);
 
-        /*
-         * The POST is the one that matters. A GET that 404s while the POST still works
-         * would hide the form and leave the hole open, which is the shape a lazy fix
-         * takes.
-         */
         $this->post(route('register.store'), [
             'name' => 'Intruder',
             'email' => 'intruder@example.test',
@@ -65,6 +101,37 @@ class RegistrationGateTest extends TestCase
 
         $this->assertDatabaseMissing('users', ['email' => 'intruder@example.test']);
         $this->assertGuest();
+    }
+
+    /**
+     * The whole point in one test: the first sign-up works and the second does not.
+     *
+     * Asserted end to end rather than by calling the gate twice, because the interesting version of
+     * this bug is a check that passes and then a use that happens anyway. A test that sets up one user
+     * and calls it a day proves the closed case; this proves the transition, which is the part that was
+     * previously missing entirely.
+     */
+    public function test_the_second_sign_up_is_refused_once_the_first_has_landed(): void
+    {
+        $this->inMode(Deployment::SINGLE);
+
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'first@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertSessionHasNoErrors();
+
+        $this->post(route('logout'));
+
+        $this->post(route('register.store'), [
+            'name' => 'Second Reader',
+            'email' => 'second@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertNotFound();
+
+        $this->assertDatabaseMissing('users', ['email' => 'second@example.test']);
     }
 
     public function test_shared_and_public_modes_leave_registration_open(): void
@@ -92,16 +159,24 @@ class RegistrationGateTest extends TestCase
 
     // The page stops advertising it ---------------------------------------
 
-    public function test_the_login_page_offers_sign_up_only_when_it_is_allowed(): void
+    public function test_the_login_page_offers_sign_up_only_while_the_install_is_unclaimed(): void
     {
         /*
-         * The link was unconditional, so a single-user install pointed at an endpoint that
-         * now answers 404. A visible link to a closed door is worse than no link.
+         * The link was unconditional, so a single-user install pointed at an endpoint that now
+         * answers 404. A visible link to a closed door is worse than no link. So the link follows the
+         * same rule as the endpoint, in both directions: shown while the install is unclaimed, gone
+         * the moment it has a reader, because a page that advertises a closed door is its own bug.
          */
         $this->inMode(Deployment::SINGLE);
+
+        $this->get(route('login'))->assertOk()->assertSee(__('Sign up'));
+
+        User::factory()->create();
+
         $this->get(route('login'))->assertOk()->assertDontSee(__('Sign up'));
 
         $this->inMode(Deployment::SHARED);
+
         $this->get(route('login'))->assertOk()->assertSee(__('Sign up'));
     }
 

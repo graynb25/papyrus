@@ -20,6 +20,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | The local reader
+    |--------------------------------------------------------------------------
+    |
+    | The address of this install's own reader, written once when the first account
+    | is created and used for one thing: pre-filling the sign-in form while the
+    | install is still unclaimed. The database decides who exists. This is a note
+    | about who the install is for, and it deliberately holds no password, no token
+    | and nothing else that could sign anybody in. See App\Support\LocalReaderAccount.
+    |
+    */
+
+    'local_reader' => env('PAPYRUS_LOCAL_READER'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Suwayomi connection
     |--------------------------------------------------------------------------
     |

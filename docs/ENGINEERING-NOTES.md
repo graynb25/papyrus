@@ -4311,3 +4311,128 @@ ull tells the checker the generator
     is a test asserting a property both must satisfy, and the one that now exists asserts that every
     lookup names this install's data directory. It is a property, not a value, so it does not need
     updating when the markers change, and it fails against the old code.
+228. **A guest's loopback is not your loopback, and the error a wrong address gives is the error a
+    broken install gives.**
+    Two wrong turns in a row on this, both against a sandbox that was completely healthy. First
+    `papyrus.test`, which is a host-only name and cannot resolve in a guest at all. Then `8402`,
+    which is not the wrong port so much as the wrong machine: it is the port the clean-room gate
+    forces, not the 8000 a real install uses.
+
+    Both came back as `ERR_CONNECTION_REFUSED`, which is the single least informative error this
+    project can produce. It is what a broken install says. It is what a wrong port says. It is what
+    typing a guest's address into a host browser says, because the guest has its own network stack
+    and its own `127.0.0.1`, and the host's browser asking the host's loopback for the guest's
+    service is asking a machine that never had it.
+
+    Papyrus binds `http://127.0.0.1:{port}` in the Caddyfile, loopback only, and that is deliberate:
+    it is the security posture a reader ships with, and nothing here relaxes it for convenience. So a
+    host browser can never reach a sandboxed Papyrus at any address, and the honest answer to "how
+    do I look at this" is a browser *inside* the guest.
+
+    What makes this cheap to state now is `build/sandbox/hold-open.ps1`, which prints the address and
+    says which machine to type it into. The general shape, and it is the addition to the "worked,
+    just not for the reader" family: **when a local address fails, establish which loopback you are
+    on before theorising about the port.** Two of the three variables in a local URL are not local at
+    all once virtualization is involved, and the port is the only one anybody thinks about.
+
+229. **"The guest did not start" and "the guest has not started yet" are different claims, and the
+    process list cannot tell them apart.**
+    Launched the sandbox, waited twenty seconds, found no `WindowsSandbox.exe`, and concluded the
+    launch had failed. It had not. The guest was booting, took its usual minute or two, and then
+    ran the logon command perfectly: 12,644 files copied, four processes up, `/ready` answering 200
+    in fifteen seconds. Every assertion about the launch in that first check was wrong, and all of
+    them were confident.
+
+    The trap is that "no process yet" and "process died" are the same observation. The evidence that
+    separates them is the results folder, because it is the only thing written by the guest and read
+    from the host. By the time I looked again there were three files in it and the whole question
+    was settled.
+
+    The mirror image is worse, because it looks like the same failure while meaning the opposite.
+    Windows Sandbox refuses to start a second guest while one is open, and it does so by exiting
+    **zero, with no output and no window.** I read that as "the sandbox is broken" while a perfectly
+    good guest was running underneath it, and started debugging the wrong thing entirely. The
+    distinguishers are `vmmemWindowsSandbox` and `WindowsSandboxServer`, which persist for the life
+    of a guest and were right there in the process list the whole time.
+
+    The general shape: **a silent exit code is not a failure report, and a process list is not a
+    progress file.** Check for the thing the subject would have written if it were getting anywhere,
+    not for the thing that launched it.
+
+230. **A library backup parked in `database/` blocks the build, and the fix is to move it, not to
+    delete it.**
+    `build-install.php` refused to report success: the build contained files that must not ship, and
+    named `database/papyrus-20261013-031701.sqlite`. The guard is right and I would not weaken it. An
+    install carrying a library looks exactly like one that does not until somebody opens it, and
+    "opened it and found 867 series they never installed" is the worst thing a packaged app can do.
+
+    The tempting response is to delete the file. That would have destroyed 4.9MB of somebody's
+    actual reading history: 867 series, 21,448 chapter states, 223 sources, 1,277 imported series,
+    verified by reading the file before touching it. It was a timestamped backup somebody had
+    deliberately taken, and it happened to be sitting in the one directory the build copies.
+
+    So it moved to `.tools/backups/`, which `.gitignore` line 77 already covers, after copying,
+    comparing SHA256, and re-reading the copy from its new home to prove it was intact. The build
+    then passed: no developer data across 12,644 files.
+
+    The underlying shape is older than this instance: `database/.gitignore` hides `*.sqlite*`, so
+    `git status` is silent and clean and will never warn anybody. The file is invisible to the one
+    tool a developer trusts to tell them what is not going to ship, and visible only to the build.
+    That is an acceptable arrangement, provided the build is the thing that complains, which is
+    exactly what it did. The lesson is not about the backup. It is that **a build guard which fires
+    on somebody's data must be answered by moving the data, and the move is only safe if the guard
+    named the file and the data was read before it was moved.**
+
+231. **A feature that closes a door must not close the only key, and the fix is a window rather than
+    an opening.**
+    `single` deployment mode disabled registration. That was correct and deliberate: it is a
+    one-reader install, and an open sign-up form is a hole in it. It also meant a brand new install
+    had no way to make its first account, because the only route to one was the form that had just
+    been closed.
+
+    Found by following the setup instructions, opening the site, and trying to log in with the Suwayomi
+    username from `.env`. That account belongs to the manga engine, not to this app, and the mode that
+    would have let the reader create one was shut by design. So the two halves of the product were
+    each correct and the product was unusable, which is the most expensive combination there is and the
+    one no unit test in this project would ever have caught.
+
+    The answer that shipped was `users:create`, a console command. True, and a reader still had to
+    open a terminal to use the application they had just installed. The answer that shipped now is
+    that `single` mode opens sign-up **while nobody has registered**, and closes it the moment the
+    first account exists. Not an opening: a window. The security property the mode exists for is
+    fully intact, and a fresh install has a door.
+
+    Three things that had to be true for this, and each was a bug first:
+
+    - **The link and the endpoint must ask one question.** The login page gated its sign-up link on
+      `Deployment::allowsRegistration()` and the middleware gated the route on the same method, which
+      is lesson 227's exact shape waiting to happen: two answers to one question, able to disagree,
+      with every test green because both were individually correct. It is now one object,
+      `Registration::isOpen()`, and both call sites ask it.
+    - **A check and a use is not atomic.** Reading a user count and then writing a row has a gap in
+      it, and two browser tabs submitting the form at once is not a contrived thing to imagine on a
+      loopback install. Both requests see zero users, both pass, and a `single` mode install ends up
+      with two readers, which breaks the invariant the mode is named for. So the POST takes a lock
+      and re-reads the count while holding it. The test proves the lock turns the second one away by
+      actually holding it, rather than asserting the method returns false for reasons it does not
+      explain.
+    - **The pre-filled value is only read in the state it is written.** The remembered address goes in
+      the file when the first account is created, and is read only while registration is open, which
+      is the only state where that is true. Read afterwards, it could be stale: wipe the database and
+      it would offer an address belonging to nobody.
+
+    ## The part that was refused rather than built
+
+    "Save the account so it launches with the user each time" most naturally means the password too,
+    and that was declined rather than overlooked. Laravel stores the password as a hash, so anything
+    that could sign the reader in unattended would have to keep the **plaintext** on disk, readable by
+    anything running as that user, unrotatable without redoing setup. `users:create` refuses that on
+    purpose: it generates a password and prints it once, and warns on stderr when `--password` is
+    used, because a command line leaks into shell history and the process list. Writing the plaintext
+    into a file the launcher reads on every start is that same leak with more reach and less
+    visibility.
+
+    So what is stored is the address, which buys the thing that actually mattered: the one field
+    nobody has to retype. The general shape, and it applies well beyond this: **when a request asks to
+    persist a secret so a system can authenticate unattended, ask what the plaintext would have to
+    look like, because that is the only version that works, and it is rarely worth it.**
