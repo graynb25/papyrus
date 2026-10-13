@@ -4436,3 +4436,73 @@ ull tells the checker the generator
     nobody has to retype. The general shape, and it applies well beyond this: **when a request asks to
     persist a secret so a system can authenticate unattended, ask what the plaintext would have to
     look like, because that is the only version that works, and it is rarely worth it.**
+
+232. **A configuration that reads as a security boundary is not one, and I asserted it was without
+    checking.**
+    `packaging/frankenphp/Caddyfile` said `http://127.0.0.1:{{APP_PORT}}`. The installer guide said
+    "by default nothing outside your computer can reach it". The launcher's comment said the app
+    binds loopback. Three places saying the same thing, in the same voice, none of them true.
+
+        Caddyfile said                         http://127.0.0.1:8000
+        the listener was actually bound on     ::           the IPv6 wildcard, every interface
+        http://192.0.2.1:8000/ready         200
+        http://192.0.2.2:8000/ready          200
+
+    Windows Firewall had inbound-allow rules for `frankenphp.exe`, so nothing local was holding the
+    line back either. A reader's library, their reading history and their account were answering on
+    the local network. For contrast, nginx on the development checkout binds `127.0.0.1` correctly on
+    the same machine, so nothing about the host made this unavoidable.
+
+    ## The part that is my fault and not the code's
+
+    I told a reader this was unreachable, in a previous session, while explaining why a sandbox
+    address would not work. That claim came from reading the Caddyfile and not from asking the
+    socket. I then wrote the claim into a docs file and repeated it in conversation. This is the
+    project's own lesson about a confident wrong answer, and the reason it is lesson-shaped rather
+    than a code comment is that the failure was mine, not the configuration's: **naming a loopback
+    host in a site address does not restrict which interfaces the listener binds.** The only
+    directive that does is an explicit `bind`, and it is now `bind 127.0.0.1 ::1`.
+
+    What makes this one so cheap to ship broken is that every artefact points the same way. The file
+    says loopback, the docs say loopback, the comment says loopback. A reader, or an agent, checking
+    any one of them finds nothing to question. The check that would have caught it is the one nobody
+    makes: ask the machine.
+
+    ## What the fix cost, which was the interesting part
+
+    The first attempt replaced the site address with `http://localhost:8000` and added the bind. That
+    broke the app completely. The launcher waited sixty attempts and reported "the web server started
+    but never reported ready", and Caddy's access log was full of:
+
+        msg: "NOP"  status: 0  host: 127.0.0.1:8000
+
+    `NOP` is Caddy's word for no route matched. A site address is also the `Host` it matches, and the
+    launcher's own readiness probe sends `Host: 127.0.0.1:8000`. So the socket bound, accepted every
+    connection, and served nothing at all. The fix was to list both spellings on one block:
+
+        http://127.0.0.1:{{APP_PORT}}, http://localhost:{{APP_PORT}} {
+            bind 127.0.0.1 ::1
+
+    Which is also what made the second half of the change work. The passkey relying-party id is
+    `parse_url(APP_URL, PHP_URL_HOST)`, `APP_URL` is `http://localhost:8000`, and a browser cannot
+    use a passkey at all on an IP address. So passkeys on the packaged install had never worked, and
+    Chrome's refusal told the reader to use an address the launcher was never giving them. Both names
+    are now listed, the reader is handed `localhost`, and the probes keep the literal.
+
+    ## The test that fails against the shipped file
+
+    `LauncherBindTest` asserts the explicit `bind` exists and that every address any `bind` names is
+    loopback. A test asserting the site address is loopback would have passed against the broken file,
+    which is the whole defect: the address was always right and always useless.
+
+    All three mutations are killed, and the third one caught me. Removing `localhost` from the site
+    address initially left all ten tests green, because the assertion read the raw file and the
+    comment block I had written explaining the `localhost` rationale contains that exact string. A
+    test reading comments reports on the author's explanation rather than on the program. I fixed the
+    same class of bug in `SandboxRunnerTest` earlier the same day and reintroduced it here, which is
+    the argument for writing the lesson down rather than fixing it once.
+
+    The general shape, and it is the addition to the "a check that reports a verdict about something
+    it did not read" family: **a security claim that comes from reading configuration is not a
+    security claim. Ask the socket, from an address that is not supposed to work, and see whether it
+    works.**

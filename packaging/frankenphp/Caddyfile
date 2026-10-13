@@ -49,7 +49,44 @@
 #
 # It also keeps QUIC out. Left alone, Caddy advertises h1, h2 and h3 on the port, and h3 is
 # always over TLS.
-http://127.0.0.1:{{APP_PORT}} {
+#
+# ## The address says `localhost`, and `bind` says why that is not enough
+#
+# This block used to say `http://127.0.0.1:{{APP_PORT}}` on the belief that naming a loopback host
+# in a site address restricts the listener to loopback. It does not, at least not with this binary:
+#
+#     Caddyfile said    http://127.0.0.1:8000
+#     actually bound    ::            the IPv6 wildcard, every interface
+#     http://192.0.2.2:8000/ready  200
+#
+# So a reader's install was answering on the local network while the configuration file, the
+# installer guide and the launcher all said nothing outside the machine could reach it. The only
+# thing that restricts a Caddy listener is an explicit `bind`, which is why the next line is not
+# optional and not decoration.
+#
+# Two families, because `localhost` resolves to `::1` before `127.0.0.1` on Windows and only the
+# IPv4 half was ever bound. Naming `localhost` also matches `APP_URL`, which is what the passkey
+# relying-party id is derived from: an IP literal cannot be a relying-party id at all, so passkeys
+# were guaranteed to fail on `127.0.0.1`, with Chrome telling the reader to use a different address
+# than the one Papyrus had just opened for them.
+#
+# ## Both names are listed, and replacing one with the other does not work
+#
+# Because a site address is also the Host it matches. This said `http://localhost:{{APP_PORT}}`
+# alone, and the result was a listener that accepted every connection and served nothing: Caddy's
+# access log filled with `msg: "NOP"`, `status: 0`, for requests carrying `Host: 127.0.0.1:8000`,
+# which is the Host the launcher's own readiness probe sends. The app was up and answering with
+# nothing, and the launcher reported "the web server started but never reported ready" after sixty
+# attempts. Which is a good illustration of why a site address that looks right is not the same thing
+# as a site address that matches what callers actually send.
+#
+# So both are listed, comma separated, sharing one block and one `bind`. Readers get `localhost`,
+# which is the spelling the server's own `APP_URL` and therefore its relying-party id agree with,
+# and the internal probes keep working on the literal.
+http://127.0.0.1:{{APP_PORT}}, http://localhost:{{APP_PORT}} {
+	# The security boundary. Loopback only, on both families, and nothing else.
+	bind 127.0.0.1 ::1
+
 	# `root` without a `*`. The wildcard form is Caddy module syntax, and using it inside a
 	# block whose directive is nginx-style changed the matcher so that every request answered
 	# 400 with nothing logged. The documented Laravel form is a bare path.

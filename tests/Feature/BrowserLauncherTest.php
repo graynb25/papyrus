@@ -63,7 +63,7 @@ class BrowserLauncherTest extends TestCase
      */
     public static function realPorts(): array
     {
-        return [['http://127.0.0.1:8000'], ['http://127.0.0.1:8402'], ['http://127.0.0.1:4567'], ['http://127.0.0.1:65535']];
+        return [['http://127.0.0.1:8000'], ['http://localhost:8000'], ['http://localhost:8402'], ['http://127.0.0.1:4567'], ['http://localhost:65535']];
     }
 
     #[DataProvider('realPorts')]
@@ -85,8 +85,8 @@ class BrowserLauncherTest extends TestCase
         return [
             'a remote host' => ['http://example.test:8000'],
             'a public host' => ['http://127.0.0.1.evil.test:8000'],
+            'localhost with a suffix' => ['http://localhost.evil.test:8000'],
             'no port' => ['http://127.0.0.1'],
-            'not loopback' => ['http://localhost:8000'],
             'https, which this never serves' => ['https://127.0.0.1:8000'],
             'a shell metacharacter in the port' => ['http://127.0.0.1:8000&calc'],
             'a command' => ['cmd /c calc'],

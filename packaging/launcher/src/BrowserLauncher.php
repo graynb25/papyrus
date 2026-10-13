@@ -107,18 +107,29 @@ final class BrowserLauncher
     /**
      * Whether this is a URL this would hand to a shell.
      *
-     * ## Why a loopback URL is the only one accepted
+     * ## Why loopback and nothing else
      *
      * Because this is only ever called with the address the launcher just bound, and the cost of
      * accepting anything else is that a value reaching this class from an environment variable or a
-     * command line becomes a shell command. Papyrus serves on 127.0.0.1 and nothing else; if that
+     * command line becomes a shell command. Papyrus serves on loopback and nothing else; if that
      * ever changes, the check changes with it and the failure is a refused open rather than a launch.
      *
      * The port is bounded as well, for the same reason and because a port is the one part of a URL
      * that is not self-evidently safe to interpolate.
+     *
+     * ## Why `localhost` is here and `127.0.0.1` alone is not
+     *
+     * Because a host name is required for some browser features to work at all on this app. An IP
+     * literal cannot be a WebAuthn relying-party id, so a passkey on `http://127.0.0.1:8000` is
+     * refused by the browser before Papyrus is involved, with an error telling the reader to use
+     * `localhost` instead. Since `APP_URL` is `http://localhost:8000` and the relying-party id is
+     * derived from it, `localhost` is the address that agrees with the server's own idea of its
+     * own name.
+     *
+     * Both spellings resolve to loopback, so this widens what is *named*, never what is reachable.
      */
     private function isSafeUrl(string $url): bool
     {
-        return preg_match('#^http://127\.0\.0\.1:\d{2,5}\z#', $url) === 1;
+        return preg_match('#^http://(127\.0\.0\.1|localhost):\d{2,5}\z#', $url) === 1;
     }
 }

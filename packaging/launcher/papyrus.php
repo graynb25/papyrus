@@ -146,7 +146,7 @@ try {
              * rather than by construction. A URL that disagrees with the port actually bound is worse
              * than no URL, because a reader who follows it is told the app is broken.
              */
-            $url = sprintf('http://127.0.0.1:%d', $supervisor->appPort());
+            $url = $supervisor->readerUrl();
 
             $say(sprintf('Papyrus is running at %s', $url));
 

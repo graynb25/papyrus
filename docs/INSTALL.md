@@ -39,12 +39,24 @@ below, because it is the single most common reason a first launch does nothing.
 5. Finish. Papyrus starts on its own.
 
 When it is ready, Papyrus opens your browser for you at the address it bound to, which is usually
-**`http://127.0.0.1:8000`**. The address is also printed in the window, and it is worth reading rather
+**`http://localhost:8000`**. The address is also printed in the window, and it is worth reading rather
 than guessing: the port is not fixed, because the clean-room gate uses 8402 and you can set your own.
+
+It says `localhost` rather than `127.0.0.1`, and the difference is not cosmetic. A browser will not
+use a passkey on an IP address, so an install reached at `127.0.0.1` refuses a passkey with a message
+telling you to use `localhost`, which is an address Papyrus was not handing you. Both names reach
+the same server.
 
 That address is local to your machine. Papyrus is a server you run yourself, and by default nothing
 outside your computer can reach it. Do not port-forward it unless you understand what you are
 exposing.
+
+**That was not true until recently, and the reason is worth knowing.** The web server was configured
+to listen on `http://127.0.0.1:8000`, which reads as loopback and looks like it confines the process
+to your machine. It does not. Naming a loopback host in the address does not restrict which
+interfaces the server listens on: a real install was answering on the local network, on `192.0.2.2`
+and on `192.0.2.1`, while this guide said it could not be. It now binds loopback explicitly, on
+IPv4 and IPv6 both, and that was checked by asking for those addresses and being refused.
 
 ---
 

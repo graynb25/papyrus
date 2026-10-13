@@ -349,12 +349,12 @@ final class Supervisor
             $summary->record('papyrus', 'database current');
 
             $this->startWebServer($say);
-            $summary->record('web', sprintf('serving on http://127.0.0.1:%d, ready', $this->appPort));
+            $summary->record('web', sprintf('serving on %s, ready', $this->readerUrl()));
 
             $this->startWorkers($say);
             $summary->record('papyrus', 'queue worker and scheduler started');
 
-            $summary->record('papyrus', sprintf('ready at http://127.0.0.1:%d', $this->appPort));
+            $summary->record('papyrus', sprintf('ready at %s', $this->readerUrl()));
 
             return array_keys($this->started);
         } catch (\Throwable $e) {
@@ -1071,6 +1071,36 @@ final class Supervisor
     public function appPort(): int
     {
         return $this->appPort;
+    }
+
+    /**
+     * The address a reader should open, which is not the same string as any address we probe.
+     *
+     * ## Why `localhost` and not `127.0.0.1`
+     *
+     * Because an IP literal cannot be a WebAuthn relying-party id. The browser refuses a passkey on
+     * `http://127.0.0.1:8000` before Papyrus is involved at all, and says so in a message telling the
+     * reader to use `localhost`, which is an address this launcher was never handing them. The
+     * relying-party id is `parse_url(APP_URL, PHP_URL_HOST)` and `APP_URL` is
+     * `http://localhost:8000`, so `localhost` is the spelling that agrees with the server's own
+     * config.
+     *
+     * ## Why the probes stay on `127.0.0.1`
+     *
+     * Because a probe is not something a reader types and is not a security boundary. Every internal
+     * check, the readiness poll and the Suwayomi GraphQL call keep using the literal, and there is
+     * nothing to gain by making them depend on name resolution. Exactly one string, this one, is
+     * shown to a person.
+     *
+     * ## It does not widen what is reachable
+     *
+     * Both spellings are loopback. The listener is restricted by the explicit `bind` in the
+     * Caddyfile, which is the thing that actually confines it, and naming a host does nothing for
+     * that on its own.
+     */
+    public function readerUrl(): string
+    {
+        return sprintf('http://localhost:%d', $this->appPort);
     }
 
     public function logDirectory(): string
