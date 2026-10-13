@@ -188,7 +188,7 @@ class ConfigureInstallTest extends TestCase
      * A data directory whose path contains a space, which is not an edge case.
      *
      * `C:\Program Files\Papyrus` is where a Windows install goes by default, and this project's
-     * own working directory is `C:\Users\<you>\Php Projects`. A Windows path with a space is the
+     * own working directory is `C:\My Projects`. A Windows path with a space is the
      * ordinary case, not the unusual one.
      *
      * This test exists because every other test here passed while the install was broken on those

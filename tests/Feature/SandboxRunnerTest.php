@@ -20,10 +20,15 @@ use PHPUnit\Framework\TestCase;
  *
  * ## What is not asserted, and why
  *
- * The host paths inside a `.wsb` are this machine's. Asserting them would make the test pass here
- * and fail everywhere else, which is a test that teaches the wrong thing. What is asserted is the
- * part that is the project's: that the runner named in the file exists, and that the runner does the
- * thing its name promises.
+ * These assert on the `.wsb.template` files, not on a resolved `.wsb`. A resolved one has to contain
+ * an ABSOLUTE host folder, because Windows Sandbox expands nothing in `<HostFolder>`, so it names
+ * where the repository lives. That is one machine's folder layout, it is gitignored, and it is
+ * written on demand by `resolve-wsb.ps1`. Reading it here would make this suite pass only on a machine
+ * that had run the resolver and fail on a fresh clone, which is a test reporting on local state
+ * rather than on the project.
+ *
+ * What is asserted is the part that is the project's: that the template names a runner that exists,
+ * and that the runner does the thing its name promises.
  */
 class SandboxRunnerTest extends TestCase
 {
@@ -34,7 +39,7 @@ class SandboxRunnerTest extends TestCase
      */
     public static function sandboxes(): array
     {
-        return [['papyrus.wsb'], ['papyrus-hold.wsb']];
+        return [['papyrus.wsb.template'], ['papyrus-hold.wsb.template']];
     }
 
     #[DataProvider('sandboxes')]

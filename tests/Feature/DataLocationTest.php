@@ -83,17 +83,17 @@ class DataLocationTest extends TestCase
          * unrelated folders, which is the shape of a check that passes.
          */
         $this->assertTrue(
-            (new DataLocation)->inside('C:\\Users\\reader\\AppData\\Programs\\Papyrus', 'C:\\Users\\reader\\AppData'),
+            (new DataLocation)->inside('C:\\Users\\<you>\\AppData\\Programs\\Papyrus', 'C:\\Users\\<you>\\AppData'),
             'a real subfolder is inside',
         );
 
         $this->assertFalse(
-            (new DataLocation)->inside('C:\\Users\\reader\\AppDataLocal', 'C:\\Users\\reader\\AppData'),
+            (new DataLocation)->inside('C:\\Users\\<you>\\AppDataLocal', 'C:\\Users\\<you>\\AppData'),
             'a sibling folder with a longer name is not inside',
         );
 
         $this->assertFalse(
-            (new DataLocation)->inside('C:\\Users\\reader\\AppData', 'C:\\Users\\reader\\AppData'),
+            (new DataLocation)->inside('C:\\Users\\<you>\\AppData', 'C:\\Users\\<you>\\AppData'),
             'a path is not inside itself',
         );
     }

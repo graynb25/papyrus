@@ -178,12 +178,12 @@ final class DevWorkersTest extends TestCase
     public function test_a_worker_started_with_a_bare_artisan_is_this_checkout(): void
     {
         $this->assertOurs(
-            '"C:\\Users\\reader\\.config\\herd\\bin\\php84\\php.exe"  artisan queue:work --tries=3 --sleep=1',
+            '"C:\\Users\\<you>\\.config\\herd\\bin\\php84\\php.exe"  artisan queue:work --tries=3 --sleep=1',
             'this is the command line this machine actually produced for the checkout queue worker',
         );
 
         $this->assertOurs(
-            '"C:\\Users\\reader\\.config\\herd\\bin\\php84\\php.exe"  artisan schedule:work',
+            '"C:\\Users\\<you>\\.config\\herd\\bin\\php84\\php.exe"  artisan schedule:work',
             'the scheduler is started the same way and belongs to the same checkout',
         );
     }
@@ -198,14 +198,14 @@ final class DevWorkersTest extends TestCase
     public function test_an_installed_workers_worker_is_not_this_checkout(): void
     {
         $this->assertNotOurs(
-            '"C:\\Users\\reader\\AppData\\Local\\Papyrus\\php\\php.ini" '
-            .'"C:\\Users\\reader\\AppData\\Local\\Programs\\Papyrus\\artisan" "queue:work" "--tries=3" "--sleep=1"',
+            '"C:\\Users\\<you>\\AppData\\Local\\Papyrus\\php\\php.ini" '
+            .'"C:\\Users\\<you>\\AppData\\Local\\Programs\\Papyrus\\artisan" "queue:work" "--tries=3" "--sleep=1"',
             'this is a packaged install draining %LOCALAPPDATA%, and reporting it as ours is the bug',
         );
 
         $this->assertNotOurs(
-            '"C:\\Users\\reader\\AppData\\Local\\Papyrus\\php\\php.ini" '
-            .'"C:\\Users\\reader\\AppData\\Local\\Programs\\Papyrus\\artisan" "schedule:work"',
+            '"C:\\Users\\<you>\\AppData\\Local\\Papyrus\\php\\php.ini" '
+            .'"C:\\Users\\<you>\\AppData\\Local\\Programs\\Papyrus\\artisan" "schedule:work"',
             'the installed scheduler is equally not ours',
         );
     }
@@ -219,9 +219,9 @@ final class DevWorkersTest extends TestCase
     public function test_the_build_installs_worker_is_not_this_checkout(): void
     {
         $this->assertNotOurs(
-            '"D:\\Data\\Dev\\Php Projects\\papyrus\\build\\install\\runtime\\bin\\php.exe" '
-            .'"-c" "C:\\Users\\reader\\Documents\\Papyrus\\data\\php\\php.ini" '
-            .'"D:\\Data\\Dev\\Php Projects\\papyrus\\build\\install\\artisan" "queue:work" "--tries=3" "--sleep=1"',
+            '"C:\\Papyrus\\build\\install\\runtime\\bin\\php.exe" '
+            .'"-c" "C:\\Users\\<you>\\Documents\\Papyrus\\data\\php\\php.ini" '
+            .'"C:\\Papyrus\\build\\install\\artisan" "queue:work" "--tries=3" "--sleep=1"',
             'the build install drains the old Documents library and is not this checkout',
         );
     }
@@ -256,7 +256,7 @@ final class DevWorkersTest extends TestCase
     public function test_a_non_worker_is_never_reported_as_a_worker(): void
     {
         $this->assertNotOurs(
-            '"frankenphp.exe" "run" "--config" "C:\\Users\\reader\\AppData\\Local\\Papyrus\\frankenphp\\Caddyfile"',
+            '"frankenphp.exe" "run" "--config" "C:\\Users\\<you>\\AppData\\Local\\Papyrus\\frankenphp\\Caddyfile"',
             'the web server is not a queue worker',
         );
 
@@ -268,7 +268,7 @@ final class DevWorkersTest extends TestCase
         $this->assertNotOurs('', 'a process with no command line is not a worker we can vouch for');
 
         $this->assertNotOurs(
-            '"C:\\Users\\reader\\.config\\herd\\bin\\php84\\php.exe" artisan migrate --force',
+            '"C:\\Users\\<you>\\.config\\herd\\bin\\php84\\php.exe" artisan migrate --force',
             'artisan on its own is not a worker',
         );
     }

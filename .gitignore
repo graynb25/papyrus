@@ -160,3 +160,10 @@ build/dev-scheduler.log.err
 *.aib
 *.pas4
 *.backup
+
+# Windows Sandbox configurations, resolved from the .wsb.template beside them. The guest has to be
+# given an ABSOLUTE host folder, so the resolved file cannot avoid naming where the repository lives,
+# and that is one machine's folder layout rather than project content. Tracked as templates; these
+# are what resolve-wsb.ps1 writes and they are regenerated on demand.
+build/sandbox/*.wsb
+!build/sandbox/*.wsb.template

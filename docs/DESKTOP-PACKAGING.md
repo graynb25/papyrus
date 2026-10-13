@@ -284,7 +284,7 @@ names its dependencies by hand. A hand-maintained list is a second dependency gr
 check on it at all; there is one now.
 
 **16 is the one this repository was uniquely unable to see**, and it is worth stating plainly: this
-project's own working directory is `C:\Users\<you>\Php Projects`. Every test used a system temp
+project's own working directory is `C:\My Projects`. Every test used a system temp
 directory, the clean-room probe used a path with no space, and the gate used `C:\papyrus-data`. The
 unit tests are not wrong and the design is not wrong; the paths simply were never the paths anyone
 is on.

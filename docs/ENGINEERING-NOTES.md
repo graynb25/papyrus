@@ -2604,8 +2604,8 @@ were eliminated.
      measurement but would have been pasted into this file as one.
 
      A related detail, found while fixing it, and the reason the probe is a file rather than
-     `-c` code: the runner has to launch Python through a shell to survive the space in
-     `Php Projects`, and **a shell splits `-c` arguments on whitespace**. So
+     `-c` code: the runner has to launch Python through a shell to survive a space in the
+     project folder's path, and **a shell splits `-c` arguments on whitespace**. So
      `spawnSync(python, ['-c', 'import playwright, sys; print("ok")'])` delivered the single
      word `import`, raised a SyntaxError, and made the runner report that no interpreter was
      available. Quoting a *path* is something a shell does correctly. Quoting *code* is not,
