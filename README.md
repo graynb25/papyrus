@@ -62,6 +62,7 @@ reader and settings all work.
 | Import | `/settings/import` | Brings a library in from another reader app. Inspects the file before it writes anything, and reports what it did |
 | Settings | `/settings/profile`, `/settings/connections`, `/settings/appearance`, `/settings/security` | Profile, AniList tracking, reader appearance, and password, two-factor and passkeys |
 | About | `/settings/about` | The two version numbers a bug report starts with, and whether the Suwayomi in front of it is one this build can work with |
+| Questions | `/faq` | Public. What this install collects, where it lives, and the three things that do reach the internet, each with who started it |
 | Licences | `/settings/licences` | Every package this install is made of, generated from the lock files the build ships from, so it cannot claim coverage it does not have. 448 of them as of writing, and exactly one that names itself proprietary: `livewire/flux`, which is the component library every page here is built from |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
@@ -311,6 +312,16 @@ So the flow is:
 
 1. Open Papyrus. The login page shows **Sign up** while the install is unclaimed.
 2. Create your account. There is no email verification, it is all local.
+
+Nothing is reported anywhere: no telemetry, no analytics, no crash reporting, no phone-home check.
+There is no server behind Papyrus, so there is nowhere for any of it to go. Everything it knows about
+you is in a SQLite file inside your user profile, which you can copy, back up or delete yourself.
+Uninstalling removes the program and deliberately leaves that file alone.
+
+Three things do reach the internet, and all three are things you started: connecting an AniList
+account, downloading a chapter (which means asking the manga source for it), and installing a source
+extension. `/faq` says what each one sends, and it is linked from the sign-in screen rather than
+merely asserted there.
 3. Sign-up closes itself. From now on `/register` answers 404 and the link is gone, so nobody else
    can join your install.
 

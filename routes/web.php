@@ -41,6 +41,22 @@ Route::get('/', function () {
  * carry one. They are gated to `single` mode, they serve an hour of public cache, and the
  * expensive thing they reach is a thumbnail on a loopback-bound server the reader owns.
  */
+/*
+ * The FAQ, public because the reader it is for cannot sign in.
+ *
+ * A reader who has just run an application from an unknown download and does not trust it is
+ * precisely the person who most needs to read what it collects, and they are by definition not
+ * logged in yet. Behind the login this page would answer the question for everybody except the one
+ * person asking it.
+ *
+ * Throttled, like the showcase, for the same reason and the same measured asymmetry: a GET that
+ * reads nothing expensive should not need a write to rate limit, and this one renders a static list
+ * out of two PHP files.
+ */
+Route::livewire('faq', 'pages::faq')
+    ->middleware('throttle:120,1')
+    ->name('faq');
+
 Route::get('showcase', ShowcaseController::class)
     ->middleware('throttle:120,1')
     ->name('showcase.index');

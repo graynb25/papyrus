@@ -4728,3 +4728,80 @@ eturn null that a generator never needs.
     The fix is that the message names no path at all and says the default is already absolute. Worth
     recording because the reflex was to be helpful by printing the very value that is forbidden, and
     being helpful felt like it outranked the rule. It does not.
+241. **A public page is not a public page until it has rendered signed out, and nothing else will
+    tell you.**
+    The FAQ was meant to answer "does this thing send my data anywhere" for a reader who has just run
+    the application and does not yet trust it. That reader is, by definition, not signed in.
+
+    The first version used Livewire's default page layout, which is the application shell. The shell's
+    sidebar reads `auth()->user()->name` in four places. So the page whose entire purpose is to
+    reassure a signed-out reader was the one page on the site that threw
+    `Attempt to read property "name" on null`, on the very first request from the very person it was
+    written for.
+
+    What makes this worth recording is how it survived every check I ran. The route was added and I
+    confirmed it was defined. The view was added and I confirmed it compiled. The links were added in
+    three places. **I never rendered it signed out.** Four green checks, and the one that mattered was
+    the one I did not think to do. `test_the_page_is_reachable_without_an_account` now does it, and it
+    is the first test in the file rather than one of the last.
+
+    Two smaller things came out of the same fix, both of them mine guessing at a framework rather than
+    reading it:
+
+    - `#[Layout('components.layouts.auth')]` raised `MissingLayoutException` on a view that exists,
+      because page layouts resolve as the anonymous component namespace `layouts::auth`, not as a view
+      path. The exception names a file that is sitting right there.
+    - Writing `#[Layout(...)]` on its own line above `new #[Title(...)] class` does not attach the
+      attribute to the class. Livewire compiles a page component by injecting a `return` ahead of the
+      class, so the attribute lands on the `return` and the compiled file fails to parse with an error
+      naming neither the view nor the attribute. Both attributes have to sit together on the `new`.
+
+242. **A privacy page that says the wrong thing is worth less than no privacy page, so the claims live
+    in PHP and the tests assert on them.**
+    The request was for a page making it clear this is local and captures nothing. The obvious first
+    draft of the headline answer was "nothing leaves your computer", and it is false in three specific
+    ways:
+
+    - Connecting an AniList account sends the series and chapter number you finished.
+    - Downloading a chapter contacts the manga source, because that is how a chapter is fetched.
+    - Installing a source extension downloads a jar from a repository.
+
+    None of those is surveillance. All of them are things the reader started. But a claim with an
+    unlisted exception is exactly the failure this page exists to prevent, so the exceptions are their
+    own block with their own heading, and every one of them says who initiated it.
+
+    Which is why the content is `App\Support\Faq` rather than markup. Prose is the weak point in a
+    codebase that tests everything else, and a privacy statement is the easiest thing in an application
+    to let rot: it stays true right up until somebody adds a script, and nobody re-reads the paragraph.
+    The tests assert that every entry in `outbound()` appears in the privacy answer, so dropping one is
+    a failing test rather than a quietly overstated promise.
+
+    The outbound list was not guessed. Every URL in `app/` and `config/` was listed: `anilist.co` and
+    `graphql.anilist.co`, both behind an OAuth flow the reader starts; `lhtranslation.net` and
+    `tachimanga.app`, both inside import fixtures; `sqs.us-east-1.amazonaws.com`, an unused default in
+    the queue config. There is no analytics, telemetry, crash reporting or error reporting anywhere in
+    the application, and that is now something the page states and a test would catch being changed.
+
+    The sign-in screen's existing promise, "no tracking, no telemetry, no third party between you and
+    your sources", is now a link to this page. An unverifiable claim on a sign-in screen is worth
+    exactly as much as the reader's suspicion of it, which is usually less than the claim deserves but
+    more than the claim can prove on its own.
+
+243. **The same mutation reported a survival three separate times, and every one was an anchor miss.**
+    Lesson 235 recorded this once. It has now happened again, twice in this session, and both times
+    the culprit was a PowerShell `.Replace()` whose anchor included a line ending that the file did not
+    use, which is not an error and produces a file that is completely unchanged.
+
+    What makes it keep happening is that the tool and the report agree. PowerShell printed no warning,
+    the test run printed a clean `0 failed`, and "0 failed" plus "the mutation should have failed" is
+    indistinguishable from "the mutation was ineffective" unless somebody goes and reads the file.
+
+    So this is now a habit rather than a lesson: after any mutation reported as surviving, check the
+    file before believing it, and if the anchor is missing, redo the mutation by line index, which has
+    no escaping to get wrong. Line index is slower and it is worth it, because it is the only form
+    whose failure mode is loud.
+
+    The third one was killed three ways once applied: one assertion failure and two errors, the errors
+    coming from the `LogicException` guard in `Faq::privacy()` firing because no entry claimed to be
+    the privacy entry. A guard that refuses to return a wrong answer, and a test that notices, is the
+    whole shape of the thing.
