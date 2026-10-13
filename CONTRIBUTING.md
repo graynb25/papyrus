@@ -1,124 +1,133 @@
-# Working on Papyrus
+# Contributing
 
-The house style, and the traps. [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) has
-the full agreement and **146 recorded traps**; this is the short version you need before
-your first commit. Section 14 of the notes also lists what the code does not do, which is
-worth reading before you trust a claim in any of these documents.
+## The short version
 
-## Before you write anything
-
-**Measure, do not infer.** Every field name, enum value and behaviour comes from the live
-server or the committed snapshot in `resources/schemas/suwayomi-introspection.json`. When
-research and the running server disagree, the server wins and the research gets corrected.
-
-```bash
-php artisan suwayomi:check                  # is it up, which auth mode, any drift
-php artisan suwayomi:schema:dump            # introspect and diff against the snapshot
-php ../.tools/suwayomi/schema-inspect.php Fetch
-php ../.tools/suwayomi/field-args.php Query extensions
+```
+php -d memory_limit=2048M artisan test --without-tty
+php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G
+php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/
+python .tools/suwayomi/check-dashes.py
 ```
 
-**Never re-implement a parser in PHP.** Keiyoushi extensions are Kotlin. That is the one
-fact the entire architecture rests on. If a source does not exist, the options are a Kotlin
-extension, a patch to Suwayomi, or one targeted parser as a genuine last resort.
+All four, every time. A change is not finished until all four have been run **against the change**,
+not against the branch it was based on.
 
-**Mark inference as inference.** A comment saying "verified" must be true, or say what it
-was measured against.
+Then commit and push. Both are expected without asking.
 
-## Writing code
+---
 
-Docblocks carry the *why*, especially where a number looks arbitrary or a workaround looks
-unnecessary. Someone reading this in six months needs to know that a 20 second per-source
-timeout sits under a 30 second server cap, and that a 0.95 similarity threshold came from a
-measurement rather than a preference.
+## Before you start
 
-Stay silent when the code already says it. No rhetoric in docblocks, and no comment that
-restates the line beneath it.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** is the map. Read it first; it will save you an hour.
+- **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** is 226 numbered lessons. Each one is a
+  mistake that was actually made here. Grep it before solving anything that sounds familiar.
+- **[docs/DESKTOP-PACKAGING.md](docs/DESKTOP-PACKAGING.md)** if you are touching the launcher, and
+  **[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)** if you are touching shipping.
 
-`php -l` new files. A parse error does not fail the suite when nothing loads the file.
+## Conventions
 
-### Scope
+**No em dashes and no en dashes.** Not in code, not in comments, not in docs, not in commit messages.
+The checker scans every tracked file and it is why several comments here are phrased the long way
+round. If it fails you, you will be told which file.
 
-- **User-owned models extend `OwnedModel`**, never a trait. PHPStan cannot reason about a
-  model instance inside a trait's `creating` closure, which produced 76 errors when tried.
-  Global tables extend `Model` directly.
-- `user_id` is **never** in `#[Fillable]`. Write rows for someone else with
-  `createFor($user, [...])`.
-- The tenant scope **fails closed** with no authenticated user. A CLI reading zero rows is
-  fixed by naming the user, never by relaxing the scope.
-- Mirror writes live in `SourceCatalog`. Catalogue and trust live in `ExtensionManager`.
-  Duplicating a method across the two is how they drift apart.
+**Comments explain why, and cite something.** A measurement, an upstream issue number, or the specific
+failure the comment prevents. A comment restating the code is deleted. This is the single most
+distinctive thing about this codebase and the thing most worth preserving.
 
-## Writing prose
-
-No em dashes. They are the clearest single tell that a machine wrote something.
-
-The other habits that read as generated: "it's not just X, it's Y" in any form, announcing
-what you are about to do before you do it, three adjectives where one would do, bullet lists
-of three where a sentence would do, and words like robust, seamless, leverage, delve,
-crucial, comprehensive. Bold for emphasis rather than headings, and a neat one-line summary
-at the end of every section.
-
-Say the thing, then stop.
-
-Check before you call it done:
-
-```bash
-php ../.tools/suwayomi/scan-dashes.php              # docs and source, everything
-php ../.tools/suwayomi/list-dash-lines.php <file>   # one file, offending lines and numbers
+```
+Good:  // Measured: an access token carries exp = issued + 300, so the lifetime is never assumed.
+Bad:   // Increment the counter.
+Bad:   // See the comment above.
+Worse: // This fixes the bug where schedule:run had no ini.
+       // (and schedule:run's ini is fixed in three other files, all of which say so)
 ```
 
-Both are byte scans. An earlier PowerShell version reported zero em dashes in a file
-containing thirty, so trust the byte scan and not a regex written in the wrong shell.
+**State a measurement, not an opinion.** "361ms to 1617ms with an 876ms median" tells a reader whether
+the claim still holds. "fast" does not.
 
-They are also outside this directory, at `..\.tools\suwayomi\`, since they cover the docs
-in the parent folder as well.
+**Say which side of the line a bug is on.** Most hard problems here are somebody else's API. Papyrus
+keeps the library and cannot parse a site; the manga server parses sites and has no concept of your
+shelves. Naming which component is responsible is most of the work of fixing anything.
+
+## Adding to the launcher
+
+[`packaging/launcher/`](packaging/launcher) is plain PHP with **no autoloader**. A new class is
+invisible to the test suite and fatal at runtime unless you also add it to `papyrus.php`'s require
+list, in dependency order. A test enforces that every file in `src` is required, in both directions,
+but it cannot tell you the right *order*.
+
+Two more things that are specific to that layer:
+
+- The launcher's own PHP loads **no ini at all**. It cannot touch a database. Anything needing one
+  shells out to the install's PHP with the ini named explicitly.
+- Anything the launcher spawns needs the ini **and** `PHPRC`, because a flag reaches the process you
+  pass it to and an environment variable reaches everything it spawns. Lesson 224.
 
 ## Tests
 
-Name tests for the behaviour, not the method. `tests/Unit` for pure logic,
-`tests/Feature` for anything touching the database.
+- **A claim that can be checked should be checked by a test.** "It works" is not a finding.
+- **A check that cannot fail is not a check.** If every assertion happens to match a named case, the
+  dangerous branch is unreachable and the test proves nothing. When you write a test, consider how it
+  could pass without the fix being present, and if the answer is "it could not", find another one.
+- **Never write a test that reports what the machine is doing** rather than what the code does.
+  Several here once failed because a real worker was running on the machine that ran them. Stub the
+  thing rather than observing it.
+- **Confirm a new test fails before you keep the fix.** Revert the fix, run the test, watch it fail,
+  restore. A test that has never failed has not been shown to test anything.
 
-A test that passes but never runs the browser cannot catch an Alpine error. Three bugs in
-this project passed 194 tests and were visible on the first click. So:
+### Mutation checks
 
-**Open the page.** That is the fifth gate.
+`.tools/suwayomi/mutation-*.php`. They mutate a file, run a slice of the suite, and restore.
 
-The suite is currently **1,157 tests**, and twenty-nine browser gates live in
-`..\.tools\suwayomi\`, carrying **478 checks** between them. A sixth bug of the
-same kind is waiting for whoever reads this next.
+```
+php .tools/suwayomi/mutation-check-credentials.php
+```
 
-Run the tests with `php artisan test`. Run the browser gates with `node
-..\.tools\suwayomi\run-all-gates.mjs`, which takes no arguments and runs all
-twenty-nine in one pass, about 34 minutes. Pass a comma-separated list of
-name fragments to run a subset: `run-all-gates.mjs october-pass,library`
-runs those two.
+Four outcomes, and the distinction matters more than the count:
 
-**A gate must print `[ok ]` or `[FAIL]` per assertion.** The runner counts
-those markers, so a gate that asserts correctly and reports in its own way is
-counted as silent, and the standing will say it asserts nothing when it does not.
-`check(name, condition, detail)` is the convention, and the list that decides
-the exit code is the same list `check()` appends to.
+| Outcome | Meaning |
+| --- | --- |
+| `killed` | a test failed, so the mutation is covered |
+| `SURVIVED` | the tests passed against broken code. A real gap |
+| `INERT` | an **ineffective** mutation: it changed nothing, so no test could have caught it. Not a gap |
+| `ANCHOR MISSING` | the mutation did not match the source. **It checked nothing and exits 2** |
 
-**Run the gates as one suite, not in batches.** A gate that only passes in a
-batch is broken, and batching hides the reason: the first full single run
-found three failures that each passed alone and none of which passed
-alongside the others, all of them a fixed sleep read too early. Do not take a
-green suite run in batches as a green suite.
+A run that checked nothing is not a passing run. `ANCHOR MISSING` is the one to take most seriously.
 
-`Http::fake()` the GraphQL endpoint; tests must never reach the real server. Use
-`Tests\Support\MintsTokens` for tokens, since a fake returning `"token-1"` has no readable
-`exp` and silently exercises the wrong path.
+## Things that will waste your time if you do not know them
 
-`php artisan view:clear` after editing any `.blade.php`, or a stale compiled view will lie
-to you.
+- **CI runs on `windows-latest`, one job, no matrix, on purpose.** The product is a Windows
+  executable. On Linux the process-matching tests find nothing and pass *vacuously*, so a green Linux
+  job would report the packaging layer as covered while testing none of it. Do not add a Linux job.
+- **Nothing may be running out of `build/install` during a build.** The build rewrites it in place.
+- **`Papyrus.cmd` is LF in the repository and CRLF in the build.** The build normalises and then
+  fails if any bare LF survives. Do not "fix" this with `.gitattributes`.
+- **Two databases, and copying the wrong one succeeds.** The manga server's is H2 inside a running
+  JVM and holds the manga. Papyrus's is SQLite and holds what the reader did. A valid SQLite file in
+  the wrong directory reads as zero rows with no error.
+- **Copy `database.sqlite` with its `-wal`.** The write-ahead log holds rows not yet in the main file.
+- **A fresh install is the only place certain defects are visible.** Run
+  `.tools/verify-installer.ps1` after touching the launcher, `Papyrus.cmd`, the data location rule or
+  the installer.
+- **Livewire single-file components are named with U+26A1 (`⚡`)**, not an ASCII question mark. Writing
+  one through a shell fails, because PowerShell and .NET both reject `?` in a path.
+- **The design is settled.** A redesign was done and is what ships. Change markup freely; do not
+  change the design.
 
-## Asking
+## Commits
 
-When a decision has real trade-offs, present concrete options, name the trade-off of each,
-and say which you recommend. The user decides. Do not make the call and mention it
-afterwards.
+Write the commit message for someone reading `git log` in a year with no context. What broke, what
+the cause was, and what you measured. Not what files changed.
 
-For a decision that was already made and might be revisited, add a row to the decisions
-table in `AGENT.md` with the reasoning. The reasoning matters more than the choice, since
-the next person will have a different constraint.
+Long messages are fine and preferred when the reasoning is the point. Several in this history run
+thirty lines because the thirty lines are why the change is not going to be undone by the next
+person who cannot see the problem.
+
+## Pull requests
+
+- Say what you changed and what you measured.
+- Say what you did **not** do, and what you did not verify. A PR that notes "I have not run this
+  against a fresh install" saves the next person an hour.
+- Link the issue if there is one.
+- One concern per PR. The history here has some long ones and they are all harder to review than the
+  work warranted.

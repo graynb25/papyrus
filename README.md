@@ -652,7 +652,16 @@ something to monetise.
 | Document | What is in it |
 |---|---|
 | [`docs/SETUP-SUWAYOMI.md`](docs/SETUP-SUWAYOMI.md) | Installing and configuring Suwayomi, including why it runs as a JAR rather than a Windows Service |
+| **[docs/INSTALL.md](docs/INSTALL.md)** | **Installing on Windows, for a reader. Where the library goes, backups, and troubleshooting by symptom** |
+| **[docs/SOURCES.md](docs/SOURCES.md)** | **Finding and using sources. The one page you cannot skip, because Papyrus ships none** |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | **How it is put together and why. Two databases, four processes, the launcher that is not Laravel** |
+| **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
+| **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
+| [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. Not shipped yet, and this says honestly what is unproven |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
+| [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
+| [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |
 | [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) | The working agreement. Every measurement taken, every trap found, every decision and its reasoning |
 | [`docs/READER-PLAN.md`](docs/READER-PLAN.md) | The original reader design and what changed from it |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Local setup and the gate sequence |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | The gates, the conventions, and the traps that will waste your time |
