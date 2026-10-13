@@ -1,0 +1,5 @@
+{
+    "tested": "2.4.2366",
+    "minimum": "2.4.0",
+    "note": "The Suwayomi release Papyrus is developed and tested against, and the oldest one it can work with. Read by the launcher's health check and by `php artisan suwayomi:check`, so the two cannot disagree. `tested` is the exact build the suite was run against; `minimum` is the floor below which the GraphQL queries Papyrus depends on are missing. Suwayomi reports versions with a leading v, as in v2.4.2366, and version_compare sorts that below 2.3.0 unless it is stripped first. Update both together, and re-run the suite against the new server before raising `tested`."
+}

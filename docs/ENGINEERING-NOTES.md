@@ -4207,3 +4207,48 @@ ull tells the checker the generator
     The general shape: **a check that has been corrected is evidence that the pattern was understood,
     and therefore evidence that a second instance of it is probably still there.** The cost of fixing
     one is that the neighbourhood stops being suspicious.
+
+226. **Two copies of a rule will disagree, and `require_once` deduplicates by path rather than by
+    class name.**
+    Adding a Suwayomi compatibility check meant answering one question twice: is this version string
+    something `version_compare` can order? `build-install.php` needed to refuse to ship an unusable
+    `suwayomi.json`, and `SuwayomiCompatibility::read()` needed to decline to compare with one. So it
+    was written twice.
+
+    They disagreed immediately. The build rejected `latest` and a recorded `v2.4.2366`. The reader
+    accepted both. And the disagreement was worse than a redundant implementation, because the two
+    answers were not the same question: **a file the build refused to ship could still be compared
+    with if a person put it there by hand**, and the build's guarantee was therefore about the build's
+    own path and not about the thing it guarantees.
+
+    The fix was to make the class the owner and have the build ask it, which meant the build loading
+    a launcher class early. And that produced a second lesson, this one:
+
+        Fatal error: Cannot redeclare class Papyrus\Launcher\SuwayomiCompatibility
+          (previously declared in .../packaging/launcher/src/SuwayomiCompatibility.php)
+          in .../build/install/packaging/launcher/src/SuwayomiCompatibility.php
+
+    `require_once` remembers the **resolved path** it has already included, not the class name. The
+    same file content at `packaging/launcher/src/` and at `build/install/packaging/launcher/src/`
+    are two paths, so the guard does not fire and PHP declares the class a second time. The build
+    loads the launcher from the repository to validate against it, and loads it again from the built
+    tree to prove the built tree boots. Both are correct and they cannot coexist.
+
+    The resolution was ordering rather than mechanism. The build now only checks that the file is
+    present and is JSON at the point it copies it, and asks the class whether the two numbers are
+    usable **after** the launcher loop has loaded it from the built tree, which is the first moment
+    the class exists. One rule, asked once, by the code that has to live with the consequences.
+
+    Three things worth keeping.
+
+    - **A rule implemented in two places is two rules, and the tests will only find the difference
+      if one of them happens to be covered.** Here the reader's half was the loose one, and a test
+      that fed it `latest` is what caught it. Write the test against the loosest caller, not the
+      strictest.
+    - **`require_once` is a file guard, not a class guard.** Anywhere the same source can be loaded
+      from two roots, which in a build that assembles a tree by copying is the normal case rather
+      than an edge case, it will eventually load from both.
+    - **Sharing a rule is not the same as sharing the code that holds it.** The obvious way to stop
+      copying the rule is to `require` the owner, and here that was worse than the copy, because the
+      owner also had to be loaded later from somewhere else. Sharing means ordering, sometimes, and
+      not just deduplication.

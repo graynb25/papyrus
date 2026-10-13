@@ -154,8 +154,86 @@ final class Health
         }
 
         $version = $this->prober->suwayomiVersion($port);
-        $this->add('suwayomi', 'running  '.($version !== '' ? $version : 'version unknown').'  port '.$port, true);
+
+        $this->add(
+            'suwayomi',
+            'running  '.($version !== '' ? $version : 'version unknown').'  port '.$port.$this->compatibilityNote($version),
+            ! $this->isTooOld($version),
+        );
     }
+
+    /**
+     * What to say about the running server beyond its version.
+     *
+     * Two failures and one non-failure, and the difference between them is the whole point.
+     *
+     * **Too old is a fault.** Below the floor the GraphQL fields Papyrus depends on are not there,
+     * nothing the reader does will help, and the only fix is a server upgrade. That earns a FAIL
+     * because every line here that is not green is meant to be actionable.
+     *
+     * **Not the tested version is not a fault.** A reader on a newer Suwayomi may be perfectly fine,
+     * and saying so in the failure colour would train them to ignore the one line that does mean it.
+     * So it is said, in the ok colour, and it names the version we did test against so the reader can
+     * tell "unusual" from "broken".
+     *
+     * **An unknown version is not a verdict.** The probe returns an empty string when Suwayomi
+     * answers but omits the field, which happens on builds that predate it. That is not evidence of
+     * an old server, so nothing is claimed.
+     *
+     * And when this build has no `suwayomi.json`, the same applies one level up: no file means no
+     * opinion, and inventing a default would be a confident answer about a file nobody wrote.
+     */
+    private function compatibilityNote(string $version): string
+    {
+        $compatibility = $this->compatibility();
+
+        if (! $compatibility->isKnown()) {
+            return '  (this build records no Suwayomi version, so compatibility was not checked)';
+        }
+
+        $tooOld = $this->isTooOld($version);
+
+        if ($tooOld === true) {
+            return '  TOO OLD, Papyrus needs at least '.$compatibility->minimum();
+        }
+
+        if ($tooOld === null) {
+            return '  (it did not report a version, so compatibility was not checked)';
+        }
+
+        if ($compatibility->isTested($version) !== true) {
+            return '  newer than the tested '.$compatibility->tested().', which should work but is unproven here';
+        }
+
+        return '  the version Papyrus ships and tests against';
+    }
+
+    /**
+     * Whether the reported server is below the floor, or null when that cannot be told.
+     */
+    private function isTooOld(string $version): ?bool
+    {
+        return $this->compatibility()->isTooOld($version);
+    }
+
+    /**
+     * What this build was built to run against, read once per report.
+     *
+     * Staged into the install root beside `version.txt`, which records the app version and the
+     * commit but said nothing about Suwayomi, so there was nothing for a reader to compare against.
+     */
+    private function compatibility(): SuwayomiCompatibility
+    {
+        if ($this->suwayomiCompatibility === null) {
+            $this->suwayomiCompatibility = SuwayomiCompatibility::read(
+                $this->supervisor->installRoot().DIRECTORY_SEPARATOR.'suwayomi.json',
+            );
+        }
+
+        return $this->suwayomiCompatibility;
+    }
+
+    private ?SuwayomiCompatibility $suwayomiCompatibility = null;
 
     private function web(): void
     {

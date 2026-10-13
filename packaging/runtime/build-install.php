@@ -48,6 +48,7 @@ namespace Papyrus\Runtime\Build;
 
 use DateTimeImmutable;
 use Papyrus\Launcher\Supervisor;
+use Papyrus\Launcher\SuwayomiCompatibility;
 use Throwable;
 
 /**
@@ -159,6 +160,14 @@ const REQUIRED_AFTER_BUILD = [
     'Papyrus.cmd',
 
     'version.txt',
+
+    /*
+     * What Suwayomi this build expects. Without it the health check has nothing to compare the
+     * running server against and says so on every run, which is the state this file was added to
+     * end. Checked here because the build is the last place it can still be a mistake rather than
+     * a reader's problem.
+     */
+    'suwayomi.json',
 
     /*
      * The one dotfile that must ship, and the only reason this list is not purely a set of
@@ -319,6 +328,42 @@ if (file_put_contents(
 }
 
 say('version', $version.' ('.$commit.')');
+
+/*
+ * The Suwayomi release this build is for, copied beside version.txt.
+ *
+ * `version.txt` records the app version, the commit and a timestamp, and until now that was the
+ * whole of what a shipped artifact said about itself. So `health` could print the version of the
+ * Suwayomi it found and had nothing to compare it against, and a reader on an unsupported server got
+ * a run of GraphQL errors about fields that do not exist there.
+ *
+ * Copied rather than regenerated, so there is exactly one copy of these two numbers in the
+ * repository. Regenerating them here would mean a second place to edit and a way for the artifact
+ * and the source to disagree, which is the same class of bug as the one this fixes.
+ *
+ * ## Only the presence of the file is checked here
+ *
+ * Whether the two numbers inside it are usable is asked further down, after the launcher has been
+ * loaded from the built tree, using that class rather than a second copy of its rule. This block
+ * cannot ask, because `require_once` deduplicates by resolved path: loading the class from the
+ * repository here and from `build/install` further down declares it twice and the build dies with
+ * "Cannot redeclare class", which is exactly what the first version of this did.
+ */
+$compatibilityFile = $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'suwayomi.json';
+
+if (! is_file($compatibilityFile)) {
+    fail('no packaging/suwayomi.json, so the build cannot say which Suwayomi this install expects');
+}
+
+if (! is_array(json_decode((string) file_get_contents($compatibilityFile), true))) {
+    fail('packaging/suwayomi.json is not readable JSON');
+}
+
+if (copy($compatibilityFile, $into.DIRECTORY_SEPARATOR.'suwayomi.json') === false) {
+    fail('could not write '.$into.DIRECTORY_SEPARATOR.'suwayomi.json');
+}
+
+say('suwayomi', 'staged suwayomi.json');
 
 // --- the PHP and web server runtime -------------------------------------------------
 
@@ -745,6 +790,46 @@ if ($missing !== []) {
 foreach ($ordered as $file) {
     require_once $launcherSrc.DIRECTORY_SEPARATOR.$file;
 }
+
+/*
+ * And now, with the class loaded from the built tree rather than the repository, ask whether the two
+ * numbers in the staged `suwayomi.json` are ones the health check can actually compare with.
+ *
+ * Asked here rather than beside the copy because this is the first moment the class is loaded. It is
+ * asked of the class rather than with a second copy of the pattern because the two disagreed the
+ * first time they were written separately: this build rejected `latest` and a recorded `v2.4.2366`,
+ * while `SuwayomiCompatibility::read()` accepted both. Two answers to "is this file usable" that are
+ * not the same question means a file the build refused to ship could still be compared with, if a
+ * person put it there by hand.
+ *
+ * A bad file fails the build here rather than reaching a reader, where the only symptom would be a
+ * health line that quietly stopped checking anything.
+ */
+$stagedCompatibility = json_decode(
+    (string) file_get_contents($into.DIRECTORY_SEPARATOR.'suwayomi.json'),
+    true,
+);
+
+foreach (['tested', 'minimum'] as $key) {
+    $value = trim((string) ($stagedCompatibility[$key] ?? ''));
+
+    if (! SuwayomiCompatibility::isUsableVersion($value)) {
+        fail(
+            "packaging/suwayomi.json needs {$key} to be numbers and dots, as in 2.4.2366, and it holds "
+            .($value === '' ? 'nothing' : $value)
+            .'. A leading v belongs in what Suwayomi reports, not in what this file records.'
+        );
+    }
+}
+
+if (version_compare($stagedCompatibility['minimum'], $stagedCompatibility['tested'], '>')) {
+    fail(
+        'packaging/suwayomi.json says the oldest workable server (v'.$stagedCompatibility['minimum']
+        .') is newer than the tested one (v'.$stagedCompatibility['tested'].'), which cannot be right'
+    );
+}
+
+say('suwayomi', 'expects v'.$stagedCompatibility['tested'].' (floor v'.$stagedCompatibility['minimum'].')');
 
 $bootPhp = $into.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'php.exe';
 

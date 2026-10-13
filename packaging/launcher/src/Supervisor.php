@@ -1079,6 +1079,23 @@ final class Supervisor
     }
 
     /**
+     * Where the program itself lives, as opposed to where the reader's data lives.
+     *
+     * Exposed because `path()` is private and callers outside this class legitimately need to reach
+     * a file that ships beside the program rather than beside the data: `suwayomi.json` records the
+     * Suwayomi release this build expects, and `version.txt` records the app version and commit.
+     *
+     * The distinction matters and is easy to get wrong. The data directory moves between installs
+     * and can be portable, sitting on a USB stick beside the program; the install root cannot. A
+     * caller reaching for a shipped file through `dataDirectory()` would appear to work on a per-user
+     * install, where the two happen to share a parent, and find nothing at all on a portable one.
+     */
+    public function installRoot(): string
+    {
+        return $this->root;
+    }
+
+    /**
      * Where this install lives, as opposed to where it keeps its data.
      *
      * The two are different directories in a packaged install and the same one in a checkout, and

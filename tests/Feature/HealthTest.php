@@ -117,14 +117,19 @@ class HealthTest extends TestCase
      * *missing* worker is reported as missing found real workers running and failed for reasons
      * that had nothing to do with the code.
      */
-    private function prober(bool $suwayomiUp = false, bool $webUp = false, int $readyStatus = 200): Prober
-    {
-        return new class($suwayomiUp, $webUp, $readyStatus) extends Prober
+    private function prober(
+        bool $suwayomiUp = false,
+        bool $webUp = false,
+        int $readyStatus = 200,
+        string $version = 'v2.4.2366',
+    ): Prober {
+        return new class($suwayomiUp, $webUp, $readyStatus, $version) extends Prober
         {
             public function __construct(
                 private readonly bool $suwayomiUp,
                 private readonly bool $webUp,
                 private readonly int $readyStatus,
+                private readonly string $version,
             ) {}
 
             public function suwayomiAnswers(int $port, float $timeoutSeconds = 3.0): bool
@@ -134,7 +139,7 @@ class HealthTest extends TestCase
 
             public function suwayomiVersion(int $port, float $timeoutSeconds = 3.0): string
             {
-                return $this->suwayomiUp ? 'v2.4.2366' : '';
+                return $this->suwayomiUp ? $this->version : '';
             }
 
             public function isPortTaken(int $port): bool
@@ -420,6 +425,143 @@ class HealthTest extends TestCase
 
         $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
         $this->assertStringContainsString('could not be read', $report);
+    }
+
+    /**
+     * Put a `suwayomi.json` in the scratch install, so the compatibility check has something to read.
+     *
+     * Written into the install root rather than injected as a seam, because reading that file is
+     * half of what is being tested. A seam would prove the comparison and skip the part where the
+     * file is looked for in the wrong directory, which is exactly the mistake an install-root versus
+     * data-directory confusion would produce.
+     */
+    private function installCompatibility(array|bool|null $overrides = null): void
+    {
+        $path = $this->install.DIRECTORY_SEPARATOR.'suwayomi.json';
+
+        if ($overrides === false) {
+            @unlink($path);
+
+            return;
+        }
+
+        file_put_contents(
+            $path,
+            json_encode(array_merge(['tested' => '2.4.2366', 'minimum' => '2.4.0'], $overrides ?? [])),
+        );
+    }
+
+    /**
+     * The version this build ships is confirmed rather than merely printed.
+     *
+     * Until this existed the line said `running v2.4.2366 port 4567` and stopped there. It was
+     * accurate and useless, because accurate about what was there says nothing about whether it is
+     * the right thing to be there. There was no expected version anywhere in the shipped artifact to
+     * compare it against: `version.txt` recorded the app version, the commit and a timestamp, and
+     * nothing about Suwayomi at all.
+     */
+    public function test_the_tested_suwayomi_version_is_confirmed_on_the_health_line(): void
+    {
+        $this->installCompatibility();
+
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: true),
+        )->render();
+
+        $this->assertMatchesRegularExpression('/ok\s+suwayomi\s+running\s+v2\.4\.2366/', $report);
+        $this->assertStringContainsString('the version Papyrus ships and tests against', $report);
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+    }
+
+    /**
+     * A newer Suwayomi is reported, and deliberately not as a failure.
+     *
+     * This is the distinction the whole check turns on. A reader on a server newer than the one we
+     * tested is very likely fine, and painting that line red would train them to ignore the one line
+     * on this report that is meant to be believed. So it is named, in the ok colour, alongside the
+     * version we did test, so "unusual" is distinguishable from "broken".
+     */
+    public function test_a_newer_suwayomi_is_reported_without_being_a_failure(): void
+    {
+        $this->installCompatibility();
+
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: true, version: 'v2.5.100'),
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringContainsString('v2.5.100', $report);
+        $this->assertStringContainsString('newer than the tested v2.4.2366', $report);
+
+        // Deliberately not asserting `overall ok`. This scratch install has no web server and no
+        // database, so the overall line reports the scratch environment rather than anything about
+        // Suwayomi. What matters is that the suwayomi line is not among the failures, which is the
+        // assertion above.
+    }
+
+    /**
+     * A server below the floor is the one case that is a fault.
+     *
+     * Below `minimum` the GraphQL fields Papyrus depends on are not there. Nothing the reader does
+     * will make it work, the only fix is a server upgrade, and the alternative they would otherwise
+     * choose is to file a bug against Papyrus describing errors about fields that do not exist.
+     */
+    public function test_a_suwayomi_older_than_the_floor_is_a_failure_and_names_the_minimum(): void
+    {
+        $this->installCompatibility();
+
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: true, version: 'v2.3.2243'),
+        )->render();
+
+        $this->assertMatchesRegularExpression('/FAIL\s+suwayomi\s+running/', $report);
+        $this->assertStringContainsString('TOO OLD', $report);
+        $this->assertStringContainsString('needs at least v2.4.0', $report, 'the message must name what is required, not merely that something is wrong');
+        $this->assertMatchesRegularExpression('/overall\s+something is wrong/', $report);
+    }
+
+    /**
+     * A server that answers but reports no version gets no verdict.
+     *
+     * The probe returns an empty string when the `aboutServer.version` field is missing, which is
+     * what happens on builds predating it. That is not evidence of an old server, and failing it
+     * would be inventing a fault out of a missing sentence.
+     */
+    public function test_a_suwayomi_that_reports_no_version_is_not_a_verdict(): void
+    {
+        $this->installCompatibility();
+
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: true, version: ''),
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringContainsString('did not report a version', $report);
+    }
+
+    /**
+     * A build with no pinned version says it could not check, rather than guessing.
+     *
+     * This is the state the project is in today, so the test is a description of it as much as a
+     * guard. The rule it protects is that an absent file produces no opinion: defaulting the minimum
+     * to something plausible would produce a confident answer about a file nobody wrote, and could
+     * fail a working reader's install on a guess.
+     */
+    public function test_a_build_with_no_pinned_suwayomi_says_it_could_not_check(): void
+    {
+        $this->installCompatibility(false);
+
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: true, version: 'v2.3.2243'),
+        )->render();
+
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringContainsString('records no Suwayomi version', $report);
     }
 
     /**

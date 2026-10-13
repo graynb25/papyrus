@@ -415,10 +415,10 @@ an issue by a third party can be.
 | `VACUUM INTO` snapshot job for the Papyrus database | **S** | 0 |
 | Orchestrated restore, both databases, one action | **S** | 1 |
 | Versioned install with a pointer flip | **S** | 2 |
-| Suwayomi version compatibility check at startup | H | 0, next to the readiness probe |
+| Suwayomi version compatibility check at startup | H | **done.** `packaging/suwayomi.json` is the single source, the build stages and validates it, and `health` compares the running server against it. A server below the floor is a FAIL naming the minimum; a newer one is named without being a fault; an unknown version gets no verdict |
 | Surface and manage Suwayomi's existing backups in the UI | H | 1 |
 | Name the process holding a taken port | H | 1 |
-| macOS notarisation budget decision, $99 a year | **H** | 2 |
+| macOS notarisation budget decision, $99 a year | **H** | 2, on hold |
 | cosign keyless attestations on releases | M | 2 |
 | SHA256 and a machine readable manifest beside the artifacts | M | 2 |
 | Linux packaging, which is the cheap proof of the pipeline | M | 2 |
