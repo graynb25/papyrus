@@ -1,5 +1,22 @@
 # Runs the packaged install inside the Windows Sandbox and writes what happened to C:\results.
 #
+# ## If you are reading this because you opened the sandbox and Papyrus is not at papyrus.test
+#
+# It is not, and it cannot be. `papyrus.test` is a *host* name: it is a line in this machine's hosts
+# file pointing at 127.0.0.1, and it is served by Herd's nginx on port 80 of this machine. A Windows
+# Sandbox guest is a separate machine with its own hosts file and its own network stack, and it has no
+# route to this machine's port 80. So a browser inside the guest asking for papyrus.test gets
+# ERR_CONNECTION_REFUSED, which is the correct answer and not a fault.
+#
+# Inside the guest, from this gate's configuration:
+#
+#     Papyrus          http://127.0.0.1:8402
+#     Suwayomi's WebUI http://127.0.0.1:4571
+#
+# Both of those are loopback inside the guest and work. If you are looking at Suwayomi's own WebUI and
+# it is fine, that is the manga server working and says nothing about whether Papyrus is up; open the
+# app's port to find out.
+#
 # Deliberately plain PowerShell with no dependency on anything outside the sandbox. Every earlier
 # check used PHP probes written for the development machine, and the point of this gate is to test
 # the install rather than the harness that tested it. A probe that has been through ten revisions

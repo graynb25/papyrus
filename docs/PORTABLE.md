@@ -97,6 +97,29 @@ would be to detect it and say so, which is item 2.
 
 Most of this assumes you have assembled the folder yourself.
 
+### Inside the sandbox, Papyrus is not at `papyrus.test`
+
+**This one is not a fault and cannot be fixed.** `papyrus.test` is a *host* name: a line in this
+machine's hosts file pointing at `127.0.0.1`, served by Herd's nginx on port 80 of this machine. A
+Windows Sandbox guest is a separate machine with its own hosts file and its own network stack, and it
+has no route to this machine's port 80. A browser inside the guest asking for `papyrus.test` gets
+`ERR_CONNECTION_REFUSED`, which is the correct answer.
+
+Inside the guest, with the gate's configuration:
+
+| | |
+| --- | --- |
+| Papyrus | `http://127.0.0.1:8402` |
+| Suwayomi's own WebUI | `http://127.0.0.1:4571` |
+
+Both are loopback *inside the guest* and both work. Worth stating plainly because the failure is
+confusing: **Suwayomi's WebUI being fine tells you nothing about whether Papyrus is up.** They are
+two different processes on two different ports, and a reader who opens the Suwayomi tab, sees it
+working, and concludes the install is fine has checked the wrong one. Open the app's port.
+
+`build/sandbox/run-in-sandbox.ps1` says the same thing in its own header, for anyone who opens the
+gate rather than this document.
+
 ### "Papyrus is not installed under this launcher"
 
 From `status`, when nothing this copy started is running. It is not an error, and it is not the
