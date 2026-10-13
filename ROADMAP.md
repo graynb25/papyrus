@@ -57,7 +57,7 @@ application is running out of. A versioned folder plus a pointer means an upgrad
 *Blocked on:* item 3, because a pointer flip is a small change in isolation and a dangerous one
 against a launcher that cannot yet tell two installs apart.
 
-### 3. ~~Name the process holding a taken port~~ — done
+### 3. Name the process holding a taken port: done
 
 **High. Phase 1. Complete.**
 
