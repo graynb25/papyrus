@@ -529,17 +529,47 @@ extension DLLs, in the smoke layout.
 
 ### Still to do in phase 0
 
-0.5 `.env` generation, 0.6 Windows path and junction reality, 0.7 data location under
-`%LOCALAPPDATA%`, 0.8 the launcher shell, 0.9 one log for four processes, 0.10 the clean
-sandbox, 0.11 the Suwayomi runtime shape, 0.12 uninstall leaving data alone, and the
-`VACUUM INTO` snapshot job that `DISTRIBUTION.md` puts at severe.
+**Nothing except 0.8's tray icon, which is deferred rather than forgotten.** This list said all of
+these were outstanding as of 2026-10-11, which stopped being true within the day, and a plan that
+lists completed work as pending is worse than no plan. Verified against the tree rather than from
+memory:
 
-The goal is a folder that runs on a machine with nothing installed, launched by a script.
-No installer, no shell, no registry. Everything after this phase is packaging; this phase is
-the work.
+| # | Item | State | Evidence |
+| --- | --- | --- | --- |
+| 0.5 | `.env` generation | done | `papyrus:configure`, and `.env.example` ships. The build runs it and fails if it does not write a key |
+| 0.6 | Windows path and junction reality | done, **by a different route than planned** | The plan said junction `public/storage`. What shipped is that `storage/` moved to the install root and `NEVER_COPY_STORAGE` keeps it out of the artifact, so there is no junction to make. A real directory at the root, no symlink, no long path |
+| 0.7 | Data location under `%LOCALAPPDATA%` | done | `DataLocation.php`, with a portable branch beside the program. Live install at `%LOCALAPPDATA%\Papyrus` |
+| 0.8 | Launcher: tray, start, stop, open browser | **partly done** | `Papyrus.cmd` starts, stops and reports. **No tray icon and no native binary.** The plan called for a 5 to 10MB Go or C# binary; what exists is a batch file. Deliberate, since the batch file is what the clean sandbox could prove, and a native binary would need its own gate |
+| 0.9 | One place for four processes' logs | done | `SummaryLog` writes the one-line-per-process summary; nine parsers normalise the nine native formats; `papyrus diagnostics` bundles them |
+| 0.10 | Clean-sandbox verification | done, **but not re-run since** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked, 549 lines. Last ran 2026-10-11, which is before the `PHPRC` fix, the health check and the process-identity fix. Those three are exactly the kind of change the gate exists for and it has not seen them |
+| 0.11 | Decide the Suwayomi runtime shape | done | The `jlink` question was answered by staging rather than building: a pinned JRE is staged beside the jar at build time and digest verified. 353.6 MB of the 623 MB install is Suwayomi and its JVM, none of it ours |
+| 0.12 | Uninstall must not delete the library | done | `papyrus.iss` contains **zero** `[UninstallDelete]` directives. The full install, run, uninstall cycle was run with the library hashed either side and it came back byte identical |
+| | `VACUUM INTO` snapshot job | done | `SnapshotDatabase` behind `papyrus:snapshot`, scheduled `dailyAt('03:17')` |
+| 0.1 | Artifact layout and build pipeline | done | `build-install.php` verifies 20 required paths, boots Laravel from the built tree, and runs the launcher out of it |
+| 0.2 | Verify FrankenPHP on Windows | done | PHP 8.5.11 ZTS, full suite green against it |
+| 0.3 | Process supervisor for four processes | done | Verified across install, run and upgrade on a real install |
+| 0.4 | Readiness probe | done | `/ready`, and the health check reports its status, app key and database separately |
 
-**Exit gate: it runs in a clean Windows sandbox with nothing preinstalled.** Not "works on my
-machine". A sandbox.
+**The exit gate has a caveat worth stating plainly.** "Runs in a clean Windows sandbox with nothing
+preinstalled" was demonstrated on 2026-10-11 and has not been repeated since. Three launcher changes
+landed after it, one of which fixed a scheduler that had never worked in any install at all. The gate
+is the only check here that runs on a machine with nothing installed, and it has not seen the change
+that was most likely to matter to it.
+
+**It also cannot be run from this machine as it stands**, checked rather than assumed:
+
+| | |
+| --- | --- |
+| Virtualization present in firmware | yes |
+| `HypervisorPresent` | yes |
+| `System32\SystemSandbox.exe` | **absent**, so Windows Sandbox is not installed |
+| Feature state | needs elevation to query, and this session has none |
+
+So re-running the gate is not a five minute job here; it needs a machine with Windows Sandbox turned
+on, which needs an administrator. Everything else on this list is either done or is documentation,
+and this is the one item on it that needs something this environment does not have. It is also the
+item most likely to find a real defect, since a scheduler that had never once worked is precisely the
+kind of thing a working install hides.
 
 | # | Item | Sev | Notes |
 | --- | --- | --- | --- |
