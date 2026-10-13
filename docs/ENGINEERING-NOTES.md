@@ -4581,3 +4581,78 @@ eturn null that a generator never needs.
     a fairly humbling illustration of how much that failure mode is about attention rather than
     complexity. Any mutation that made the two disagree would have been caught by nothing at all,
     because both were correct.
+236. **An IP address is PII whatever kind it is, and I shipped two of the reader's while writing up a
+    security fix.**
+    While documenting the loopback bind fix I pasted the two real LAN addresses into ROADMAP.md as the
+    evidence that the listener was reachable from outside the machine. Committed, pushed. The gate I
+    had built for exactly this fired afterwards rather than before, which is the whole story.
+
+    The reader's correction, which is the part worth keeping: **base addresses are issued per region,
+    a machine's address locates it, and an address is PII regardless of kind.** I had reasoned about
+    this by category, and the categorising was the error. RFC1918 versus public changes *who* can be
+    hurt, never *whether* the address identifies. A private address still maps the shape of somebody's
+    network, which vendor's DHCP is serving it, and how it is subdivided.
+
+    Which is worse in my own gate, because I wrote the reasoning down: it listed three private ranges,
+    stopped, and its docstring said RFC1918 addresses "are not personally identifying on their own, and
+    the argument that they are has been made and rejected." That was me rejecting it. The consequence
+    was concrete and immediate: **a public address, the one that genuinely pins a house to a region,
+    walked straight through a gate that was designed to catch addresses.** The rule was narrower than
+    the threat, and it had been narrowed by the author's opinion rather than by measurement.
+
+    ## What changed, and what the tests found
+
+    The rule is now an allowlist rather than a denylist: reserved and documentation space is permitted,
+    everything else is refused. Four exemptions, each defensible in one sentence: loopback and
+    unspecified (identical on every computer, and the bind fix needs them), RFC5737 and RFC3849
+    documentation space (reserved by the IETF for appearing in documents), broadcast, and the cloud
+    metadata endpoint `169.254.169.254` (the same literal on every provider's every VM).
+
+    `fe80::/10` is deliberately *not* exempt. A link-local IPv6 ends in an interface identifier derived
+    from the MAC address, so it is a hardware fingerprint in plain sight and more identifying than most
+    public addresses.
+
+    Then the gate got a test file, which it had never had, and the test immediately found seven wrong
+    answers. Two were mine:
+
+    - **The RFC1918 check ran after `10 <= a <= 126`.** So `192.0.2.1` was reported as "a routable IP
+      address, which locates a machine", which is both the wrong verdict and the wrong reason. It was
+      still *refused*, so the gate still exited 1 and nothing looked broken. **A correct exit code from
+      an incorrect classification is the most dangerous shape a gate can have**, because it teaches the
+      reader that the output can be trusted and stops them reading it.
+    - **`192.0.2.1` is the address the reader actually leaked, and the gate was only catching it by
+      accident**, via a branch written for a different range.
+
+    ## The one that would have shipped again
+
+    The real find. The gate read `git ls-files`, which lists the *index*, and a new file is not in the
+    index until somebody stages it. So a leak written into a fresh file was invisible for exactly as
+    long as it took to run `git add`, which is the window `git add -A`, `git commit`, `git push` sits
+    in. Planted as a test: an untracked, unstaged file holding three real addresses returned "no IP
+    address of any kind" and exit 0. Nothing was wrong with the rules at all; the file was simply never
+    in the list. It now reads untracked files too, with `--exclude-standard` so `.gitignore` is still
+    honoured, and the whole scan still takes 0.8 seconds.
+
+    **A gate is only as good as the set it reads.** Writing correct rules against an incomplete
+    corpus is the same mistake as writing correct code against wrong inputs, and I have made that
+    mistake enough times now that it is worth naming as a category.
+
+237. **Validating after matching is not validation, and I proved it with a module built for it.**
+    The IPv6 branch of the gate accepted anything shaped like hex groups and colons and handed it to
+    `ipaddress.ip_address()` to confirm. That produced 1,400 false positives on a clean tree, because
+    `e::f` and `a::BAC` are *both genuinely valid IPv6*. They were also, in the source, PHP type hints
+    like `Cache::forget(...)` and log timestamps like `20:14:38`.
+
+    The lesson is not "regexes are hard". It is that **the shape has to carry the discrimination before
+    validation runs**, because validation answers "is this well formed", which is a different question
+    from "is this an address in this context". `ipaddress` was never going to help: those strings are
+    real addresses, written by accident, by a compiler.
+
+    Fixing it by narrowing to full eight-group and bracketed forms, plus the `fe80:` prefix for the
+    compressed link-local range, took the count to zero with the rules unchanged. Four hex characters
+    with a digit first is a prefix no type hint or colour produces, which is why that one is safe.
+
+    I also nearly shipped an IPv6 scan as *measured fact* when it was my own bad regex: the first scan
+    reported 1,353 hits for `::` and hundreds for fragments like `e::c`, and I had to discard the whole
+    output rather than report it. A measurement of the wrong thing is more dangerous than no
+    measurement, because it looks like diligence.
