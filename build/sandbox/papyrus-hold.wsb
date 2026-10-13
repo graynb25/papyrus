@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+
+  <!--
+    Start a packaged Papyrus install inside the Windows Sandbox and leave it running, so a person
+    can actually use it.
+
+    ## Why this exists alongside papyrus.wsb
+
+    Because a gate and a demo are opposites, and running one to get the other does not work.
+
+    `run-in-sandbox.ps1` starts the install, tests it, stops it, and reports. Nothing is left behind,
+    which is exactly right for a gate and exactly wrong for someone who wants to look at the thing.
+    The obvious workaround, launching the gate and interrupting it, leaves the app in whatever state
+    the test had reached, which is not the state a reader meets: half its processes up, a data
+    directory built by a test rather than a person, and no way to know which of those were meant to
+    be true.
+
+    So this is a second runner with a second job: same setup, then hold.
+
+    ## The ports are the defaults, and that is deliberate
+
+    8000 and 4567, which is what a real install uses, rather than the 8402 and 4571 the gate forces.
+    Somebody looking at this should be seeing the addresses a reader would actually see.
+
+    This matters more than it sounds. The whole reason this file was written is that a healthy
+    install was reached for at the wrong port twice, and both times the only evidence on screen was
+    ERR_CONNECTION_REFUSED. Using the gate's ports here would bake that confusion into the one place
+    somebody is being shown how to use the app.
+
+    ## Where the install goes
+
+    C:\Program Files\Papyrus. That is where a Windows installer puts one, and it is the awkward path
+    with a space in it, which is half of what the sandbox gate exists to catch.
+
+    ## It does not prompt, and it does not ask for anything
+
+    If Papyrus fails to start, the reason goes to C:\results\hold-open.txt on the host, and the
+    terminal stays open so it can also be read on screen. There is no prompt of any kind, because a
+    prompt inside a sandbox either cannot be answered or gets answered badly, and both look like a
+    hang.
+
+    ## One guest at a time, and the results folder must exist first
+
+    Both inherited from papyrus.wsb, and both cost real time there. Windows Sandbox refuses to start
+    a second guest while one is open, saying so in a window nobody is watching, and it will not
+    create a missing mapped folder: the mount fails, the logon command never runs, and the sandbox
+    closes looking exactly like a slow boot.
+  -->
+
+  <VGpu>Disable</VGpu>
+  <Networking>Default</Networking>
+
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Users\<you>\Php Projects\papyrus\build</HostFolder>
+      <SandboxFolder>C:\build</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Users\<you>\Php Projects\papyrus\build\sandbox-results</HostFolder>
+      <SandboxFolder>C:\results</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\build\sandbox\hold-open.ps1</Command>
+  </LogonCommand>
+
+</Configuration>
