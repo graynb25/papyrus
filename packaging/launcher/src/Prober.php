@@ -210,4 +210,145 @@ class Prober
 
         return true;
     }
+
+    /**
+     * Which process is listening on this port, for a report a reader can act on.
+     *
+     * ## Why this exists
+     *
+     * Because `isPortTaken()` answers yes or no, and "yes" is not a thing a reader can do anything
+     * with. They are told "not listening on port 4567" and the only next question is "by what?", which
+     * sends them to Task Manager. This is the answer to that question, on the line where the question
+     * gets asked.
+     *
+     * It matters most for the case that cannot be fixed from inside Papyrus. Two Windows accounts on
+     * one machine each get their own data directory and both want 4567 and 8000, so the second one to
+     * start cannot work and cannot be made to work by retrying. The process holding the port is the
+     * whole diagnosis.
+     *
+     * ## Why the same invocation shape as ProcessFinder, and not a simpler one
+     *
+     * Because the simpler versions were all tried here and all of them failed in ways that looked
+     * like success. `-File` needs a name ending in `.ps1` or PowerShell refuses it and prints its
+     * banner instead of the answer. Output through a pipe loses the answer entirely, because the
+     * banner arrives and the script's output does not. So the script goes to a file with the right
+     * extension and its output is read after it exits.
+     *
+     * Reimplemented rather than shared because the question is genuinely different, not because the
+     * mechanism is. Lesson 226 is about a rule copied and then diverging; this is a query copied with
+     * a different answer, and the two never have to agree because they never are asked the same
+     * thing.
+     *
+     * ## Why null rather than a guess
+     *
+     * A free port, a cmdlet this machine does not have, and a process that exited between the two
+     * queries all return null, and null is reported as "could not find out". A name invented from a
+     * process list would be worse than no name, because a reader will act on it.
+     *
+     * @return array{pid: int, name: string, command: string}|null
+     */
+    public function portHolder(int $port): ?array
+    {
+        if (! $this->isPortTaken($port)) {
+            return null;
+        }
+
+        $script = tempnam(sys_get_temp_dir(), 'papyrus-port-');
+
+        if ($script === false) {
+            return null;
+        }
+
+        // The extension, and the reason the first version of this found nothing while appearing to
+        // work. See ProcessFinder, which found it the hard way.
+        $script .= '.ps1';
+
+        file_put_contents($script, implode(PHP_EOL, [
+            'param([int]$Port)',
+            '$ErrorActionPreference = "SilentlyContinue"',
+            '$listener = Get-NetTCPConnection -LocalPort $Port -State Listen |',
+            '  Select-Object -First 1',
+            'if (-not $listener) { exit 0 }',
+            '$proc = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $listener.OwningProcess)',
+            'if (-not $proc) { exit 0 }',
+            '[Console]::Out.Write((@{ pid = [int]$proc.ProcessId; name = [string]$proc.Name; command = [string]$proc.CommandLine } | ConvertTo-Json -Compress))',
+        ]));
+
+        $out = tempnam(sys_get_temp_dir(), 'papyrus-port-out-');
+
+        if ($out === false) {
+            @unlink($script);
+
+            return null;
+        }
+
+        $process = @proc_open(
+            [
+                'powershell',
+                '-NoProfile',
+                '-NonInteractive',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-File',
+                $script,
+                (string) $port,
+            ],
+            [
+                0 => ['pipe', 'r'],
+                1 => ['file', $out, 'w'],
+                2 => ['file', $out, 'a'],
+            ],
+            $pipes,
+            null,
+            ['PAPYRUS_PROBER' => '1'] + (getenv() ?: []),
+        );
+
+        if (is_resource($process)) {
+            fclose($pipes[0]);
+            proc_close($process);
+        }
+
+        $json = (string) @file_get_contents($out);
+
+        @unlink($script);
+        @unlink($out);
+
+        $decoded = json_decode($json, true);
+
+        if (! is_array($decoded) || ! isset($decoded['pid'])) {
+            return null;
+        }
+
+        return [
+            'pid' => (int) $decoded['pid'],
+            'name' => (string) ($decoded['name'] ?? ''),
+            'command' => (string) ($decoded['command'] ?? ''),
+        ];
+    }
+
+    /**
+     * One line naming whoever holds a port, or null when it could not be found out.
+     *
+     * The command line is trimmed to something a reader can paste into Task Manager, because the full
+     * one is a FrankenPHP argument list several hundred characters long and the useful part is the
+     * first token and the tail.
+     */
+    public function describePortHolder(int $port): ?string
+    {
+        $holder = $this->portHolder($port);
+
+        if ($holder === null) {
+            return null;
+        }
+
+        $name = $holder['name'] !== '' ? $holder['name'] : 'a process';
+
+        $command = $holder['command'];
+
+        if (strlen($command) > 120) {
+            $command = substr($command, 0, 60).' ... '.substr($command, -55);
+        }
+
+        return sprintf('held by %s, pid %d%s', $name, $holder['pid'], $command === '' ? '' : ': '.$command);
+    }
 }

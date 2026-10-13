@@ -4252,3 +4252,62 @@ ull tells the checker the generator
       copying the rule is to `require` the owner, and here that was worse than the copy, because the
       owner also had to be loaded later from somewhere else. Sharing means ordering, sometimes, and
       not just deduplication.
+
+227. **A method that answers a question, and a second method beside it that answers it differently,
+    will disagree for the life of the feature and nothing will fail.**
+    `Supervisor` decided which processes were its own in two places. `stopAll()` asked `tokensFor($name)`,
+    which returns `[data directory, role]`. `isRunning()` built its own marker from a bare
+    `queue:work`, `schedule:work`, `frankenphp`, or a jar basename, and ran its own PowerShell probe to
+    match it.
+
+    `stopAll()` was the correct one and had been correct for some time, because it had been fixed once
+    already for a different defect: a stop that reached into another install. Its docblock explains the
+    reasoning in detail, including why the data directory and not the install root, including why two
+    launchers can share a root.
+
+    `isRunning()` was never fixed, because nobody was looking at it, and its bare markers match **any**
+    install on the machine.
+
+    What it cost, measured rather than argued: with a second copy of the install in another folder, its
+    `health` reported the installed app's four processes as its own and **every line green**, while
+    failing on a database that was not there. A reader running a portable copy alongside an installed one
+    would have been told everything was fine.
+
+    Nothing failed for as long as both existed, and the reason is worth stating precisely, because it is
+    what let this survive: **`health` is only ever run by somebody who already believes something is
+    wrong, and this particular wrong answer says everything is fine.** A diagnostic that is consulted
+    during an incident and that reports health is not itself checked against an incident. It gets a pass
+    every time because "everything is fine" is what you want to hear, and nobody notices a diagnostic
+    agreeing with them.
+
+    So this is 225 twice over, and 223 at the layer above:
+
+    - **223:** liveness is not participation. Here participation was not even established. The process
+      existed; it did not belong to the thing asking.
+    - **225:** the fix for one occurrence of the pattern was already in the file, correct, with a
+      docblock explaining why, three lines away from the occurrence that was wrong. Having understood
+      the problem made the second place look taken care of.
+
+    Two things worth carrying.
+
+    **The fix was a deletion, not a correction.** `isRunning()` now calls the same
+    `$this->finder->find($this->tokensFor($name))` that `stopAll()` does, and its own probe is gone. It
+    was a second implementation of `ProcessFinder::find()` with one token where that takes a list. Had
+    it been corrected in place, the file would still have held two implementations of process matching,
+    one of them right, and the next disagreement would have had the same cause and taken the same time
+    to find. There is now exactly one question and one answer, and the argument for `ProcessFinder` is
+    recorded in `ProcessFinder`.
+
+    **Two of the four lines were never wrong and are still green from a second copy.** `suwayomi` and
+    `web` report on whether something is answering a *port*, not on process identity, and that is
+    deliberate: the launcher adopts a Suwayomi already on its port rather than starting a second one,
+    so "something is answering on 4567" is the true and useful answer. Only the two workers were
+    matched by process, and only those two were wrong. Worth saying because the fix looks smaller than
+    the defect did, and a reader of the commit message deserves to know which half was real.
+
+    The general shape, and it is the addition to 225: **when you find a duplicated question, check
+    whether the two copies are ever compared.** Here they were not compared by any test, because no test
+    could fail on a discrepancy between two correct-in-different-ways methods. What would have caught it
+    is a test asserting a property both must satisfy, and the one that now exists asserts that every
+    lookup names this install's data directory. It is a property, not a value, so it does not need
+    updating when the markers change, and it fails against the old code.

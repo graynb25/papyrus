@@ -148,7 +148,13 @@ final class Health
         $answering = $this->prober->suwayomiAnswers($port);
 
         if (! $answering) {
-            $this->add('suwayomi', 'not answering on port '.$port, false);
+            $holder = $this->prober->describePortHolder($port);
+
+            $this->add(
+                'suwayomi',
+                'not answering on port '.$port.($holder !== null ? ', which is '.$holder : ''),
+                false,
+            );
 
             return;
         }
@@ -248,7 +254,13 @@ final class Health
         $readiness = $this->prober->readiness($port);
 
         if ($readiness === null) {
-            $this->add('web', 'listening on '.$port.' but /ready did not answer', false);
+            $holder = $this->prober->describePortHolder($port);
+
+            $this->add(
+                'web',
+                'listening on '.$port.' but /ready did not answer'.($holder !== null ? ', which is '.$holder : ''),
+                false,
+            );
 
             return;
         }

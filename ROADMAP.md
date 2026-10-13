@@ -57,28 +57,32 @@ application is running out of. A versioned folder plus a pointer means an upgrad
 *Blocked on:* item 3, because a pointer flip is a small change in isolation and a dangerous one
 against a launcher that cannot yet tell two installs apart.
 
-### 3. Name the process holding a taken port
+### 3. ~~Name the process holding a taken port~~ — done
 
-**High. Phase 1.**
+**High. Phase 1. Complete.**
 
-`isPortTaken()` returns a boolean. A reader with a port conflict is told "not listening on port 4567"
-and nothing else, when the answer is "Papyrus from another Windows account, pid 4212".
-
-Small, self-contained, and the same file as the fix below.
+`isPortTaken()` returned a boolean and a reader got "not listening on port 4567" and no next step.
+The health lines now name the holder, its pid, and enough of its command line to find it in Task
+Manager, and say nothing invented when it cannot be found out.
 
 ### 4. Two installs reporting each other's health
 
-**High. Not written up as a defect yet.**
+**Partly fixed.** Found while writing [PORTABLE.md](docs/PORTABLE.md), and measured rather than
+theorised.
 
-Found while writing [PORTABLE.md](docs/PORTABLE.md), and measured rather than theorised: `health`
-run from a second copy of the install reported **all four processes of the installed app as its own,
-all green**, while failing on its own database. A second Papyrus on one machine is confidently wrong
-about whether the first is working.
+**Done:** the worker lookups. `health` matched processes on a bare `queue:work` while `stop` matched
+them on the data directory plus the role, so a second Papyrus reported the first one's workers as its
+own. Both now use the same tokens, and a second copy correctly reports `NOT RUNNING` over a database
+that is not there.
 
-This is lesson 223 from [ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md) one level up. The instance
-lock exists and is not consulted by `status` or `health`. The fix is that every process name this
-launcher looks for carries a path rooted at *this* install, which is the shape rule `dev-workers.ps1`
-already uses for the same reason.
+**Still open, and deliberately:** the `suwayomi` and `web` lines report green from a second copy. Those
+are port probes, not process probes, and it is correct. The launcher explicitly adopts a Suwayomi
+already listening on its port rather than starting a second one, so "something is answering on 4567"
+is the true and useful answer. The residual risk is `web`, where the readiness probe confirms something
+is answering `/ready` with a valid key and database, which is Papyrus-shaped but not proof it is *this*
+Papyrus.
+
+**Also done, and the reason this was findable:** a port held by something else now says who holds it.
 
 ### 5. A portable zip
 

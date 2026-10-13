@@ -1177,73 +1177,40 @@ final class Supervisor
             return ($this->livenessProbe)($name);
         }
 
-        $marker = match ($name) {
-            'queue' => 'queue:work',
-            'scheduler' => 'schedule:work',
-            'suwayomi' => basename($this->locateJar() ?? 'Suwayomi-Server'),
-            'web' => 'frankenphp',
-            default => null,
-        };
-
-        if ($marker === null) {
+        if ($this->tokensFor($name) === []) {
             return false;
         }
 
         /*
-         * A temporary script file, run with `-File`, rather than `-Command`.
+         * The same tokens `stop` uses, and the same finder.
          *
-         * `-Command` needs the PowerShell source wrapped in double quotes for the shell, and the
-         * source itself contains double quotes in both the WMI filter and the `-like` pattern.
-         * Escaping that nest correctly is possible and was tried, and it silently returned nothing
-         * on a machine where the identical command worked when pasted into a shell, which is the
-         * worst possible failure: health reporting both workers dead while they were running.
+         * This used to build its own marker and its own PowerShell query. The marker was a bare
+         * `queue:work`, `schedule:work`, `frankenphp` or a jar name, none of which say *which*
+         * install they belong to, so a second Papyrus on the machine matched all four and reported
+         * itself perfectly healthy over a database that was not there. Measured, not theorised: run
+         * from a copy of the install in another folder, this reported the installed app's four
+         * processes as its own, all green, while failing on its own database.
          *
-         * `-File` has no quoting layer at all. The script takes the pattern as an argument, so
-         * there is exactly one place a value could need escaping and it is not inside a string in
-         * two languages at once.
+         * It is lesson 223 one level up, and it survived a fix that was correct one screen away.
+         * `tokensFor()` had carried the data directory for some time and `stopAll` had been using
+         * it, and nobody noticed the question had been answered twice.
          *
-         * WMIC was the cheap alternative and is gone: this machine has no `wmic` at all, so the
-         * obvious implementation reports everything dead on any Windows build that has deprecated
-         * it. `health` is asked for precisely when something is already wrong, and a diagnostic
-         * that reports all four processes broken because its own query tool is missing is worse
-         * than one that is slow.
+         * Which is the actual lesson, and it is 225 again: a fix applied to one occurrence of a
+         * pattern leaves the other occurrences in place, and the other occurrences are nearby. The
+         * two answers disagreed for the life of the feature and nothing failed, because `health` is
+         * only ever run by somebody who already believes something is wrong, and this particular
+         * wrong answer says everything is fine.
+         *
+         * The probe is deleted rather than corrected. It was a second implementation of
+         * `ProcessFinder::find()`, one token where that takes a list, with its own temporary script.
+         * Keeping a corrected copy would leave the next person two questions and one answer, which
+         * is how the two came to disagree in the first place.
+         *
+         * Its commentary about `-File` and the death of WMIC is worth keeping, because
+         * `ProcessFinder` was built for exactly those reasons and the reasoning should not be lost
+         * with the code that repeated it. See {@see ProcessFinder}.
          */
-        $script = tempnam(sys_get_temp_dir(), 'papyrus-probe-');
-
-        if ($script === false) {
-            return false;
-        }
-
-        file_put_contents($script, implode(PHP_EOL, [
-            'param([string]$Pattern)',
-            '$ErrorActionPreference = "SilentlyContinue"',
-            'Get-CimInstance Win32_Process |',
-            '  Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Pattern) } |',
-            '  Select-Object -First 1 -ExpandProperty ProcessId',
-        ]));
-
-        $output = [];
-        $status = 1;
-
-        @exec(
-            sprintf(
-                'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File %s %s 2>NUL',
-                escapeshellarg($script),
-                escapeshellarg($marker),
-            ),
-            $output,
-            $status,
-        );
-
-        @unlink($script);
-
-        foreach ($output as $line) {
-            if (trim($line) !== '') {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->finder->find($this->tokensFor($name)) !== [];
     }
 
     /** The summary log, for the health command and for the messages `start` writes. */

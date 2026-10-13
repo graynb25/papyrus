@@ -122,15 +122,31 @@ class HealthTest extends TestCase
         bool $webUp = false,
         int $readyStatus = 200,
         string $version = 'v2.4.2366',
+        ?string $portHolder = null,
     ): Prober {
-        return new class($suwayomiUp, $webUp, $readyStatus, $version) extends Prober
+        return new class($suwayomiUp, $webUp, $readyStatus, $version, $portHolder) extends Prober
         {
             public function __construct(
                 private readonly bool $suwayomiUp,
                 private readonly bool $webUp,
                 private readonly int $readyStatus,
                 private readonly string $version,
+                private readonly ?string $portHolder,
             ) {}
+
+            /*
+             * Who holds the port, stubbed rather than asked of this machine.
+             *
+             * The real one shells out to PowerShell and reads the kernel's own answer, which is
+             * exactly right in production and makes the interesting assertion impossible here: a suite
+             * cannot put a named process on a port, so it could only ever assert against whatever
+             * happened to be running. Stubbing the sentence is the same trade the queue reader makes,
+             * and for the same reason.
+             */
+            public function describePortHolder(int $port): ?string
+            {
+                return $this->portHolder;
+            }
 
             public function suwayomiAnswers(int $port, float $timeoutSeconds = 3.0): bool
             {
@@ -384,6 +400,44 @@ class HealthTest extends TestCase
         )->render();
 
         $this->assertDoesNotMatchRegularExpression('/FAIL\s+schedule/', $report);
+    }
+
+    /**
+     * A port held by something else says who holds it.
+     *
+     * The case a reader cannot fix from inside Papyrus: two Windows accounts on one machine each get their
+     * own data directory and both want 4567 and 8000. The second one cannot start and cannot be made to
+     * start by retrying, and "not listening on port 4567" does not tell them that. Naming the holder turns
+     * it into something they can go and look at.
+     *
+     * The assertion that matters is that the name appears on the *failure* line, because a reader reads the
+     * failing line and nothing else.
+     */
+    public function test_a_port_another_process_holds_names_that_process(): void
+    {
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: false, webUp: false, portHolder: 'held by java.exe, pid 4212'),
+        )->render();
+
+        $this->assertMatchesRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringContainsString('held by java.exe, pid 4212', $report);
+    }
+
+    /**
+     * And when the holder cannot be found out, the line says the port is taken and nothing more.
+     *
+     * Not a name invented from a process list. A reader will act on a process name, and a wrong one sends
+     * them to end a process they needed. The absence of a holder is not evidence about anything.
+     */
+    public function test_an_unnamed_port_holder_leaves_the_line_usable(): void
+    {
+        $report = $this->health(
+            $this->supervisor(['queue', 'scheduler']),
+            $this->prober(suwayomiUp: false, webUp: false, portHolder: null),
+        )->render();
+
+        $this->assertMatchesRegularExpression('/FAIL\s+suwayomi\s+not answering on port 4567/', $report);
     }
 
     /**
