@@ -6,6 +6,10 @@
             <flux:navlist.item :href="route('security.edit')" wire:navigate>{{ __('Security') }}</flux:navlist.item>
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
             <flux:navlist.item :href="route('import.edit')" wire:navigate>{{ __('Import') }}</flux:navlist.item>
+            {{-- Last, and read only. Everything above changes something about the reader's account
+                 or their library; this one only reports what is installed, which is why it sits at
+                 the bottom rather than among the things you set up. --}}
+            <flux:navlist.item :href="route('about.edit')" wire:navigate>{{ __('About') }}</flux:navlist.item>
         </flux:navlist>
     </div>
 

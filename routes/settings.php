@@ -21,6 +21,19 @@ Route::middleware(['auth'])->group(function () {
      * library. Placed in this group because it is an import, not an account change.
      */
     Route::livewire('settings/import', 'pages::settings.import')->name('import.edit');
+
+    /*
+     * What this install is, and what it is running.
+     *
+     * Here, behind `auth` and not `verified`, and the reason is the opposite of the import page
+     * directly above. That one is below verification because a reader who has just signed up and
+     * cannot receive a mail is exactly the one migrating off another app. This one reads nothing
+     * about the reader at all: it is the Papyrus version, the Suwayomi version, and whether the two
+     * are compatible. There is no reader data on the page, so there is nothing to escalate for, and
+     * putting it behind verification would hide two version numbers from exactly the people most
+     * likely to be filing a first-run report.
+     */
+    Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
