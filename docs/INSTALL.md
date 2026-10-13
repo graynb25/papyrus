@@ -56,17 +56,29 @@ wait for it rather than closing the window.
 
 Then:
 
-1. **Create an account.** This is local, on your machine. There is no email verification.
+1. **Create an account.** This is local, on your machine.
 
    The sign-up link is on the login page, and it is only there while nobody has signed up yet. Make
    your account, and sign-up closes itself behind you: a single-reader install answers `404` to
    `/register` from then on, so nobody else can join. That is deliberate, and it is why the link
    disappears rather than leading to an error.
 
+   **The address is checked for shape, not for existence.** It has to look like an email address and
+   nobody else can already be using it. Nothing proves you own it, and no email is sent, because a
+   self-hosted install on your own machine has nowhere to send it and nobody else to send it to.
+   `you@example.com` is a perfectly good login.
+
+   That also means your account is marked verified immediately, so you can use the app straight away
+   instead of being parked on a "please verify your email" page that can never complete.
+
    Your address is written to `PAPYRUS_LOCAL_READER` in your `.env`, and the login form offers it
    back to you next time. Your password is not written anywhere. Papyrus stores it as a hash and
    keeps no copy that could sign you in, so if you forget it, use **Forgot your password?** rather
    than expecting the installer to know it.
+
+   If you later change `PAPYRUS_DEPLOYMENT_MODE` to `shared` or `public` so other people can reach
+   your install, **re-verify your own address** from settings first. Accounts made in single mode
+   were never proven to control their address, and that assumption carries over.
 
    Lost the account entirely? `php artisan users:create --email=you@example.com` makes another one.
    It prints a generated password once, which is the only time it exists.

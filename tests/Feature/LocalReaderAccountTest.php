@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Support\Deployment;
 use App\Support\EnvironmentFile;
 use App\Support\LocalReaderAccount;
 use App\Support\Registration;
@@ -177,6 +178,111 @@ class LocalReaderAccountTest extends TestCase
         $this->get(route('login'))
             ->assertOk()
             ->assertDontSee('reader@example.test');
+    }
+
+    // Is the account usable at all? -----------------------------------------
+
+    /**
+     * The one that was broken, measured rather than assumed.
+     *
+     * Signing up through the browser used to produce an account that was authenticated and then
+     * redirected to `/email/verify` from every route: the library, the dashboard, every settings page
+     * except the two deliberately exempt ones. The reader was signed in and could do nothing, on an
+     * install with no mail transport, and nothing on screen said why.
+     */
+    public function test_a_reader_who_signs_up_can_actually_use_the_app(): void
+    {
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'first@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertAuthenticated();
+
+        // The library is behind auth AND verified, so this is the route that matters.
+        $this->get('/library')->assertOk();
+    }
+
+    public function test_a_first_run_account_is_verified_without_a_mail_transport(): void
+    {
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'first@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertNotNull(
+            User::query()->where('email', 'first@example.test')->firstOrFail()->email_verified_at,
+            'verification on a loopback install has nothing to verify against and no way to complete, '
+                .'and leaving it pending locks the reader out of the whole app',
+        );
+    }
+
+    /**
+     * And the other direction, which is the reason the first one is allowed at all.
+     *
+     * In a mode other people can reach, an address nobody controls is exactly what you do not want on
+     * your instance. Auto-verifying there would hand every stranger a confirmed account, so this
+     * asserts it does not happen rather than leaving it to the reader of the code to notice.
+     */
+    public function test_an_account_in_a_reachable_mode_is_still_sent_for_verification(): void
+    {
+        Config::set('papyrus.deployment_mode', Deployment::SHARED);
+
+        $this->post(route('register.store'), [
+            'name' => 'Second Reader',
+            'email' => 'second@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertNull(
+            User::query()->where('email', 'second@example.test')->firstOrFail()->email_verified_at,
+            'shared and public installs must not auto verify, or sign-up is an open door with a '
+                .'confirmation stamp on it',
+        );
+
+        $this->get('/library')->assertRedirect(route('verification.notice'));
+    }
+
+    /**
+     * The other half of the parity, and it is a separate test on purpose.
+     *
+     * The first version of this ran the command and then the browser in one test and failed, because
+     * the command had already claimed the install and the browser sign-up was correctly refused. The
+     * failure was the sign-up window doing its job; the test was wrong to assume both could run at
+     * once.
+     *
+     * `users:create` has always marked its accounts verified, for the same reason the browser path now
+     * does: the address was just invented, an unverified account cannot sign in, and this box may have
+     * no mail transport. Two ways of making one account disagreed about whether it worked.
+     */
+    public function test_the_command_also_makes_a_verified_account(): void
+    {
+        $this->artisan('users:create', [
+            '--email' => 'made@example.test',
+            '--no-email' => true,
+        ])->assertSuccessful();
+
+        $user = User::query()->where('email', 'made@example.test')->firstOrFail();
+
+        $this->assertNotNull($user->email_verified_at);
+    }
+
+    /**
+     * And the command claiming the install closes the browser sign-up, which is the window working.
+     */
+    public function test_the_command_claiming_the_install_closes_the_browser_sign_up(): void
+    {
+        $this->artisan('users:create', [
+            '--email' => 'made@example.test',
+            '--no-email' => true,
+        ])->assertSuccessful();
+
+        $this->get(route('register'))->assertNotFound();
     }
 
     // A checkout's own env is never written -------------------------------

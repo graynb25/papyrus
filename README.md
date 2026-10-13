@@ -317,6 +317,13 @@ form, so you only ever type a password. **Your password is not recorded anywhere
 a hash and no copy that could sign you in, so use **Forgot your password?** if you lose it rather
 than expecting the installer to know it.
 
+**The address is checked for shape, not for existence**, and no email is sent: a self-hosted
+install on your own machine has nowhere to send it. So `you@example.com` is a perfectly good login,
+and your account is marked verified immediately rather than being parked on a verification page
+that can never complete. If you later switch `PAPYRUS_DEPLOYMENT_MODE` to `shared` or `public` so
+other people can reach your install, re-verify your own address from settings first, because an
+account made in single mode was never proven to control its address.
+
 Lost the account entirely, or scripting a second install? The command still exists and is still
 the right tool for an unattended one:
 
