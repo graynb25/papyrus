@@ -3914,10 +3914,12 @@ umber_format and '%d' without a word, so every consumer of a newly nullable valu
     PHPStan could not follow it. messages() does the filtering once and narrows with is_string
     rather than casting, because a cast claims a type the walk never promised.
 
-215. **A generator that declares Generator<K, V, null, null> trips eturn.missing.**
+215. **A generator that declares Generator<K, V, null, null> trips 
+eturn.missing.**
     Declaring the third and fourth type parameters as 
 ull tells the checker the generator
-    returns a null explicitly, and then it wants the eturn null that a generator never needs.
+    returns a null explicitly, and then it wants the 
+eturn null that a generator never needs.
     `@return Generator<int, array{int, int|string}>` is the accurate declaration.
 216. **A test one second away from a boundary is a coin flip, not a test.**
     `AuthManager::ACCESS_MARGIN` is 30 and `isFresh()` is `time() < \ - 30`. The
@@ -4506,3 +4508,76 @@ ull tells the checker the generator
     it did not read" family: **a security claim that comes from reading configuration is not a
     security claim. Ask the socket, from an address that is not supposed to work, and see whether it
     works.**
+
+233. **The one image anybody looks at is the one that was right, and the wrong ones were silent.**
+    Generating an app icon produced a perfect five hundred and twelve pixel render and two completely
+    empty small ones: `favicon-16.png` at 96 bytes and `favicon-32.png` at 104 bytes, both fully
+    transparent, no error, no warning. Had the page shipped, the icon in every browser tab would have
+    been a blank square while the file anyone would open to check it looked perfect.
+
+    The cause was one line. The downscale loop tracked the *target* size rather than the canvas size, so
+    it never halved, and the final resample was then told its source was 64 by 64 when the source
+    really was 2048 by 2048. It read the empty top left corner.
+
+    ## Three diagnoses, two of them wrong, and the third was the code
+
+    This is the part worth keeping. The obvious answer was that `imagecopyresampled` does not
+    area-average across an extreme ratio, which is documented, true of GD, and was not the cause. The
+    second answer was that my own measurement was reading `imagecolorat` on a palette image, because
+    GD writes a low colour PNG as a palette and `imagecolorat` then returns an index rather than a
+    colour. That one turned out to be a real bug in the measuring script, and it was still not the
+    cause: the same zero appeared after fixing it.
+
+    What settled it was a standalone probe running the same GD calls with correct bookkeeping. It
+    printed solid `E9553B` pixels all the way down to sixteen pixels and held ink between 34 and 39
+    percent at every size. GD was innocent. The difference had to be in my code, and the only
+    difference was that initialisation.
+
+    The general shape, and it is the addition to the "a confident wrong answer beats no answer" family:
+    **when a check reports something absurd, suspect the check before the code, then suspect the code
+    before doubting the platform, and get the platform out of it with a probe rather than an
+    argument.** I argued with the reader instead, and I was wrong twice for reasons that had nothing
+    to do with either of my two theories.
+
+    The generator now refuses to write an icon carrying less than five percent ink. That guard is the
+    point of the file, and it is a refusal rather than a warning because nothing else about this class
+    of failure is loud.
+
+234. **A check that reports zero is more dangerous than one that reports wrong, because zero looks like a filter working.**
+    a filter working.**
+    Two of the three bugs on the way to the licences page produced empty lists rather than incorrect
+    ones, and both passed every assertion that existed at the time.
+
+    The npm lock file reader filtered on a `name` field. `lockfileVersion 3` records no `name` on a
+    dependency at all: the name is the path after the last `node_modules/`. The filter therefore
+    rejected all 307 entries and the reader reported zero JavaScript packages, which is exactly what a
+    reader that had correctly found none would look like.
+
+    The licences page was asserting that an absent licence counts as closed, on the reasoning that
+    silence is not permission. That reported twenty three packages as not open source when exactly one
+    is. The other twenty two were platform specific prebuilt binaries for darwin, freebsd and arm that
+    record no licence field at all. A page that overstates its own restrictions is not evidence of
+    compliance either; it is a false accusation about twenty two packages.
+
+    Both are now three-state: named as proprietary, licensed, and not licensed, with the counts
+    reported apart so a change to one cannot inflate the other. The general shape: **assert on the
+    magnitude, not just the sign.** "Is it empty" is satisfied by an empty list, an empty list, and an
+    empty list, which is why this is the shape that survives.
+
+235. **The mutation that survived had not happened, and the one after it found my own duplication.**
+    A mutation on the licence classification reported as surviving: the suite stayed green. The
+    explanation was that PowerShell's `-replace` takes a regular expression, the pattern contained `?`
+    and `||`, and it matched nothing. The file was never changed.
+
+    That is the `ANCHOR MISSING` case the project's own harnesses already distinguish, arrived at by
+    hand rather than through one. A mutation reported as a survival must be checked against the file
+    before it is reported as a gap, because the two mean opposite things and one of them costs nothing.
+
+    Redone with literal replacement and by line index, both mutations were killed immediately.
+
+    Then the second one, which killed correctly, exposed something real underneath: the classification
+    rule existed twice, once static for construction and once as an instance method for `isUnrecorded()`.
+    Two implementations of one question in new code, written the same afternoon, which is lesson 227 and
+    a fairly humbling illustration of how much that failure mode is about attention rather than
+    complexity. Any mutation that made the two disagree would have been caught by nothing at all,
+    because both were correct.

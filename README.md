@@ -61,6 +61,8 @@ reader and settings all work.
 | Reader | `/read/{manga}/{chapter}` | Continuous scroll or paged, progress saved per user |
 | Import | `/settings/import` | Brings a library in from another reader app. Inspects the file before it writes anything, and reports what it did |
 | Settings | `/settings/profile`, `/settings/connections`, `/settings/appearance`, `/settings/security` | Profile, AniList tracking, reader appearance, and password, two-factor and passkeys |
+| About | `/settings/about` | The two version numbers a bug report starts with, and whether the Suwayomi in front of it is one this build can work with |
+| Licences | `/settings/licences` | Every package this install is made of, generated from the lock files the build ships from, so it cannot claim coverage it does not have. 448 of them as of writing, and exactly one that names itself proprietary: `livewire/flux`, which is the component library every page here is built from |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
 

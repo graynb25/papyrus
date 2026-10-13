@@ -34,6 +34,7 @@ Route::middleware(['auth'])->group(function () {
      * likely to be filing a first-run report.
      */
     Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');
+    Route::livewire('settings/licences', 'pages::settings.licences')->name('licences.edit');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

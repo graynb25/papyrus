@@ -29,6 +29,53 @@ check.
 
 ---
 
+## Shipped on 2026-10-13, after this list was last read
+
+Everything below landed on 2026-10-13 and is verified by the suite. It is here because a plan that
+does not record what has been done is read as though nothing has, which is the same failure as a stale
+blocker in the other direction.
+
+### The listener was not confined to loopback
+
+`packaging/frankenphp/Caddyfile` said `http://127.0.0.1:{{APP_PORT}}`, and the installer guide said
+nothing outside the machine could be reached. Measured on a live install:
+
+    Caddyfile said                         http://127.0.0.1:8000
+    the listener was actually bound on     ::           the IPv6 wildcard, every interface
+    http://192.0.2.1:8000/ready         200
+    http://192.0.2.2:8000/ready          200
+
+Naming a loopback host in a Caddy site address does not restrict the listener. An explicit
+`bind 127.0.0.1 ::1` does, and is now there, with `LauncherBindTest` failing against the file as it
+shipped. This answers phase 2 item 2.5, which asked to be told whether the firewall prompt could be
+avoided: it can, now that the bind is real.
+
+### Reader-facing fixes
+
+- **The browser opens itself.** `Papyrus.cmd` passes `--open` and the launcher opens the address it
+  bound. The port was never a constant, so documenting it could only ever cover the common case.
+- **A reader can make their own account.** `single` mode closed registration, which is right, and that
+  also closed the only route to a first account. It now opens sign-up *while nobody has registered* and
+  shuts behind the first one, which is a window rather than an opening.
+- **That account works.** The first version produced a signed-in reader who was then redirected to
+  `/email/verify` from every route. Verified accounts on creation in `single` mode only.
+- **The remembered address.** `PAPYRUS_LOCAL_READER` holds the address and pre-fills the login form.
+  Not the password, and never will be; see `LocalReaderAccount`.
+- **A licences page**, generated from the two lock files the build installs from, plus the two bundled
+  pieces no lock file mentions. It reports 448 packages and one that names itself proprietary.
+- **A sandbox runner that leaves Papyrus running**, so an install can be looked at rather than only
+  gated.
+
+### Phase 1 is overtaken, not outstanding
+
+Phase 1 was "acquiring Suwayomi": eight items about downloading it at first run. The install bundles
+it instead, with a pinned JRE staged at build time and a digest asserted. So 1.1 through 1.4 are moot
+rather than pending, 1.5 and 1.6 are done and verified against a live install, and only 1.7 (licence
+attribution, now largely satisfied by the licences page) and 1.8 (optional MSI, deliberately declined)
+remain. **Reading Phase 1 as live work would be planning work that is already moot.**
+
+---
+
 ## Now: planned, severe
 
 ### 1. Orchestrated restore, both databases, one action
@@ -54,8 +101,10 @@ snapshot restore is not surfaced anywhere.
 application is running out of. A versioned folder plus a pointer means an upgrade lays down
 `1.3.0` beside `1.2.0` and flips, and a rollback is flipping back.
 
-*Blocked on:* item 3, because a pointer flip is a small change in isolation and a dangerous one
-against a launcher that cannot yet tell two installs apart.
+*Blocked on:* nothing, now. This said "blocked on: item 3" and item 3 has been complete for a
+  while: the launcher matches its own processes on the data directory plus the role, so a pointer
+  flip no longer risks flipping the wrong install. A stale blocker is why this sat still, and a
+  plan that reports a resolved dependency as a live one is worse than no plan.
 
 ### 3. Name the process holding a taken port: done
 

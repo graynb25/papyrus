@@ -10,6 +10,7 @@
                  or their library; this one only reports what is installed, which is why it sits at
                  the bottom rather than among the things you set up. --}}
             <flux:navlist.item :href="route('about.edit')" wire:navigate>{{ __('About') }}</flux:navlist.item>
+    <flux:navlist.item :href="route('licences.edit')" wire:navigate>{{ __('Licences') }}</flux:navlist.item>
         </flux:navlist>
     </div>
 
