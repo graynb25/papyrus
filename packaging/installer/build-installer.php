@@ -190,6 +190,112 @@ $megabytes = round(filesize($expected) / 1048576, 1);
 say('installer', $expected);
 say('size', $megabytes.' MB');
 
+// --- the manifest ------------------------------------------------------------------------------
+
+/*
+ * A machine readable account of what this build produced.
+ *
+ * ## Why it is written twice
+ *
+ * Once into the output directory beside the artifact, so it travels with the download, and once into
+ * `releases/<version>.json`, which is committed. The committed copy is the one that matters for audit:
+ * a reader who distrusts our download page can clone the repository, read the manifest for the version
+ * they have, and check the hash themselves without trusting anything we serve them.
+ *
+ * That is why it is committed rather than generated on demand. A hash published only beside the file
+ * it describes proves the file arrived intact and says nothing about whether it is the file we meant
+ * to publish. A hash in the repository, in history, at a version anybody can check, is the one that
+ * answers "is this really Papyrus 1.2.0".
+ *
+ * ## Why the digest is computed here rather than by whatever published the file
+ *
+ * Because the moment the number stops being computed from the artifact is the moment it stops being
+ * evidence. A manifest assembled from state captured before the compile would carry the hash of the
+ * wrong file and still look perfect.
+ *
+ * ## Why `requires` is in it at all
+ *
+ * Because the Suwayomi floor is a real contract that has been a sentence in a document until now. The
+ * same two numbers in `packaging/suwayomi.json` are read here, so the manifest, the launcher's health
+ * check and the About page cannot disagree about what Papyrus needs, and whoever writes the updater
+ * has it in a form they can parse rather than a sentence they have to read.
+ */
+$compatibilityFile = $install.DIRECTORY_SEPARATOR.'suwayomi.json';
+
+foreach ([['version.txt', $install.DIRECTORY_SEPARATOR.'version.txt'], ['suwayomi.json', $compatibilityFile]] as [$label, $required]) {
+    if (! is_file($required)) {
+        fail('cannot write a manifest: '.$required.' is not there, and '.$label.' is required for it');
+    }
+}
+
+$stamped = [];
+foreach (file($install.DIRECTORY_SEPARATOR.'version.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+    if (preg_match('/^([a-z]+)\s+(\S+)$/i', $line, $matches) === 1) {
+        $stamped[strtolower($matches[1])] = $matches[2];
+    }
+}
+
+$compatibility = json_decode((string) file_get_contents($compatibilityFile), true);
+
+if (! is_string($stamped['version'] ?? null) || ! is_array($compatibility) || ! is_string($compatibility['minimum'] ?? null)) {
+    fail('cannot write a manifest: version.txt or suwayomi.json is not readable, and the manifest needs both');
+}
+
+/*
+ * The JVM floor, read from the JRE that was actually staged.
+ *
+ * Read rather than written down, because a hardcoded 21 would be a claim about a JRE rather than a
+ * measurement of it, and would go stale silently the day the pinned JRE moved. If the release file is
+ * missing the build still succeeds and the field says so, because an unknown floor is a smaller problem
+ * than a build refused over a file nobody reads.
+ */
+$jreRelease = $install.DIRECTORY_SEPARATOR.'suwayomi'.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'release';
+$jvm = null;
+
+if (is_file($jreRelease) && preg_match('/JAVA_VERSION="([^"]+)"/', (string) file_get_contents($jreRelease), $matches) === 1) {
+    $jvm = '>='.$matches[1];
+}
+
+$manifest = [
+    'version' => $stamped['version'],
+    'released' => substr((string) ($stamped['built'] ?? date('c')), 0, 10),
+    'commit' => $stamped['commit'] ?? null,
+    'requires' => [
+        'suwayomi' => '>='.ltrim((string) $compatibility['minimum'], 'vV'),
+        'jvm' => $jvm,
+    ],
+    'artifacts' => [[
+        'file' => basename($expected),
+        'sha256' => hash_file('sha256', $expected),
+        'size' => filesize($expected),
+    ]],
+];
+
+$encoded = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;
+
+$beside = $out.DIRECTORY_SEPARATOR.'manifest.json';
+
+if (file_put_contents($beside, $encoded) === false) {
+    fail('could not write '.$beside);
+}
+
+$releases = $repo.DIRECTORY_SEPARATOR.'releases';
+
+if (! is_dir($releases)) {
+    mkdir($releases, 0o777, true);
+}
+
+$committed = $releases.DIRECTORY_SEPARATOR.$manifest['version'].'.json';
+
+if (file_put_contents($committed, $encoded) === false) {
+    fail('could not write '.$committed);
+}
+
+say('manifest', $beside);
+say('', 'sha256 '.$manifest['artifacts'][0]['sha256']);
+say('', 'also written to releases/'.$manifest['version'].'.json, which is committed');
+say('', 'requires suwayomi '.$manifest['requires']['suwayomi'].', jvm '.($jvm ?? 'unknown'));
+
 // --- and the one property that makes it an installer rather than an archive -----------------
 
 /*
