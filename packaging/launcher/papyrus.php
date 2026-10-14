@@ -244,7 +244,19 @@ try {
 
             foreach ($outcomes as $name => $outcome) {
                 if ($outcome === 'killed') {
-                    $say(sprintf('%s did not stop politely and had to be killed.', $name));
+                    /*
+                     * Not "did not stop politely", because on Windows nothing tried.
+                     *
+                     * Measured: `taskkill` without `/F` cannot terminate a console process at all, so a
+                     * process this launcher did not start is always killed outright. Saying it "did not
+                     * stop politely" describes an attempt that never happened, and this line is what a
+                     * reader pastes into a bug report. See `ProcessFinder::terminate()`.
+                     *
+                     * The distinction that does matter is still here: a process stopped through a
+                     * handle and one force-killed are different signals about whether something is
+                     * wrong, and `stopAll` reports them differently.
+                     */
+                    $say(sprintf('%s was stopped by force, which is the only way Windows can stop it.', $name));
                 }
 
                 if ($outcome === 'still running' || $outcome === 'could not be stopped') {

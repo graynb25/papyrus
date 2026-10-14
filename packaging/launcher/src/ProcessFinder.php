@@ -79,8 +79,12 @@ final class ProcessFinder
 {
     /**
      * @param  (callable(list<string>): list<int>)|null  $probe  Overrides the OS query, for tests.
+     * @param  (callable(string): array{status: int})|null  $killer  Overrides running `taskkill`, for
+     *                                                               tests. It exists because the defect this class was measured having is a defect in the
+     *                                                               *command*, and a command nobody can assert on is a command nobody can catch being wrong.
+     *                                                               Only the Windows branch uses it; the Unix branch signals with `posix_kill`.
      */
-    public function __construct(private $probe = null) {}
+    public function __construct(private $probe = null, private $killer = null) {}
 
     /**
      * The pids of every running process whose command line contains all of these tokens.
@@ -205,9 +209,48 @@ final class ProcessFinder
     /**
      * Terminate a pid this process did not start.
      *
-     * `proc_terminate` is not an option, because it needs a handle. `taskkill /T` is used rather
-     * than `/F` on the first attempt so the process tree gets a chance to unwind, and the honest
-     * outcome of a second attempt is named rather than dressed up as a polite stop.
+     * ## Why there is no graceful attempt on Windows, and it was measured
+     *
+     * Because `taskkill` without `/F` **cannot terminate a console process on Windows at all**. It
+     * sends a close request to windows and console applications have none. Measured on the reader's
+     * own install, against a `php artisan queue:work` this launcher did not start:
+     *
+     *     taskkill /PID 31548            exit 1
+     *       ERROR: The process with PID 31548 could not be terminated.
+     *       Reason: This process can only be terminated forcefully (with /F option).
+     *
+     * So the first version, which tried `taskkill /PID <pid> /T` and fell back to `/F`, was
+     * attempting a graceful stop that cannot exist on this platform.
+     *
+     * Worse than useless, because it reports success it did not achieve. Against the JVM tree:
+     *
+     *     taskkill /PID 8396 /T          exit 128
+     *       ERROR:   The process with PID 4964  could not be terminated. Reason: ... forcefully
+     *       SUCCESS: Sent termination signal to process with PID 30280, child of PID 8396.
+     *       ERROR:   The process with PID 30912 could not be terminated. Reason: ... forcefully
+     *       ERROR:   The process with PID 8396  could not be terminated. Reason: child processes ...
+     *
+     * 30280 was still running afterwards. `SUCCESS: Sent termination signal` means a signal was sent,
+     * not that anything died, and reading it as a stop is the exact failure this project's notes call
+     * a probe reporting a plausible result that is really its own failure echoed back.
+     *
+     * And for comparison, the one call that does work, whose every SUCCESS line is true:
+     *
+     *     taskkill /PID 8396 /T /F       exit 0
+     *       SUCCESS: The process with PID 4964 ... has been terminated.
+     *       SUCCESS: The process with PID 30280 ... has been terminated.
+     *       SUCCESS: The process with PID 30912 ... has been terminated.
+     *       SUCCESS: The process with PID 8396  ... has been terminated.
+     *
+     * So one call, and the outcome is named for what it is. `/T` is kept because Suwayomi's
+     * `jcef_helper` children hold files open inside the reader's data directory, and a JVM stopped
+     * without its tree leaves that directory undeletable.
+     *
+     * ## Why the Unix branch still tries politely
+     *
+     * Because `SIGTERM` is real there, and a process that handles it closes its database and flushes
+     * what it is holding. Same order as {@see ManagedProcess::stop()}, which is the polite path for
+     * processes this process *did* start and which has a handle to ask.
      *
      * @return string What happened, in the words the caller reports to a reader.
      */
@@ -225,15 +268,11 @@ final class ProcessFinder
         }
 
         if (PHP_OS_FAMILY === 'Windows') {
-            @exec(sprintf('taskkill /PID %d /T 2>NUL', $pid), $output, $status);
+            $status = ($this->killer ?? [self::class, 'taskkill'])(
+                sprintf('taskkill /PID %d /T /F 2>NUL', $pid),
+            )['status'];
 
-            if ($status === 0) {
-                return $this->waitForExit($pid, 10) ? 'terminated' : 'still running';
-            }
-
-            @exec(sprintf('taskkill /PID %d /T /F 2>NUL', $pid), $output, $status);
-
-            return $status === 0 ? 'killed' : 'could not be stopped';
+            return $status === 0 && $this->waitForExit($pid, 10) ? 'killed' : 'could not be stopped';
         }
 
         // SIGTERM first, SIGKILL second, which is the same order ManagedProcess::stop uses.
@@ -246,6 +285,18 @@ final class ProcessFinder
         @posix_kill($pid, defined('SIGKILL') ? SIGKILL : 9);
 
         return $this->waitForExit($pid, 5) ? 'killed' : 'still running';
+    }
+
+    /**
+     * Run one command and report only its exit status.
+     *
+     * @return array{status: int}
+     */
+    private static function taskkill(string $command): array
+    {
+        @exec($command, $output, $status);
+
+        return ['status' => $status];
     }
 
     /** Whether the pid has gone within the grace period. */

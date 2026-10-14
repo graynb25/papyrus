@@ -410,4 +410,187 @@ class CrossProcessStopTest extends TestCase
             'build-install.php must read the order from somewhere, and papyrus.php is where it is',
         );
     }
+
+    // -------------------------------------------------------------------------------------------
+    // The command that does the killing, which is where the defect was.
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * A finder that records the commands it would run and answers with a fixed exit status.
+     *
+     * The command is asserted rather than the effect because the effect cannot be produced in a test.
+     * `waitForExit()` genuinely asks the operating system, so a fake that claimed a process had died
+     * would be asserting against its own fiction, and a test that starts a real process to kill is a
+     * test that can kill the PHPUnit runner instead. See this class's own docblock.
+     *
+     * @param  array<string, int>  $answers  Exit status per pid.
+     * @param  list<string>  $issued
+     */
+    private function killerFor(array $answers, array &$issued): ProcessFinder
+    {
+        return new ProcessFinder(
+            fn (array $tokens): array => [],
+            function (string $command) use ($answers, &$issued): array {
+                $issued[] = $command;
+
+                preg_match('/PID (\d+)/', $command, $found);
+
+                $pid = (string) (int) ($found[1] ?? 0);
+
+                return ['status' => $answers[$pid] ?? 0];
+            },
+        );
+    }
+
+    /**
+     * ## The defect, measured on the reader's own install
+     *
+     * `terminate()` used to try `taskkill /PID <pid> /T` first and fall back to `/F`. The first pass
+     * cannot terminate a console process on Windows at all, and it reported a success it had not
+     * achieved:
+     *
+     *     taskkill /PID 8396 /T          exit 128
+     *       SUCCESS: Sent termination signal to process with PID 30280, child of PID 8396.
+     *       ERROR:   The process with PID 8396 could not be terminated.
+     *
+     * 30280 was still running afterwards. A `stop` that ran the pretend pass first was therefore
+     * slower than one that did not, printed a false success, and killed nothing.
+     *
+     * This asserts the command, because the command was the defect. A class whose Windows branch
+     * shells out cannot be tested any other way, and that is why this went unnoticed: `terminate()`
+     * had no test at all.
+     */
+    public function test_the_only_kill_command_is_the_forceful_one(): void
+    {
+        $pid = $this->somethingThatIsAlive();
+
+        $issued = [];
+        $finder = $this->killerFor([(string) $pid => 0], $issued);
+
+        $finder->terminate($pid);
+
+        $this->assertCount(1, $issued, 'one command, because there is one that works');
+        $this->assertStringContainsString('/T /F', $issued[0], 'and it is the forceful one');
+        $this->assertDoesNotMatchRegularExpression(
+            '/\/T\s+2>NUL/',
+            $issued[0],
+            'with no `/T` alone anywhere: that pass cannot stop a console process and reports a '
+            .'success it did not achieve',
+        );
+    }
+
+    /**
+     * Adding the pretend-graceful pass back is the mutation this test exists to kill.
+     */
+    public function test_no_pass_before_the_forceful_one_is_attempted(): void
+    {
+        $pid = $this->somethingThatIsAlive();
+
+        $issued = [];
+
+        $this->killerFor([(string) $pid => 0], $issued)->terminate($pid);
+
+        foreach ($issued as $command) {
+            $this->assertStringNotContainsString(
+                ' 2>NUL',
+                str_replace('/T /F 2>NUL', '', $command),
+                'every command issued must carry /F, and there must be no command without it',
+            );
+        }
+    }
+
+    /**
+     * `/T` is kept, because Suwayomi's `jcef_helper` children hold files open in the reader's data
+     * directory and a JVM stopped without its tree leaves that directory undeletable.
+     */
+    public function test_the_tree_is_taken_with_the_parent(): void
+    {
+        $pid = $this->somethingThatIsAlive();
+
+        $issued = [];
+        $this->killerFor([(string) $pid => 0], $issued)->terminate($pid);
+
+        $this->assertStringContainsString('/T', $issued[0]);
+    }
+
+    /**
+     * A failure is named as one, rather than reported as a stop that did not stop anything.
+     */
+    public function test_a_refused_kill_is_reported_as_one(): void
+    {
+        $pid = $this->somethingThatIsAlive();
+
+        $issued = [];
+
+        $this->assertSame(
+            'could not be stopped',
+            $this->killerFor([(string) $pid => 1], $issued)->terminate($pid),
+        );
+    }
+
+    /**
+     * Its own pid, which is the safety property this class most has to get right.
+     */
+    public function test_it_will_not_run_any_command_against_itself(): void
+    {
+        $issued = [];
+        $finder = $this->killerFor([], $issued);
+
+        $this->assertSame('refused, that is this process', $finder->terminate((int) getmypid()));
+        $this->assertSame([], $issued, 'and issues no command at all');
+    }
+
+    /**
+     * A process that is not running is not killed, which is the same property seen from the other side.
+     */
+    public function test_a_process_that_is_already_gone_is_not_killed(): void
+    {
+        $issued = [];
+        $finder = $this->killerFor([], $issued);
+
+        $this->assertSame('already gone', $finder->terminate(4194303));
+        $this->assertSame([], $issued);
+    }
+
+    /**
+     * A pid of zero or less, which is what a failed `getmypid()` would produce.
+     */
+    public function test_a_pid_of_zero_or_less_issues_no_command(): void
+    {
+        $issued = [];
+        $finder = $this->killerFor([], $issued);
+
+        foreach ([0, -1] as $pid) {
+            $this->assertSame('refused, that is this process', $finder->terminate($pid));
+        }
+
+        $this->assertSame([], $issued);
+    }
+
+    /**
+     * A real, live pid on this machine that is not this one.
+     *
+     * The parent, because it cannot have exited while this is running and `terminate()` refuses its
+     * own pid by design. That refusal is the safety property that matters most here, so a test cannot
+     * use the runner itself: the first version did, and every assertion passed against the refusal
+     * branch instead of the code under test.
+     *
+     * Read from the operating system rather than invented, so a machine where it cannot be read says
+     * so and skips rather than testing nothing.
+     */
+    private function somethingThatIsAlive(): int
+    {
+        $parent = @shell_exec(
+            'powershell -NoProfile -NonInteractive -Command '
+            .'"(Get-CimInstance Win32_Process -Filter \"ProcessId='.getmypid().'\").ParentProcessId" 2>NUL',
+        );
+
+        $pid = is_string($parent) && ctype_digit(trim($parent)) ? (int) trim($parent) : 0;
+
+        if ($pid <= 0 || ! ProcessIdentity::isAlive($pid)) {
+            $this->markTestSkipped('no second live process to name, so the check would prove nothing');
+        }
+
+        return $pid;
+    }
 }
