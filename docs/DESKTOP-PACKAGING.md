@@ -8,12 +8,62 @@ machine. Item 0.9, the unified logging that makes any of this diagnosable, is de
 [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
 and the upstream projects it would ship.
 
-The shipped configs live in `packaging/`, and the two build steps are:
+The shipped configs live in `packaging/`, and the build steps are:
 
 ```
 php packaging/runtime/stage-runtime.php      the pinned JRE and the CA bundle
-php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar> --into=<dir>
+php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar> --into=<absolute path>
+php packaging/installer/build-installer.php  the .exe, signed
+php packaging/installer/build-portable.php   the zip, hashed
 ```
+
+`--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
+resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved
+php.ini` with nothing pointing at the cause. It is refused at the top of the script for that reason.
+
+### Signing the installer
+
+Authenticode, driven entirely by the environment so that no secret lives in the repository:
+
+| Variable | What it does |
+| --- | --- |
+| `PAPYRUS_SIGN=1` | Asks for signing. Without it the build **refuses** rather than producing an unsigned installer quietly |
+| `PAPYRUS_CERT_THUMBPRINT` | A code-signing certificate already in the Windows certificate store |
+| `PAPYRUS_CERT_PFX` | Path to a `.pfx` holding one, instead of a thumbprint |
+| `PAPYRUS_CERT_PASSWORD` | Password for that `.pfx` |
+| `PAPYRUS_SIGNTOOL` | Path to `signtool.exe`, if it is not where the SDK puts it |
+| `PAPYRUS_TIMESTAMP_URL` | Defaults to DigiCert. A release without a timestamp is refused |
+| `PAPYRUS_RELEASE=1` | Marks this as a release, which makes a missing timestamp fatal rather than survivable |
+
+`--unsigned` is the only way to build without signing, and it is a flag rather than a default because an
+unsigned installer is indistinguishable from a signed one on disk. The build manifest records
+`signed: true|false` and a description of the signature, so the build log is not the only record.
+
+The certificate is a real one and **is not in this repository**. Until one exists the only way to produce
+an installer locally is `--unsigned`, and anything published that way should be described as unsigned.
+
+### The portable zip, and why it cannot be signed
+
+`build-portable.php` packages the install for a reader who wants no installer at all: unpack it anywhere,
+run `Papyrus.cmd`, and the library lives in a `Papyrus` directory beside it rather than inside it. It
+refuses an install containing a real `.env`, a live `database.sqlite`, either sidecar, or a build probe,
+and it refuses an output directory inside the install, because a build then packages the previous build's
+archive.
+
+**A zip cannot carry an Authenticode signature.** Measured with a real certificate and `signtool.exe`:
+
+```
+SignTool Error: This file format cannot be signed because it is not recognized.
+```
+
+So it ships a `.sha256` sidecar in `sha256sum` format instead, which both `sha256sum -c` and Windows'
+`certutil` accept. That is a weaker guarantee than a signature and it is the honest one available for a
+container format.
+
+It also makes reproducibility load-bearing. Entries are sorted before writing, and two builds of
+identical content produce byte-identical archives, so a published hash stays meaningful. A zip whose bytes
+change every build has a hash that changes every build, and "is this the file you published" becomes
+unanswerable.
 
 `build-install.php` refuses to finish on a broken install. Beyond checking that files exist, it
 lays the install out using the launcher's own code, boots the application with the launcher's own

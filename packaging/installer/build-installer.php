@@ -31,19 +31,42 @@
  *
  * ## Usage:
  *
- *   php packaging/installer/build-installer.php [--install=<dir>] [--out=<dir>]
+ *   php packaging/installer/build-installer.php [--install=<dir>] [--out=<dir>] [--unsigned]
+ *
+ * ## Signing
+ *
+ * Sign the finished `.exe` with Authenticode by setting `PAPYRUS_SIGN=1` and giving it a certificate,
+ * either `PAPYRUS_CERT_THUMBPRINT` for one already in the Windows store or `PAPYRUS_CERT_PFX` for a
+ * file. `--unsigned` is the only way to build without signing, and it says so out loud, because an
+ * unsigned installer is indistinguishable from a signed one on disk.
+ *
+ * See `packaging/signing/Signing.php` for the configuration and for why skipping has to be a decision.
  */
 
 declare(strict_types=1);
 
 $repo = dirname(__DIR__, 2);
 
+/*
+ * Paths and the flag are kept apart, deliberately.
+ *
+ * The first version put `--unsigned` into the same `$options` bag as the two paths. PHPStan correctly
+ * reported that `$out` was then `string|true`, because the bag held a boolean, and the inference
+ * travelled four hundred lines to a `mkdir` and a `countFiles`.
+ *
+ * A flag is not a path, so it gets its own variable. That is cleaner code as well as correct typing,
+ * and the alternative was a cast, which is the thing the analysis guidance exists to prevent.
+ */
+$unsigned = false;
 $options = [];
+
 foreach (array_slice($argv, 1) as $argument) {
     if (str_starts_with($argument, '--install=')) {
         $options['install'] = substr($argument, strlen('--install='));
     } elseif (str_starts_with($argument, '--out=')) {
         $options['out'] = substr($argument, strlen('--out='));
+    } elseif ($argument === '--unsigned') {
+        $unsigned = true;
     } else {
         fail('unexpected argument: '.$argument);
     }
@@ -190,6 +213,57 @@ $megabytes = round(filesize($expected) / 1048576, 1);
 say('installer', $expected);
 say('size', $megabytes.' MB');
 
+// --- signing ----------------------------------------------------------------------------------
+
+/*
+ * Signing happens after the compiler and before the manifest, so the manifest can record what was
+ * actually done rather than what was intended.
+ */
+require_once __DIR__.'/../signing/Signing.php';
+
+use Papyrus\Signing\Signing;
+
+$skipSigning = $unsigned;
+
+if ($skipSigning && Signing::isRequested()) {
+    fail(
+        "--unsigned was passed and PAPYRUS_SIGN is set. Those disagree.\n\n"
+        ."  Signing was requested by the environment and waived on the command line, which is\n"
+        .'  exactly the state where the wrong one is believed to have happened. Pass one.'
+    );
+}
+
+if ($skipSigning) {
+    say('signature', 'NOT SIGNED, because --unsigned was passed');
+    say('', 'an unsigned installer looks identical to a signed one on disk');
+} elseif (Signing::isRequested()) {
+    try {
+        // A local build may lose the timestamp server without that being fatal. A release may not:
+        // an untimestamped signature stops being valid the day the certificate expires, which is
+        // four years away and entirely somebody else's problem by then.
+        Signing::sign([$expected], ! Signing::isRelease());
+
+        say('signature', Signing::describe($expected));
+    } catch (RuntimeException $e) {
+        fail("signing failed.\n\n  ".str_replace("\n", "\n  ", $e->getMessage()));
+    }
+} else {
+    /*
+     * The default, and the reason `--unsigned` exists at all.
+     *
+     * Refusing here rather than proceeding quietly means the only way to get an unsigned artefact is
+     * to ask for one. The alternative is a build that produces unsigned installers whenever nobody
+     * happens to have a certificate configured, and calls that normal.
+     */
+    fail(
+        "no signing configuration, so refusing to produce an unsigned installer silently.\n\n"
+        ."  To sign, set PAPYRUS_SIGN=1 and either\n"
+        ."    PAPYRUS_CERT_THUMBPRINT  a code-signing certificate already in the Windows store, or\n"
+        ."    PAPYRUS_CERT_PFX         path to a .pfx holding one\n\n"
+        .'  To build without signing on purpose, pass --unsigned.'
+    );
+}
+
 // --- the manifest ------------------------------------------------------------------------------
 
 /*
@@ -264,6 +338,16 @@ $manifest = [
         'suwayomi' => '>='.ltrim((string) $compatibility['minimum'], 'vV'),
         'jvm' => $jvm,
     ],
+    /*
+     * The signing state, recorded rather than left in the build log.
+     *
+     * A log is pasted into an issue and then lost. The manifest is the artefact that gets published
+     * beside the installer, so it is the only place a reader, or a mirror, or a later audit can learn
+     * whether this build was signed. `signed` is a boolean rather than a certificate name so that it
+     * cannot be mistaken for an endorsement by whoever holds the certificate.
+     */
+    'signed' => ! $skipSigning,
+    'signature' => $skipSigning ? null : Signing::describe($expected),
     'artifacts' => [[
         'file' => basename($expected),
         'sha256' => hash_file('sha256', $expected),

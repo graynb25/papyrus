@@ -34,7 +34,8 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/",
-            "Papyrus\\Launcher\\": "packaging/launcher/src/"
+            "Papyrus\\Launcher\\": "packaging/launcher/src/",
+                "Papyrus\\Signing\\": "packaging/signing/"
         }
     },
     "autoload-dev": {

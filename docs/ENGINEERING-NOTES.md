@@ -4805,3 +4805,85 @@ eturn null that a generator never needs.
     coming from the `LogicException` guard in `Faq::privacy()` firing because no entry claimed to be
     the privacy entry. A guard that refuses to return a wrong answer, and a test that notices, is the
     whole shape of the thing.
+
+244. **Signing is refused by omission, because an unsigned artefact looks exactly like a signed one.**
+    `build-installer.php` now signs the finished `.exe` with Authenticode, and the design constraint is
+    that unsigned must be a *decision*. An unsigned installer on disk is the same size, has the same
+    name and shows the same icon; the only difference is something a reader has to know to look for.
+
+    So the rules are: ask with `PAPYRUS_SIGN=1`, refuse if no certificate is configured, refuse if the
+    signature does not verify, and require `--unsigned` to skip. A build that quietly produced unsigned
+    installers whenever nobody happened to have a certificate is a build that trains everyone to
+    distribute unsigned installers.
+
+    `PAPYRUS_SIGN=` set to *nothing* counts as unset, and that is load-bearing rather than pedantic. An
+    empty value is what a shell export or an unpopulated CI secret looks like, and it is precisely the
+    shape of "signing was on and then quietly was not".
+
+    Verified against a real certificate rather than a mock, which immediately paid for itself: signtool
+    answered `You cannot use the /td option twice`, because the code passed the timestamp digest
+    algorithm in the base arguments and again in the timestamp block. A mocked tool returning exit zero
+    proves the function ran. It says nothing about whether the file is signed, which is the only question
+    the reader will ever have an opinion about.
+
+245. **A zip cannot be signed, so the portable ships a hash and says why in the archive itself.**
+    Measured rather than assumed, because the whole distribution story depends on it. A real
+    certificate, a real `signtool.exe`, a real zip:
+
+        SignTool Error: This file format cannot be signed because it is not recognized.
+
+    Authenticode covers PE images, catalogs, MSI packages and PowerShell files. A zip is a container.
+    There is no configuration that makes it work, and the correct response is to stop looking.
+
+    So the portable is distributed the way every other project distributes a tarball: a published
+    SHA-256 beside it, and a reader who compares it knows the file is the one that was published. The
+    `.exe` gets the stronger mechanism because the `.exe` can.
+
+    Which makes reproducibility load-bearing rather than tidy. A zip whose bytes change every build has
+    a hash that changes every build, and "is this the file you published" becomes unanswerable. Entries
+    are sorted before writing, and two builds of identical content are asserted to produce identical
+    hashes. Measured: two runs into sibling output directories give byte-identical archives.
+
+246. **A build that packages its own previous output, silently, forever.**
+    `--out` inside `--install` is now refused. It was not, and it looked completely fine:
+
+        run 3   3 files
+        run 4   5 files      the archive contains dist1/Papyrus-1.2.0-portable.zip
+
+    Each build packages the last one, the entry count climbs, and on the real install that is a 305MB
+    file absorbing a copy of itself. No warning, no non-zero exit, and the entry count looks plausible
+    at every step.
+
+    Found by a test that asserted reproducibility and failed, which is the only reason it surfaced: the
+    behaviour is invisible from the output and obvious from the archive contents. The fix is a refusal at
+    the top, and the test now pins it.
+
+247. **Two more of my own checks that could not have failed, in the same afternoon as two that could
+    not fail the other way.**
+    The portable's non-PE test captured `$threw` by value into a closure, so the closure set its own copy
+    and the assertion read an untouched `false`. It reported "signing a non-PE file must be an error"
+    against code that was refusing correctly throughout. Usually this project's notes are about an
+    assertion that cannot be reached; this time the signal never left the closure.
+
+    And PHPStan found the mirror image: `if ($staged === 0)` in the portable, which is unreachable
+    because `$staged` counts the injected readme and is therefore provably one or more. The intent was
+    "an empty install must not become an archive", and the check now counts what came from the install
+    rather than the total, which is what the intent was all along.
+
+    Worth pairing with lesson 243. Three of the five problems in this session's packaging work were
+    checks that could not report a result, and not one of them was a hard piece of logic. They were
+    ordinary assumptions, written quickly, about whether a variable held what it was supposed to.
+
+248. **A test that only calls cleanup on the happy path turns one failure into a permanent one.**
+    The portable tests each ended with `cleanUp()`. A test that failed never reached it, so its staging
+    directory stayed in the temporary folder, where the next run's test walked into it. The suite went
+    flaky with no code change at all, which is the most expensive kind of failure to diagnose and looks
+    exactly like a race.
+
+    Cleanup now happens in `tearDown`, so it runs either way. That makes the suite deterministic, and I
+    want to be precise about what it does not do: it does not explain the original failure. It appeared
+    twice in five runs and then not once in thirteen, and I never pinned it. The honest position is that
+    the symptom is gone and the cause is not known, and those are different claims.
+
+    The related fix was each test getting its own parent directory, rather than every test writing to one
+    shared `sys_get_temp_dir()/out`.
