@@ -182,3 +182,9 @@ build/sandbox/*.wsb
 # reading: an indented pattern is a literal path that happens to start with two spaces, so the rule
 # matches nothing at all and looks identical to one that works.
 /.signing/
+
+# Bytecode caches for the Python gates under tools/. Python writes these on import, so the very act
+# of running the gate creates one, and without this rule the first person to run it commits a .pyc
+# by accident. Found the ordinary way: git add tools/ staged one.
+__pycache__/
+*.pyc
