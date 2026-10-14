@@ -100,6 +100,7 @@ require __DIR__.'/src/InstallControl.php';
 require __DIR__.'/src/SupervisorControl.php';
 require __DIR__.'/src/RestoreCommand.php';
 require __DIR__.'/src/MangaSnapshot.php';
+require __DIR__.'/src/RunRecord.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 
