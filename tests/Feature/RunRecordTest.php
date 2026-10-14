@@ -57,7 +57,7 @@ class RunRecordTest extends TestCase
 
     private function begin(string $operation = 'restore', string $token = '20261014-031701'): RunRecord
     {
-        return RunRecord::begin($this->path(), $operation, $token, gmdate('c'));
+        return RunRecord::begin($this->path(), $operation, RunRecord::RESTORE_STAGES, $token, gmdate('c'));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -66,7 +66,7 @@ class RunRecordTest extends TestCase
     {
         $view = $this->begin()->view();
 
-        $this->assertCount(count(RunRecord::STAGES), $view['stages']);
+        $this->assertCount(count(RunRecord::RESTORE_STAGES), $view['stages']);
 
         foreach ($view['stages'] as $stage) {
             $this->assertSame('pending', $stage['state'], $stage['stage'].' should start pending');
@@ -174,7 +174,7 @@ class RunRecordTest extends TestCase
      */
     public function test_a_run_that_stopped_reporting_reads_as_stalled(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', 't', gmdate('c', time() - 600));
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 600));
         $record->enter('stopping');
 
         $view = $record->view();
@@ -185,7 +185,7 @@ class RunRecordTest extends TestCase
 
     public function test_a_run_that_is_reporting_is_not_stalled(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', 't', gmdate('c', time() - 600));
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 600));
 
         $this->assertFalse($record->view()['stalled'], 'a run that has not started a stage is not stalled');
     }
@@ -195,9 +195,9 @@ class RunRecordTest extends TestCase
      */
     public function test_a_finished_run_is_not_stalled_however_old(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', 't', gmdate('c', time() - 86400));
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 86400));
 
-        foreach (RunRecord::STAGES as $stage) {
+        foreach (RunRecord::RESTORE_STAGES as $stage) {
             $record->skip($stage);
         }
 
@@ -213,7 +213,7 @@ class RunRecordTest extends TestCase
      */
     public function test_it_reports_its_age(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', 't', gmdate('c', time() - 3600));
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 3600));
 
         $this->assertSame(3600, $record->view()['age_seconds']);
     }
@@ -248,22 +248,32 @@ class RunRecordTest extends TestCase
 
     /**
      * A stage that is not one of the stages is refused, not invented.
+     *
+     * The four calls are written out rather than looped over method names. `fail()` takes a reason
+     * as well as a stage, so a loop has to pass a different number of arguments to each one, and
+     * PHPStan is right that a spread it cannot resolve to a fixed arity proves nothing about any of
+     * them.
      */
     public function test_an_unknown_stage_is_refused(): void
     {
         $record = $this->begin();
 
-        foreach ([['enter', ['teleporting']], ['finish', ['teleporting']], ['fail', ['teleporting', 'no reason']], ['skip', ['teleporting']]] as [$method, $arguments]) {
-            $refused = false;
+        $refused = 0;
 
+        foreach ([
+            static fn (RunRecord $r) => $r->enter('teleporting'),
+            static fn (RunRecord $r) => $r->finish('teleporting'),
+            static fn (RunRecord $r) => $r->fail('teleporting', 'no reason'),
+            static fn (RunRecord $r) => $r->skip('teleporting'),
+        ] as $call) {
             try {
-                $record->{$method}(...$arguments);
+                $call($record);
             } catch (RestoreRefused) {
-                $refused = true;
+                $refused++;
             }
-
-            $this->assertTrue($refused, $method.'() must refuse a stage that does not exist');
         }
+
+        $this->assertSame(4, $refused, 'every one of enter, finish, fail and skip must refuse a stage that does not exist');
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -328,7 +338,7 @@ class RunRecordTest extends TestCase
     {
         $record = $this->begin();
 
-        foreach (RunRecord::STAGES as $stage) {
+        foreach (RunRecord::RESTORE_STAGES as $stage) {
             $record->enter($stage);
             $record->finish($stage);
         }
@@ -341,11 +351,157 @@ class RunRecordTest extends TestCase
         $this->assertSame([], $strays, 'an atomic write must not leave its temporary behind');
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Each operation brings its own stages, because a shared list invents stages that never ran.
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * A snapshot reports a snapshot's stages.
+     *
+     * The first version had one list, tuned for a restore, and a snapshot inherited
+     * `reading_backup` and `checking_pair`, neither of which it has anything to do with. They would
+     * have sat at `pending` for ever, which is a lie told by leaving something out rather than by
+     * saying anything false.
+     */
+    public function test_a_snapshot_reports_its_own_stages(): void
+    {
+        $record = RunRecord::begin($this->path(), 'snapshot', RunRecord::SNAPSHOT_STAGES, 'tok', gmdate('c'));
+
+        $view = $record->view();
+
+        $this->assertCount(count(RunRecord::SNAPSHOT_STAGES), $view['stages']);
+        $this->assertSame('snapshot', $view['operation']);
+
+        foreach (RunRecord::SNAPSHOT_STAGES as $stage) {
+            $this->assertNotNull($this->stageOrNull($view, $stage), $stage.' must be a stage of a snapshot');
+        }
+
+        foreach (['reading_backup', 'checking_pair', 'verifying'] as $notASnapshotStage) {
+            $this->assertNull(
+                $this->stageOrNull($view, $notASnapshotStage),
+                'a snapshot must not report '.$notASnapshotStage.', which is a stage of a restore',
+            );
+        }
+    }
+
+    /**
+     * A snapshot's stages can be entered, and read back, like any other's.
+     */
+    public function test_a_snapshot_can_be_entered_and_read_back(): void
+    {
+        $record = RunRecord::begin($this->path(), 'snapshot', RunRecord::SNAPSHOT_STAGES, 'tok', gmdate('c'));
+        $record->enter('stopping', 'asking the launcher to stop everything');
+        $record->finish('stopping', 'four processes stopped');
+        $record->fail('copying_manga_half', 'Suwayomi was still running after thirty seconds');
+        $record->finish('restarting', 'up again');
+
+        $read = RunRecord::read($this->path());
+
+        $this->assertNotNull($read, 'the app has to be able to read this back when it returns');
+        $this->assertSame('snapshot', $read->view()['operation']);
+        $this->assertSame('done', $this->stage($read->view(), 'stopping')['state']);
+        $this->assertTrue($read->view()['failed']);
+        $this->assertSame('pending', $this->stage($read->view(), 'checking_target')['state']);
+    }
+
+    /**
+     * A stage name that was entered and then never written still reads back.
+     *
+     * The stage order is stored beside the stages rather than being inferred from them, precisely so
+     * that a launcher killed between writing `running` and writing `done` leaves a readable record.
+     * Inferred from the keys, that record would lose the very stage it was in the middle of.
+     */
+    public function test_the_stage_order_outlives_a_stage_removed_from_the_file(): void
+    {
+        $record = RunRecord::begin($this->path(), 'snapshot', RunRecord::SNAPSHOT_STAGES, 'tok', gmdate('c'));
+        $record->enter('stopping');
+
+        $raw = json_decode((string) file_get_contents($this->path()), true);
+
+        $this->assertSame(RunRecord::SNAPSHOT_STAGES, $raw['stage_order']);
+
+        unset($raw['stages']['stopping']);
+        file_put_contents($this->path(), json_encode($raw));
+
+        $read = RunRecord::read($this->path());
+
+        $this->assertNotNull($read);
+        $this->assertSame(
+            'pending',
+            $this->stage($read->view(), 'stopping')['state'],
+            'the stage that was mid-flight is still named, and reads as not finished',
+        );
+    }
+
+    /**
+     * A record with no stages at all is refused rather than written.
+     *
+     * Nothing about it could be shown to anybody, so writing it produces a file that exists and says
+     * nothing, which is the original failure wearing a different hat.
+     */
+    public function test_a_run_with_no_stages_is_refused(): void
+    {
+        $refused = false;
+
+        try {
+            RunRecord::begin($this->path(), 'snapshot', [], 'tok', gmdate('c'));
+        } catch (RestoreRefused $e) {
+            $refused = true;
+
+            $this->assertStringContainsString('no stages to report', $e->getMessage());
+        }
+
+        $this->assertTrue($refused);
+        $this->assertFileDoesNotExist($this->path(), 'a refused run must leave no file behind');
+    }
+
+    /**
+     * A stage list holding something that is not a name is refused.
+     */
+    public function test_a_stage_list_holding_something_that_is_not_a_name_is_refused(): void
+    {
+        foreach ([[['stopping']], [''], ['  '], [42]] as $stages) {
+            $refused = false;
+
+            try {
+                RunRecord::begin($this->path(), 'snapshot', $stages, 'tok', gmdate('c'));
+            } catch (RestoreRefused) {
+                $refused = true;
+            }
+
+            $this->assertTrue($refused, 'a stage list of '.json_encode($stages).' must be refused');
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $view
      * @return array<string, mixed>
      */
     private function stage(array $view, string $name): array
+    {
+        /*
+         * Keyed by name, and `assertArrayHasKey` rather than `$this->fail()` at the end.
+         *
+         * `fail()` is declared `@return never`, so a `return []` after it is unreachable as far as
+         * PHPStan is concerned, and PHP will never reach it either. The assertion does the same job
+         * without the dead statement, and naming the stage it could not find is in the message.
+         */
+        $byName = [];
+
+        foreach ($view['stages'] as $stage) {
+            $byName[$stage['stage']] = $stage;
+        }
+
+        $this->assertArrayHasKey($name, $byName, 'there is no stage named '.$name);
+
+        return $byName[$name];
+    }
+
+    /**
+     * @param  array<string, mixed>  $view
+     * @return array<string, mixed>|null
+     */
+    private function stageOrNull(array $view, string $name): ?array
     {
         foreach ($view['stages'] as $stage) {
             if ($stage['stage'] === $name) {
@@ -353,8 +509,6 @@ class RunRecordTest extends TestCase
             }
         }
 
-        $this->fail('no stage named '.$name);
-
-        return [];
+        return null;
     }
 }

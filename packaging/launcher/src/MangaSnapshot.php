@@ -49,6 +49,29 @@ use Throwable;
  * So the question asked is the boring one, and the only one that can be answered: **is the process
  * still alive?** That is a fact about the world rather than about the filesystem.
  *
+ * ## What the pid argument means, and why it is nullable
+ *
+ * `$wasRunningPid` is the pid Suwayomi was running under when the caller looked, or **null when it
+ * was not running at all**.
+ *
+ * Null is not the absence of an answer. It is the strongest answer available: nothing is running, so
+ * nothing is writing the file, so copying it cannot catch it mid-write. There is no process to check
+ * and no wait to do.
+ *
+ * The first version took `int $suwayomiPid` and refused anything at or below zero, saying "No process
+ * id was given for Suwayomi, so nothing has proved the manga database is not being written." That
+ * refused the safest case there is. The obvious moment to copy the manga database is when Suwayomi
+ * is already stopped, and that moment would have been refused, leaving a reader to start Suwayomi
+ * purely so that it could be stopped again to be copied.
+ *
+ * That is a check that could only fail rather than one that could not, which is the same defect as a
+ * check that can never fail: both report a verdict about something other than the thing being
+ * checked. This one refused on a fact that argues the other way.
+ *
+ * So the type says it. `?int` cannot express "running, but I do not know its pid", which is the one
+ * state that genuinely must be refused, because that is the state where a copy would be unsafe. A
+ * caller passing `0` or below has not done the lookup, and the refusal says so and names the fix.
+ *
  * ## What it does not do
  *
  * It does not decide whether Suwayomi was stopped. It is told. It checks, refuses if the answer is no,
@@ -75,7 +98,8 @@ final class MangaSnapshot
     /**
      * Copy the manga database to `$target`, refusing unless nothing is writing it.
      *
-     * @param  int  $suwayomiPid  The JVM's pid, as it was before it was stopped.
+     * @param  int|null  $wasRunningPid  The pid Suwayomi was running under, or null when it was not
+     *                                   running at all, which is proof enough on its own.
      * @param  int  $settleSeconds  How long to keep re-checking once the process is first seen gone.
      *
      * @throws RestoreRefused The process is still alive, or the copy did not arrive intact.
@@ -83,7 +107,7 @@ final class MangaSnapshot
     public function capture(
         string $source,
         string $target,
-        int $suwayomiPid,
+        ?int $wasRunningPid,
         int $settleSeconds = 2,
         ?callable $note = null,
     ): void {
@@ -97,7 +121,7 @@ final class MangaSnapshot
             )))->attempted($source);
         }
 
-        $this->waitUntilGone($suwayomiPid, $settleSeconds, $note);
+        $this->waitUntilGone($wasRunningPid, $settleSeconds, $note);
 
         $note('  copying '.basename($source).' ('.number_format((int) filesize($source)).' bytes)');
 
@@ -122,18 +146,26 @@ final class MangaSnapshot
     /**
      * Keep asking until the process is gone, then wait a moment more.
      *
+     * Nothing to ask about when Suwayomi was not running to begin with, which returns immediately.
+     *
      * The extra wait is measurable rather than superstitious. `taskkill` returning does not mean the
      * process has finished exiting, and in the cycles above the launcher reported a process stopped
      * and a port was still held a moment later.
      *
      * @throws RestoreRefused
      */
-    private function waitUntilGone(int $pid, int $settleSeconds, callable $note): void
+    private function waitUntilGone(?int $pid, int $settleSeconds, callable $note): void
     {
+        if ($pid === null) {
+            $note('  Suwayomi was not running, so nothing was writing this file');
+
+            return;
+        }
+
         if ($pid <= 0) {
             throw (new RestoreRefused(
-                'No process id was given for Suwayomi, so nothing has proved the manga database is not '
-                .'being written. A snapshot that cannot prove that is not a backup.',
+                'No usable process id was given for Suwayomi. Pass null when Suwayomi is not running, '
+                .'which is safe to copy, rather than a number that is not a process.'
             ))->attempted('pid');
         }
 
@@ -170,14 +202,14 @@ final class MangaSnapshot
     public function tryCapture(
         string $source,
         string $target,
-        int $suwayomiPid,
+        ?int $wasRunningPid,
         int $settleSeconds = 2,
         ?callable $note = null,
     ): bool {
         $note ??= static fn (string $line): null => null;
 
         try {
-            $this->capture($source, $target, $suwayomiPid, $settleSeconds, $note);
+            $this->capture($source, $target, $wasRunningPid, $settleSeconds, $note);
 
             return true;
         } catch (Throwable $e) {

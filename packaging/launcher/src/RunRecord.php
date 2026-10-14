@@ -44,14 +44,46 @@ use JsonException;
  */
 final class RunRecord
 {
-    /** The stages a restore moves through, in the order it moves through them. */
-    public const STAGES = [
+    /**
+     * The stages a restore moves through, in the order it moves through them.
+     *
+     * ## Why each operation has its own list rather than one shared list
+     *
+     * Because the first version declared one constant tuned for a restore, and a snapshot then
+     * inherited two stages that do not apply to it: it has nothing to read a backup from and nothing
+     * to check a pair against. They would have sat at `pending` for ever, which is the small lie told
+     * by leaving something out, and the reason `skip()` exists at all.
+     *
+     * The caller passes its own list instead, so the launcher owns the vocabulary rather than this
+     * class guessing at it. The application renders whatever it finds, so it needs no list of its own
+     * and cannot fall out of step with either command.
+     *
+     * `stopping` and `restarting` are spelled the same in both on purpose. A reader who has watched
+     * one operation stop the install has watched the other do it too.
+     */
+    public const RESTORE_STAGES = [
         'reading_backup',
         'checking_pair',
         'stopping',
         'copying_reader_half',
         'copying_manga_half',
         'verifying',
+        'restarting',
+    ];
+
+    /**
+     * The stages a snapshot moves through, in the order it moves through them.
+     *
+     * `checking_target` is first because refusing to overwrite an existing backup has to happen
+     * before anything is stopped. Every stage after that one costs the reader their install being
+     * down, and a refusal that arrives once it is down is a refusal they paid for.
+     */
+    public const SNAPSHOT_STAGES = [
+        'checking_target',
+        'stopping',
+        'copying_manga_half',
+        'copying_reader_half',
+        'writing_manifest',
         'restarting',
     ];
 
@@ -75,33 +107,68 @@ final class RunRecord
      * Refusing rather than replacing is the same rule the snapshot command follows for a target file:
      * a same-second second run must not quietly replace a good record with a worse one. A caller that
      * genuinely wants a new run removes the old one first.
+     *
+     * @param  array<array-key, mixed>  $stages  This operation's own stages: {@see RESTORE_STAGES}
+     *                                           for a restore, {@see SNAPSHOT_STAGES} for a snapshot, never
+     *                                           a union. Typed loosely on purpose: PHP does not enforce the
+     *                                           type of an array element, so the check below is the only thing
+     *                                           standing between a caller and a record no screen can draw.
      */
-    public static function begin(string $path, string $operation, string $token, string $startedAt): self
+    public static function begin(string $path, string $operation, array $stages, string $token, string $startedAt): self
     {
-        if (is_file($path)) {
+        if ($stages === []) {
             throw new RestoreRefused(sprintf(
-                'There is already a run recorded at %s. Look at it before starting another one, '
-                .'because a restore that is still going looks exactly like one that has finished.',
-                $path,
+                'A %s was started with no stages to report, so nothing it did could ever be shown to '
+                .'a reader. That is refused rather than written.',
+                $operation,
             ));
         }
 
-        $stages = [];
-
-        foreach (self::STAGES as $stage) {
-            $stages[$stage] = [
-                'state' => 'pending',
-                'attempts' => 0,
-                'message' => null,
-                'started_at' => null,
-                'finished_at' => null,
-            ];
+        foreach ($stages as $stage) {
+            if (! is_string($stage) || trim($stage) === '') {
+                throw new RestoreRefused(sprintf(
+                    'The stage list given to a %s holds something that is not a stage name, so the '
+                    .'record would name stages no screen can draw.',
+                    $operation,
+                ));
+            }
         }
 
-        $record = new self($path, $operation, $token, $startedAt, $stages);
+        if (is_file($path)) {
+            throw new RestoreRefused(sprintf(
+                'There is already a run recorded at %s. Look at it before starting another one, '
+                .'because a %s that is still going looks exactly like one that has finished.',
+                $path,
+                $operation,
+            ));
+        }
+
+        $blank = [];
+
+        foreach ($stages as $stage) {
+            $blank[$stage] = self::blankStage();
+        }
+
+        $record = new self($path, $operation, $token, $startedAt, $blank);
         $record->write();
 
         return $record;
+    }
+
+    /**
+     * A stage nobody has touched yet.
+     *
+     * @return array{state: string, attempts: int, message: string|null, started_at: string|null, finished_at: string|null}
+     */
+    private static function blankStage(): array
+    {
+        return [
+            'state' => 'pending',
+            'attempts' => 0,
+            'message' => null,
+            'started_at' => null,
+            'finished_at' => null,
+        ];
     }
 
     /**
@@ -127,9 +194,41 @@ final class RunRecord
             return null;
         }
 
+        /*
+         * This operation's own stage list, not a list chosen here.
+         *
+         * It is stored separately from the stages themselves so that a stage which was entered and
+         * then never written, by a launcher killed at exactly that moment, still reads back as a
+         * stage. A restore and a snapshot have different stages and the first version had one list
+         * tuned for a restore, so anything that guessed here would invent stages that never ran.
+         *
+         * A record written before this was added has no `stage_order`, so the keys it does have are
+         * the list. That is the best available answer and it is never empty for a record that was
+         * written at all, because a record with no stages was refused before it was written.
+         */
+        $order = [];
+
+        foreach (is_array($decoded['stage_order'] ?? null) ? $decoded['stage_order'] : [] as $name) {
+            if (is_string($name) && $name !== '') {
+                $order[] = $name;
+            }
+        }
+
+        if ($order === []) {
+            foreach (array_keys(is_array($decoded['stages']) ? $decoded['stages'] : []) as $name) {
+                if (is_string($name) && $name !== '') {
+                    $order[] = $name;
+                }
+            }
+        }
+
+        if ($order === []) {
+            return null;
+        }
+
         $stages = [];
 
-        foreach (self::STAGES as $stage) {
+        foreach ($order as $stage) {
             $row = is_array($decoded['stages'][$stage] ?? null) ? $decoded['stages'][$stage] : [];
 
             /*
@@ -302,7 +401,7 @@ final class RunRecord
     /**
      * The record, as written.
      *
-     * @return array{version: int, operation: string, token: string, started_at: string, stages: array<string, array{state: string, attempts: int, message: string|null, started_at: string|null, finished_at: string|null}>}
+     * @return array{version: int, operation: string, token: string, started_at: string, stage_order: list<string>, stages: array<string, array{state: string, attempts: int, message: string|null, started_at: string|null, finished_at: string|null}>}
      */
     public function toArray(): array
     {
@@ -311,6 +410,7 @@ final class RunRecord
             'operation' => $this->operation,
             'token' => $this->token,
             'started_at' => $this->startedAt,
+            'stage_order' => array_keys($this->stages),
             'stages' => $this->stages,
         ];
     }

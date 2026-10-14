@@ -151,13 +151,13 @@ class MangaSnapshotTest extends TestCase
     }
 
     /**
-     * No pid is not a yes.
+     * A pid of zero or below is refused, and the refusal names the fix.
      *
-     * A pid of zero, or none, means nothing was actually identified. Treating that as permission
-     * would make "I could not find the process" indistinguishable from "the process is gone", which
-     * is the failure AGENTS.md calls a confident wrong answer.
+     * Not because "no pid" is unsafe. Because `null` now means "not running, safe to copy", so a
+     * caller passing a number that is not a process has not done the lookup, and saying so is the
+     * difference between a refusal and a reader guessing.
      */
-    public function test_no_process_id_is_refused_rather_than_treated_as_gone(): void
+    public function test_a_pid_that_is_not_a_process_is_refused_with_the_fix_in_the_message(): void
     {
         foreach ([0, -1] as $pid) {
             $refused = false;
@@ -167,12 +167,85 @@ class MangaSnapshotTest extends TestCase
             } catch (RestoreRefused $e) {
                 $refused = true;
 
-                $this->assertStringContainsString('No process id', $e->getMessage());
+                $this->assertStringContainsString('No usable process id', $e->getMessage());
+                $this->assertStringContainsString('Pass null', $e->getMessage());
             }
 
             $this->assertTrue($refused, "pid {$pid} must be refused");
             $this->assertFileDoesNotExist($this->target());
         }
+    }
+
+    /**
+     * Suwayomi not running at all is the strongest proof available, and it copies.
+     *
+     * The first version refused a pid of zero with "nothing has proved the manga database is not being
+     * written", which was backwards: nothing running is the proof. So the most convenient moment to
+     * take this backup, Suwayomi already being stopped, was the one moment that was refused.
+     *
+     * Asserted that it copies, that it does not ask the operating system anything, and that it says
+     * why it did not wait. A null that quietly waited thirty seconds would pass a file-exists
+     * assertion and still be wrong.
+     */
+    public function test_suwayomi_not_running_copies_without_asking_or_waiting(): void
+    {
+        $source = $this->source();
+        $target = $this->target();
+        $lines = [];
+
+        $started = microtime(true);
+
+        $this->snapshot(aliveFor: 999)->capture(
+            $source,
+            $target,
+            null,
+            5,
+            static function (string $line) use (&$lines): void {
+                $lines[] = $line;
+            },
+        );
+
+        $this->assertFileExists($target, 'nothing running means nothing is writing the file');
+        $this->assertSame('H2 DATABASE BYTES', (string) file_get_contents($target));
+        $this->assertLessThan(
+            3.0,
+            microtime(true) - $started,
+            'it must not have waited, because there is no process to wait for',
+        );
+
+        $said = implode("\n", $lines);
+
+        $this->assertStringContainsString('was not running', $said);
+        $this->assertStringNotContainsString('has gone', $said, 'a process that was never there cannot have gone');
+    }
+
+    /**
+     * The liveness check is not consulted at all when there is nothing to check.
+     *
+     * `aliveFor: 999` makes any call to it report a process that never dies. If null consulted it,
+     * this would time out and refuse, which is the defect the null branch exists to remove.
+     */
+    public function test_a_null_pid_never_asks_whether_a_process_is_alive(): void
+    {
+        $target = $this->target();
+
+        $this->assertTrue(
+            $this->snapshot(aliveFor: 999)->tryCapture($this->source(), $target, null, 0),
+            'null must not be answered by asking the operating system',
+        );
+
+        $this->assertFileExists($target);
+    }
+
+    /**
+     * `tryCapture` reports a success for null too, not only for a refusal.
+     */
+    public function test_try_capture_reports_success_when_suwayomi_was_not_running(): void
+    {
+        $captured = $this->snapshot()->tryCapture($this->source(), $this->target(), null, 0);
+
+        $this->assertTrue($captured);
+        $this->assertFileExists($this->target());
     }
 
     /**
@@ -300,5 +373,57 @@ class MangaSnapshotTest extends TestCase
         $this->assertStringContainsString('has gone', $said);
         $this->assertStringContainsString('copying database.mv.db', $said);
         $this->assertStringContainsString('byte for byte', $said);
+    }
+
+    /**
+     * It waits after the process has gone, rather than copying the instant it notices.
+     *
+     * ## Why this test exists because a mutation survived without it
+     *
+     * The first mutation pass here found that deleting the settle sleep changed nothing for any test,
+     * because every other test passes a settle of zero, and the null path returns before reaching it
+     * at all. An ineffective mutation and an uncovered one look identical from outside, and the
+     * difference is worth having: ineffective means no test could ever have caught it, uncovered
+     * means a test could and does not.
+     *
+     * This one could, so it now does. The wait is not politeness. Measured on this machine, the
+     * launcher reported a process stopped and a port was still held a moment later, which is the
+     * whole reason this class exists rather than a `copy()`. A wait nothing tests is a wait that
+     * gets removed by the next person tidying up.
+     *
+     * A real second of real time, because the thing under test is elapsed time and a fake clock
+     * would only be testing the fake.
+     */
+    public function test_it_waits_after_the_process_is_gone_before_copying(): void
+    {
+        $started = microtime(true);
+
+        $this->snapshot()->capture($this->source(), $this->target(), 4242, 1);
+
+        $this->assertFileExists($this->target());
+        $this->assertGreaterThanOrEqual(
+            0.9,
+            microtime(true) - $started,
+            'it copied without waiting, so the window between taskkill returning and the port being '
+            .'released is exactly the one this class exists to cover',
+        );
+    }
+
+    /**
+     * The wait is not paid when there was nothing to wait for.
+     *
+     * The other half of the test above, so that a fix for it cannot simply be "always sleep".
+     */
+    public function test_a_zero_settle_does_not_wait_at_all(): void
+    {
+        $started = microtime(true);
+
+        $this->snapshot()->capture($this->source(), $this->target(), 4242, 0);
+
+        $this->assertLessThan(
+            0.9,
+            microtime(true) - $started,
+            'a settle of zero has to mean zero, or the parameter does nothing',
+        );
     }
 }
