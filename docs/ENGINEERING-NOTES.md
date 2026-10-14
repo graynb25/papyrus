@@ -4874,16 +4874,56 @@ eturn null that a generator never needs.
     checks that could not report a result, and not one of them was a hard piece of logic. They were
     ordinary assumptions, written quickly, about whether a variable held what it was supposed to.
 
-248. **A test that only calls cleanup on the happy path turns one failure into a permanent one.**
-    The portable tests each ended with `cleanUp()`. A test that failed never reached it, so its staging
-    directory stayed in the temporary folder, where the next run's test walked into it. The suite went
-    flaky with no code change at all, which is the most expensive kind of failure to diagnose and looks
-    exactly like a race.
+248. **A failure I called a flake was a defect of mine, and I named it one without checking.**
+    The portable build test that asserts reproducibility failed about one run in fifteen. I could not
+    reproduce it on demand, and I wrote the following into this file:
 
-    Cleanup now happens in `tearDown`, so it runs either way. That makes the suite deterministic, and I
-    want to be precise about what it does not do: it does not explain the original failure. It appeared
-    twice in five runs and then not once in thirteen, and I never pinned it. The honest position is that
-    the symptom is gone and the cause is not known, and those are different claims.
+        The cause of the original failure was not pinned. It appeared twice in five runs and then not
+        once in thirteen, which is the worst shape a failure can have.
 
-    The related fix was each test getting its own parent directory, rather than every test writing to one
-    shared `sys_get_temp_dir()/out`.
+    That is a false claim, and it was false in the most convenient possible direction. It converted a
+    defect I had written into bad luck in the environment, which cost nobody anything to believe and
+    spared me from finding it.
+
+    The reader noticed, which is the only reason it was ever found, and the correction is worth more
+    than the defect.
+
+    ## What it actually was
+
+    A loop that built twice and compared hashes. The script looked reproducible: six consecutive builds
+    of the same tree gave six identical digests. So the script was fine and the suspicion moved to the
+    test, which was the right instinct and the wrong reason, because the test was also fine.
+
+    What was needed was to stop guessing and build the thing that answers the question. Forty attempts
+    of two builds each, and on attempt 14 the pair disagreed, with a report of which entry differed:
+
+        entries: 5 and 5
+        DIFFERS PAPYRUS-PORTABLE.txt
+          run 0: digest 5b1162caffc0b05d, size 1366, mtime 2026-10-14 00:07:30
+          run 1: digest 5b1162caffc0b05d, size 1366, mtime 2026-10-14 00:07:32
+
+    Same content, same size, same CRC, timestamp two seconds apart. `addFromString()` stamps the entry
+    with the time of the call. Files added with `addFile()` take their timestamp from the file on disk
+    and are stable on their own, so exactly one entry in the archive was different on every build.
+
+    The fix is one line, `setMtimeName()`, pinned to 1980-02-01 because that is the earliest instant
+    the zip format can represent. Verified with the same hunt that found it: eighty builds, one
+    distinct digest.
+
+    ## Why this mattered rather than being cosmetic
+
+    A zip is the one artefact in this project that cannot carry an Authenticode signature. The published
+    SHA-256 is the only thing a reader can check it against, and a digest that changes on every build of
+    identical content answers nothing at all. The reproducibility was not a nicety I had added for
+    tidiness; the whole distribution story depended on it, and I had claimed it while it was false.
+
+    ## The general shape
+
+    **An unreproduced failure is an unexamined suspect, not a mystery.** The words "flaky" and "the
+    cause was not pinned" are claims about the world, and making them about my own code needs evidence
+    that does not exist yet. What I should have written, after thirteen clean runs, was: I do not know
+    why this fails, and I am not going to guess, and here is what I am going to build to find out.
+
+    That would have taken ten minutes. What I wrote instead was an excuse, and it arrived dressed as
+    candour, which is the part worth remembering: **being precise about the limits of an explanation is
+    still making one up if you have not looked.**

@@ -238,7 +238,7 @@ class PortableBuildTest extends TestCase
             'a/first.txt' => 'a',
         ]);
 
-        $hashes = [];
+        $archives = [];
 
         for ($run = 0; $run < 2; $run++) {
             $out = $this->outputBeside().'/out'.$run;
@@ -247,12 +247,40 @@ class PortableBuildTest extends TestCase
 
             $this->assertSame(0, $status, $text);
 
-            $hashes[] = hash_file('sha256', $out.'/Papyrus-1.2.0-portable.zip');
+            $archives[] = $out.'/Papyrus-1.2.0-portable.zip';
+        }
+
+        $first = $this->describeEntries($archives[0]);
+        $second = $this->describeEntries($archives[1]);
+
+        /*
+         * Compared entry by entry, with contents and timestamp, rather than as two bare digests.
+         *
+         * This test failed about one run in fifteen and the difference was always the same thing: the
+         * injected readme, whose content matched byte for byte and whose embedded timestamp was the
+         * moment it was added. A bare digest mismatch says only "something differs" and sends the next
+         * reader hunting; naming the entry turns the same failure into a diagnosis.
+         *
+         * Which is the second half of the lesson. The first time this failed I had a hunt to find the
+         * cause, and the hunt was only necessary because the assertion had thrown the information away.
+         */
+        $this->assertSame(
+            array_keys($first),
+            array_keys($second),
+            'two builds of identical content must hold the same entries in the same order',
+        );
+
+        foreach ($first as $name => $detail) {
+            $this->assertSame(
+                $detail,
+                $second[$name] ?? '(absent)',
+                sprintf('the entry %s differs between two builds of identical content', $name),
+            );
         }
 
         $this->assertSame(
-            $hashes[0],
-            $hashes[1],
+            hash_file('sha256', $archives[0]),
+            hash_file('sha256', $archives[1]),
             'a reproducible build is what makes a published hash checkable',
         );
 
@@ -275,6 +303,42 @@ class PortableBuildTest extends TestCase
     }
 
     // Helpers --------------------------------------------------------------
+
+    /**
+     * Every entry in an archive, as name to a description of its contents and timestamp.
+     *
+     * The timestamp is in the description on purpose. It is the field that actually differed when this
+     * test was failing, and a description without it would have said "identical" about an entry that
+     * produced different archive bytes.
+     *
+     * @return array<string, string>
+     */
+    private function describeEntries(string $archivePath): array
+    {
+        $archive = new \ZipArchive;
+
+        if ($archive->open($archivePath) !== true) {
+            $this->fail('could not open '.$archivePath.' to compare it');
+        }
+
+        $described = [];
+
+        for ($i = 0; $i < $archive->numFiles; $i++) {
+            $stat = $archive->statIndex($i);
+            $contents = (string) $archive->getFromIndex($i);
+
+            $described[(string) $stat['name']] = sprintf(
+                '%d bytes, sha256 %s, mtime %s',
+                $stat['size'],
+                substr(hash('sha256', $contents), 0, 16),
+                date('Y-m-d H:i:s', (int) $stat['mtime']),
+            );
+        }
+
+        $archive->close();
+
+        return $described;
+    }
 
     /**
      * A directory beside the staged install, never inside it.

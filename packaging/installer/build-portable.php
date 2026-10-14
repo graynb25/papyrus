@@ -276,6 +276,28 @@ foreach ($entries as $relative => $source) {
         fail("could not add {$relative} to the archive");
     }
 
+    /*
+     * Pin the injected entry's timestamp, which is the only reason this loop needs a second step.
+     *
+     * ddFromString stamps the entry with the time of the call, so a build of byte identical
+     * content produced a different archive every time. Found by the test that asserts reproducibility,
+     * which failed roughly one run in fifteen. I called that a flake before checking what it was, and
+     * it was not one: two builds of the same tree differed in exactly one entry, the readme, whose
+     * content matched byte for byte and whose embedded timestamp was two seconds apart.
+     *
+     * That mattered for real rather than cosmetically. A zip is the one artefact here that cannot carry
+     * an Authenticode signature, so the published SHA-256 is the only thing a reader can check it
+     * against, and a hash that changes on every build of identical content answers nothing at all.
+     *
+     * Files added with ddFile take their timestamp from the file on disk and are stable on their
+     * own. Only the injected entry needed this.
+     *
+     * 1980-02-01 is the earliest instant the zip format can represent, so the value is both fixed and
+     * valid rather than a magic number.
+     */
+    if ($source === null) {
+        $zip->setMtimeName($relative, 315619200);
+    }
     $written++;
 }
 
