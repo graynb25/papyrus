@@ -96,6 +96,9 @@ require __DIR__.'/src/LocalFileMover.php';
 require __DIR__.'/src/BackupPair.php';
 require __DIR__.'/src/RestoreOutcome.php';
 require __DIR__.'/src/Restorer.php';
+require __DIR__.'/src/InstallControl.php';
+require __DIR__.'/src/SupervisorControl.php';
+require __DIR__.'/src/RestoreCommand.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 
@@ -255,6 +258,21 @@ try {
             }
 
             exit(0);
+
+        case 'restore':
+            /*
+             * The one operation where a reader can lose work they cannot reconstruct.
+             *
+             * Suwayomi backs its own half up daily and nothing backed this project's half up until
+             * recently, so a restore of only one database was not a degraded install but a broken
+             * one: `series_states.suwayomi_manga_id` would point at rows that no longer mean what the
+             * reader thinks they mean, and the symptom is a library that reads as empty.
+             *
+             * The command stops the install, puts both halves back as one operation, and starts it
+             * again, including when the restore fails. It is a class rather than a case body because
+             * the choreography is the part worth testing and a switch statement hides it.
+             */
+            exit(RestoreCommand::forSupervisor($supervisor)->run(array_slice($argv, 2), $say));
 
         case 'health':
             /*
