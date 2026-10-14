@@ -83,6 +83,20 @@ require __DIR__.'/src/ZipWriter.php';
 require __DIR__.'/src/EnvironmentReport.php';
 require __DIR__.'/src/Bundle.php';
 
+/*
+ * Layer 3. Restoring both databases as one operation.
+ *
+ * The interface comes before its implementations because the launcher has no autoloader and these are
+ * plain requires, so the order is the dependency order. `FileMover` first because `LocalFileMover`
+ * type hints it, and `RestoreRefused` before both because every signature in this layer throws it.
+ */
+require __DIR__.'/src/RestoreRefused.php';
+require __DIR__.'/src/FileMover.php';
+require __DIR__.'/src/LocalFileMover.php';
+require __DIR__.'/src/BackupPair.php';
+require __DIR__.'/src/RestoreOutcome.php';
+require __DIR__.'/src/Restorer.php';
+
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 
 /*
