@@ -166,8 +166,24 @@ class SigningTest extends TestCase
         $this->assertNotSame('Valid', $reported, 'Windows reports Valid, so nothing was actually signed');
         $this->assertNotSame('', $reported, 'PowerShell returned nothing at all');
 
-        // And the class's own description agrees.
-        $this->assertStringContainsString('unsigned', Signing::describe($artefact));
+        /*
+         * The class's own description has to agree, and it has to say present rather than
+         * unsigned.
+         *
+         * The wording changed once it was measured. unsigned invites the reader to conclude the
+         * file is untampered-with in the sense of unsigned, which is not what it means: the
+         * signature IS there, it is simply chained to a root this machine was never told to trust.
+         * That distinction is the whole content of the message, so the test holds the wording too.
+         */
+        $described = Signing::describe($artefact);
+
+        $this->assertStringContainsString('present', $described);
+        $this->assertStringContainsString('does not trust', $described);
+        $this->assertStringNotContainsString(
+            'unsigned',
+            $described,
+            'the signature is present; calling it unsigned misstates what a reader is looking at',
+        );
     }
 
     /**

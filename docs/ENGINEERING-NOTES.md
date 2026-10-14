@@ -4927,3 +4927,121 @@ eturn null that a generator never needs.
     That would have taken ten minutes. What I wrote instead was an excuse, and it arrived dressed as
     candour, which is the part worth remembering: **being precise about the limits of an explanation is
     still making one up if you have not looked.**
+
+249. **A certificate I made, reported as made, and could not sign with.**
+    `make-certificate.php` wrote a `.pfx`, printed a thumbprint, and exited zero. Following its own
+    documentation then failed:
+
+        Cannot find path 'Cert:\CurrentUser\My\<thumbprint>' because it does not exist.
+
+    A pfx on disk is not a certificate in the Windows store, and every documented way of signing by
+    thumbprint reads the store. So the script was producing something nothing could consume, reporting
+    success, and the failure only appeared at the point of use.
+
+    The script now installs what it makes, into `Cert:\CurrentUser\My` rather than `LocalMachine`, because
+    that needs no administrator and a single developer's machine should not be changed more than it has
+    to be.
+
+    Two smaller traps in the same fix, both of which produced an error that pointed somewhere else:
+
+    - **`ConvertTo-SecureString ''` throws.** The script's default is a blank password, and importing the
+      pfx with `ConvertTo-SecureString '' -AsPlainText -Force` fails with "Cannot bind argument to
+      parameter 'String' because it is an empty string". Omitting `-Password` entirely is the only
+      spelling of "no password" PowerShell accepts.
+    - **A path with a space.** `Get-PfxCertificate -FilePath <path>` splits at the first space unless
+      the value carries its own quotes inside the command string, which AGENTS.md already records for a
+      different tool. It is a property of the shell rather than of one script, and the command is built
+      as an array for the same reason.
+
+    Worth pairing with the lesson about a skipped dependency and the one about an empty list: **the
+    artefact existed, the tool succeeded, and the thing it was for did not work.** Nothing in the pipeline
+    checks that an input is usable in the way the next step will use it, which is why the certificate gets
+    read back and the signature gets verified by asking Windows rather than by asking the tool.
+
+250. **I told the reader self-signing would not remove the warning, and nearly corrected myself into the
+    opposite claim.**
+    It does not remove it. Measured both ways, with the count of trusted roots read back afterwards:
+
+        root absent from every store    ->  UnknownError, signtool verify /pa exits 1
+        root imported to CurrentUser\Root ->  Valid
+
+    But I got there by nearly writing the reverse, because an intermediate measurement said `Valid` with
+    nothing trusted. The root was still in the store. Every attempt to remove it had silently failed and
+    reported success: `Remove-Item` on the certificate object, which has no `Delete()` method, and a
+    `Where-Object` filter on a Subject that begins `OU=self-signed, O=Papyrus` and so does not match the
+    pattern I wrote.
+
+    Removing it through the `X509Store` API and re-reading the count settled it in one command. That is the
+    general shape and it is the same one as lesson 248: **"I removed it" is a claim about an action, not a
+    fact about the world.** The count has to be read back, and if the count is the thing under dispute, the
+    measurement is not finished.
+
+    What made this one dangerous rather than merely sloppy is the direction. The false reading would have
+    said self-signing removes the Windows warning, which is the thing a reader most wants to hear and the
+    thing least true. Getting it wrong in the pessimistic direction is a nuisance. Getting it wrong in the
+    flattering direction is a person trusting a file they should not.
+
+251. **A guard that refused the wrong thing, and reported that it had refused the right thing.**
+    `--out=..` writes a private key into the parent of the repository. On this machine the parent is
+    the developer's own folder, which is exactly where the machine-detail gate exists to stop things.
+
+    The guard that was supposed to stop it read:
+
+        str_starts_with($comparable($resolvedRoot).'\\', $comparable($resolvedHome).'\\')
+
+    which asks whether the root starts with the home, with the separator appended to the haystack
+    rather than the needle. So it is:
+
+      - **false** for every genuine escape, because `C:\Users\<you>\...` does not start with `d:\data\`,
+        which is the one case it exists for, and
+      - **true** when the home and the root are the same directory, because appending a separator to
+        both sides makes the two strings identical.
+
+    It printed a confident refusal with the wrong reason attached. The tell was the message: `--out=.`
+    was being rejected as "cannot be above the repository root", which is a different problem, and a
+    message naming the wrong cause is worth more suspicion than one naming the right cause.
+
+    Three separate escapes turned up before any of it was caught, and each wrote a real key:
+    `--out=` resolved to the repository root, `--out=.` to the repository root a second way, and
+    `--out=..` to the folder above. All three printed success.
+
+    Worth pairing with the check-that-cannot-fail family: **a guard that produces output is not a guard
+    that works**, and the cheapest way to tell them apart is to read what the output says rather than
+    only that there is some.
+
+252. **A test that passed against code doing the thing the test exists to prevent.**
+    The test was "a scratch home must not install anything into `Cert:\CurrentUser\My`". Removing the
+    guard that prevents it changed nothing, and the test passed.
+
+    The cause was not the guard being unreachable. The test passed `--password=probe`, and
+    `installIntoStore()` already refuses any non-empty password because a password must not reach a
+    command line. So the store was untouched whether or not the guard was there, and the test proved
+    nothing at all.
+
+    A test has to isolate the thing it is testing from every other thing that could produce the same
+    outcome. Here there were two refusals in series and the test was sitting behind the wrong one.
+
+    The fix was to use the blank default password, which is the only configuration in which the guard
+    is the only thing standing between the script and the machine. That is not a detail of the test;
+    it is the whole reason the test can say anything.
+
+253. **A cleanup that deleted the developer's real signing certificate.**
+    The store test records which thumbprints were present before it ran, and removes any that appeared
+    afterwards. Correct design, and it deleted the actual certificate the project signs installers with.
+
+    `storeBefore` was assigned inside the one test that asserted on the store, and read in `tearDown`,
+    which every test runs. So the other eleven tests read an empty baseline, found a Papyrus
+    certificate that had been there all along, and removed it as a stray.
+
+    The general form: **a cleanup that removes whatever it did not find at the start will delete things
+    that were never the test's, if the start is not recorded on every path that runs the cleanup.** The
+    baseline is not a detail of one test. It is an invariant of the class, and the only correct place to
+    establish one is `setUp`.
+
+    What made it survivable was that the certificate was still on disk as a `.pfx`, so the same identity
+    came back rather than a new one being minted. Minting a replacement would have been invisible: the
+    thumbprint would differ and nothing would say why.
+
+    Worth pairing with the portable readme lesson. There, a claim was made and nothing checked it.
+    Here, a check was written and it was narrower than its name, which is the quieter version of the
+    same mistake.

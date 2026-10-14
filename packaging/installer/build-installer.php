@@ -247,6 +247,29 @@ if ($skipSigning) {
     } catch (RuntimeException $e) {
         fail("signing failed.\n\n  ".str_replace("\n", "\n  ", $e->getMessage()));
     }
+
+    /*
+     * Copy the signing certificate beside the installer.
+     *
+     * Because README tells a reader that a self-signed signature can be trusted locally by importing
+     * `papyrus.crt`, and a file that is not published cannot be imported. That sentence was written
+     * before this existed, which is a habit worth naming: a README claim about a build artefact is
+     * still a claim, and writing it is not the same as making it true.
+     *
+     * The .crt is the public half of the key pair by definition, so copying it is not a leak. The
+     * private key never comes near this line, and the export reads the certificate store rather than
+     * the pfx precisely because the pfx holds both halves.
+     *
+     * A certificate from a real authority is not published this way, because its root is already in
+     * every Windows install and publishing it would be noise. Only a self-signed one needs it, which is
+     * exactly the case a reader cannot otherwise resolve on their own.
+     */
+    $published = publishCertificate($out);
+
+    if ($published !== null) {
+        say('certificate', $published);
+        say('', 'published beside the installer, so a reader can compare it or import it');
+    }
 } else {
     /*
      * The default, and the reason `--unsigned` exists at all.
@@ -492,6 +515,61 @@ function countFiles(string $directory): int
     return $count;
 }
 
+/**
+ * Copy the public certificate beside the artefact and return its SHA-1 thumbprint.
+ *
+ * Read from the certificate store rather than from the pfx, because the pfx is the private key and
+ * this is the one place in the build where a file is deliberately copied next to the installer.
+ *
+ * Returns null when there is nothing to publish, which is the normal case for a certificate from a
+ * real authority: its root is already trusted everywhere, so a copy beside the download is noise.
+ *
+ * A failure here is reported and not fatal. A release built from a pfx rather than the store has no
+ * certificate to export, and refusing to produce an installer over that would be worse than saying so.
+ */
+function publishCertificate(string $out): ?string
+{
+    $thumbprint = getenv('PAPYRUS_CERT_THUMBPRINT');
+
+    if ($thumbprint === false || trim($thumbprint) === '') {
+        return null;
+    }
+
+    $target = $out.DIRECTORY_SEPARATOR.'papyrus.crt';
+
+    $command = sprintf(
+        'powershell -NoProfile -Command "Export-Certificate -Cert %s -FilePath %s -Type CERT" 2>&1',
+        escapeshellarg('Cert:\\CurrentUser\\My\\'.trim($thumbprint)),
+        escapeshellarg($target),
+    );
+
+    $output = [];
+    $status = 1;
+
+    exec($command, $output, $status);
+
+    if ($status !== 0 || ! is_file($target)) {
+        fwrite(STDERR, '  note: could not export the certificate: '.trim(implode(' ', $output)).PHP_EOL);
+
+        return null;
+    }
+
+    $digests = [];
+
+    exec(sprintf('certutil -hashfile %s SHA1 2>&1', escapeshellarg($target)), $digests);
+
+    foreach ($digests as $line) {
+        if (preg_match('/^[0-9a-f]{40}$/i', trim($line), $matches) === 1) {
+            return strtolower($matches[0]);
+        }
+    }
+
+    // The file was written, which is what a reader needs. Not knowing the digest is a lesser problem
+    // than not having the certificate, so it is reported rather than turned into a failed build.
+    fwrite(STDERR, '  note: wrote papyrus.crt but could not read its thumbprint back'.PHP_EOL);
+
+    return 'written, thumbprint not read back';
+}
 function say(string $label, string $value = ''): void
 {
     fwrite(STDOUT, '  '.str_pad($label, 16).$value.PHP_EOL);

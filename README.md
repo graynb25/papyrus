@@ -198,6 +198,55 @@ A second run is a delta rather than a repeat. `imported_series` fingerprints eac
 second run applies only what changed, which is also what makes an interrupted import safe to
 press again.
 
+## Installing it
+
+There are two ways, and they are the same application.
+
+**The installer.** Run the `.exe`, and it puts Papyrus in your user profile with a launcher on your
+desktop. It is the ordinary route and it is the one most people want.
+
+**The portable zip.** Unpack it anywhere and run `Papyrus.cmd`. No installer, no registry, no admin
+rights, no uninstaller. It is for trying Papyrus without committing to it, or running it from a USB
+stick. Your library lives in a `Papyrus` folder *beside* wherever you unpack it, not inside it.
+
+Uninstalling the installer deliberately leaves your library alone, because deleting somebody's library
+by accident is not a recoverable mistake. Removing the portable folder does not touch it either.
+
+### The Windows warning, and what to do about it
+
+Papyrus is signed with a **self-signed certificate**, and Windows will warn you about that. This is
+expected and it is not a sign the file is unsafe.
+
+Measured on both sides, so this is not a reassurance:
+
+| Certificate | What Windows reports |
+| --- | --- |
+| Not installed on your machine | `UnknownError`, and a "Windows protected your PC" prompt |
+| Installed on your machine | `Valid`, no prompt |
+
+A self-signed certificate terminates in a root that Windows has never been told to trust, so the
+signature proves the file has not been tampered with but cannot prove *who* signed it. Only a
+certificate from a recognised authority can do that, and Papyrus does not have one.
+
+If you would rather not see the warning on this machine, trust the certificate yourself. You are then
+deciding to trust whoever made it, which is a decision you are entitled to make but should make
+knowingly:
+
+```powershell
+Import-Certificate -FilePath papyrus.crt -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+The `.crt` is published beside the download, and its SHA-1 thumbprint is in the build manifest so you
+can check that you have the file somebody published rather than one you were handed.
+
+For the portable zip, check the SHA-256 instead. A zip cannot carry this kind of signature at all, so
+the published digest is the only verification available:
+
+```powershell
+Get-FileHash .\Papyrus-1.2.0-portable.zip -Algorithm SHA256
+```
+
+and compare it with the `.sha256` file published beside the download.
 ## Running it
 
 Suwayomi first. It needs to be a normal process, not a Windows Service, because its

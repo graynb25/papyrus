@@ -126,9 +126,24 @@ final class Signing
 
         $text = trim(implode("\n", $output));
 
-        // `/pa` failing means Windows would not trust it, which is the whole point of the check.
+        /*
+         * `/pa` failing means Windows would not trust it, which is the whole point of the check.
+         *
+         * And "does not trust" is worth stating precisely rather than as a verdict on the signature.
+         * For a certificate from a real authority this branch is a genuine problem. For a self-signed
+         * one it is the expected and only possible outcome on a machine that has not installed the
+         * root: the signature is present, intact, and chains to a root nobody was told to trust.
+         * Both measured, with the trusted root count read back rather than assumed:
+         *
+         *     root absent  ->  UnknownError, signtool exits 1
+         *     root present ->  Valid
+         *
+         * So the wording says which of those happened, because "Windows does not trust this" invites
+         * the reader to conclude the file is tampered with, and it is not.
+         */
         if ($status !== 0) {
-            return 'unsigned: Windows does not trust this signature';
+            return 'present, and Windows does not trust the certificate: '
+                .'expected for a self-signed signer, and a real problem for a CA-issued one';
         }
 
         if (preg_match('/^Number of certificates=\d+/mi', $text, $matches) === 1) {

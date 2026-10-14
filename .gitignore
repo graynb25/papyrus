@@ -167,3 +167,18 @@ build/dev-scheduler.log.err
 # are what resolve-wsb.ps1 writes and they are regenerated on demand.
 build/sandbox/*.wsb
 !build/sandbox/*.wsb.template
+
+# Signing material. The private key and its certificate, made by packaging/signing/make-certificate.php.
+#
+# Never tracked, for the ordinary reason that a private key in a repository cannot be undone by deleting
+# the file afterwards: every clone already has it and every mirror already has it.
+#
+# Inside the repository rather than under /build/dist/ on purpose. A clean of the output directory must
+# not take the certificate with it, because losing this means the next build signs under a new identity
+# and anybody who trusted the previous one is quietly given back a warning they had stopped seeing.
+#
+# The leading slash is required. Without it the rule matches a directory named .signing at any depth, and
+# with this file's own indentation rules the difference is invisible unless you ask git rather than
+# reading: an indented pattern is a literal path that happens to start with two spaces, so the rule
+# matches nothing at all and looks identical to one that works.
+/.signing/

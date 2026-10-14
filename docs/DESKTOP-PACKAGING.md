@@ -39,8 +39,57 @@ Authenticode, driven entirely by the environment so that no secret lives in the 
 unsigned installer is indistinguishable from a signed one on disk. The build manifest records
 `signed: true|false` and a description of the signature, so the build log is not the only record.
 
-The certificate is a real one and **is not in this repository**. Until one exists the only way to produce
-an installer locally is `--unsigned`, and anything published that way should be described as unsigned.
+### Self-signing, and what it actually does
+
+`packaging/signing/make-certificate.php` makes a self-signed code-signing certificate in `.signing/`:
+
+```powershell
+php packaging/signing/make-certificate.php
+```
+
+Then to sign with it:
+
+```powershell
+$env:PAPYRUS_SIGN = "1"
+$env:PAPYRUS_CERT_PFX = "<the .pfx path>"
+php packaging/installer/build-installer.php
+```
+
+**It does not remove the Windows warning on a reader's machine.** Measured both ways, with the count of
+trusted roots read back afterwards rather than assumed:
+
+| Certificate root | `Get-AuthenticodeSignature` | `signtool verify /pa` |
+| --- | --- | --- |
+| absent from every store | `UnknownError` | exit 1, "terminated in a root certificate which is not trusted by the trust provider" |
+| imported to `Cert:\CurrentUser\Root` | `Valid` | exit 0 |
+
+So the warning goes away only on a machine where somebody installed the certificate:
+
+```powershell
+Import-Certificate -FilePath .signing\papyrus.crt -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+What it does buy, which is worth having:
+
+- **Integrity.** The signature proves the file has not changed since it was signed, and it names a
+  signer whose thumbprint can be published alongside the download so a reader can check it.
+- **A stable identity.** Every release signed by the same certificate names the same signer, so a
+  reader can notice a change. That is worth something even untrusted, because the absence of a change is
+  information.
+- **A tested upgrade path.** When a CA-issued certificate is bought, only the environment variables
+  change. The signing code has already run against a real signature rather than a mock.
+
+Two details that are not optional:
+
+- The certificate **must carry the code signing EKU**. openssl's bare `req -x509` produces one with no
+  Extended Key Usage at all, which `signtool sign` accepts and Windows then refuses. The script uses a
+  config file and reads the EKU back off the finished certificate before reporting success.
+- The material lives in `.signing/`, which is gitignored **and** skipped by the machine-detail gate, and
+  not under `build/dist/`. A clean of the output directory must not take the certificate with it: losing
+  it means the next release is signed by a new identity, and a reader who trusted the old one is handed
+  a warning they had stopped seeing, with nothing on their side to explain it.
+
+The script refuses to overwrite an existing certificate for the same reason.
 
 ### The portable zip, and why it cannot be signed
 
