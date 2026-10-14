@@ -128,8 +128,31 @@ final class MangaSnapshot
         $this->mover->copy($source, $target);
 
         /*
-         * Verified against the source, because the whole reason this is a class rather than a
-         * `copy()` is that a copy of a file that is still being written opens and is wrong.
+         * Is it there at all, before asking whether the bytes agree.
+         *
+         * The digest comparison below is the real check, and it is the reason this class exists rather
+         * than a `copy()`. But it cannot answer this question on its own: two files that are both
+         * absent hash identically, so a copy that silently produced nothing passes the digest
+         * comparison and the snapshot goes on to write a manifest naming a file that does not exist.
+         * That restores into an empty library with nothing saying why, which is the exact failure a
+         * pair exists to prevent, reached by a shorter road.
+         *
+         * Found by a mutation rather than by reading: removing the "are both halves present" check in
+         * `SnapshotCommand::writeManifest()` survived every test, because every test had arranged for
+         * the copy to either work or fail before that point. This is the check that closes it, and it
+         * is here rather than there because this is where the copy happens and this is the only place
+         * that knows.
+         */
+        if (! is_file($target)) {
+            throw (new RestoreRefused(
+                'The manga database was reported as copied but nothing arrived, so there is no manga '
+                .'half and no pair can be recorded. Nothing has been recorded as backed up.',
+            ))->attempted($target);
+        }
+
+        /*
+         * Verified against the source, because a copy of a file that is still being written opens and
+         * is wrong.
          */
         if ($this->mover->digest($source) !== $this->mover->digest($target)) {
             @unlink($target);

@@ -61,7 +61,28 @@ final class ProcessIdentity
 
         $actual = self::startTime($pid);
 
-        return $actual !== null && $actual === $startedAt;
+        if ($actual === null) {
+            return false;
+        }
+
+        /*
+         * Compared to the second, not to the microsecond.
+         *
+         * The two sources do not agree below a second. `REQUEST_TIME_FLOAT` is PHP's own float and
+         * carries microseconds; Windows CIM reports `CreationDate` at a whole second. Measured, with a
+         * live launcher holding the lock:
+         *
+         *     lock startedAt   : 1792009321.885108
+         *     actual startTime : 1792009321.000000
+         *
+         * So an exact comparison rejects a process that is the process. A second is also finer than the
+         * answer needs: what distinguishes one run of a process from another is which second it began
+         * in, and two processes cannot share a pid and a start second by accident.
+         *
+         * Both sides are truncated rather than rounded, so a start time one second before a boundary
+         * does not round up into it.
+         */
+        return (int) $actual === (int) (float) $startedAt;
     }
 
     /**
@@ -136,16 +157,53 @@ final class ProcessIdentity
     /**
      * Another process's start time.
      *
-     * `ps -o lstart=` on anything Unix. On Windows this is genuinely awkward, which is the
-     * honest reason the lock memoises its own: the only pid this needs to re-read is its own.
+     * `ps -o lstart=` on anything Unix. On Windows, CIM through `Get-CimInstance`, which is the
+     * supported route now that `wmic` is gone.
+     *
+     * ## Why this used to return null on Windows, and what that cost
+     *
+     * The comment said "the only pid this needs to re-read is its own", which was the reasoning at the
+     * time and has since turned out to be wrong in a way that disabled the instance lock entirely.
+     *
+     * `isSameProcess()` returns `$actual !== null && $actual === $startedAt`. With null it returns
+     * false for **every pid that is not this process**. So `InstanceLock::isHeld()` was false for
+     * every lock the launcher had not written itself, so `acquire()` never refused, so the lock has
+     * never once blocked anything on Windows.
+     *
+     * Measured, against the reader's own install, with a launcher alive and holding the lock:
+     *
+     *     lock pid         : 16308          isAlive          : true
+     *     lock startedAt   : 1792009245.444885
+     *     actual startTime : NULL           isSameProcess    : false
+     *     isHeld           : false          holderPid        : NULL
+     *     describe         : pid 16308 started ... (not alive, the lock is stale)
+     *
+     * The lock said the lock was stale, naming a process that was running, and the whole chain
+     * believed it. Two `papyrus start` runs in a row both succeeded and the second took the lock, which
+     * is the first half of a race that ends with `snapshot` stopping an install another launcher is
+     * supervising.
+     *
+     * ## Why this is a single CIM query and not a poll
+     *
+     * Because it is only reached for a pid this process did not write, which is the lock holder or a
+     * pid a reader is asking about. That is not every second: `MangaSnapshot` polls liveness, not
+     * identity, and liveness still goes through the cheap `tasklist` path.
+     *
+     * The read is memoised per pid, and only for a process found alive. A dead pid's start time
+     * changes the moment its number is recycled, and caching that would make the cache actively wrong.
      */
     private static function readForeignStartTime(int $pid): ?string
     {
-        if (PHP_OS_FAMILY === 'Windows') {
-            return null;
+        if (isset(self::$ownStartTime[$pid])) {
+            return self::$ownStartTime[$pid];
         }
 
-        $output = @shell_exec(sprintf('ps -o lstart= -p %d 2>/dev/null', $pid));
+        $output = PHP_OS_FAMILY === 'Windows'
+            ? @shell_exec(sprintf(
+                'powershell -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter \'ProcessId=%d\').CreationDate.ToUniversalTime().ToString(\'o\')" 2>NUL',
+                $pid,
+            ))
+            : @shell_exec(sprintf('ps -o lstart= -p %d 2>/dev/null', $pid));
 
         if (! is_string($output)) {
             return null;
@@ -153,7 +211,36 @@ final class ProcessIdentity
 
         $trimmed = trim($output);
 
-        return $trimmed === '' ? null : $trimmed;
+        if ($trimmed === '') {
+            return null;
+        }
+
+        /*
+         * Both formats are reduced to a float of seconds, because the two platforms do not agree on
+         * how to write one and a string comparison across them is a comparison of formatting.
+         *
+         * `toString('o')` gives an ISO 8601 instant with a `Z`; `ps -o lstart=` gives
+         * `Tue Oct 14 19:59:31 2026`. `strtotime` reads the first natively and the second correctly,
+         * and both then become the same number. The lock stores that number as a string, which is
+         * what `readOwnStartTime()` already produces, so a lock written by a launcher and read back by
+         * another are comparable.
+         */
+        $at = strtotime($trimmed);
+
+        if ($at === false) {
+            // An unparseable answer is still better than none when it came from ps, whose format is
+            // a fixed shape. Returning it raw keeps the comparison working on Unix, where the writer
+            // and the reader both produce it.
+            return PHP_OS_FAMILY === 'Windows' ? null : $trimmed;
+        }
+
+        $seconds = number_format((float) $at, 6, '.', '');
+
+        if (self::isAlive($pid)) {
+            self::$ownStartTime[$pid] = $seconds;
+        }
+
+        return $seconds;
     }
 
     /**

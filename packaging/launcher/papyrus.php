@@ -3,13 +3,15 @@
 /**
  * The packaged Papyrus launcher.
  *
- * Five commands, because that is what a phase 0 install needs:
+ * Seven commands, because that is what a phase 0 install needs:
  *
  *   start        bring everything up, wait until it is genuinely usable, then hold
  *   stop         bring it all down, leaving nothing behind
  *   status       say what is running, without changing anything
  *   health       the short answer to "is it working", for a reader to paste into a report
  *   diagnostics  gather everything into one bundle to attach to a bug report
+ *   snapshot     take both databases as one pair, which only this can do
+ *   restore      put a pair back, or leave both as they were
  *
  * ## Why this is plain PHP and not a compiled launcher
  *
@@ -97,10 +99,14 @@ require __DIR__.'/src/BackupPair.php';
 require __DIR__.'/src/RestoreOutcome.php';
 require __DIR__.'/src/Restorer.php';
 require __DIR__.'/src/InstallControl.php';
+require __DIR__.'/src/InstallFacts.php';
 require __DIR__.'/src/SupervisorControl.php';
 require __DIR__.'/src/RestoreCommand.php';
 require __DIR__.'/src/MangaSnapshot.php';
 require __DIR__.'/src/RunRecord.php';
+require __DIR__.'/src/ReaderSnapshotResult.php';
+require __DIR__.'/src/ReaderSnapshot.php';
+require __DIR__.'/src/SnapshotCommand.php';
 
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 
@@ -276,6 +282,22 @@ try {
              */
             exit(RestoreCommand::forSupervisor($supervisor)->run(array_slice($argv, 2), $say));
 
+        case 'snapshot':
+            /*
+             * The other half of the same pair, and the only command that can produce one.
+             *
+             * `artisan papyrus:snapshot` writes `papyrus-20261013-031701.sqlite` beside the database
+             * and calls itself a backup. It is not one: the two databases reference each other by id,
+             * so a file holding one half restores into a library that reads as empty with nothing
+             * saying why, and `BackupPair` refuses a manifest naming only one.
+             *
+             * Here the app is stopped, both files are copied, a manifest binds them to one token, and
+             * the app comes back up. It comes back up even when the snapshot failed, because a reader
+             * whose backup failed and who is then left with a dead install cannot tell a bad backup
+             * from a broken application.
+             */
+            exit(SnapshotCommand::forSupervisor($supervisor)->run(array_slice($argv, 2), $say));
+
         case 'health':
             /*
              * The command a reader is asked to run before filing a bug.
@@ -355,7 +377,7 @@ try {
             exit(0);
 
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics] [--zip] [--open]\n");
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics|snapshot|restore] [--zip] [--open] [--yes] [--into=DIR]\n");
 
             exit(2);
     }

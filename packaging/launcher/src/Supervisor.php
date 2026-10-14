@@ -231,15 +231,66 @@ final class Supervisor
     }
 
     /**
-     * The ini, for a caller outside this class that has to start a PHP process.
+     * The ini to hand a PHP process, which is never the template.
      *
-     * {@see Health} does, and it cannot guess: the resolved ini lives in the data directory, its
-     * path depends on the layout, and a caller that reconstructed it would be a third
-     * implementation of "where the ini is". Public so that there is one answer rather than two.
+     * ## Why this resolves rather than answering
+     *
+     * Because the template carries `{{RUNTIME}}` in its `extension_dir`, and a PHP process started
+     * against it loads no extensions at all. Measured on the reader's own install, packaged runtime:
+     *
+     *     php.exe -c <ROOT>\runtime\php\php.ini   ->  (no pdo_sqlite, no sqlite3)
+     *     php.exe -c <DATA>\php\php.ini           ->  pdo_sqlite, sqlite3
+     *
+     * So "where is the ini" and "which ini" were two different questions and only one of them was
+     * being asked. This used to return `$this->ini()`, which is the template unless `start` has
+     * already resolved it into the data directory, and only `start` resolves it.
+     *
+     * The result was that `health`, `restore` and `snapshot` were all handed an unresolved template
+     * by a caller that would then run a real PHP against it. The first snapshot on the reader's
+     * install failed with:
+     *
+     *     Unable to load dynamic library 'php_pdo_sqlite.dll'
+     *       (tried: {{RUNTIME}}/ext\php_pdo_sqlite.dll ...)
+     *
+     * `Health` had already hit this and worked around it by rebuilding the resolved path itself,
+     * which is lesson 225: a fix applied to one occurrence of a pattern leaves the other occurrences
+     * in place, and the other occurrences are nearby. There is one answer here now, and it is here.
+     *
+     * The on-disk file is preferred rather than rewritten, so a diagnostic stays a diagnostic and
+     * does not write to the install it is reporting on. Substitution only happens when there is no
+     * resolved ini at all, which is a fresh install, which is exactly when `start` needs it.
      */
     public function resolvedIniPath(): string
     {
-        return $this->ini();
+        if ($this->resolvedIni === null) {
+            $existing = $this->dataDirectory.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini';
+
+            $this->resolvedIni = is_file($existing) ? $existing : null;
+
+            if ($this->resolvedIni === null) {
+                $this->resolvePhpConfig();
+            }
+        }
+
+        $ini = $this->ini();
+
+        if (str_contains($ini, '{{')) {
+            /*
+             * Refused rather than returned.
+             *
+             * A caller will hand this straight to `php.exe -c`, and PHP does not fail to start over an
+             * ini it cannot make sense of. It starts, loads nothing, and answers every question with a
+             * confident wrong value. Returning a path that is known to be unusable here would put
+             * that decision somewhere the message cannot reach.
+             */
+            throw new RuntimeException(sprintf(
+                'The PHP configuration at %s still contains unresolved placeholders, so a PHP started '
+                .'against it would load no extensions at all. Start Papyrus once to resolve it.',
+                $ini,
+            ));
+        }
+
+        return $ini;
     }
 
     /**
@@ -1240,7 +1291,79 @@ final class Supervisor
          * `ProcessFinder` was built for exactly those reasons and the reasoning should not be lost
          * with the code that repeated it. See {@see ProcessFinder}.
          */
-        return $this->finder->find($this->tokensFor($name)) !== [];
+        return $this->pidsFor($name) !== [];
+    }
+
+    /**
+     * The pids of every running process that is this install's `$name`, asked of the operating system.
+     *
+     * Public because a snapshot has to know which pid to wait for, and `stopAll` destroys that
+     * information by the time it returns. It had to be asked *before* the stop, from the same tokens
+     * and the same finder `stop` uses, because a second implementation of "which processes are mine"
+     * is lesson 225 and this class already carries a long note about having had one.
+     *
+     * @return list<int> Empty when the process is not running, or when its tokens cannot be built.
+     *                   Both are the same answer for this caller and neither is guessed at.
+     */
+    public function pidsFor(string $name): array
+    {
+        $tokens = $this->tokensFor($name);
+
+        if ($tokens === []) {
+            return [];
+        }
+
+        return $this->finder->find($tokens);
+    }
+
+    /**
+     * The pid of a live launcher that is supervising this install, or null when none is.
+     *
+     * The instance lock is the only thing here that says which launcher owns an install, and until
+     * now only `start` ever read it. So `snapshot` and `restore` could stop an install that another
+     * launcher was holding open, with neither of them knowing. Measured, on the reader's install, the
+     * full transcript being in {@see InstallControl::stop()}:
+     *
+     *     the holder saw its children die, said "stopped on its own", shut the rest down and exited 1
+     *     the snapshot finished all six stages, said "up again", and exited 0
+     *     the install was down
+     *
+     * Both were telling the truth about what they had done. Together they had left a stopped install
+     * that both of them claimed to have left running, which is the combination this project keeps
+     * meeting and the reason a guard that only one caller honours is not a guard.
+     *
+     * Answers from the lock rather than from a process search, because the lock carries a start time
+     * and a pid alone is not an identity. A crashed launcher leaves a stale file behind, and a reader
+     * who is told another launcher owns the install when none does would never start it.
+     */
+    public function supervisorPid(): ?int
+    {
+        return (new InstanceLock($this->lockPath()))->holderPid();
+    }
+
+    /**
+     * The version of Suwayomi this install ships, read from the jar's own name.
+     *
+     * `Suwayomi-Server-v2.4.2366.jar` gives `2.4.2366`, which is the number `suwayomi.json` records
+     * and the number a manifest should carry.
+     *
+     * Read from the file rather than asked over GraphQL on purpose. A backup manifest has to be
+     * writable whether or not the server is up, and this is the command that is about to stop it, so
+     * a version read from a live server would have to be fetched before the stop and could not be
+     * re-read afterwards to check it. It is also the same number: the jar *is* the server.
+     *
+     * `unknown` rather than an empty string, because {@see BackupPair} refuses an empty one and a
+     * reader is better served by a manifest that says it does not know than by no backup at all.
+     */
+    public function suwayomiVersion(): string
+    {
+        $jar = $this->locateJar();
+
+        if ($jar !== null && preg_match('/(\d+\.\d+(?:\.\d+)*)/', basename($jar), $found) === 1) {
+            return $found[1];
+        }
+
+        return 'unknown';
     }
 
     /** The summary log, for the health command and for the messages `start` writes. */

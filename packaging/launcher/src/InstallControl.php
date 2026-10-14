@@ -46,6 +46,36 @@ interface InstallControl
     /**
      * Bring everything down.
      *
+     * ## Why a caller of this has to ask permission first
+     *
+     * Because `stop` does not care whether another launcher is supervising this install, and two
+     * supervisors over one install is a race neither can win. Measured, on the reader's own install,
+     * running `papyrus snapshot` from a second process while `papyrus start` was holding the terminal
+     * open:
+     *
+     *     start (holder)                  snapshot
+     *     ------------------------------  ---------------------------------------------
+     *     scheduler stopped on its own,    stopping: 2 processes stopped
+     *     shutting the rest down           copying_manga_half: done, 49,709,056 bytes
+     *     scheduler: already gone          copying_reader_half: done, 867 series, 21,447 states
+     *     queue: terminated                writing_manifest: done
+     *     web: terminated                  restarting: done, up again
+     *     suwayomi: terminated             (exit 0)
+     *     kcef: could not be stopped
+     *     (exit 1)
+     *
+     * Both reported what they did and the install was down afterwards. The holder saw its children
+     * die, concluded they had died on their own, and shut down and exited. The snapshot then started
+     * a fresh set of processes that nobody was supervising, and its own record said `up again`.
+     *
+     * The install was not running when I looked. Neither command had lied, and together they had
+     * produced a stopped install that both of them claimed to have left running.
+     *
+     * So a caller asks {@see InstallFacts::supervisorPid()} whether a live launcher owns this install
+     * before stopping anything, and refuses with an instruction rather than racing. The lock file
+     * already answers that question and names the process; it was simply only ever consulted by
+     * `start`.
+     *
      * @param  callable(string): void  $say
      * @return array<string, string> Process name to outcome, empty when nothing belonging to this
      *                               install was running.

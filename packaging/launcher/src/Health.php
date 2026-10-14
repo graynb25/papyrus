@@ -524,46 +524,31 @@ final class Health
     {
         $php = $this->supervisor->phpExecutable();
 
+        /*
+         * The ini the *running* install actually used, never the template.
+         *
+         * This rebuilt the path itself, because `resolvedIniPath()` answered with the unresolved
+         * template: this probe reached that, started the install's php against `{{RUNTIME}}`, and got
+         * eleven warnings about a missing extension followed by a confident "not checked". The
+         * workaround was right about the problem and wrong about where it lived, because
+         * `snapshot` and `restore` were being handed the same template for the same kind of child.
+         *
+         * Measured, on the reader's own install, packaged runtime:
+         *
+         *     php.exe -c <ROOT>\runtime\php\php.ini   ->  no pdo_sqlite, no sqlite3
+         *     php.exe -c <DATA>\php\php.ini           ->  pdo_sqlite, sqlite3
+         *
+         * So the resolution moved into `Supervisor`, where there is one answer. This is now just the
+         * refusal, because a diagnostic that dies because a file is missing has failed at the only job
+         * it has, which is saying what is missing.
+         */
         try {
             $ini = $this->supervisor->resolvedIniPath();
         } catch (\Throwable) {
-            /*
-             * `resolvedIniPath()` refuses when the template ini is absent, and it is right to:
-             * without it PHP loads no extensions at all. But health is a diagnostic, and a
-             * diagnostic that dies because a file is missing has failed at the only job it has,
-             * which is saying what is missing. The other lines still report.
-             */
             return null;
         }
 
         if (! is_file($php) || ! is_file($ini)) {
-            return null;
-        }
-
-        /*
-         * The ini the *running* install actually used, not the one the template describes.
-         *
-         * `resolvedIniPath()` answers "where is the ini", and on a fresh install that is the
-         * unresolved template, because substitution happens into the data directory at start. This
-         * diagnostic reached that path, started the install's php against the template, and got
-         * eleven warnings about `{{RUNTIME}}` and `could not find driver` followed by a confident
-         * "not checked". So it looked like a considered verdict about the queue and was really an
-         * unresolved template read as if it were a configuration.
-         *
-         * That is the same mistake the build caught once already, where a probe reported a
-         * specific and wrong answer about a file it had not read.
-         *
-         * The data directory's resolved ini is the one that is known good: the web server, the
-         * workers and this install's own boot all run against it, and the launcher resolves it
-         * before it starts anything. Where it is missing the answer is no answer, rather than a
-         * warning-laden run that looks like one.
-         */
-        $resolved = dirname($this->supervisor->databaseFile()).DIRECTORY_SEPARATOR.'php'
-            .DIRECTORY_SEPARATOR.'php.ini';
-
-        if (is_file($resolved)) {
-            $ini = $resolved;
-        } elseif (str_contains($ini, '{{')) {
             return null;
         }
 

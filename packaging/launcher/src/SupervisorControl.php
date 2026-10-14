@@ -3,17 +3,17 @@
 namespace Papyrus\Launcher;
 
 /**
- * {@see InstallControl} backed by the launcher's own supervisor.
+ * {@see InstallControl} and {@see InstallFacts}, backed by the launcher's own supervisor.
  *
- * A thin adapter rather than `RestoreCommand` calling the supervisor itself, so that the command's
- * only knowledge of processes is that they can be stopped and started.
+ * A thin adapter rather than the commands calling the supervisor themselves, so that each command's
+ * only knowledge of the install is the questions it actually has to ask.
  *
  * The interesting detail is `start()`'s return, which is what lets the caller report honestly. A
  * start that raised is caught here and turned into a list, because a restore that put the files back
  * and then could not bring the application up has still left the reader with a problem, and it should
  * not report a clean success.
  */
-final class SupervisorControl implements InstallControl
+final class SupervisorControl implements InstallControl, InstallFacts
 {
     public function __construct(private readonly Supervisor $supervisor) {}
 
@@ -31,5 +31,30 @@ final class SupervisorControl implements InstallControl
 
             return [];
         }
+    }
+
+    public function supervisorPid(): ?int
+    {
+        return $this->supervisor->supervisorPid();
+    }
+
+    public function suwayomiPids(): array
+    {
+        return $this->supervisor->pidsFor('suwayomi');
+    }
+
+    public function suwayomiVersion(): string
+    {
+        return $this->supervisor->suwayomiVersion();
+    }
+
+    public function phpExecutable(): string
+    {
+        return $this->supervisor->phpExecutable();
+    }
+
+    public function iniPath(): string
+    {
+        return $this->supervisor->resolvedIniPath();
     }
 }

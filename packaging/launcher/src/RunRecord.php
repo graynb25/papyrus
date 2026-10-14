@@ -420,6 +420,14 @@ final class RunRecord
      *
      * A reader either sees the previous record or this one and never a torn one, which matters
      * because "torn" would render as "no run" and "no run" is the failure this is here to stop.
+     *
+     * The directory has to exist and is not created here. Creating it meant the snapshot command's own
+     * check on its destination never ran: `begin()` made the folder first, so a reader who pointed a
+     * snapshot at a path that could not exist was told "could not create the directory to write the run
+     * record", which names the wrong problem and points at the run rather than at the backup. The
+     * command owns making the directory, because the directory is where the backup goes.
+     *
+     * @throws RestoreRefused
      */
     private function write(): void
     {
@@ -431,21 +439,24 @@ final class RunRecord
 
         $directory = dirname($this->path);
 
-        if (! is_dir($directory) && ! @mkdir($directory, 0o777, true) && ! is_dir($directory)) {
-            throw new RestoreRefused(sprintf('Could not create %s to write the run record.', $directory));
+        if (! is_dir($directory)) {
+            throw (new RestoreRefused(sprintf(
+                'There is no %s to write a run record into, so nothing was recorded.',
+                $directory,
+            )))->attempted($directory);
         }
 
         $temporary = $this->path.'.'.getmypid().'.tmp';
 
         if (@file_put_contents($temporary, $encoded) === false) {
-            throw new RestoreRefused(sprintf('Could not write the run record to %s.', $temporary));
+            throw (new RestoreRefused(sprintf('Could not write the run record to %s.', $temporary)));
         }
 
         // rename() is atomic within a filesystem, which is all this needs.
         if (! @rename($temporary, $this->path)) {
             @unlink($temporary);
 
-            throw new RestoreRefused(sprintf('Could not put the run record in place at %s.', $this->path));
+            throw (new RestoreRefused(sprintf('Could not put the run record in place at %s.', $this->path)));
         }
     }
 }

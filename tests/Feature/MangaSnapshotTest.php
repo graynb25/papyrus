@@ -426,4 +426,114 @@ class MangaSnapshotTest extends TestCase
             'a settle of zero has to mean zero, or the parameter does nothing',
         );
     }
+
+    /**
+     * A copy that reports success and produces nothing is refused.
+     *
+     * ## Why this is checked separately from the digest comparison
+     *
+     * Because the digest comparison cannot answer it. Two files that are both absent hash identically,
+     * so a mover that copies nothing and then returns a constant for both paths passes the digest
+     * check and the snapshot carries on to write a manifest naming a file that does not exist. That
+     * restores into an empty library with nothing saying why, which is the one failure a pair exists
+     * to prevent, reached by a shorter road.
+     *
+     * Found by a mutation rather than by reading. Removing the "are both halves present" check in
+     * `SnapshotCommand::writeManifest()` survived every test, because every test had arranged for the
+     * copy to either succeed with a file or fail before that point was reached. So the check moved
+     * here, where the copy happens, and this test is the one that holds it.
+     *
+     * The mover is not pretending to be the filesystem: the verification genuinely runs and genuinely
+     * cannot tell the difference. That is the point of the test rather than a flaw in it.
+     */
+    public function test_a_copy_that_produces_no_file_is_refused(): void
+    {
+        $silent = new class(new LocalFileMover) implements FileMover
+        {
+            public function __construct(private readonly FileMover $inner) {}
+
+            public function move(string $from, string $to): void
+            {
+                $this->inner->move($from, $to);
+            }
+
+            public function copy(string $from, string $to): void
+            {
+                // Copies nothing, and says nothing.
+            }
+
+            public function digest(string $path): string
+            {
+                return str_repeat('a', 64);
+            }
+
+            public function exists(string $path): bool
+            {
+                return false;
+            }
+        };
+
+        $lines = [];
+        $target = $this->target();
+
+        $captured = $this->snapshot(mover: $silent)->tryCapture(
+            $this->source(),
+            $target,
+            4242,
+            0,
+            static function (string $line) use (&$lines): void {
+                $lines[] = $line;
+            },
+        );
+
+        $this->assertFalse($captured, 'nothing arrived, so nothing was copied');
+        $this->assertFileDoesNotExist($target);
+        $this->assertStringContainsString('nothing arrived', implode("\n", $lines));
+        $this->assertStringContainsString(
+            'Nothing has been recorded as backed up',
+            implode("\n", $lines),
+            'and it does not leave the reader believing there is a backup',
+        );
+    }
+
+    /**
+     * The same shape through `capture()` rather than `tryCapture()`, so the exception a caller sees
+     * names the cause rather than arriving as a bare failure.
+     */
+    public function test_capture_throws_when_the_copy_produces_no_file(): void
+    {
+        $silent = new class(new LocalFileMover) implements FileMover
+        {
+            public function __construct(private readonly FileMover $inner) {}
+
+            public function move(string $from, string $to): void
+            {
+                $this->inner->move($from, $to);
+            }
+
+            public function copy(string $from, string $to): void {}
+
+            public function digest(string $path): string
+            {
+                return str_repeat('a', 64);
+            }
+
+            public function exists(string $path): bool
+            {
+                return false;
+            }
+        };
+
+        $refused = false;
+
+        try {
+            $this->snapshot(mover: $silent)->capture($this->source(), $this->target(), 4242, 0);
+        } catch (RestoreRefused $e) {
+            $refused = true;
+
+            $this->assertStringContainsString('nothing arrived', $e->getMessage());
+        }
+
+        $this->assertTrue($refused);
+    }
 }
