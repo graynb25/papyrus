@@ -33,6 +33,19 @@ Route::middleware(['auth'])->group(function () {
      * putting it behind verification would hide two version numbers from exactly the people most
      * likely to be filing a first-run report.
      */
+    /*
+     * What can be restored, and what the last backup actually did.
+     *
+     * Behind `auth` and not `verified`, beside `about` and for the same reason: it reads the
+     * filesystem and nothing about the reader. There is no reader data on the page, so there is
+     * nothing to escalate for, and a reader who has just signed up and cannot yet receive a mail is
+     * exactly the one most likely to be wondering whether their first backup happened.
+     *
+     * Nothing here can start a backup. It cannot: the manga half has to be copied with Suwayomi
+     * stopped, and Suwayomi being stopped means this process is stopped. The page says so and gives
+     * the command, which is the honest shape of a thing that cannot be done from in here.
+     */
+    Route::livewire('settings/backups', 'pages::settings.backups')->name('backups.edit');
     Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');
     Route::livewire('settings/licences', 'pages::settings.licences')->name('licences.edit');
 });

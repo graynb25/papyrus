@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Backup\BackupLibrary;
 use App\Import\BackupReaders;
 use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
@@ -41,6 +42,19 @@ class AppServiceProvider extends ServiceProvider
          * library page: the fetch knew why it returned nothing and the view could not see it.
          */
         $this->app->scoped(Library::class);
+
+        /*
+         * The backups folder, resolved once per request.
+         *
+         * Bound rather than constructed at the call site, because a page that news up the folder itself
+         * cannot be tested: the test would point at the checkout's own directory, which nothing writes
+         * to, and every assertion on the page would be vacuously true against an empty folder.
+         *
+         * This is the same mistake the `Library` binding above exists to fix, and it is worth naming:
+         * the object knows where things are, so the temptation is for the caller to ask it directly,
+         * which puts the knowledge back in two places.
+         */
+        $this->app->scoped(BackupLibrary::class, static fn (): BackupLibrary => BackupLibrary::forThisInstall());
 
         $this->app->singleton(Timestamps::class);
         $this->app->singleton(Transport::class);

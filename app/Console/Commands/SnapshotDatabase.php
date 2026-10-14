@@ -47,7 +47,17 @@ class SnapshotDatabase extends Command
         {--keep=14 : How many snapshots to keep}
         {--prune : Delete older snapshots beyond the retention, and take none}';
 
-    protected $description = 'Take a consistent snapshot of this install\'s own database using VACUUM INTO';
+    protected $description = 'Take a consistent copy of this install\'s own database. This is one half of a backup, not a backup: `papyrus snapshot` takes one you can restore';
+
+    /**
+     * The name every half written by this command starts with.
+     *
+     * `reader-half`, not `papyrus`. This used to write `papyrus-20261013-031701.sqlite`, which reads
+     * as a backup and sits exactly where a reader would look for one. It is not one and cannot be
+     * restored, so the name now says what it is before anything else has to be read. See
+     * {@see sayWhatThisIsAndIsNot()} for the full reason, which is worth more than the constant.
+     */
+    private const PREFIX = 'reader-half-';
 
     public function handle(): int
     {
@@ -85,7 +95,7 @@ class SnapshotDatabase extends Command
             return self::SUCCESS;
         }
 
-        $target = $directory.DIRECTORY_SEPARATOR.'papyrus-'.gmdate('Ymd-His').'.sqlite';
+        $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.gmdate('Ymd-His').'.sqlite';
 
         try {
             $this->vacuumInto($target);
@@ -113,9 +123,53 @@ class SnapshotDatabase extends Command
             number_format((int) filesize($target)).' bytes',
         ));
 
+        $this->sayWhatThisIsAndIsNot($directory);
+
         $this->prune($directory);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Say, every single time, that this is one half and not a backup.
+     *
+     * ## Why this is not a footnote
+     *
+     * Because the name this used to write was `papyrus-20261013-031701.sqlite`, which reads as a
+     * backup and sits beside the database where a reader would look for one. It is not one. It cannot
+     * be restored: `BackupPair::read()` refuses a manifest naming one half, and for a very good
+     * reason, because `series_states.suwayomi_manga_id` points at a row in Suwayomi's H2 file and a
+     * reader half alone is a library with no library.
+     *
+     * Worse, this runs on a schedule. Measured on the reader's own install there were two of these
+     * beside the database, `papyrus-20261013-031701.sqlite` and `papyrus-20261014-031700.sqlite`,
+     * from the 03:17 job, and `Artisan::call()` discards what the command printed. So the arrangement
+     * was: once a day, silently, produce a file that looks like a backup and cannot be restored. That
+     * is the whole of "what a user does not know, they will think worked", running unattended.
+     *
+     * So the name changed to say what it is, the default folder is one whose name says what it is,
+     * and the command says the rest. A reader who finds one of these should be able to work out from
+     * the name alone that it is not the thing they want.
+     *
+     * The real answer is `papyrus snapshot`, which stops the install, copies both halves and writes
+     * the manifest that binds them. That cannot be done from in here, which is why this command
+     * exists at all: stopping the application would stop the scheduler that is running it.
+     */
+    private function sayWhatThisIsAndIsNot(string $directory): void
+    {
+        $this->newLine();
+
+        $this->components->warn('This is one half of a backup, not a backup.');
+
+        $this->line(sprintf('  It holds what you have read, your shelves and your settings, in %s.', $directory));
+        $this->line('  It does not hold your manga, and on its own it cannot be restored: your library');
+        $this->line('  points into the manga database, so one half without the other is a library that');
+        $this->line('  reads as empty with nothing saying why.');
+        $this->newLine();
+        $this->line('  A backup you can actually restore is both halves together. To take one:');
+        $this->line('    papyrus snapshot');
+        $this->line('  Papyrus has to be stopped for that, which is why this command cannot do it.');
+        $this->newLine();
     }
 
     /**
@@ -142,12 +196,16 @@ class SnapshotDatabase extends Command
      * snapshots daily both keep a sensible window. And a snapshot that fails to delete is
      * reported rather than ignored, because a directory that quietly grows forever is how a
      * reader's disk fills.
+     *
+     * Matches {@see PREFIX} only, so this can never delete a file it did not write. That is not
+     * hypothetical: a snapshot folder is a reader's folder, and the older glob of `papyrus-*.sqlite`
+     * would have matched a file this command never wrote if one had ever been put there.
      */
     private function prune(string $directory): void
     {
         $keep = max(0, (int) $this->option('keep'));
 
-        $snapshots = glob($directory.DIRECTORY_SEPARATOR.'papyrus-*.sqlite') ?: [];
+        $snapshots = glob($directory.DIRECTORY_SEPARATOR.self::PREFIX.'*.sqlite') ?: [];
 
         if (count($snapshots) <= $keep) {
             return;
@@ -169,9 +227,14 @@ class SnapshotDatabase extends Command
     /**
      * Where snapshots go.
      *
-     * Defaults beside the database itself, because that is the location already proven writable
-     * by the install, and because a backup written somewhere else is a backup that stops being
-     * written the first time that somewhere is not writable.
+     * Defaults to a folder beside the database whose name says what is in it, because the location
+     * is already proven writable by the install and because a file written somewhere else is a file
+     * that stops being written the first time that somewhere is not writable.
+     *
+     * The folder is not called `backups`. `backups/` is where `papyrus snapshot` puts whole pairs, and
+     * mixing a half into a folder of pairs is how somebody ends up trying to restore one. Measured on
+     * the reader's install before this change: two files named `papyrus-*.sqlite` sitting beside the
+     * database where a reader would look for a backup, neither of them restorable.
      */
     private function directory(): string
     {
@@ -189,6 +252,6 @@ class SnapshotDatabase extends Command
             return base_path('database');
         }
 
-        return dirname($database);
+        return dirname($database).DIRECTORY_SEPARATOR.'reader-snapshots';
     }
 }

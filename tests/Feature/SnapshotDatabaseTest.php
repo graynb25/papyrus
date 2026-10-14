@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -94,7 +95,7 @@ class SnapshotDatabaseTest extends TestCase
 
         $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
 
-        $files = glob($directory.'/papyrus-*.sqlite') ?: [];
+        $files = glob($directory.'/reader-half-*.sqlite') ?: [];
 
         $this->assertCount(1, $files, 'exactly one snapshot per run');
         $this->assertGreaterThan(0, filesize($files[0]));
@@ -123,7 +124,7 @@ class SnapshotDatabaseTest extends TestCase
 
         $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
 
-        $files = glob($directory.'/papyrus-*.sqlite') ?: [];
+        $files = glob($directory.'/reader-half-*.sqlite') ?: [];
         $copy = new \PDO('sqlite:'.$files[0]);
 
         $states = $copy->query('select count(*) from chapter_states')->fetchColumn();
@@ -150,17 +151,17 @@ class SnapshotDatabaseTest extends TestCase
         File::ensureDirectoryExists($directory);
 
         foreach (['20260101-000000', '20260201-000000', '20260301-000000'] as $stamp) {
-            File::put($directory."/papyrus-{$stamp}.sqlite", 'x');
+            File::put($directory."/reader-half-{$stamp}.sqlite", 'x');
         }
 
         $this->artisan('papyrus:snapshot', ['--into' => $directory, '--keep' => 2, '--prune' => true])
             ->assertSuccessful();
 
-        $left = array_map('basename', glob($directory.'/papyrus-*.sqlite') ?: []);
+        $left = array_map('basename', glob($directory.'/reader-half-*.sqlite') ?: []);
 
         sort($left);
 
-        $this->assertSame(['papyrus-20260201-000000.sqlite', 'papyrus-20260301-000000.sqlite'], $left);
+        $this->assertSame(['reader-half-20260201-000000.sqlite', 'reader-half-20260301-000000.sqlite'], $left);
     }
 
     /**
@@ -173,7 +174,7 @@ class SnapshotDatabaseTest extends TestCase
         $this->artisan('papyrus:snapshot', ['--into' => $directory, '--keep' => 5, '--prune' => true])
             ->assertSuccessful();
 
-        $this->assertSame([], glob($directory.'/papyrus-*.sqlite') ?: []);
+        $this->assertSame([], glob($directory.'/reader-half-*.sqlite') ?: []);
     }
 
     /**
@@ -189,7 +190,7 @@ class SnapshotDatabaseTest extends TestCase
         File::ensureDirectoryExists($directory);
 
         // A directory exactly where the snapshot file belongs, so the write cannot succeed.
-        File::ensureDirectoryExists($directory.'/papyrus-'.gmdate('Ymd-His').'.sqlite');
+        File::ensureDirectoryExists($directory.'/reader-half-'.gmdate('Ymd-His').'.sqlite');
 
         $exit = $this->artisan('papyrus:snapshot', ['--into' => $directory])->run();
 
@@ -211,6 +212,153 @@ class SnapshotDatabaseTest extends TestCase
         });
 
         $this->assertSame(1, $exit, 'inside a transaction it must refuse rather than fail obscurely');
-        $this->assertSame([], glob($directory.'/papyrus-*.sqlite') ?: [], 'and write nothing');
+        $this->assertSame([], glob($directory.'/reader-half-*.sqlite') ?: [], 'and write nothing');
+    }
+
+    /**
+     * The file this command writes must not look like a backup, because it is not one.
+     *
+     * ## What this is fixing, measured
+     *
+     * On the reader's own install there were two of these beside the database:
+     *
+     *     papyrus-20261013-031701.sqlite   4.95 MB   10/12/2026 22:17
+     *     papyrus-20261014-031700.sqlite   4.98 MB   10/13/2026 22:17
+     *
+     * Both from the daily 03:17 job, whose output `Artisan::call()` discards. So the arrangement was:
+     * once a day, silently, write a file that reads as a backup, sits exactly where a reader would
+     * look for one, and cannot be restored.
+     *
+     * It cannot be restored because the two databases point at each other by id.
+     * `series_states.suwayomi_manga_id` names a row in Suwayomi's H2 file, so `BackupPair::read()`
+     * refuses a manifest naming one half, and the symptom of restoring one alone is a library that
+     * reads as empty with nothing saying why.
+     *
+     * Asserted on the name rather than on a message, because the name is what a reader sees in a file
+     * listing six weeks from now, long after they have forgotten this command existed.
+     */
+    public function test_the_file_it_writes_does_not_look_like_a_backup(): void
+    {
+        $directory = $this->scratch.'/honesty';
+
+        $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+
+        $written = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+        $this->assertCount(1, $written, 'one half, under a name that says so');
+
+        $this->assertSame(
+            [],
+            glob($directory.'/papyrus-*.sqlite') ?: [],
+            'and nothing named like the old version, which is what a reader mistakes for a backup',
+        );
+
+        $this->assertSame(
+            [],
+            glob($directory.'/backup-*.json') ?: [],
+            'and nothing named like a manifest, because there is no pair here',
+        );
+
+        $this->assertStringContainsString(
+            'reader-half',
+            basename($written[0]),
+            'the name itself has to carry the warning, since a file listing is all a reader has',
+        );
+    }
+
+    /**
+     * And it says so out loud, every time, because the name is not the only way it is found.
+     *
+     * The scheduled job discards this output, which is half the problem: a reader who runs the
+     * command by hand gets the explanation, and a reader who finds the file later gets the name. Both
+     * need it, and neither alone is enough.
+     */
+    public function test_it_says_it_is_not_a_backup_and_names_the_command_that_is(): void
+    {
+        $directory = $this->scratch.'/says-so';
+
+        $this->artisan('papyrus:snapshot', ['--into' => $directory])
+            ->expectsOutputToContain('one half of a backup, not a backup')
+            ->expectsOutputToContain('papyrus snapshot')
+            ->assertSuccessful();
+    }
+
+    /**
+     * It must not claim to be restorable in the sentence that names the file.
+     *
+     * The old output was `Snapshot written: papyrus-20261013-031701.sqlite (4,949,760 bytes)`, which
+     * is a sentence with no caveat in it at all.
+     */
+    public function test_it_does_not_announce_itself_as_a_backup(): void
+    {
+        $directory = $this->scratch.'/announcing';
+
+        $output = $this->runAndCapture($directory);
+
+        $this->assertStringContainsString('Snapshot written', $output);
+        $this->assertStringNotContainsStringIgnoringCase('backup written', $output);
+        $this->assertStringContainsString('one half of a backup, not a backup', $output);
+    }
+
+    /**
+     * Pruning only ever deletes what this command wrote.
+     *
+     * The glob used to be `papyrus-*.sqlite`, and a snapshot folder is a reader's folder. A file
+     * there that this command never wrote would have been deleted silently, which is the one thing a
+     * retention routine must never do to a folder it shares.
+     */
+    public function test_pruning_never_deletes_a_file_it_did_not_write(): void
+    {
+        $directory = $this->scratch.'/foreign';
+        File::ensureDirectoryExists($directory);
+
+        $keep = 'reader-half-20260101-000000.sqlite';
+        $mine = 'reader-half-20260201-000000.sqlite';
+        $theirs = 'a-file-someone-else-put-here.sqlite';
+        $looks_like_a_snapshot = 'papyrus-20250101-000000.sqlite';
+
+        foreach ([$keep, $mine, $theirs, $looks_like_a_snapshot] as $name) {
+            File::put($directory.'/'.$name, 'x');
+        }
+
+        $this->artisan('papyrus:snapshot', ['--into' => $directory, '--keep' => 1, '--prune' => true])
+            ->assertSuccessful();
+
+        $left = array_map('basename', glob($directory.'/*') ?: []);
+        sort($left);
+
+        $this->assertSame([$theirs, $looks_like_a_snapshot, $mine], $left);
+    }
+
+    /**
+     * The default folder's name says what is in it.
+     *
+     * `backups/` is where `papyrus snapshot` puts whole pairs. A half sharing that folder with pairs
+     * is how somebody tries to restore one.
+     */
+    public function test_the_default_folder_is_not_the_one_pairs_live_in(): void
+    {
+        $this->artisan('papyrus:snapshot')->assertSuccessful();
+
+        $expected = dirname((string) config('database.connections.sqlite.database')).DIRECTORY_SEPARATOR.'reader-snapshots';
+
+        $this->assertDirectoryExists($expected);
+        $this->assertCount(1, glob($expected.'/reader-half-*.sqlite') ?: []);
+
+        $this->assertSame(
+            [],
+            glob(dirname((string) config('database.connections.sqlite.database')).DIRECTORY_SEPARATOR.'backups') ?: [],
+            'and nothing was written into the folder pairs live in',
+        );
+    }
+
+    /**
+     * Run the command and hand back everything it printed.
+     */
+    private function runAndCapture(string $directory): string
+    {
+        Artisan::call('papyrus:snapshot', ['--into' => $directory]);
+
+        return (string) Artisan::output();
     }
 }
