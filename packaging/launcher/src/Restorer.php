@@ -46,7 +46,8 @@ final class Restorer
     /**
      * Put a pair back into a live install.
      *
-     * @param  array{papyrus: string, suwayomi: string}  $live  The two files as they are now
+     * @param  array<string, array{target: string, companions: list<string>}>  $live  Each half as it
+     *                                                                                is now: the file to replace, and the sidecars that belong to it and go with it.
      * @param  string|null  $rollbackDirectory  Defaults to `rollback-<token>` beside the pair
      *
      * @throws RestoreRefused Nothing was changed, or a rollback failed and the message says so.
@@ -60,16 +61,38 @@ final class Restorer
         // Both files are moved aside first, and the set records that it is under way. Once this is
         // non-empty, any failure has to put things back, so the rollback path cannot be skipped by a
         // later `return` or `throw`.
+        /*
+         * A flat list of every file actually moved, so the rollback puts back exactly those and no
+         * others. Restoring a file that was never moved would destroy the very thing being restored,
+         * and leaving one out would lose the rows that lived in it.
+         */
         $movedAside = [];
 
         try {
+            /*
+             * The target and every companion move aside together.
+             *
+             * Together because a WAL without its database and a database without its WAL are both
+             * states nothing can be reasoned about. Measured: replacing `database.sqlite` while the
+             * previous install's `database.sqlite-wal` stayed beside it produced a restored database
+             * with THREE rows where the snapshot held two, and `PRAGMA integrity_check` said `ok`
+             * throughout, because the result is a valid database holding a row that should not be in
+             * it. On the reader's own install that WAL is 4,140,632 bytes against a 5,192,368 byte
+             * database.
+             */
             foreach (['papyrus', 'suwayomi'] as $half) {
-                $this->mover->move($live[$half], $rollbackDirectory.DIRECTORY_SEPARATOR.'previous-'.basename($live[$half]));
-                $movedAside[$half] = $live[$half];
+                foreach ($this->filesOf($live[$half]) as $path) {
+                    $this->mover->move(
+                        $path,
+                        $rollbackDirectory.DIRECTORY_SEPARATOR.'previous-'.basename($path),
+                    );
+
+                    $movedAside[] = $path;
+                }
             }
 
             foreach (['papyrus', 'suwayomi'] as $half) {
-                $this->mover->copy($pair->pathOf($half), $live[$half]);
+                $this->mover->copy($pair->pathOf($half), $live[$half]['target']);
             }
 
             /*
@@ -127,7 +150,7 @@ final class Restorer
     }
 
     /**
-     * @param  array{papyrus: string, suwayomi: string}  $live
+     * @param  array<string, array{target: string, companions: list<string>}>  $live
      *
      * @throws RestoreRefused
      */
@@ -136,11 +159,11 @@ final class Restorer
         foreach (['papyrus', 'suwayomi'] as $half) {
             $expected = $half === 'suwayomi' ? $pair->suwayomiSha256 : $pair->papyrusSha256;
 
-            if ($this->mover->digest($live[$half]) !== $expected) {
+            if ($this->mover->digest($live[$half]['target']) !== $expected) {
                 throw (new RestoreRefused(sprintf(
                     'The %s half did not land intact. It has been taken back out again.',
                     $half === 'suwayomi' ? 'manga' : 'reader',
-                )))->attempted($live[$half]);
+                )))->attempted($live[$half]['target']);
             }
         }
     }
@@ -153,10 +176,14 @@ final class Restorer
      * can do is say that in words rather than return an exception a caller might report as "the
      * restore failed, try again".
      *
-     * @param  array<string, string>  $movedAside  Which halves were actually moved, so only those
-     *                                             are put back. Moving a file that was never moved
-     *                                             would destroy the very thing being restored.
-     * @param  array{papyrus: string, suwayomi: string}  $live
+     * @param  list<string>  $movedAside  Every file actually moved, so only those are put back.
+     *                                    Moving a file that was never moved would destroy the very
+     *                                    thing being restored, and leaving one out would lose the
+     *                                    rows that lived in it: the live WAL held rows the main
+     *                                    database did not have, so a rollback that restored only
+     *                                    the main file would discard them while looking like a
+     *                                    successful undo.
+     * @param  array<string, array{target: string, companions: list<string>}>  $live
      */
     private function undo(
         array $movedAside,
@@ -173,13 +200,13 @@ final class Restorer
 
         $problems = [];
 
-        foreach (array_reverse(array_keys($movedAside), true) as $half) {
-            $kept = $rollbackDirectory.DIRECTORY_SEPARATOR.'previous-'.basename($live[$half]);
+        foreach (array_reverse($movedAside) as $path) {
+            $kept = $rollbackDirectory.DIRECTORY_SEPARATOR.'previous-'.basename($path);
 
             try {
-                $this->mover->move($kept, $live[$half]);
+                $this->mover->move($kept, $path);
             } catch (Throwable $e) {
-                $problems[] = sprintf('%s: %s', $half, $e->getMessage());
+                $problems[] = sprintf('%s: %s', basename($path), $e->getMessage());
             }
         }
 
@@ -202,18 +229,50 @@ final class Restorer
     }
 
     /**
-     * @param  array<string, string>  $movedAside
-     * @param  array{papyrus: string, suwayomi: string}  $live
-     * @return array<string, string>
+     * Where each kept file now is, grouped by the half it belongs to.
+     *
+     * A reader told only where `database.sqlite` went has been told half of what they need. The WAL
+     * beside it held rows the main file did not have, and it is the only other copy of them.
+     *
+     * @param  list<string>  $movedAside
+     * @param  array<string, array{target: string, companions: list<string>}>  $live
+     * @return array<string, array<string, string>>
      */
     private function rollbackPaths(array $movedAside, array $live, string $rollbackDirectory): array
     {
         $paths = [];
 
-        foreach (array_keys($movedAside) as $half) {
-            $paths[$half] = $rollbackDirectory.DIRECTORY_SEPARATOR.'previous-'.basename($live[$half]);
+        foreach ($live as $half => $files) {
+            foreach ($this->filesOf($files) as $path) {
+                if (in_array($path, $movedAside, true)) {
+                    $paths[$half][basename($path)] = $rollbackDirectory
+                        .DIRECTORY_SEPARATOR.'previous-'.basename($path);
+                }
+            }
         }
 
         return $paths;
+    }
+
+    /**
+     * The target and the sidecars that belong to it, target first and duplicates dropped.
+     *
+     * Only files that exist are returned. A database that was cleanly closed has no WAL, and asking
+     * the mover to move one that is not there would be a refusal rather than a restore.
+     *
+     * @param  array{target: string, companions: list<string>}  $half
+     * @return list<string>
+     */
+    private function filesOf(array $half): array
+    {
+        $files = [$half['target']];
+
+        foreach ($half['companions'] as $companion) {
+            if (! in_array($companion, $files, true) && $this->mover->exists($companion)) {
+                $files[] = $companion;
+            }
+        }
+
+        return $files;
     }
 }

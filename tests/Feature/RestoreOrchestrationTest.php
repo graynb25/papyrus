@@ -134,7 +134,16 @@ class RestoreOrchestrationTest extends TestCase
         return BackupPair::read($manifest, $this->backupDir());
     }
 
-    /** A live install whose two files carry recognisable content. */
+    /**
+     * A live install whose two files carry recognisable content.
+     *
+     * Each half is a target plus the sidecars that belong to it, because a WAL without its database
+     * and a database without its WAL are both states nothing can be reasoned about. None are listed
+     * here: this suite writes plain files, and a write-ahead log cannot be produced by writing a
+     * file, so it has its own suite in {@see RestoreSidecarTest}.
+     *
+     * @return array{papyrus: array{target: string, companions: list<string>}, suwayomi: array{target: string, companions: list<string>}}
+     */
     private function writeLive(string $papyrusBody = 'LIVE-PAPYRUS', string $suwayomiBody = 'LIVE-SUWAYOMI'): array
     {
         $papyrus = $this->liveDir().DIRECTORY_SEPARATOR.'database.sqlite';
@@ -143,7 +152,10 @@ class RestoreOrchestrationTest extends TestCase
         file_put_contents($papyrus, $papyrusBody);
         file_put_contents($suwayomi, $suwayomiBody);
 
-        return ['papyrus' => $papyrus, 'suwayomi' => $suwayomi];
+        return [
+            'papyrus' => ['target' => $papyrus, 'companions' => []],
+            'suwayomi' => ['target' => $suwayomi, 'companions' => []],
+        ];
     }
 
     private function restorer(?FileMover $mover = null): Restorer
@@ -211,8 +223,8 @@ class RestoreOrchestrationTest extends TestCase
         $this->assertTrue($failed, 'the restore must refuse rather than report success');
 
         // Both live files are byte for byte what they were before the attempt.
-        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']), 'the reader half was left replaced');
-        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']), 'the manga half was left replaced');
+        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']['target']), 'the reader half was left replaced');
+        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']['target']), 'the manga half was left replaced');
     }
 
     /**
@@ -237,7 +249,7 @@ class RestoreOrchestrationTest extends TestCase
          * situation again: nothing had been moved aside, so there was nothing to put back and the
          * code correctly reported a plain refusal.
          */
-        $refusesRollback = new class(new LocalFileMover, array_values($live)) implements FileMover
+        $refusesRollback = new class(new LocalFileMover, array_values(array_column($live, 'target'))) implements FileMover
         {
             public function __construct(private readonly FileMover $inner, private readonly array $livePaths) {}
 
@@ -386,8 +398,8 @@ class RestoreOrchestrationTest extends TestCase
             'nothing may be written before the pair is known good. It wrote to: '.implode(', ', $mover->wroteTo),
         );
 
-        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']));
-        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']));
+        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']['target']));
+        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']['target']));
     }
 
     /**
@@ -414,8 +426,8 @@ class RestoreOrchestrationTest extends TestCase
         }
 
         $this->assertTrue($refused, 'a digest mismatch must be refused');
-        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']));
-        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']));
+        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']['target']));
+        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']['target']));
 
         /*
          * Nothing was written, which is the property that makes this a pre-flight rather than a
@@ -491,7 +503,7 @@ class RestoreOrchestrationTest extends TestCase
         $this->assertTrue($refused, 'a copy that did not arrive intact must be refused');
 
         // Nothing short is sitting where a database is expected.
-        foreach ([$live['papyrus'], $live['suwayomi']] as $path) {
+        foreach (array_column($live, 'target') as $path) {
             $body = (string) @file_get_contents($path);
 
             $this->assertNotSame(
@@ -501,8 +513,8 @@ class RestoreOrchestrationTest extends TestCase
             );
         }
 
-        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']));
-        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']));
+        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']['target']));
+        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']['target']));
     }
 
     /**
@@ -780,19 +792,19 @@ class RestoreOrchestrationTest extends TestCase
 
         $this->assertSame(
             'PAPYRUS-SIDECAR-867-21447',
-            (string) file_get_contents($live['papyrus']),
+            (string) file_get_contents($live['papyrus']['target']),
             'the reader half was not restored',
         );
         $this->assertSame(
             'SUWAYOMI-H2-20261013-031701',
-            (string) file_get_contents($live['suwayomi']),
+            (string) file_get_contents($live['suwayomi']['target']),
             'the manga half was not restored',
         );
 
         $this->assertNotSame([], $result->rollback, 'the previous files must be kept, not deleted');
         $this->assertSame(
             'LIVE-PAPYRUS',
-            (string) file_get_contents($result->rollback['papyrus'] ?? ''),
+            (string) file_get_contents($result->rollback['papyrus']['database.sqlite'] ?? ''),
             'the rollback copy is not the file that was there before',
         );
         $this->assertSame(867, $result->seriesStates);
@@ -818,7 +830,7 @@ class RestoreOrchestrationTest extends TestCase
         );
         $this->assertSame(
             'LIVE-SUWAYOMI',
-            (string) file_get_contents($result->rollback['suwayomi'] ?? ''),
+            (string) file_get_contents($result->rollback['suwayomi']['database.mv.db'] ?? ''),
             'the kept manga half is not the file that was there before',
         );
     }
@@ -836,10 +848,10 @@ class RestoreOrchestrationTest extends TestCase
         $pair = $this->writePair();
 
         $this->restorer()->restore($pair, $live);
-        $first = (string) file_get_contents($live['papyrus']);
+        $first = (string) file_get_contents($live['papyrus']['target']);
 
         $this->restorer()->restore($pair, $live);
-        $second = (string) file_get_contents($live['papyrus']);
+        $second = (string) file_get_contents($live['papyrus']['target']);
 
         $this->assertSame($first, $second);
         $this->assertSame('PAPYRUS-SIDECAR-867-21447', $second);

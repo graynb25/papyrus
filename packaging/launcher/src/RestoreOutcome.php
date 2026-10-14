@@ -18,7 +18,8 @@ namespace Papyrus\Launcher;
 final class RestoreOutcome
 {
     /**
-     * @param  array<string, string>  $rollback  Half name to the path the previous file is now at.
+     * @param  array<string, array<string, string>>  $rollback  Half name, then file name, to where
+     *                                                          that file is now.
      */
     public function __construct(
         public readonly BackupPair $pair,
@@ -51,14 +52,20 @@ final class RestoreOutcome
     /**
      * One line per kept file, naming where it is.
      *
+     * Every file, not one per half. The reader's write-ahead log is a file in its own right and it
+     * held rows the main database did not have, so a list that named only `database.sqlite` would
+     * leave the reader believing their rollback is complete when it is not.
+     *
      * @return list<string>
      */
     public function rollbackLines(): array
     {
         $lines = [];
 
-        foreach ($this->rollback as $half => $path) {
-            $lines[] = sprintf('  %-12s %s', $half, $path);
+        foreach ($this->rollback as $half => $files) {
+            foreach ($files as $name => $path) {
+                $lines[] = sprintf('  %-9s %-22s %s', $half, $name, $path);
+            }
         }
 
         return $lines;
