@@ -6016,9 +6016,10 @@ were eliminated.
 
     Traps 207 to 216 went into this file on 2026-10-10 through a PowerShell double-quoted
     here-string. The prose contained markdown backticks, and every one that started a code span
-    next to a special letter was read as an escape and executed: `n became a newline inside
-    "null", `f a form feed inside "false", `0 a NUL, and a dollar name behind a backslash was
-    read as a variable and replaced with nothing, leaving the backslash alone.
+    next to a special letter was read as an escape and executed: `` `n `` became a newline
+    inside "null", `` `f `` a form feed inside "false", `` `0 `` a NUL, and a dollar name
+    behind a backslash was read as a variable and replaced with nothing, leaving the backslash
+    alone.
 
     The fragments still read as English, which is why nobody caught it: "writes alse is" and
     "reads as ." passed for prose for five days. The NULs are the half that hid the rest. One
