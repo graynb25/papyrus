@@ -6012,6 +6012,27 @@ were eliminated.
     result into a confident sentence**, which is the same defect as the `bound to:` line in F2 and the
     "Starting Papyrus again" line in F16: a message describing a state nobody established.
 
+274. **A here-string is an interpreter, and it edited the prose it was asked to carry.**
+
+    Traps 207 to 216 went into this file on 2026-10-10 through a PowerShell double-quoted
+    here-string. The prose contained markdown backticks, and every one that started a code span
+    next to a special letter was read as an escape and executed: `n became a newline inside
+    "null", `f a form feed inside "false", `0 a NUL, and a dollar name behind a backslash was
+    read as a variable and replaced with nothing, leaving the backslash alone.
+
+    The fragments still read as English, which is why nobody caught it: "writes alse is" and
+    "reads as ." passed for prose for five days. The NULs are the half that hid the rest. One
+    NUL is enough for git to call the whole file binary, and a binary file has no readable
+    diff, so the notes left review at the same moment the words left the sentences.
+
+    The same class of write put two BEL bytes into `packaging/installer/build-portable.php` on
+    2026-10-13, where a backtick before an "a" became the byte and swallowed the letter.
+
+    The general shape: **text handed to an interpreter belongs to the interpreter.** Write file
+    content with a tool that copies bytes, and after any write that went through a shell, read
+    the artifact back and count what you expect: control bytes at zero, and the words where
+    they were put.
+
 ## And the lesson underneath both, which cost more than either
 
 The gate was changed to test something it had never tested, in a script that had never been run with
