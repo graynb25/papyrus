@@ -3836,8 +3836,7 @@ were eliminated.
      no log kept.** Before spending an afternoon recovering data, check whether the thing you
      suspect actually happened, and whether the database says so.
 207. **A protobuf flag that is absent is not a flag that is false, and !== 0 says it is true.**
-    `integer(\, 4) !== 0` reads as true whenever the field is missing, because 
-ull !== 0,
+    `integer($bytes, 4) !== 0` reads as true whenever the field is missing, because `null` !== 0,
     and protobuf omits a false rather than writing a zero. The .tachibk reader shipped that way
     and reported **2,911 chapters read out of a file holding 1,616**, while every other number it
     printed stayed correct.
@@ -3850,12 +3849,12 @@ ull !== 0,
     count against a second decoder written in another language.
 
     The general shape: **the fixture must reproduce the shape of the data, not the shape of the
-    idea.** "Unread" in this format is an absent field, and a fixture that writes alse is
+    idea.** "Unread" in this format is an absent field, and a fixture that writes `false` is
     testing a file no writer produces.
 
 208. **Protobuf writes a fixed32 little endian, and unpack('G') reads it big endian.**
     g is little endian and G is big, they look identical, and getting it wrong does not
-    raise. 700.5 comes back as a denormal so small it reads as . Every decimal chapter
+    raise. 700.5 comes back as a denormal so small it reads as `0`. Every decimal chapter
     number silently became zero and every whole one became nonsense.
 
     The general shape: **byte order errors are silent, and a language that names both variants
@@ -3863,8 +3862,8 @@ ull !== 0,
     order rather than for the field.
 
 209. **A dropped ternary branch is still valid PHP when it is the last argument.**
-    `sprintf('Read a %s backup%s.', \, \ === null)` compiles. The call is
-    complete, \ === null is the third argument, and the trailing ) closes the
+    `sprintf('Read a %s backup%s.', $format, $schemaVersion === null)` compiles. The call is
+    complete, $schemaVersion === null is the third argument, and the trailing ) closes the
     enclosing call. It printed Read a tachibk backup1. and every test passed.
 
     This one is worth keeping for the shape rather than the instance. The intermediate state was
@@ -3872,20 +3871,17 @@ ull !== 0,
     across several lines needs a test that asserts on the sentence, not on the exit code.
 
 210. **A nullable value through %d becomes a confident zero.**
-    ImportedBackup::\ is now ?int, because .tachibk states no version anywhere
-    and a  reads as a version the server recognised. The type was changed and one caller was
-    fixed; the second, `number_format(\->schemaVersion)`, turned 
-ull into '0' in the
+    ImportedBackup::$schemaVersion is now ?int, because .tachibk states no version anywhere
+    and a `0` reads as a version the server recognised. The type was changed and one caller was
+    fixed; the second, `number_format($backup->schemaVersion)`, turned `null` into '0' in the
     progress note and nothing failed.
 
-    The general shape: **widening a type does not migrate its callers.** PHP will coerce 
-ull
-    into 
-umber_format and '%d' without a word, so every consumer of a newly nullable value
+    The general shape: **widening a type does not migrate its callers.** PHP will coerce `null`
+    into `number_format` and '%d' without a word, so every consumer of a newly nullable value
     has to be found by the type checker and not by memory.
 
 211. **A count of what survived a filter is not a count of what was in the file.**
-    `totalInFile` was `count(\)` after unnameable series had been skipped, so a file
+    `totalInFile` was `count($series)` after unnameable series had been skipped, so a file
     holding three series reported two. The comment next to the skip said it still counted, which
     made the bug a documented lie rather than an undocumented one.
 
@@ -3914,15 +3910,12 @@ umber_format and '%d' without a word, so every consumer of a newly nullable valu
     PHPStan could not follow it. messages() does the filtering once and narrows with is_string
     rather than casting, because a cast claims a type the walk never promised.
 
-215. **A generator that declares Generator<K, V, null, null> trips 
-eturn.missing.**
-    Declaring the third and fourth type parameters as 
-ull tells the checker the generator
-    returns a null explicitly, and then it wants the 
-eturn null that a generator never needs.
+215. **A generator that declares Generator<K, V, null, null> trips `return.missing`.**
+    Declaring the third and fourth type parameters as `null` tells the checker the generator
+    returns a null explicitly, and then it wants the `return null` that a generator never needs.
     `@return Generator<int, array{int, int|string}>` is the accurate declaration.
 216. **A test one second away from a boundary is a coin flip, not a test.**
-    `AuthManager::ACCESS_MARGIN` is 30 and `isFresh()` is `time() < \ - 30`. The
+    `AuthManager::ACCESS_MARGIN` is 30 and `isFresh()` is `time() < $expiresAt - 30`. The
     test for a token *outside* that margin captured `time() + 31`, so it had exactly one
     second of slack before the branch it was asserting on would flip. It passed in isolation and
     failed once in a full run, on a machine that was also running something else.
@@ -4543,7 +4536,7 @@ eturn null that a generator never needs.
     point of the file, and it is a refusal rather than a warning because nothing else about this class
     of failure is loud.
 
-234. **A check that reports zero is more dangerous than one that reports wrong, because zero looks like a filter working.**
+234. **A check that reports zero is more dangerous than one that reports wrong, because zero looks like
     a filter working.**
     Two of the three bugs on the way to the licences page produced empty lists rather than incorrect
     ones, and both passed every assertion that existed at the time.
