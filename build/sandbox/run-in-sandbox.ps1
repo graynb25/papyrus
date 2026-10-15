@@ -340,7 +340,19 @@ if (-not $startProcess.HasExited) {
     # Not a failure. This is what a working install looks like from outside.
     Say '  the launcher is still holding and serving after 4 minutes, which is what start does'
 
-    Check 'the launcher reached running' ($null -ne $reportedPort) 'never reported a port'
+    # The detail says what actually happened rather than what used to happen.
+    #
+    # This was a literal 'never reported a port', which is the text of the failure. Once the pattern
+    # matched, the run printed a green line reading:
+    #
+    #     [ok  ] the launcher reached running  never reported a port
+    #
+    # A check that passes while its own detail describes the failure it once reported is a check
+    # nobody can read quickly, and a reader scanning for red will miss that the wording is wrong. The
+    # same fault as `port  released` with an empty port name: a string that survived the fix it was
+    # written for.
+    Check 'the launcher reached running' ($null -ne $reportedPort) `
+        $(if ($null -eq $reportedPort) { 'never reported a port' } else { "reported port $reportedPort" })
 
     if ($null -ne $reportedPort) {
         $appPort = $reportedPort

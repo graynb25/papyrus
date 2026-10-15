@@ -5185,6 +5185,19 @@ eturn null that a generator never needs.
       valid
     - a missing port is recorded as a named failure rather than announced and stepped over
 
+    And the fix left one thing behind, which the next clean-machine run caught. The check carried its
+    failure text as a literal, so once the pattern matched and the run went green it printed:
+
+    ```
+    [ok  ] the launcher reached running  never reported a port
+    ```
+
+    A passing line quoting the failure it used to report. Same fault as `port  released` with an
+    empty name: **a string that survives the fix it was written for.** The detail now says what
+    happened, which on the passing run is `reported port 8402`. Worth pairing with the habit this
+    file keeps recommending, of reading a green line's wording as carefully as its colour, because
+    the colour was right and the sentence was wrong.
+
     And the general form, which is the fourth time in this file: **a selector that misses its
     subject reports a failure that does not exist.** Trap 138 with a CSS class, trap 151 with an
     `aria-label`, trap 254 with a path separator, this with a hostname. Four different subjects and
