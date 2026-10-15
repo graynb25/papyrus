@@ -116,6 +116,9 @@ class HealthTest extends TestCase
      * this machine is doing at the time. That already happened once, when a suite asserting that a
      * *missing* worker is reported as missing found real workers running and failed for reasons
      * that had nothing to do with the code.
+     *
+     * @param  array<int, list<string>|null>  $addresses  What each port is bound to, keyed by port.
+     *                                                    A null value is the port whose bind could not be read.
      */
     private function prober(
         bool $suwayomiUp = false,
@@ -123,8 +126,9 @@ class HealthTest extends TestCase
         int $readyStatus = 200,
         string $version = 'v2.4.2366',
         ?string $portHolder = null,
+        array $addresses = [],
     ): Prober {
-        return new class($suwayomiUp, $webUp, $readyStatus, $version, $portHolder) extends Prober
+        return new class($suwayomiUp, $webUp, $readyStatus, $version, $portHolder, $addresses) extends Prober
         {
             public function __construct(
                 private readonly bool $suwayomiUp,
@@ -132,6 +136,8 @@ class HealthTest extends TestCase
                 private readonly int $readyStatus,
                 private readonly string $version,
                 private readonly ?string $portHolder,
+                /** @var array<int, list<string>|null> */
+                private readonly array $addresses,
             ) {}
 
             /*
@@ -146,6 +152,23 @@ class HealthTest extends TestCase
             public function describePortHolder(int $port): ?string
             {
                 return $this->portHolder;
+            }
+
+            /*
+             * What each port is bound to, stubbed for the same reason `describePortHolder` is.
+             *
+             * Defaulting to loopback rather than to null, because a test that is not about the bind
+             * should read as a healthy install and there is no reason to make every one of them say
+             * "not checked". The tests that are about the bind pass their own answer, including null
+             * for the case that could not be found out.
+             */
+            public function listeningAddresses(int $port): ?array
+            {
+                if (array_key_exists($port, $this->addresses)) {
+                    return $this->addresses[$port];
+                }
+
+                return ['127.0.0.1'];
             }
 
             public function suwayomiAnswers(int $port, float $timeoutSeconds = 3.0): bool
@@ -526,6 +549,144 @@ class HealthTest extends TestCase
         $this->assertMatchesRegularExpression('/ok\s+suwayomi\s+running\s+v2\.4\.2366/', $report);
         $this->assertStringContainsString('the version Papyrus ships and tests against', $report);
         $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+    }
+
+    // ------------------------------------------------- what a port is bound to, which is finding F2
+
+    /**
+     * The address is on the line, not only the port.
+     *
+     * This is the whole of finding F2. On 2026-10-14 Suwayomi listened on `:::4567`, which is every
+     * interface, so a reader's whole library was reachable from the network, and this report said
+     * `running  v2.4.2366  port 4567` and nothing else. A port number says a thing is listening. It
+     * does not say who can reach it, which is the only question that mattered.
+     */
+    public function test_the_line_names_what_the_port_is_bound_to_not_only_the_port(): void
+    {
+        $this->installCompatibility();
+
+        $supervisor = $this->supervisor(['queue', 'scheduler']);
+
+        $report = $this->health($supervisor, $this->prober(
+            suwayomiUp: true,
+            webUp: true,
+            // The ports are read from the supervisor rather than written down, so a change to the
+            // test's ports cannot make these four tests assert against a port nothing is listening on
+            // and pass for the wrong reason.
+            addresses: [
+                $supervisor->suwayomiPort() => ['127.0.0.1'],
+                $supervisor->appPort() => ['::1', '127.0.0.1'],
+            ],
+        ))->render();
+
+        $this->assertStringContainsString('127.0.0.1 (this machine only)', $report);
+        $this->assertStringContainsString('::1 (this machine only)', $report);
+    }
+
+    /**
+     * A wildcard bind is a failure, and is named as a wildcard rather than as an address.
+     *
+     * The naming matters as much as the verdict. `0.0.0.0` printed on its own reads like an address,
+     * and an address reads like somewhere specific. This one is everywhere at once, which is the
+     * whole problem, and the line has to say so in words rather than leaving the reader to know
+     * what the wildcard means.
+     */
+    public function test_a_wildcard_bind_is_a_failure_and_says_it_is_every_interface(): void
+    {
+        $this->installCompatibility();
+
+        $supervisor = $this->supervisor(['queue', 'scheduler']);
+
+        $report = $this->health($supervisor, $this->prober(
+            suwayomiUp: true,
+            webUp: true,
+            addresses: [
+                $supervisor->suwayomiPort() => ['127.0.0.1', '0.0.0.0'],
+                $supervisor->appPort() => ['127.0.0.1'],
+            ],
+        ))->render();
+
+        $this->assertStringContainsString('every interface (0.0.0.0), which is the whole network', $report);
+        $this->assertMatchesRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringContainsString('something is wrong', $report);
+    }
+
+    /**
+     * Two addresses on one port, one of them a LAN address, is a failure.
+     *
+     * This is the case that decides how the prober reads the port. The first version took
+     * `Select-Object -First 1`, so which answer arrived depended on the order the kernel happened to
+     * return, and `127.0.0.1` coming first would have printed "this machine only" on an install whose
+     * library is on the network. Measured on this project: FrankenPHP does listen on `::1` and
+     * `127.0.0.1` together, so several listeners on one port is the normal case and not an exotic
+     * one.
+     */
+    public function test_a_lan_address_hiding_beside_a_loopback_one_is_still_a_failure(): void
+    {
+        $this->installCompatibility();
+
+        $supervisor = $this->supervisor(['queue', 'scheduler']);
+
+        $report = $this->health($supervisor, $this->prober(
+            suwayomiUp: true,
+            webUp: true,
+            addresses: [
+                $supervisor->suwayomiPort() => ['127.0.0.1', '192.0.2.7'],
+                $supervisor->appPort() => ['127.0.0.1'],
+            ],
+        ))->render();
+
+        $this->assertStringContainsString('192.0.2.7', $report);
+        $this->assertMatchesRegularExpression('/FAIL\s+suwayomi/', $report);
+    }
+
+    /**
+     * A bind it could not read says so, and is neither a failure nor an endorsement.
+     *
+     * The failure path, which is the one that goes wrong otherwise. `health` is what a reader is told
+     * to run before filing a bug, so a line that quietly reads as fine when nothing was looked at is
+     * worse than no line, and a line that reads as broken when nothing was looked at is worse than
+     * that. It has to say it did not look.
+     *
+     * And it must not print an address at all, because printing `127.0.0.1` here would be the exact
+     * defect this finding is about: reporting loopback on the strength of not having checked.
+     */
+    public function test_a_bind_it_could_not_read_says_so_and_claims_no_address(): void
+    {
+        $this->installCompatibility();
+
+        $supervisor = $this->supervisor(['queue', 'scheduler']);
+
+        $report = $this->health($supervisor, $this->prober(
+            suwayomiUp: true,
+            webUp: true,
+            addresses: [
+                $supervisor->suwayomiPort() => null,
+                $supervisor->appPort() => ['127.0.0.1'],
+            ],
+        ))->render();
+
+        $this->assertStringContainsString('not checked', $report);
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+suwayomi/', $report);
+        $this->assertStringNotContainsString(
+            'this machine only',
+            $this->suwayomiLine($report),
+            'a bind that was not read cannot be reported as loopback, which is the whole defect',
+        );
+    }
+
+    /**
+     * The suwayomi line on its own, so an assertion about it cannot be satisfied by another line.
+     */
+    private function suwayomiLine(string $report): string
+    {
+        foreach (explode(PHP_EOL, $report) as $line) {
+            if (str_contains($line, 'suwayomi')) {
+                return $line;
+            }
+        }
+
+        return '';
     }
 
     /**

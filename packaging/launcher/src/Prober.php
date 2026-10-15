@@ -245,7 +245,7 @@ class Prober
      * queries all return null, and null is reported as "could not find out". A name invented from a
      * process list would be worse than no name, because a reader will act on it.
      *
-     * @return array{pid: int, name: string, command: string}|null
+     * @return array{pid: int, name: string, command: string, addresses: list<string>}|null
      */
     public function portHolder(int $port): ?array
     {
@@ -266,12 +266,24 @@ class Prober
         file_put_contents($script, implode(PHP_EOL, [
             'param([int]$Port)',
             '$ErrorActionPreference = "SilentlyContinue"',
-            '$listener = Get-NetTCPConnection -LocalPort $Port -State Listen |',
-            '  Select-Object -First 1',
-            'if (-not $listener) { exit 0 }',
-            '$proc = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $listener.OwningProcess)',
+            /*
+             * Every address on the port, not the first listener.
+             *
+             * `Select-Object -First 1` is right when the only thing wanted is a process name. It is
+             * exactly wrong for the address, because one port can carry several listeners at once and
+             * which one comes first is not something anybody decided. Taking the first would report
+             * loopback on an install whose library is reachable from the network, and that is the one
+             * answer in this file that must never be invented.
+             *
+             * Measured rather than assumed: FrankenPHP listens on `::1` and `127.0.0.1` at the same
+             * time, so several addresses on one port is the normal case in this project.
+             */
+            '$listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen)',
+            'if ($listeners.Count -eq 0) { exit 0 }',
+            '$proc = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $listeners[0].OwningProcess)',
             'if (-not $proc) { exit 0 }',
-            '[Console]::Out.Write((@{ pid = [int]$proc.ProcessId; name = [string]$proc.Name; command = [string]$proc.CommandLine } | ConvertTo-Json -Compress))',
+            '$addresses = @($listeners | ForEach-Object { [string]$_.LocalAddress } | Sort-Object -Unique)',
+            '[Console]::Out.Write((@{ pid = [int]$proc.ProcessId; name = [string]$proc.Name; command = [string]$proc.CommandLine; addresses = $addresses } | ConvertTo-Json -Compress))',
         ]));
 
         $out = tempnam(sys_get_temp_dir(), 'papyrus-port-out-');
@@ -319,11 +331,54 @@ class Prober
             return null;
         }
 
+        /*
+         * The addresses are read as a list and are allowed to be missing or empty.
+         *
+         * An older PowerShell, a cmdlet that answered something unexpected, or a port that went
+         * away between the two queries all produce no list. That is reported as no list rather than
+         * as an empty one meaning "nothing is listening", because the caller has to be able to say
+         * it could not find out, and an empty list read as a fact is a listener that vanished
+         * reported as a port that was never bound.
+         */
+        $addresses = [];
+
+        if (isset($decoded['addresses']) && is_array($decoded['addresses'])) {
+            foreach ($decoded['addresses'] as $address) {
+                $address = trim((string) $address);
+
+                if ($address !== '' && ! in_array($address, $addresses, true)) {
+                    $addresses[] = $address;
+                }
+            }
+        }
+
         return [
             'pid' => (int) $decoded['pid'],
             'name' => (string) ($decoded['name'] ?? ''),
             'command' => (string) ($decoded['command'] ?? ''),
+            'addresses' => $addresses,
         ];
+    }
+
+    /**
+     * Every address a port is listening on, or null when that could not be found out.
+     *
+     * Null means the question was not answered. An empty array would mean the port is bound to
+     * nothing, which is not a thing, so the two are kept apart on purpose: a caller that receives
+     * null has to say it did not look, and a caller that received an empty array has to say the port
+     * is not listening at all.
+     *
+     * @return list<string>|null
+     */
+    public function listeningAddresses(int $port): ?array
+    {
+        $holder = $this->portHolder($port);
+
+        if ($holder === null) {
+            return null;
+        }
+
+        return $holder['addresses'] === [] ? null : $holder['addresses'];
     }
 
     /**

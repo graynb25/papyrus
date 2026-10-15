@@ -163,8 +163,9 @@ final class Health
 
         $this->add(
             'suwayomi',
-            'running  '.($version !== '' ? $version : 'version unknown').'  port '.$port.$this->compatibilityNote($version),
-            ! $this->isTooOld($version),
+            'running  '.($version !== '' ? $version : 'version unknown').'  port '.$port
+                .$this->compatibilityNote($version).$this->bindSentence($port),
+            ! $this->isTooOld($version) && $this->isNotExposed($port),
         );
     }
 
@@ -268,14 +269,118 @@ final class Health
         $this->add(
             'web',
             sprintf(
-                'listening  port %d  /ready %d  key %s  database %s',
+                'listening  port %d  /ready %d  key %s  database %s%s',
                 $port,
                 $readiness['status'],
                 $readiness['checks']['key'] ? 'ok' : 'FAILED',
                 $readiness['checks']['database'] ? 'ok' : 'FAILED',
+                $this->bindSentence($port),
             ),
-            $readiness['status'] === 200,
+            $readiness['status'] === 200 && $this->isNotExposed($port),
         );
+    }
+
+    /**
+     * What to say about what a port is bound to, and whether that is a failure.
+     *
+     * This is the check that would have turned finding F1 into a one line fix rather than an
+     * afternoon. On 2026-10-14 Suwayomi was reachable from the LAN on `:::4567` while every
+     * document in this project said the reader's library was only on this machine, and nothing in
+     * `health` said so, because it reported the port and not the address.
+     *
+     * ## Three states, and the middle one matters most
+     *
+     * - Loopback only: named as loopback, and ok.
+     * - Anything else: named as what it is bound to, and a failure. A wildcard is named as a
+     *   wildcard rather than as an address, because `0.0.0.0` is not a place it is listening, it is
+     *   every place at once, and printing it without that meaning is how the original defect read as
+     *   fine.
+     * - Could not be found out: says so, and is **not** a failure and **not** an endorsement.
+     *
+     * The third is the one worth being careful about. This report is the first thing a reader is
+     * asked to run before filing a bug, so a line that says "not checked" must not read as "fine",
+     * and it must not read as "broken" either. Both of those would be answers this file did not
+     * earn, which is the failure mode §6 of AGENTS.md calls a fallback that names a broken thing.
+     */
+    private function bindSentence(int $port): string
+    {
+        $addresses = $this->prober->listeningAddresses($port);
+
+        if ($addresses === null) {
+            return '  bound to: not checked';
+        }
+
+        $seen = [];
+
+        foreach ($addresses as $address) {
+            $seen[] = $this->describeAddress($address);
+        }
+
+        return '  bound to: '.implode(', ', $seen);
+    }
+
+    /**
+     * Whether nothing on this port is reachable from outside the machine, or null when unknown.
+     *
+     * `null` rather than a bool because the caller must be able to tell "looked and it is fine"
+     * from "did not look", and a bool cannot.
+     */
+    private function isNotExposed(int $port): bool
+    {
+        $addresses = $this->prober->listeningAddresses($port);
+
+        if ($addresses === null) {
+            return true;
+        }
+
+        foreach ($addresses as $address) {
+            if (! $this->isLoopback($address)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether one address is this machine and nothing else.
+     *
+     * Only loopback counts, and only the forms a listener actually reports. Everything else,
+     * including the wildcards and anything unrecognised, is not loopback: this is the one place in
+     * the project where guessing safe is the wrong direction, because the guess protects nobody and
+     * the reader believes it.
+     */
+    private function isLoopback(string $address): bool
+    {
+        $address = strtolower(trim($address));
+
+        if (str_starts_with($address, '127.')) {
+            return true;
+        }
+
+        return $address === '::1' || str_starts_with($address, '::ffff:127.');
+    }
+
+    /**
+     * One address, named so that a wildcard cannot be mistaken for a place.
+     */
+    private function describeAddress(string $address): string
+    {
+        $address = trim($address);
+
+        if ($address === '0.0.0.0') {
+            return 'every interface (0.0.0.0), which is the whole network';
+        }
+
+        if ($address === '::') {
+            return 'every interface (::), which is the whole network';
+        }
+
+        if ($this->isLoopback($address)) {
+            return $address.' (this machine only)';
+        }
+
+        return $address;
     }
 
     /**
