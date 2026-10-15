@@ -88,8 +88,64 @@ if ($normalisedOut === $normalisedInstall
     );
 }
 
-$version = trim((string) @file_get_contents($install.DIRECTORY_SEPARATOR.'version.txt'));
-$version = preg_match('/\d+\.\d+\.\d+/', $version, $matches) === 1 ? $matches[0] : '0.0.0';
+/*
+ * The install has to be a finished install, and that is asked before anything is packaged.
+ *
+ * This used to read the version out of `version.txt` and fall back to `0.0.0` when it could not:
+ *
+ *     $version = preg_match('/\d+\.\d+\.\d+/', $version, $matches) === 1 ? $matches[0] : '0.0.0';
+ *
+ * A missing `version.txt` is what a half cleared install looks like, because `build-install.php`
+ * writes that file last and had already emptied the directory before it failed. So the fallback did
+ * not mark a broken install, it named one: it produced `Papyrus-0.0.0-portable.zip`, and one of those
+ * was still sitting in `build/dist` from a run three days before this was found.
+ *
+ * Measured, on an install that had been cleared and then abandoned:
+ *
+ *     files           12143 from the install, plus the readme
+ *     size            70.8 MB
+ *
+ * against 12672 files and 623 MB for the same version. Nothing said so, because 12143 is a number and
+ * this script had no second number to compare it with. The build reported DONE and recorded a hash.
+ *
+ * So it is refused, in two parts. The stamp has to exist and hold a version, because that is the one
+ * file whose absence means the install did not finish. And the version has to match the repository's,
+ * because a tree built from last week's source packaged under today's number is the same mistake one
+ * stage later, and `build-installer.php` already refuses it for the `.exe`.
+ */
+$stampPath = $install.DIRECTORY_SEPARATOR.'version.txt';
+
+if (! is_file($stampPath)) {
+    fail(
+        "the install at {$install} has no version.txt, so it is not a finished install.\n\n"
+        ."  version.txt is written near the end of build-install.php. If it is missing then the\n"
+        .'  last build emptied that directory and did not finish. Run build-install.php first.'
+    );
+}
+
+$stamp = (string) file_get_contents($stampPath);
+
+if (preg_match('/\d+\.\d+\.\d+/', $stamp, $matches) !== 1) {
+    fail(
+        "{$stampPath} does not hold a version, so the install cannot be identified.\n\n"
+        .'  It holds: '.str_replace("\n", ' | ', trim($stamp))
+    );
+}
+
+$version = $matches[0];
+
+$repositoryVersionFile = $repo.DIRECTORY_SEPARATOR.'VERSION';
+$repositoryVersion = is_file($repositoryVersionFile)
+    ? trim((string) file_get_contents($repositoryVersionFile))
+    : '';
+
+if ($repositoryVersion !== '' && $version !== $repositoryVersion) {
+    fail(
+        "the install is version {$version} but the repository says {$repositoryVersion}.\n\n"
+        ."  Packaging it would ship a stale tree under today's number.\n"
+        .'  Run build-install.php first.'
+    );
+}
 
 say('version', $version);
 say('install', $install);

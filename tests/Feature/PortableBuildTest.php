@@ -80,7 +80,14 @@ class PortableBuildTest extends TestCase
      */
     public function test_it_refuses_an_install_containing_a_real_env_file(): void
     {
-        $install = $this->stageInstall(['.env' => "APP_KEY=base64:thisIsNotARealKey\n"]);
+        // `version.txt` is here because the build now refuses an install that was never finished, and
+        // that check runs first. Without it these three tests were passing for the wrong reason: they
+        // asserted that a forbidden file is refused, and were in fact being refused for a missing
+        // stamp. One test per fault, so each failure names the fault.
+        $install = $this->stageInstall([
+            'version.txt' => '1.2.0',
+            '.env' => "APP_KEY=base64:thisIsNotARealKey\n",
+        ]);
 
         [$status, $text] = $this->build($install);
 
@@ -94,6 +101,7 @@ class PortableBuildTest extends TestCase
     public function test_it_refuses_an_install_containing_a_live_reader_database(): void
     {
         $install = $this->stageInstall([
+            'version.txt' => '1.2.0',
             'database/database.sqlite' => 'not really sqlite, but a file in the wrong place',
         ]);
 
@@ -114,7 +122,10 @@ class PortableBuildTest extends TestCase
     public function test_it_refuses_the_database_sidecars_too(): void
     {
         foreach (['database/database.sqlite-wal', 'database/database.sqlite-shm'] as $sidecar) {
-            $install = $this->stageInstall([$sidecar => 'x']);
+            $install = $this->stageInstall([
+                'version.txt' => '1.2.0',
+                $sidecar => 'x',
+            ]);
 
             [$status, $text] = $this->build($install);
 
@@ -160,6 +171,90 @@ class PortableBuildTest extends TestCase
 
         $this->assertSame(1, $status, 'output inside the install must be refused');
         $this->assertStringContainsString('inside the install', $text);
+
+        $this->cleanUp($install);
+    }
+
+    /**
+     * An install that was cleared and abandoned is the one this must refuse.
+     *
+     * `build-install.php` rewrites the install directory in place, so it empties that directory and
+     * then fills it again. A build killed part way through leaves a tree with none of the install in
+     * it and no `version.txt`, because that file is written near the end.
+     *
+     * This used to package one anyway, because the version was read with a fallback:
+     *
+     *     $version = preg_match('/\d+\.\d+\.\d+/', $version, $m) === 1 ? $m[0] : '0.0.0';
+     *
+     * Measured on exactly that state, before this test existed:
+     *
+     *     files           12143 from the install, plus the readme
+     *     size            70.8 MB
+     *
+     * against 12672 files and 623 MB for the same version. Nothing objected, because 12143 is a number
+     * and this script had nothing to compare it against. The build reported DONE and wrote a hash.
+     *
+     * The fallback named the broken install rather than marking it: it produced
+     * `Papyrus-0.0.0-portable.zip`, and one of those was sitting in `build/dist` three days later.
+     */
+    public function test_it_refuses_an_install_that_was_cleared_and_never_filled(): void
+    {
+        $install = $this->stageInstall([
+            'artisan' => "<?php\n",
+        ]);
+
+        [$status, $text] = $this->build($install);
+
+        $this->assertSame(1, $status, 'an install with no version.txt is not a finished install');
+        $this->assertStringContainsString('version.txt', $text);
+        $this->assertStringContainsString('build-install', $text, 'the message has to say what to run');
+
+        $this->cleanUp($install);
+    }
+
+    /**
+     * A tree built from last week's source must not ship under today's version number.
+     *
+     * `build-installer.php` already refuses this for the `.exe`, comparing the install's own stamp
+     * against the repository's `VERSION`. This is the same mistake one stage later, and the portable
+     * was the half that did not have the check: it would have taken whatever install was lying around
+     * and named it after whatever the caller asked for.
+     */
+    public function test_it_refuses_an_install_built_from_another_version(): void
+    {
+        $install = $this->stageInstall([
+            'version.txt' => '0.9.0',
+            'Papyrus.cmd' => "@echo off\r\n",
+        ]);
+
+        [$status, $text] = $this->build($install);
+
+        $this->assertSame(1, $status, 'a stale tree must not be packaged under the current version');
+        $this->assertStringContainsString('0.9.0', $text, 'the message names what the install actually is');
+        $this->assertStringContainsString('stale', $text);
+
+        $this->cleanUp($install);
+    }
+
+    /**
+     * A `version.txt` that is there but says nothing is not a licence to guess.
+     *
+     * The fallback this replaces produced `0.0.0` for this case too. The particular trouble with
+     * `0.0.0` is that it looks like a real version: it sorts below every release, so it is easy to
+     * mistake for a pre-release somebody meant to publish rather than for a build that did not finish.
+     */
+    public function test_it_refuses_a_version_file_that_holds_no_version(): void
+    {
+        $install = $this->stageInstall([
+            'version.txt' => "this is not a version\n",
+            'Papyrus.cmd' => "@echo off\r\n",
+        ]);
+
+        [$status, $text] = $this->build($install);
+
+        $this->assertSame(1, $status);
+        $this->assertStringContainsString('does not hold a version', $text);
+        $this->assertStringNotContainsString('0.0.0', $text, 'it must not quietly become a 0.0.0 release');
 
         $this->cleanUp($install);
     }

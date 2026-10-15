@@ -5505,3 +5505,70 @@ eturn null that a generator never needs.
     So "I passed a flag and it did nothing" and "the flag is not being read" are the same observation,
     and I used that non-distinguishing check to conclude a `param()` block was broken when it was
     working. The distinguishing check is the one above: bind the real flag and read the value back.
+
+263. **A fallback that named a broken install instead of detecting it, and left a corrupt archive
+    with a hash file beside it for three days.**
+
+    `build-portable.php` read the version out of the install's own stamp like this:
+
+    ```php
+    $version = preg_match('/\d+\.\d+\.\d+/', $version, $matches) === 1 ? $matches[0] : '0.0.0';
+    ```
+
+    A missing or unreadable `version.txt` became `0.0.0`, and the build carried on. That is a
+    fallback doing the opposite of its job: the case it covers is precisely the one where the answer
+    is unknown, and it answered anyway.
+
+    **Why the stamp is the thing to ask about.** `build-install.php` rewrites the install directory in
+    place, so it empties that directory and then refills it. A build killed part way through leaves a
+    tree with none of the install in it, and no `version.txt`, because that file is written near the
+    end. So the absence of the stamp is not a corner case, it is the signature of the failure.
+
+    Measured on exactly that state:
+
+    ```
+    files           12143 from the install, plus the readme
+    size            70.8 MB
+    ```
+
+    against 12672 files and 623 MB for the same version. Nothing objected. 12143 is a number, and this
+    script had nothing to compare it against, which is the same fault as the leak check that reported
+    "checked across 12672 files" while reading no file contents: **effort read as coverage.**
+
+    And the fallback was not harmless, it was load bearing in the worst way, because it produced a
+    plausible name. The artefact it left was sitting in `build/dist` when this was found:
+
+    ```
+    Papyrus-0.0.0-portable.zip        0.001 MB   10/13/2026 18:43
+    Papyrus-0.0.0-portable.zip.sha256
+    ```
+
+    A 1KB file that does not open as a zip, beside a hash file whose whole purpose is to say this
+    archive can be trusted. A reader who downloaded it and checked it against the sidecar would have
+    been told the check passed. Three days old, because nothing looks at `build/dist` unless a build
+    is being run.
+
+    So the portable now refuses, in three parts, each naming the mistake: no `version.txt` at all, a
+    `version.txt` that does not hold a version, and a version that is not the repository's. The last
+    one is a check `build-installer.php` already had for the `.exe`, so this was the same mistake one
+    stage later in the half of the build that lacked it.
+
+    Three lessons worth keeping, and the second is the one I would have got wrong.
+
+    **A fallback in a build script is a place where a failed check becomes a successful answer.** The
+    instinct to keep going is right for a warning and wrong for an identity: if the thing you cannot
+    determine is what the artefact will be called, there is no safe default, because the default is a
+    name somebody will look for.
+
+    **Three existing tests were passing on a fault I had not introduced.** They staged an install
+    containing a `.env` or a database and asserted that the build refused it and named the file.
+    Adding an earlier check moved which refusal they hit, and all three failed. The correct response
+    was to give them a complete install, because each was meant to be testing one fault and the new
+    check had made them collide with another. The tempting response is to reorder the checks so the
+    old tests pass untouched, which would have meant putting the weaker check first on purpose. Worth
+    noticing how easily that would have looked like care.
+
+    **And the artefact was the evidence, not the build log.** Nothing in a successful run says the run
+    was wrong. The `0.0.0` zip says it, loudly, to anybody who opens `build/dist`. The lesson from the
+    filename is that a defect can sit next to its own proof for days without anybody looking at the
+    directory where the proof is.
