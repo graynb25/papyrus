@@ -189,8 +189,20 @@ class DataLocationTest extends TestCase
          * Under the repository rather than the system temp directory, because the temp directory
          * is inside `%LOCALAPPDATA%` and a root there is an installed install, which takes a
          * different branch and would make this pass without testing the rejection.
+         *
+         * One level deeper than it was, and that is not tidiness. The rejected candidate is
+         * `dirname($root).'/papyrus-data'`, and a root directly under `build/` made that
+         * `build/papyrus-data`, which is the directory the real launcher writes to when it is run
+         * out of `build/install`. So this test failed the first time anyone ran the install, and the
+         * obvious way to make it pass is to delete a directory holding somebody's backups.
+         *
+         * A test that depends on a path somebody else writes to is not a test of this class, it is
+         * a report about whoever ran the build last. The scratch directory is per run, and the
+         * install root sits inside it, so the candidate cannot be anything but ours.
          */
-        $root = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR.'dataloc-'.getmypid();
+        $scratch = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR
+            .'dataloc-'.getmypid().'-'.uniqid();
+        $root = $scratch.DIRECTORY_SEPARATOR.'install';
         $beside = dirname($root).DIRECTORY_SEPARATOR.'papyrus-data';
 
         @mkdir($root, 0o777, true);
@@ -205,6 +217,7 @@ class DataLocationTest extends TestCase
             );
         } finally {
             @rmdir($root);
+            @rmdir($scratch);
         }
     }
 

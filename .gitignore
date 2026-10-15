@@ -103,6 +103,16 @@ yarn-error.log
 # repository, and it appears the first time anyone runs the launcher from the repository root.
 /build/health-data/
 /build/health-start.*
+# The data directory that running the launcher out of build/install creates, because a portable
+# install keeps its data beside itself rather than in %LOCALAPPDATA%. Running it on 2026-10-15
+# left 1217 untracked entries here including a database.sqlite, a Suwayomi .mv.db and a real .env
+# with a generated APP_KEY, none of which belongs in a repository and all of which a `git add -A`
+# would have taken. The same class as health-data above, and ignored for the same reason.
+#
+# It is also the path DataLocationTest uses as its rejected candidate, so a test here fails if
+# anyone runs the install. That test now builds its own, but the collision is worth remembering
+# before adding another one that reaches outside its own scratch directory.
+/build/papyrus-data/
 # What packaging/dev-workers.ps1 writes when it starts the queue and the scheduler for this
 # checkout. They are a running process's output, so they change every few seconds and are of no
 # interest to anybody reading the repository; the answer they would give is what `-Status` prints.
