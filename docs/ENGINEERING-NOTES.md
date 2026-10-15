@@ -6022,9 +6022,12 @@ were eliminated.
     alone.
 
     The fragments still read as English, which is why nobody caught it: "writes alse is" and
-    "reads as ." passed for prose for five days. The NULs are the half that hid the rest. One
-    NUL is enough for git to call the whole file binary, and a binary file has no readable
-    diff, so the notes left review at the same moment the words left the sentences.
+    "reads as ." passed for prose for five days. The bytes themselves stayed out of sight for
+    a narrower reason: a diff reads only the first 8,000 bytes, so this file's diffs rendered
+    as text all along, while `git add` reads the whole file, saw the NUL, and stopped applying
+    `text=auto eol=lf`, leaving the CRLF lines a whole-file rewrite brought in on 2026-10-13
+    to be stripped by hand. One NUL in a small file does make its diff go binary, and
+    generalizing that cost a wrong first reading of this one.
 
     The same class of write put two BEL bytes into `packaging/installer/build-portable.php` on
     2026-10-13, where a backtick before an "a" became the byte and swallowed the letter.
