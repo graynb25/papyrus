@@ -5882,3 +5882,83 @@ eturn null that a generator never needs.
     Found by doing the thing rather than by reading it. The round trip this defect came out of was
     the first time `snapshot` had been run against a real install in this project's history, and it
     is the third defect in these notes that only a real run produced.
+
+271. **`tempnam()` creates the file it names, and a fixture that appends a suffix to what it
+     returned has been leaking two files per call into the reader's machine for a month.**
+
+    Almost every fixture in this project used `tempnam()` as though it returned a name:
+
+        return tempnam(sys_get_temp_dir(), 'papyrus-fixture-').'.'.$suffix;
+
+    That makes a second file, `something.tmb`, and abandons the first, `something.tmp`, for ever.
+    Nothing deleted it, nothing noticed, and the oldest of them was 2026-10-09.
+
+    Measured in `%LOCALAPPDATA%\Temp` on 2026-10-15:
+
+        70,576  zero-byte .tmp files nothing adopted or deleted
+         6,475  .tmb files, every one with an orphaned .tmp sibling of the same stem
+         4,505  covXXXX.tmp.jpg files, each with an abandoned .tmp beside it
+
+        82,457 files removed, 0 refused, 810 left alone and accounted for
+
+    Then the directory was crowded enough that `tempnam()` stopped working in it at all. This is the
+    part that matters, because the directory is not ours:
+
+        before   20 calls, 0 returned a path, 20 returned false, 20 warned
+        after    20 calls, 20 returned a path, 0 returned false, 0 warned
+
+    while `is_dir` said yes, `is_writable` said yes, and 47.7 GB were free. A writable directory with
+    room on it, in which the one function that needs to write is failing, and the only symptom is a
+    warning nobody reads.
+
+    **It was not only a test problem.** `TachimangaReader::stage()` unpacks an imported backup into a
+    file it names with `tempnam(sys_get_temp_dir(), ...)`. So on a reader's machine left crowded by our
+    tests, importing a backup could not unpack it, and the message it printed was about disk space.
+
+    The class has carried a `$temporaryDirectory` seam, documented as "for a server whose system temp
+    is small", and **no test had ever used it**. So the tests had always gone to the same directory the
+    reader goes to, and the fixture bug and the production bug were the same bug with different
+    reach.
+
+    ## The general form
+
+    A test fixture writes to a shared location and does not clean up. That is not a tidiness problem,
+    it is a resource problem, and the resource it exhausts is one the production code also uses. The
+    tests were paying it in a directory the reader would eventually need.
+
+    What made it a month rather than a day is that **nothing failed while it happened.** Every test
+    passed. The suite stayed green. The cost showed up as a slow run, which reads as the machine being
+    slow, and then as twenty two failures in a file nobody had touched, which reads as a regression in
+    that file. The cause was in a line that had been correct-looking since the day it was written.
+
+    So: a fixture that writes outside its own scratch directory has a defect even when every assertion
+    passes, and "the suite is green" is not evidence that the suite is tidy. The 15.3 minutes and then
+    22.4 minutes were the honest symptom, and 8.4 minutes after the cleanup is the proof of what it was.
+
+    ## What fixed it, and why not thirteen patches
+
+    `TestCase` now owns temporary files. `temporaryFile()` puts a fixture inside a scratch directory
+    that `tearDown()` removes whether the test passed, failed or threw, and all thirteen call sites go
+    through it.
+
+    Fixing thirteen call sites is how a fourteenth gets written, and a fourteenth would have had the
+    same bug for the same reason the first thirteen did. The directory rather than the file is also
+    deliberate: a fixture that makes two files out of one call cannot leak by being clever, because
+    there is a whole directory to remove rather than one path to remember. The rule that was not being
+    followed was "delete what you made", and the fix moves that out of thirteen places that have to
+    remember into one place that cannot forget.
+
+    ## And the two errors I made doing it
+
+    The first version of `temporaryFile()` put `random_bytes(4)` in the filename. Four random bytes
+    contain a path separator and a null byte often enough that twenty two tests failed with
+    `No such file or directory` on paths like `papyrus-fixture-/<two bytes>.tmb`. It is hex now, and
+    the comment above the line says why, because that is the sort of thing a tidy-up removes.
+
+    And I rewrote `tests/TestCase.php` with the write tool rather than editing it, reproduced only the
+    part I was adding, and deleted `skipUnlessFortifyHas()` that was already in the file. Fifteen tests
+    failed with "Call to undefined method", which is the only reason I found out.
+
+    The general form of that one is trap 269's, one level out: **a file you are adding to is not a
+    file you own.** Check what is already in it against what is in the committed copy, by diff, before
+    you finish. The write tool replaced sixteen lines with ninety six and I read the ninety six.
