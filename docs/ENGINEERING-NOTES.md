@@ -3850,12 +3850,12 @@ ull !== 0,
     count against a second decoder written in another language.
 
     The general shape: **the fixture must reproduce the shape of the data, not the shape of the
-    idea.** "Unread" in this format is an absent field, and a fixture that writes alse is
+    idea.** "Unread" in this format is an absent field, and a fixture that writes alse is
     testing a file no writer produces.
 
 208. **Protobuf writes a fixed32 little endian, and unpack('G') reads it big endian.**
     g is little endian and G is big, they look identical, and getting it wrong does not
-    raise. 700.5 comes back as a denormal so small it reads as  . Every decimal chapter
+    raise. 700.5 comes back as a denormal so small it reads as . Every decimal chapter
     number silently became zero and every whole one became nonsense.
 
     The general shape: **byte order errors are silent, and a language that names both variants
@@ -3873,7 +3873,7 @@ ull !== 0,
 
 210. **A nullable value through %d becomes a confident zero.**
     ImportedBackup::\ is now ?int, because .tachibk states no version anywhere
-    and a   reads as a version the server recognised. The type was changed and one caller was
+    and a  reads as a version the server recognised. The type was changed and one caller was
     fixed; the second, `number_format(\->schemaVersion)`, turned 
 ull into '0' in the
     progress note and nothing failed.
