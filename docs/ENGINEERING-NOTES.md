@@ -5962,3 +5962,83 @@ eturn null that a generator never needs.
     The general form of that one is trap 269's, one level out: **a file you are adding to is not a
     file you own.** Check what is already in it against what is in the committed copy, by diff, before
     you finish. The write tool replaced sixteen lines with ninety six and I read the ninety six.
+
+272. **A PowerShell `Start-Process` redirect target that is not a real file returns nothing, and
+     prints no error, and the gate dies with an empty pid.**
+
+    The sandbox gate was changed to start the install the way a reader does, through `Papyrus.cmd`,
+    which pauses on failure so a person can read the reason. That pause would hang a gate for ever, so
+    stdin was redirected from the null device:
+
+        -RedirectStandardInput 'NUL'
+
+    What happened, on a real run:
+
+        started through Papyrus.cmd, which is the shortcut a reader double clicks
+        launcher started, pid , watching its output
+
+    An empty pid. No `launcher-start.log`. No `launcher-start.err`. No error of any kind. `Start-Process`
+    did not create the guest and did not report that it had not.
+
+    **The general form: a launch that fails quietly is worse than one that fails loudly, because the
+    gate goes on to report something else entirely.** The run carried on to the next section and would
+    have reported a missing install, which is not what happened.
+
+    `-RedirectStandardInput` takes a **file path**. It does not take a device name, and PowerShell
+    will not open `NUL` as one. Redirect from an empty file instead:
+
+        Set-Content -Path 'C:\results\stdin-empty.txt' -Value '' -NoNewline
+
+    **And create it before the call that reads it.** The first fix put the `Set-Content` in the probe
+    section, which is three hundred lines *after* the `Start-Process`, so it would have failed the same
+    way. A redirect target that does not exist is not a redirect. That ordering mistake was found by
+    reading where the line had landed, not by running it again.
+
+    **What to check when a launched thing produces nothing:** is the pid empty, and does the log file
+    it was supposed to write exist. Both answers were available in the results folder and neither was
+    looked at, because the script's next line printed something that looked like progress.
+
+273. **A refusal that cannot name its cause is a new way for the gate to die silently.**
+
+    The next run of the same gate refused to start:
+
+        REFUSING TO LAUNCH: vmmemWindowsSandbox is already running (pids ).
+        Only one guest at a time, and Windows Sandbox reports a refusal by exiting zero in silence.
+
+    There was no guest running. The check had matched nothing and printed an empty list between its
+    parentheses, and the owner had closed the window by then. So the message asserted a fact, named no
+    evidence for it, and was wrong.
+
+    **The general form is trap 266 again, and it is worth the repetition: this script exists to catch
+    the three ways the gate dies without saying so, and it has produced a fourth.** An empty list in a
+    diagnostic is not cosmetic. It is the difference between "one guest, pid 1234" and "nothing
+    matched and here is why", and a reader cannot tell which they are looking at.
+
+    A check should print the count alongside the values. If the count is zero, say so in words and say
+    what it looked for. If it is not zero, name what it found. **Never let a diagnostic format an empty
+    result into a confident sentence**, which is the same defect as the `bound to:` line in F2 and the
+    "Starting Papyrus again" line in F16: a message describing a state nobody established.
+
+## And the lesson underneath both, which cost more than either
+
+The gate was changed to test something it had never tested, in a script that had never been run with
+the change, while the owner was waiting. Three things went wrong in sequence, and each one was
+preventable by a check that already exists in this repository:
+
+1. `Start-Process` returned nothing and the run carried on, because nothing asserted that the launcher
+   had actually started before the next section began. **A gate needs its own preconditions asserted,
+   not assumed from having arranged them.**
+2. The fix for that put the file creation three hundred lines too late. It would have failed the same
+   way and I would not have known until the next run.
+3. The refusal message then named a guest that was not there, and I reported it as the gate refusing
+   rather than as the gate's check being wrong, because I had no reason to doubt a check in a script
+   that had always worked.
+
+**And the run before that: I invoked the guest-side script on the host** and reported its three FAILs
+as a finding. Those FAILs described the owner's machine, with Oracle Java on PATH and Herd PHP, not the
+install. `run-in-sandbox.ps1` runs inside the VM; `launch-gate.ps1` runs on the host. Both names are in
+section 3 of the operating notes, and I read them and still ran the wrong one.
+
+The general form, and it is the same as trap 267 and 269 and 270 and 271: **a thing done in a hurry, in
+a place where it had never been done before, is the place defects live.** The pre-flight exists for
+exactly that moment and it costs five minutes.
