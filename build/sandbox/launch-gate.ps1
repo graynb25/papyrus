@@ -24,6 +24,24 @@
 # So this checks for a running guest before launching, creates the results folder first, and treats
 # "no report appeared" as a failure that names those three rather than as a machine being slow.
 
+<#
+.SYNOPSIS
+Runs the packaged install inside the Windows Sandbox and waits for its report.
+
+.DESCRIPTION
+Leave the guest open after the report, so it can be inspected. Off by default, because the gate stops
+everything it started, and a guest left standing is a stopped install that still looks like a running
+one, with Suwayomi's own browser window sitting in front of it. That is what happened on 2026-10-14:
+the gate passed, stopped every process, and left a window open showing a manga server's admin panel,
+which reads exactly like the app being broken.
+
+.PARAMETER KeepOpen
+Leave the guest running after the report, so it can be opened by hand.
+#>
+param(
+    [switch]$KeepOpen
+)
+
 $ErrorActionPreference = 'Continue'
 
 $repo    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -101,6 +119,37 @@ while ((Get-Date) -lt $deadline) {
         Say ''
         Say '=== the report ==='
         Get-Content $report | ForEach-Object { Write-Host $_ }
+
+        if ($KeepOpen) {
+            Say ''
+            Say 'Leaving the guest open, as asked. It has been stopped, so nothing in it is running.'
+        } else {
+            Say ''
+            Say 'closing the guest, which the gate has already stopped everything in'
+
+            # The client first, because that is what owns the window. Then wait for the virtual
+            # machine to let go, because the next launch refuses while one is still up and does it by
+            # exiting zero in silence, which is the first of the three ways this dies without saying.
+            Get-Process -Name 'WindowsSandbox' -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+
+            $gone = (Get-Date).AddSeconds(90)
+
+            while ((Get-Date) -lt $gone) {
+                if (-not (Get-Process -Name 'vmmemWindowsSandbox' -ErrorAction SilentlyContinue)) {
+                    Say '  the guest has gone'
+                    break
+                }
+
+                Start-Sleep -Seconds 5
+            }
+
+            if (Get-Process -Name 'vmmemWindowsSandbox' -ErrorAction SilentlyContinue) {
+                Say '  WARNING: the virtual machine is still up after 90s. A second run will be refused'
+                Say '  silently, so check this before launching again.'
+            }
+        }
+
         exit 0
     }
 

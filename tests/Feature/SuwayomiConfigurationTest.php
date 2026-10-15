@@ -165,6 +165,35 @@ class SuwayomiConfigurationTest extends TestCase
     }
 
     /**
+     * Suwayomi is told not to open a browser of its own.
+     *
+     * Its default is `server.initialOpenInBrowserEnabled = true` and it fires on every start, putting
+     * `http://127.0.0.1:4567` in the reader's face: Suwayomi's own administration UI, which this app
+     * drives through GraphQL and which no reader has a reason to open. The app meanwhile opens nothing
+     * unless `--open` was passed, and only `Papyrus.cmd` passes it.
+     *
+     * Together those are a reader looking at a working install, seeing one confident window open, and
+     * it being the wrong program. Measured in the clean-machine gate, where the guest sat showing
+     * Suwayomi's Library page while Papyrus served correctly on 8402 throughout.
+     */
+    public function test_suwayomi_does_not_open_a_browser_over_the_readers(): void
+    {
+        $configuration = $this->configuration();
+        $path = $configuration->configurationFile($this->scratch);
+
+        @mkdir(dirname($path), 0o777, true);
+        file_put_contents($path, "# WebUI\nserver.initialOpenInBrowserEnabled = true # default: true ; Open client on startup\n");
+
+        $configuration->prepare($this->scratch, 4999);
+
+        $this->assertMatchesRegularExpression(
+            '/^server\.initialOpenInBrowserEnabled = false # default: true/m',
+            (string) file_get_contents($path),
+            'it must be turned off, and Suwayomi\'s own annotation must survive the rewrite',
+        );
+    }
+
+    /**
      * The pin has to survive into a file that has no `server.ip` line at all.
      *
      * On a first run the launcher writes `server.conf` before Suwayomi has ever seen it, so there is
@@ -227,11 +256,12 @@ class SuwayomiConfigurationTest extends TestCase
         // Every other line, byte for byte.
         //
         // Except the ones this launcher owns. That set was the port alone when this test was written,
-        // and it is the port, the address and the backup path now, because `prepare()` writes all
-        // three on every start. Treating `server.ip` as an unrelated line would demand that the
-        // wildcard survive, which is the exact defect the address pin exists to remove, so the loop
-        // skips what the launcher sets and holds everything else to byte for byte.
-        foreach (['server.port', 'server.ip', 'server.backupPath'] as $owned) {
+        // and it is the port, the address, the browser setting and the backup path now, because
+        // `prepare()` writes all of them on every start. Treating one of those as an unrelated line
+        // would demand that a value the launcher deliberately sets survives untouched, which is the
+        // exact defect each of those settings exists to remove. So the loop skips what the launcher
+        // sets and holds everything else to byte for byte.
+        foreach (['server.port', 'server.ip', 'server.initialOpenInBrowserEnabled', 'server.backupPath'] as $owned) {
             $this->assertStringContainsString(
                 $owned.' =',
                 $after,
@@ -240,7 +270,15 @@ class SuwayomiConfigurationTest extends TestCase
         }
 
         foreach (explode("\n", $original) as $line) {
-            if ($line === '' || str_starts_with($line, 'server.port') || str_starts_with($line, 'server.ip')) {
+            $skip = false;
+
+            foreach (['server.port', 'server.ip', 'server.initialOpenInBrowserEnabled'] as $owned) {
+                if (str_starts_with($line, $owned)) {
+                    $skip = true;
+                }
+            }
+
+            if ($line === '' || $skip) {
                 continue;
             }
 

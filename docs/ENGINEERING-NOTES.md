@@ -5452,3 +5452,56 @@ eturn null that a generator never needs.
     `time() - N` on one line and an exact assertion on a number derived from it on another. Three
     instances had been sitting in this repository, in three files, for the length of time it took
     one of them to lose a coin toss in front of me.
+
+262. **Something opened, it looked authoritative, and it was the wrong program.**
+
+    A person watched the clean-machine gate run and reported twice that Papyrus did not open. What
+    was on screen both times was `http://127.0.0.1:4571/library`, which is Suwayomi's own web UI:
+    Library, Updates, History, Browse, Downloads, Settings, About. Papyrus is on `8402`.
+
+    Two separate causes, and the first one made the second one impossible to see clearly.
+
+    **Suwayomi opens a browser of its own.** Its default is `server.initialOpenInBrowserEnabled = true`
+    and it fires on every start. Meanwhile the app opens nothing unless `--open` was passed, and only
+    `Papyrus.cmd` passes it, because the gate runs `papyrus.php start` on a machine with no browser
+    worth opening.
+
+    So the reader is shown a manga server's administration panel, unprompted, while the application
+    they wanted opens nothing at all. That is the entry in this file's own table as *"It worked, just
+    not for the reader"*, in the worst order available: the wrong thing opened confidently and the
+    right thing was silent. A reader who double-clicked the shortcut, seen the only window that
+    appeared, and concluded the app was broken, would have been right about the appearance and wrong
+    about the cause, and nothing in either window would have corrected them.
+
+    Turned off in `prepare()` alongside the address and the backup path, because the launcher already
+    writes that file on every start and no reader has a reason to know the setting exists.
+
+    **And the gate stopped everything and left the guest standing.** Its own report says so:
+
+    ```
+    [ok  ] port 8402 released
+    [ok  ] port 4571 released
+    [ok  ] no papyrus process survived the stop  found 0
+    ```
+
+    A stopped install that still looks like a running one, with a stale browser window in front of it.
+    So the second report was of an instance the gate had deliberately killed, and there was nothing in
+    the window saying so. `launch-gate.ps1` now closes the guest once it has read the report, and waits
+    for `vmmemWindowsSandbox` to go before returning, because the next launch is refused silently while
+    one is still up.
+
+    The general form: **a gate that tears down what it tested must say so where it leaves off**, in the
+    place the person is actually looking. The report says it, in a file. Nobody reading a browser window
+    is reading a report.
+
+    And a smaller one, from checking the change: `powershell -File` does not fail on a parameter the
+    script does not declare. It puts it in `$args` and carries on:
+
+    ```
+    powershell -File t.ps1 -KeepOpen      ->  KeepOpen is: True     extra args: 0
+    powershell -File t.ps1 -NotASwitch    ->  KeepOpen is: False    extra args: 1
+    ```
+
+    So "I passed a flag and it did nothing" and "the flag is not being read" are the same observation,
+    and I used that non-distinguishing check to conclude a `param()` block was broken when it was
+    working. The distinguishing check is the one above: bind the real flag and read the value back.

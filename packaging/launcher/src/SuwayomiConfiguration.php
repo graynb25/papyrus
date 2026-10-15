@@ -156,6 +156,30 @@ final class SuwayomiConfiguration
         );
 
         /*
+         * Suwayomi must not open a browser of its own.
+         *
+         * Its default is `server.initialOpenInBrowserEnabled = true`, and it fires on every start, so
+         * the reader is shown `http://127.0.0.1:4567` unprompted: Suwayomi's own administration UI,
+         * which is a tool this app drives through GraphQL and which no reader has any reason to look
+         * at. Meanwhile the app itself opens nothing unless `--open` was passed, and only
+         * `Papyrus.cmd` passes it.
+         *
+         * The two together are the worst shape this project has for a reader, which its own notes
+         * call the most expensive kind: it works, just not for the reader. Something opens, it looks
+         * authoritative, and it is the wrong program. Observed in the clean-machine gate, where the
+         * guest was left showing Suwayomi's Library page while Papyrus served correctly on 8402 the
+         * whole time and nothing was open for the reader at all.
+         *
+         * Turned off here rather than left to the reader, because Papyrus writes this file on every
+         * start anyway and a reader has no reason to know the setting exists.
+         */
+        $this->setValue(
+            $this->configurationFile($dataDirectory),
+            'server.initialOpenInBrowserEnabled',
+            'false',
+        );
+
+        /*
          * Only backupPath is set, and the other backup settings are left exactly as Suwayomi
          * wrote them.
          *
