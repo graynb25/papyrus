@@ -31,6 +31,11 @@ paragraph while it was being written, in the sentence making the point, which is
 line. The ranges a router hands out tell you which vendor's DHCP is serving the house and how the
 network is subdivided. That is a shape of someone's home.
 
+So the addresses here are `192.0.2.x`, which is RFC5737 documentation space and means no computer,
+and the test cases below use private ranges that are not anybody's. A gate that exempts itself is only
+acceptable while the thing it exempts contains nothing that would identify anyone, and this file is
+exempt.
+
 And the rule was worse than the reasoning. It listed three private ranges and stopped, so a public
 address, which is the one that genuinely pins a machine to a household and a region, walked straight
 through. I then pasted two real private addresses into ROADMAP.md while writing up a security fix,
