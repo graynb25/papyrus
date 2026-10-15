@@ -102,6 +102,90 @@ class SuwayomiConfigurationTest extends TestCase
         );
     }
 
+    // ---------------------------------------------------------------- the address the library answers on
+
+    /**
+     * Suwayomi is pinned to loopback, and it is the listener, not the firewall, that does it.
+     *
+     * Suwayomi's own default is every interface, and it writes that default into `server.conf` itself
+     * with its own annotation. So a launcher that writes only the port is not choosing to leave the
+     * address alone, it is choosing to serve the reader's library on the network. Measured on a
+     * running install with the default in place, before this test existed:
+     *
+     *     Get-NetTCPConnection -LocalPort 4567 -State Listen   LocalAddress :::4567   java
+     *     192.0.2.1:4567  reachable
+     *
+     * and the GraphQL API does require a login, which is why this went to the end rather than
+     * stopping at the socket:
+     *
+     *     { sources { totalCount } } unauthenticated                 Unauthorized
+     *     login as the configured reader, from 192.0.2.1            succeeded
+     *     { sources { totalCount } } carrying that token             223
+     *
+     * So the whole library was readable from the local network by anything that could route here and
+     * guess the password. This is the defect `LauncherBindTest` records for FrankenPHP, where the
+     * listener was the IPv6 wildcard while every document in this project said nothing outside the
+     * machine was reachable. FrankenPHP is bound with an explicit `bind 127.0.0.1 ::1`. This is the
+     * other half, and it is asserted here rather than left to a firewall the reader may have closed,
+     * or may have answered differently to on the day.
+     */
+    public function test_suwayomi_is_pinned_to_loopback_rather_than_suwayomis_own_default(): void
+    {
+        $configuration = $this->configuration();
+        $path = $configuration->configurationFile($this->scratch);
+
+        // The file Suwayomi writes for itself, abbreviated, carrying the default the fix overrides.
+        // The root is made first because `prepare()` is what creates it, and a fixture written into
+        // a directory that does not exist yet fails on setup and says nothing about the assertion.
+        @mkdir(dirname($path), 0o777, true);
+        file_put_contents($path, "# Network\n"."server.ip = \"0.0.0.0\" # default: \"0.0.0.0\"\n"
+            ."server.port = 4567 # default: 4567 ; range: [1, 65535]\n");
+
+        $configuration->prepare($this->scratch, 4999);
+
+        $contents = (string) file_get_contents($path);
+
+        $this->assertMatchesRegularExpression(
+            '/^server\.ip = "'.preg_quote(SuwayomiConfiguration::LOOPBACK, '/').'" # default: "0\.0\.0\.0"$/m',
+            $contents,
+            'the address must become loopback and Suwayomi\'s own annotation must survive it',
+        );
+
+        $this->assertStringNotContainsString(
+            'server.ip = "0.0.0.0"',
+            $contents,
+            'the wildcard must be gone, not merely shadowed by a second ip line',
+        );
+
+        $this->assertSame(
+            1,
+            preg_match_all('/^server\.ip\s*=/m', $contents),
+            'exactly one ip line, so repeated starts cannot stack them',
+        );
+    }
+
+    /**
+     * The pin has to survive into a file that has no `server.ip` line at all.
+     *
+     * On a first run the launcher writes `server.conf` before Suwayomi has ever seen it, so there is
+     * no default line to replace and the key has to be added. A fix that only rewrote an existing
+     * line would pass the test above and leave every new reader serving on the network.
+     */
+    public function test_a_first_run_writes_the_address_when_suwayomi_has_written_none(): void
+    {
+        $configuration = $this->configuration();
+
+        $configuration->prepare($this->scratch, 4999);
+
+        // Quoted, because the value goes through `escapeHocon()` like every other written value. An
+        // assertion that repeated the bare literal would fail against correct code and tempt somebody
+        // into dropping the quotes, so it asserts the quoted shape deliberately.
+        $this->assertStringContainsString(
+            'server.ip = "'.SuwayomiConfiguration::LOOPBACK.'"',
+            (string) file_get_contents($configuration->configurationFile($this->scratch)),
+        );
+    }
+
     // ---------------------------------------------------------------- the case most likely to break something
 
     /**
@@ -141,8 +225,22 @@ class SuwayomiConfigurationTest extends TestCase
         );
 
         // Every other line, byte for byte.
+        //
+        // Except the ones this launcher owns. That set was the port alone when this test was written,
+        // and it is the port, the address and the backup path now, because `prepare()` writes all
+        // three on every start. Treating `server.ip` as an unrelated line would demand that the
+        // wildcard survive, which is the exact defect the address pin exists to remove, so the loop
+        // skips what the launcher sets and holds everything else to byte for byte.
+        foreach (['server.port', 'server.ip', 'server.backupPath'] as $owned) {
+            $this->assertStringContainsString(
+                $owned.' =',
+                $after,
+                'the launcher is supposed to set '.$owned.' and did not',
+            );
+        }
+
         foreach (explode("\n", $original) as $line) {
-            if ($line === '' || str_starts_with($line, 'server.port')) {
+            if ($line === '' || str_starts_with($line, 'server.port') || str_starts_with($line, 'server.ip')) {
                 continue;
             }
 

@@ -56,13 +56,41 @@ credential lasts until the reader revokes it or the token expires, which AniList
 about a year, and the app deletes the row on a rejected token rather than trying to
 refresh it.
 
-## Bind Suwayomi to loopback
+## Suwayomi answers on loopback only
+
+Two separate things, and for a long time this section described one of them while being titled
+after the other.
+
+**Where the app looks** is `SUWAYOMI_URL`, and setting it to loopback is necessary:
 
 ```dotenv
 SUWAYOMI_URL=http://127.0.0.1:4567
 ```
 
-Two reasons, both measured rather than assumed:
+**Where the server listens** is `server.ip` in `server.conf`, and this is the one that decides
+whether anything outside your machine can reach your library. Suwayomi's own default is
+`server.ip = "0.0.0.0"`, every interface, which it writes into that file itself. The launcher
+now pins it to `127.0.0.1` on every start, so a packaged install does not need you to do
+anything.
+
+To see what it is actually bound to rather than what it was configured to be, ask the
+machine:
+
+```powershell
+Get-NetTCPConnection -LocalPort 4567 -State Listen
+```
+
+`LocalAddress` of `:::4567` or `0.0.0.0` means every interface, and the pin is not in effect.
+`127.0.0.1` or `::1` means loopback only. `papyrus health` reports the port and not the
+address, so it will not tell you which of those you have.
+
+Setting `SUWAYOMI_URL` alone never restricted anything. It is a URL the PHP app fetches, and a
+server on `0.0.0.0` is perfectly happy to answer it from another machine. That was measured on
+an install before the pin existed: the listener was `:::4567`, reachable from two non-loopback
+addresses on the network, and a login as the configured reader from one of them returned the
+full library.
+
+Two risks remain that binding does not address, both measured rather than assumed:
 
 Its CORS reflects any origin and allows credentials, so a page in any browser tab can make
 authenticated calls to it.

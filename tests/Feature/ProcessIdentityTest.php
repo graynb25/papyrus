@@ -182,13 +182,38 @@ class ProcessIdentityTest extends TestCase
             'the exact reading is this process, which is the baseline both of the others depend on',
         );
 
+        /*
+ * The accepting offset is derived from the real fraction rather than fixed at 0.1.
+ *
+ * The first version added a fixed tenth of a second and asserted the result was still this process.
+ * That is a coin flip on every run, because the process's own start time is wherever in the second
+ * it happened to be, and adding 0.1 to `...59.9` produces the next second, which `isSameProcess()`
+ * correctly rejects. It failed 3 runs in 10, and 3 in a row on one occasion, because consecutive
+ * runs land in the same fractional window.
+ *
+ * So the offset is now half of whatever is left in the current second, which is positive and always
+ * short of the boundary whatever the fraction happens to be. The property under test is the one that
+ * matters and the one that is actually being asserted: a reading inside this second is the same
+ * process, and a reading in the next second is not.
+ */
+        $asFloat = (float) $started;
+        $fraction = $asFloat - floor($asFloat);
+        $withinSecond = (1.0 - $fraction) * 0.5;
+
+        $this->assertGreaterThan(
+            0.0,
+            $withinSecond,
+            'the derived offset has to be a real offset, or this test stopped testing anything',
+        );
+
         $this->assertTrue(
-            ProcessIdentity::isSameProcess($pid, number_format((float) $started + 0.1, 6, '.', '')),
-            'a tenth of a second out is still this process, and an exact comparison would reject it',
+            ProcessIdentity::isSameProcess($pid, number_format($asFloat + $withinSecond, 6, '.', '')),
+            'a reading inside the same second is this process, and an exact comparison would reject it'
+            .' (start '.$started.', fraction '.$fraction.', offset '.$withinSecond.')',
         );
 
         $this->assertFalse(
-            ProcessIdentity::isSameProcess($pid, number_format((float) $started + 1.0, 6, '.', '')),
+            ProcessIdentity::isSameProcess($pid, number_format($asFloat + 1.0, 6, '.', '')),
             'a full second later is a different run of the process, not a reading of this one',
         );
 

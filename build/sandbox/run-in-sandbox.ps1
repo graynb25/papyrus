@@ -312,8 +312,21 @@ while (-not $startProcess.HasExited -and (Get-Date) -lt $deadline) {
     }
 
     # Read the port the launcher reported, once, from its own output.
+    #
+    # The host is matched as either spelling on purpose. `Supervisor::appUrl()` prints `localhost`,
+    # deliberately, because that is the address the app itself advertises in APP_URL and it is what
+    # a WebAuthn relying-party id is derived from. This runner still looked for `127.0.0.1` only, so
+    # after that deliberate change the pattern matched nothing, `$reportedPort` stayed null, and the
+    # gate reported five failures against an install that was serving correctly the whole time:
+    #
+    #     [FAIL] the launcher reached running   never reported a port
+    #     [ok  ] port  released                 <- the port was empty, which is the symptom
+    #     [FAIL] /ready is 200  got 0           <- it probed http://127.0.0.1:/ready
+    #
+    # So the pattern accepts both, and the comment above it stays, because a pattern that names one
+    # spelling is a pattern that will break the next time the launcher deliberately changes it.
     if ($null -eq $reportedPort -and (Test-Path $startLog)) {
-        $match = Select-String -Path $startLog -Pattern 'running at http://127\.0\.0\.1:(\d+)' -ErrorAction SilentlyContinue |
+        $match = Select-String -Path $startLog -Pattern 'running at http://(?:127\.0\.0\.1|localhost):(\d+)' -ErrorAction SilentlyContinue |
             Select-Object -First 1
 
         if ($match) {
@@ -423,7 +436,16 @@ if (-not $startProcess.HasExited) {
 }
 
 if ($null -eq $appPort) {
+    # Recorded as a failure rather than merely announced, and the web checks below are skipped rather
+    # than run against an empty port.
+    #
+    # Announcing it and carrying on is what produced five failures and one false pass in a single run:
+    # `http://127.0.0.1:/ready` with nothing after the colon, reported as "/ready is 200, got 0", and
+    # a stop check that printed "port  released" with the port name literally empty and counted it as
+    # a pass. Every one of those was the missing port wearing a different hat, and none of them named
+    # the missing port. A condition that cannot proceed has to say so where the result is read.
     Say '  no app port was ever reported, so the web checks below cannot run'
+    Check 'the launcher reported a port to probe' $false 'it never printed "running at http://<host>:<port>"'
 }
 
 # Checked here rather than before the start, because the launcher writes this file as part of
@@ -483,31 +505,37 @@ function Get-Body([string]$url) {
     }
 }
 
-$ready = Get-Body "http://127.0.0.1:$appPort/ready"
-Say "  /ready  $($ready.Status)  $($ready.Body)"
+# Guarded, because with no port these were probing `http://127.0.0.1:/ready` and reporting the
+# result as a failing endpoint rather than as the missing port it actually was. The failure that
+# names the missing port has already been recorded above; this block would only add noise about a
+# URL that was never valid.
+if ($null -ne $appPort) {
+    $ready = Get-Body "http://127.0.0.1:$appPort/ready"
+    Say "  /ready  $($ready.Status)  $($ready.Body)"
 
-$readyDecoded = $null
+    $readyDecoded = $null
 
-try {
-    $readyDecoded = $ready.Body | ConvertFrom-Json
-} catch {
-    Say '  /ready did not return json'
+    try {
+        $readyDecoded = $ready.Body | ConvertFrom-Json
+    } catch {
+        Say '  /ready did not return json'
+    }
+
+    Check '/ready is 200' ($ready.Status -eq 200) "got $($ready.Status)"
+    Check '/ready says ready' ($null -ne $readyDecoded -and $readyDecoded.status -eq 'ready')
+
+    if ($null -ne $readyDecoded -and $null -ne $readyDecoded.checks) {
+        Check 'app key is set' ($readyDecoded.checks.key -eq $true) "key=$($readyDecoded.checks.key)"
+        Check 'database opens' ($readyDecoded.checks.database -eq $true) "database=$($readyDecoded.checks.database)"
+        Check 'no pending migrations' ($readyDecoded.checks.pending_migrations -eq 0) "pending=$($readyDecoded.checks.pending_migrations)"
+    }
+
+    $up = Get-Body "http://127.0.0.1:$appPort/up"
+    Check '/up is 200' ($up.Status -eq 200) "got $($up.Status)"
+
+    # A rendered page, not merely a 200. An app that returns its own error page is answering.
+    Check '/up returns html' ($up.Body -match '<!DOCTYPE html>|<html')
 }
-
-Check '/ready is 200' ($ready.Status -eq 200) "got $($ready.Status)"
-Check '/ready says ready' ($null -ne $readyDecoded -and $readyDecoded.status -eq 'ready')
-
-if ($null -ne $readyDecoded -and $null -ne $readyDecoded.checks) {
-    Check 'app key is set' ($readyDecoded.checks.key -eq $true) "key=$($readyDecoded.checks.key)"
-    Check 'database opens' ($readyDecoded.checks.database -eq $true) "database=$($readyDecoded.checks.database)"
-    Check 'no pending migrations' ($readyDecoded.checks.pending_migrations -eq 0) "pending=$($readyDecoded.checks.pending_migrations)"
-}
-
-$up = Get-Body "http://127.0.0.1:$appPort/up"
-Check '/up is 200' ($up.Status -eq 200) "got $($up.Status)"
-
-# A rendered page, not merely a 200. An app that returns its own error page is answering.
-Check '/up returns html' ($up.Body -match '<!DOCTYPE html>|<html')
 
 Section 'suwayomi'
 
@@ -527,6 +555,37 @@ try {
 
 Say "  aboutServer.version: $version"
 Check 'suwayomi answers graphql' ($version -match '^v?2\.4') "got $version"
+
+# What the library is reachable from.
+#
+# Suwayomi's own default is `server.ip = "0.0.0.0"`, which it writes into server.conf itself, so a
+# launcher that sets only the port is choosing the wildcard rather than declining to choose. Measured
+# on a host install in that state: the listener was `:::4567`, and from another address on the
+# network a login as the configured reader succeeded and `{ sources { totalCount } }` returned 223.
+# The reader's whole library, over the local network.
+#
+# Checked here on the socket rather than on the configuration file, because a correct `server.ip` line
+# and a server actually listening on it are different claims, and only one of them is the defect.
+#
+# `::1` and `127.0.0.1` are both loopback. `0.0.0.0`, `::` and any real interface address are not.
+$suwayomiListeners = @(Get-NetTCPConnection -LocalPort $suwayomiPort -State Listen -ErrorAction SilentlyContinue)
+
+if ($suwayomiListeners.Count -eq 0) {
+    Check 'suwayomi is bound to loopback' $false "nothing is listening on $suwayomiPort"
+} else {
+    $addresses = @($suwayomiListeners | ForEach-Object { $_.LocalAddress } | Select-Object -Unique)
+    Say "  suwayomi is listening on: $($addresses -join ', ')"
+    $allLoopback = @($addresses | Where-Object { $_ -notin @('127.0.0.1', '::1') }).Count -eq 0
+    Check 'suwayomi is bound to loopback' $allLoopback "addresses: $($addresses -join ', ')"
+}
+
+$appListeners = @(Get-NetTCPConnection -LocalPort $appPort -State Listen -ErrorAction SilentlyContinue)
+
+if ($appPort -and $appListeners.Count -gt 0) {
+    $appAddresses = @($appListeners | ForEach-Object { $_.LocalAddress } | Select-Object -Unique)
+    $appLoopback = @($appAddresses | Where-Object { $_ -notin @('127.0.0.1', '::1') }).Count -eq 0
+    Check 'papyrus is bound to loopback' $appLoopback "addresses: $($appAddresses -join ', ')"
+}
 
 Section 'the database is in the data directory, not the install'
 
@@ -644,7 +703,15 @@ Get-Content 'C:\results\launcher-stop.err' -ErrorAction SilentlyContinue | ForEa
 
 Start-Sleep -Seconds 3
 
+# Nulls are skipped rather than passed to the cmdlet, because `Get-NetTCPConnection -LocalPort $null`
+# returns nothing and so looks exactly like a released port. That is how a run printed
+# `[ok  ] port  released`, with the port name literally empty, and counted a check it never made.
 foreach ($port in @($appPort, $suwayomiPort)) {
+    if ($null -eq $port) {
+        Say "  port $('<unknown>') was never reported, so there is nothing to check for"
+        continue
+    }
+
     $still = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
     Check "port $port released" ($null -eq $still)
 }

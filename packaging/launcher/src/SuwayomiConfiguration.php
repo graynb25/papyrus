@@ -61,6 +61,15 @@ final class SuwayomiConfiguration
      */
     public const ROOT_PROPERTY = 'suwayomi.tachidesk.config.server.rootDir';
 
+    /**
+     * The address Suwayomi is pinned to, overriding its own `0.0.0.0` default.
+     *
+     * A named constant rather than a literal in `prepare()`, because it is referenced by a test that
+     * asserts the launcher writes this exact value, and a test that repeats the literal is a test
+     * that passes when the value changes on both sides at once.
+     */
+    public const LOOPBACK = '127.0.0.1';
+
     /** The directory, inside the data directory, that holds everything Suwayomi owns. */
     public function rootDirectory(string $dataDirectory): string
     {
@@ -106,6 +115,45 @@ final class SuwayomiConfiguration
         }
 
         $this->setValue($this->configurationFile($dataDirectory), 'server.port', (string) $port);
+
+        /*
+         * The address is pinned to loopback, and it is written on every start for the same reason the
+         * port is: this is the only place that decides what the reader's library is reachable from.
+         *
+         * Suwayomi's own default is `server.ip = "0.0.0.0"`, every interface, which it writes into
+         * `server.conf` itself with its own annotation:
+         *
+         *     server.ip = "0.0.0.0" # default: "0.0.0.0"
+         *
+         * So leaving it alone is not a neutral choice, it is the choice to serve on every interface.
+         * Measured on a running install, with the default in place:
+         *
+         *     Get-NetTCPConnection -LocalPort 4567 -State Listen   LocalAddress :::4567   java
+         *     127.0.0.1:4567      reachable
+         *     192.0.2.1:4567    reachable
+         *     192.0.2.2:4567     reachable
+         *
+         * The GraphQL API does require a login, so this was measured to the end rather than assumed
+         * from the socket:
+         *
+         *     { sources { totalCount } } unauthenticated   Unauthorized
+         *     login as the configured reader, from 192.0.2.1   succeeded
+         *     { sources { totalCount } } with that token    223
+         *
+         * So a reader's entire library, 223 sources on the machine this was measured on, was
+         * readable by anything that could route to the machine and guess a weak password. This is the
+         * same defect `LauncherBindTest` records for FrankenPHP, where the listener was the IPv6
+         * wildcard while every document in the project said nothing outside the machine was reachable.
+         * FrankenPHP is now bound with an explicit `bind 127.0.0.1 ::1`. This is the other half.
+         *
+         * The launcher probes `127.0.0.1` throughout (`Supervisor::suwayomiAnswers()` and friends),
+         * so loopback is the address this already expects and nothing else has to change.
+         */
+        $this->setValue(
+            $this->configurationFile($dataDirectory),
+            'server.ip',
+            $this->escapeHocon(self::LOOPBACK),
+        );
 
         /*
          * Only backupPath is set, and the other backup settings are left exactly as Suwayomi

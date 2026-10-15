@@ -355,7 +355,22 @@ if (is_file($jreRelease) && preg_match('/JAVA_VERSION="([^"]+)"/', (string) file
 
 $manifest = [
     'version' => $stamped['version'],
-    'released' => substr((string) ($stamped['built'] ?? date('c')), 0, 10),
+    /*
+     * The full instant, offset included, rather than the first ten characters of it.
+     *
+     * `version.txt` writes `built 2026-10-15 00:01:32+00:00` and the `+00:00` is in there on
+     * purpose, because an instant with no zone is not an instant. Truncating to a bare date throws
+     * away the only part that says which date it is, and the reader of this manifest does not
+     * share the builder's clock. Measured on the machine that built 1.2.0: local time was the 14th
+     * at 19:09 in SA Pacific Standard Time, PHP's default timezone is UTC, and the manifest
+     * recorded the 15th, which is a day that had not arrived for the person who built it.
+     *
+     * `date('c')` is the fallback and carries the offset as well, so this is an instant on both
+     * paths and the two cannot be told apart afterwards. A consumer that wants a plain date can
+     * take the first ten characters itself, which is a decision it gets to make rather than one
+     * this file makes for it.
+     */
+    'released' => (string) ($stamped['built'] ?? date('c')),
     'commit' => $stamped['commit'] ?? null,
     'requires' => [
         'suwayomi' => '>='.ltrim((string) $compatibility['minimum'], 'vV'),

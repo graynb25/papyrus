@@ -1,16 +1,18 @@
 {
     "version": "1.2.0",
-    "released": "2026-10-13",
-    "commit": "a705fe4",
+    "released": "2026-10-15T00:33:14+00:00",
+    "commit": "64804b9",
     "requires": {
         "suwayomi": ">=2.4.0",
         "jvm": ">=25.0.4.1"
     },
+    "signed": false,
+    "signature": null,
     "artifacts": [
         {
             "file": "Papyrus-1.2.0-setup.exe",
-            "sha256": "d17b36cf7e8c654d2a796c98058f83ccd9afbd49862b5309a98847d0c3bbfc44",
-            "size": 273869913
+            "sha256": "7fdebae6bb30bb55cdd6e1b6222d99589ed42c45c3db02551437f88eb98a6165",
+            "size": 273968964
         }
     ]
 }

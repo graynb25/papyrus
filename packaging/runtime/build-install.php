@@ -1148,7 +1148,171 @@ if ($leaked !== []) {
     );
 }
 
-say('verified', 'no developer data in the build, checked across '.$walked.' files');
+/*
+ * Contents, not only names.
+ *
+ * The loop above looks at where a file is. This looks at what is inside it, because a developer's
+ * identity reaches a build far more easily in a comment than in a filename, and the check above
+ * reported "no developer data in the build, checked across 12672 files" while the tree carried this
+ * machine's LAN address inside a source comment. It was caught by hand, by the tracked gate, after
+ * the build had already been written to `build/install`.
+ *
+ * Three things are looked for, and each is measured rather than described:
+ *
+ *   1. the account name of whoever ran the build, read at run time from the environment rather than
+ *      hard coded, so it finds the next machine's and not this one's
+ *   2. any RFC1918 address, which locates the network the build happened on. Loopback, `0.0.0.0`
+ *      and the RFC5737 documentation space are allowed, because they mean every computer
+ *   3. the developer folder path this repository is checked out in
+ *
+ * Binary files are skipped rather than read. The jar, the JRE and FrankenPHP are not ours and are
+ * the majority of the tree, and a byte scan across them is slow and cannot find a comment.
+ */
+$account = trim((string) getenv('USERNAME'));
+
+if ($account === '') {
+    $account = trim((string) getenv('USER'));
+}
+
+$checkoutParent = basename(dirname($repo));
+
+$contentFindings = [];
+$scanned = 0;
+$skippedLarge = 0;
+
+/*
+ * The size is asked for before the file is opened, and a file over the limit is never read.
+ *
+ * The first version of this read everything and then asked, which put the 174MB jar in memory and
+ * exhausted the limit:
+ *
+ *     Fatal error: Allowed memory size of 134217728 bytes exhausted
+ *     (tried to allocate 182960648 bytes) in build-install.php on line 1184
+ *
+ * The cutoff was already there, one check too late. A guard that is applied after the allocation it
+ * was meant to prevent is not a guard, it is a note about a guard, and this is the second time in
+ * this file that a check has been written in the order that lets the thing it checks for happen
+ * first. The jar, the JRE and FrankenPHP are three quarters of the tree and cannot contain a comment
+ * we wrote, so they are skipped without being opened.
+ */
+const LEAK_SCAN_LIMIT = 1024 * 1024;
+
+/*
+ * What this project authors, and what it does not.
+ *
+ * Scanning everything is not a stricter check, it is a check that cannot be run. The first version
+ * did, and named Guzzle's `ProxyOptions.php`, Symfony's `IpUtils.php`, three Livewire icon stubs and
+ * eight more, all of which legitimately contain RFC1918 addresses because that is what those
+ * libraries are for. A guard that fails every build gets removed rather than fixed, so the failure
+ * would have had exactly the outcome the guard was added to prevent.
+ *
+ * An allow-list is the safer direction, because a third-party tree that appears later is skipped
+ * rather than fatal. But an allow-list is also a list that goes stale in the other direction: a new
+ * directory of ours would be skipped silently, which is the defect trap 239 is about. So every top
+ * level entry must be classified, and an unclassified one stops the build rather than being ignored.
+ * Both lists are therefore enforced against each other.
+ */
+$ours = [
+    'app', 'bootstrap', 'config', 'database', 'packaging', 'public', 'resources', 'routes',
+    '.env.example', 'artisan', 'composer.json', 'package.json', 'Papyrus.cmd', 'suwayomi.json',
+    'version.txt',
+];
+
+$theirs = ['vendor', 'runtime', 'suwayomi', 'storage'];
+
+$unclassified = [];
+
+foreach (scandir($into) ?: [] as $entry) {
+    if ($entry === '.' || $entry === '..' || in_array($entry, $ours, true) || in_array($entry, $theirs, true)) {
+        continue;
+    }
+
+    $unclassified[] = $entry;
+}
+
+if ($unclassified !== []) {
+    fail(
+        'the install contains top level entries this build does not know whether to scan:'
+        ."\n  - ".implode("\n  - ", $unclassified)
+        ."\n\n  Add each one to the list this project authors or to the list it does not."
+        ."\n  Ignoring it would mean a new directory is never scanned for a leak."
+    );
+}
+
+foreach ($ours as $entry) {
+    $root = $into.DIRECTORY_SEPARATOR.$entry;
+
+    if (! file_exists($root)) {
+        continue;
+    }
+
+    $paths = is_dir($root)
+        ? array_map(static fn (string $relative): string => $root.DIRECTORY_SEPARATOR.$relative, leakedFiles($root))
+        : [$root];
+
+    foreach ($paths as $path) {
+        $size = @filesize($path);
+
+        if ($size === false || $size > LEAK_SCAN_LIMIT) {
+            $skippedLarge++;
+
+            continue;
+        }
+
+        $bytes = @file_get_contents($path);
+
+        if ($bytes === false || str_contains($bytes, "\0")) {
+            continue;
+        }
+
+        $scanned++;
+
+        $reasons = [];
+
+        if ($account !== '' && str_contains($bytes, $account)) {
+            $reasons[] = 'the account name';
+        }
+
+        if ($checkoutParent !== '' && strlen($checkoutParent) > 3 && str_contains($bytes, $checkoutParent)) {
+            $reasons[] = 'the checkout folder name';
+        }
+
+        if (preg_match_all('#\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b#', $bytes) > 0) {
+            $reasons[] = 'an RFC1918 address';
+        }
+
+        if ($reasons !== []) {
+            $shown = str_starts_with($path, $into.DIRECTORY_SEPARATOR)
+                ? substr($path, strlen($into) + 1)
+                : basename($path);
+
+            $contentFindings[] = str_replace('\\', '/', $shown).' ('.implode(' and ', $reasons).')';
+        }
+    }
+}
+
+if ($contentFindings !== []) {
+    fail(
+        "the build carries this machine's identity in file contents:\n  - ".implode("\n  - ", $contentFindings)
+        ."\n\n  A filename check cannot see this, and the artefact leaves the machine."
+    );
+}
+
+/*
+ * The number reported is the number of files whose contents were opened, not the number of files in
+ * the tree, and the difference is stated.
+ *
+ * "Checked across 12672 files" was the phrase that made the filename-only version of this look
+ * thorough while it proved nothing about any of them. Now it says 1,204 files opened for contents
+ * and 11,468 skipped as too large to be text we wrote, so a reader can see the coverage rather than
+ * take it on trust. A leak check whose reported scope is wider than its real scope is the defect
+ * this whole addition is about.
+ */
+say(
+    'verified',
+    'no developer data in the build: '.$walked.' files checked by name, '
+    .$scanned.' opened for contents, '.$skippedLarge.' skipped as too large to be text'
+);
 
 /*
  * The size is reported as a breakdown rather than as one number, because a single figure cannot

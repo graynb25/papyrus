@@ -5045,3 +5045,360 @@ eturn null that a generator never needs.
     Worth pairing with the portable readme lesson. There, a claim was made and nothing checked it.
     Here, a check was written and it was narrower than its name, which is the quieter version of the
     same mistake.
+
+254. **A check that reports a file missing because its own matcher is wrong is the loudest
+    false report there is, and it is still a false report.**
+
+    I opened the 305MB portable and asked whether eight required files were in it. The matcher was
+    `str_ends_with($name, '/packaging/launcher/papyrus.php')`. The portable has no wrapper
+    directory: Windows extracts it so that `packaging/launcher/papyrus.php` lands beside the
+    application rather than inside a folder named after the archive. The leading slash never
+    appears, so the check reported the launcher entry point, the snapshot command, the run record,
+    the reader half, the backups library, the Suwayomi version record, the packaged PHP and the
+    web server as all MISSING. Every one of them was present. The archive was complete.
+
+    The portable build says so itself, at line 148 of `build-portable.php`: *"Unpack this anywhere
+    and run Papyrus.cmd."* Nothing is nested, because the thing the reader runs is at the top level
+    next to the readme, which is `PAPYRUS-PORTABLE.txt` and is injected as a string rather than
+    staged from disk, so it does not appear in a search for files on disk either.
+
+    This is the family AGENTS.md lists as *"A grep that cannot match what is there is not evidence
+    it is absent"*, which has now cost time three separate times: trap 138 with a CSS class, trap
+    151 with an `aria-label`, and this with a path separator.
+
+    The asymmetry is the part worth keeping. A false MISSING gets investigated, because a reader
+    can go and look at the archive and see the file sitting there. A false PRESENT never does: it
+    is the answer that was wanted, it agrees with everything else already believed, and nothing
+    revisits it. So the false negative is the harmless direction, which is exactly backwards from
+    how much attention a line reading MISSING attracts.
+
+    The guard, which now runs before any negative is printed: push one path that is known to exist
+    through the same predicate and print what came back. If the predicate returns false for a file
+    that can be seen, the predicate is what is broken, not the archive.
+
+255. **Subtracting one count from another is not a count of the remainder, and the number is
+    plausible enough to file a bug on.**
+
+    I was checking the documented gate that `Papyrus.cmd` is CRLF in the install and that the
+    build fails if any bare LF survives. My probe counted line endings like this:
+
+    ```
+    $crlf   = substr_count($bytes, "\r\n");
+    $bareLf = strlen($bytes) - $crlf;      // wrong
+    ```
+
+    The repository copy is 5186 bytes and contains no CR at all. It reported **5186 bare LF**,
+    which is the file's length wearing a label. The portable copy came out as **5068 bare LF** and
+    119 CRLF, which is close enough to the documented failure state that the next step would have
+    been reporting that the build's line-ending gate had stopped working.
+
+    It had not. The build does what AGENTS.md describes: `build-install.php` rewrites the file
+    with `implode("\r\n", $cmdLines)`, then counts `/(?<!\r)\n/` and fails the build if that count
+    is not zero. The real arithmetic is `substr_count($bytes, "\n") - $crlf`. Measured after the
+    correction, the repository copy is 118 LF and no CRLF, and the archived copy is 119 CRLF and no
+    bare LF, so the gate is doing exactly what it claims.
+
+    The general form: **a subtraction across two different units produces a number whose units are
+    neither.** The minuend here was bytes and the subtrahend was a count of two-character
+    sequences. Any result is possible, and the most likely results are small ones that sound like
+    real measurements.
+
+    The correction is not the arithmetic, it is the habit: a probe that prints a count has to print
+    the counts it subtracted from beside it. `5186` next to `0 CRLF` next to `0 CR` is obviously
+    wrong to a reader. `5186 bare LF` on its own is a measurement.
+
+256. **A field that names a day the reader has not reached, because the build dropped the
+    timezone it had recorded on purpose.**
+
+    `build/install/version.txt` is written as:
+
+    ```
+    built 2026-10-15 00:01:32+00:00
+    ```
+
+    The offset is there deliberately, because that file is the build's own record and an instant
+    without a zone is not an instant.
+
+    The release manifest then takes ten characters of it:
+
+    ```php
+    'released' => substr((string) ($stamped['built'] ?? date('c')), 0, 10),
+    ```
+
+    so `releases/1.2.0.json` records `"released": "2026-10-15"`. The build machine is
+    `SA Pacific Standard Time`, UTC-05:00, and its local date at the time of the build was the
+    14th at 19:09. PHP's default timezone is UTC, so `date()` agrees with the manifest and both
+    name a day the person who built the thing had not got to.
+
+    Nothing errors and nothing is obviously wrong. It is a date field whose meaning depends on a
+    clock the reader does not have, produced by cutting a string at a fixed offset from a value
+    that was written to be unambiguous.
+
+    The fallback is worse than the case it falls back from. `date('c')` does carry the offset, so
+    when it is the fallback the offset was present in the source and absent from the output, and
+    anyone reading `releases/1.2.0.json` afterwards cannot tell which of the two produced the
+    value they are looking at.
+
+    The general form: **truncating a formatted value to a convenient length silently discards the
+    part that made it unambiguous.** `substr($stamp, 0, 10)` keeps the date and throws away the one
+    thing that says which date it is.
+
+257. **A gate whose pattern names one spelling of an address reported five failures and one
+    false pass against an install that was working.**
+
+    The clean-machine gate read the port the launcher had chosen out of the launcher's own output:
+
+    ```powershell
+    $match = Select-String -Path $startLog -Pattern 'running at http://127\.0\.0\.1:(\d+)'
+    ```
+
+    `Supervisor::appUrl()` prints `http://localhost:%d`. It does so deliberately, and the comment
+    above it says why: `localhost` is the address the app advertises in `APP_URL` and the one a
+    WebAuthn relying-party id is derived from. So the pattern matched nothing, `$reportedPort` stayed
+    null, and one run produced all of this:
+
+    ```
+      Papyrus is running at http://localhost:8402          <- the install, serving, correct
+      [FAIL] the launcher reached running  never reported a port
+      no app port was ever reported, so the web checks below cannot run
+      [FAIL] /ready is 200   got 0
+      [FAIL] /ready says ready
+      [FAIL] /up is 200      got 0
+      [FAIL] /up returns html
+      [ok  ] port  released                                <- the port name was empty
+    ```
+
+    Six lines, one root cause. The install was up on 8402 for the whole run. The gate had probed
+    `http://127.0.0.1:/ready`, with nothing after the colon, and reported the connection failure as
+    an endpoint that was down.
+
+    The last line is the one worth keeping. `$appPort` was null, `Get-NetTCPConnection -LocalPort $null`
+    returns nothing, and `$null -eq $still` is therefore true, so a check that had not been performed
+    was recorded as a pass, with the port name printed as nothing at all. Trap 156 again, and in the
+    form that is hardest to see: **a check whose subject is missing does not fail, it passes.**
+
+    Three changes, and the third is the one that would have caught the other two:
+
+    - the pattern accepts both spellings, because a pattern that names one will break again the
+      next time the launcher deliberately changes what it prints
+    - the web checks are guarded on the port existing, so they cannot report a URL that was never
+      valid
+    - a missing port is recorded as a named failure rather than announced and stepped over
+
+    And the general form, which is the fourth time in this file: **a selector that misses its
+    subject reports a failure that does not exist.** Trap 138 with a CSS class, trap 151 with an
+    `aria-label`, trap 254 with a path separator, this with a hostname. Four different subjects and
+    one shape, which is the argument for reading the thing the check is pointed at whenever it
+    surprises you, before believing the check.
+
+258. **A security fix was applied to one of two listeners, and the one nobody checked was the
+    one serving the library.**
+
+    `LauncherBindTest` exists because FrankenPHP was listening on the IPv6 wildcard while every
+    document in this project said nothing outside the machine was reachable. It is fixed, with an
+    explicit `bind 127.0.0.1 ::1` in the Caddyfile, and the test asserts on that `bind` line
+    specifically rather than on the site address, which was already right and already useless.
+
+    Suwayomi was never in scope. It is the other half of the same stack, it holds the library, and
+    its own default is every interface, which it writes into `server.conf` itself:
+
+    ```
+    server.ip = "0.0.0.0" # default: "0.0.0.0"
+    ```
+
+    So a launcher that writes only the port is not declining to choose an address. It is choosing
+    the wildcard. Measured on a running install before the fix, and taken to the end rather than
+    stopped at the socket:
+
+    ```
+    Get-NetTCPConnection -LocalPort 4567 -State Listen     LocalAddress :::4567   java
+    127.0.0.1:4567      reachable
+    192.0.2.1:4567    reachable
+    192.0.2.2:4567     reachable
+
+    { sources { totalCount } } unauthenticated                    Unauthorized
+    login as the configured reader, from 192.0.2.1              succeeded
+    { sources { totalCount } } carrying that token                223
+    ```
+
+    A reader's whole library, 223 sources on the machine this was measured on, readable by anything
+    that could route to it and guess a password. Stopping at the `Unauthorized` would have been the
+    comfortable answer and would have been wrong about what a weak password on a reachable login
+    endpoint is worth.
+
+    **How it was found, which is the part worth keeping.** A person watching the sandbox noticed that
+    only one of the two firewall prompts appeared. Windows prompts for a listener beyond loopback
+    and does not prompt for one bound to loopback, so the missing prompt was a measurement of the
+    second listener. It was not a defect report, it was an absence of one, and nothing in the
+    project's own gates was looking for it.
+
+    Two general forms:
+
+    **A control that stops being visible has not necessarily stopped working.** The natural reading
+    of "the PHP prompt stopped appearing" is that something regressed. The opposite was true: that
+    prompt disappearing was the fix working, and the surviving JDK prompt was the unrepaired half.
+    Neither conclusion is available without checking, and the check is a socket listing rather than
+    a judgement.
+
+    **A fix phrased as a property of one file does not generalise to the stack.** "Bind the listener
+    to loopback" was applied to `packaging/frankenphp/Caddyfile` and asserted there. The other
+    listener's address lives in a file the *server* writes and rewrites, which is why it was not
+    obviously in scope and why the guard has to live where that file is written. The launcher now
+    pins `server.ip` on every start, through the same `setValue()` seam that already owned the
+    port, and the annotation Suwayomi puts after the value survives the rewrite.
+
+259. **A leak check that reads filenames reported "no developer data" across 12,672 files
+    while the tree carried this machine's address inside a comment.**
+
+    `build-install.php` walks the whole install and refuses to finish if it finds a `.env`, a
+    database file, a log, or a populated framework cache. It then says:
+
+    ```
+    verified: no developer data in the build, checked across 12672 files
+    ```
+
+    That sentence was true about the check and false as a claim, because the walk looked at where
+    each file is and never at what is inside it. An identity reaches a build far more easily in a
+    comment than in a filename. This machine's two LAN addresses were written into a doc comment in
+    `SuwayomiConfiguration.php`, the file was copied into the install, and the build reported
+    twelve thousand files checked.
+
+    The order is what makes it a story rather than a note. The build ran first. The tracked gate,
+    which does read contents, ran second, and failed on eight lines across three files. By then the
+    tree already contained them and an installer was a minute from packaging it.
+
+    So the check now reads contents too, and looks for three things:
+
+    - the account name of whoever ran the build, read from the environment at run time rather than
+      hard coded, so it finds the next machine's name and not this one's
+    - the checkout folder name
+    - any RFC1918 address, with loopback, `0.0.0.0` and the RFC5737 documentation space allowed,
+      because they mean every computer or no computer
+
+    Text files only, and under 4MB, because the jar, the JRE and FrankenPHP are the majority of the
+    tree, are not ours, and a byte scan across them cannot find a comment.
+
+    Two things about that check that had to be established rather than assumed.
+
+    **The pattern was measured in both directions, because a leak check is only useful if it is
+    wrong in one direction.** A false positive stops a build that was fine, which is recoverable and
+    loud. A false negative ships the address to everybody, which is neither. Seventeen cases: the
+    three RFC1918 ranges including both boundaries of the `172.16/12` one, loopback, the wildcard,
+    `192.0.2.1`, `2001:db8::1`, two addresses sitting just outside the `172.16/12` range so its edges
+    are tested rather than assumed, addresses
+    inside sentences rather than standing alone, and four and five digit final groups that look like
+    addresses and are not.
+
+    Two of those cases had to be reworded rather than corrected, and the reason is worth having.
+    They were addresses just outside the `172.16/12` range, used to show the range's edges, and the
+    tracked gate refused both of them as routable addresses that locate a machine and its region.
+    That is right and it is stricter than the pattern I had written: the rule this project holds is
+    that an address is identifying whatever kind it is, because base addresses are issued per region,
+    so a number outside RFC1918 is still somebody's patch of the world. The first version of this
+    check exempted only RFC1918 and would have accepted both.
+
+    **And it was run against a planted leak before being believed.** A guard nobody has watched
+    fail is not known to work, which is trap 247 and trap 252 in one line, and this project has now
+    shipped several of them.
+
+    The general form, which is worth more than the fix: **"checked across N files" is a statement
+    about effort and not about coverage.** The number reads as thoroughness and is compatible with a
+    check that examined nothing but paths. What makes a leak check a leak check is that it opens the
+    files.
+
+    And the part I have to record honestly, because it is the fourth time. Traps 236 and 240 are
+    about putting this machine's address and path into tracked files. This was the same mistake,
+    made again, while writing trap 258, which is about a document claiming a protection it did not
+    have. The gate caught it in under a minute, which is the only reason it cost ten.
+
+260. **A guard that flags Guzzle and Symfony fails every build, and a build that always fails
+    gets its guard deleted rather than fixed.**
+
+    The content leak check added in trap 259 was written as "read every file, skip the big ones and
+    the binary ones", which reads as stricter. Run against the install it named:
+
+    ```
+    - vendor/guzzlehttp/guzzle/src/ProxyOptions.php      (an RFC1918 address)
+    - vendor/symfony/http-foundation/IpUtils.php          (an RFC1918 address)
+    - vendor/livewire/flux/stubs/.../flag.blade.php      (an RFC1918 address)
+    ... nine more
+    ```
+
+    Every one of them is correct code. `ProxyOptions` and `IpUtils` are libraries whose entire
+    subject is private address ranges. The check could not be made to pass by fixing the code, and a
+    guard that stops every build stops being read as a guard within a week.
+
+    So the scan is an allow-list of what this project authors, which is 360 files, rather than a
+    deny-list of what it does not, which is 12,257. An allow-list is the right direction here: a
+    third-party tree that appears in a later version is skipped rather than fatal.
+
+    And an allow-list goes stale in the *other* direction, which is trap 239 exactly. A new directory
+    of ours would simply stop being scanned, which is the failure the check exists to prevent, and it
+    would be silent. So both lists are enforced against each other: every top level entry in the
+    install must appear in one of them, and an unclassified entry stops the build with a message
+    saying which list it belongs in. Staleness is now loud in both directions instead of quiet in
+    one.
+
+    **A guard applied after the thing it prevents is a note about a guard.** The same block had its
+    size cutoff in the wrong place:
+
+    ```php
+    $bytes = @file_get_contents($path);          // the 174MB jar goes into memory here
+    if ($bytes === false || str_contains($bytes, "\0")) { continue; }
+    if (strlen($bytes) > 4 * 1024 * 1024) { continue; }   // the cutoff, one check too late
+    ```
+
+    ```
+    Fatal error: Allowed memory size of 134217728 bytes exhausted
+    (tried to allocate 182960648 bytes) in build-install.php on line 1184
+    ```
+
+    The cutoff existed and was correct. It was written after the allocation it was meant to prevent,
+    so it described a policy the process had already broken. `filesize()` is asked first now, and a
+    file over the limit is never opened.
+
+    **And it was proved against a planted leak before being believed.** A file carrying this
+    machine's real address and account name was dropped into `app/`, and the build refused and named
+    it: `app/_leakprobe.php (the account name and an RFC1918 address)`, exit 1, zero vendor false
+    positives. That is the difference between a check that exists and a check that works, and it
+    costs eighty seconds to establish.
+
+261. **A test that added a fixed tenth of a second to a value compared to the second, failed three
+    runs in ten, and its comment said it could not.**
+
+    `ProcessIdentity::isSameProcess()` compares start times *to the second*, because the two sources
+    disagree below one: `REQUEST_TIME_FLOAT` carries microseconds and Windows CIM reports
+    `CreationDate` at a whole second. The test asserted that a start time a tenth of a second later
+    is still the same process, which is the property that matters and is worth testing.
+
+    It is also false whenever the process started at `x.9`, because `x.9 + 0.1` is the next second,
+    which the comparison correctly rejects. About one run in ten. Measured:
+
+    ```
+    run 1..7   passed
+    run 8      FAILED
+    run 9      FAILED
+    run 10     FAILED
+    ```
+
+    Three consecutive, because consecutive runs land in the same fractional window of the second.
+    A single green run would have proved nothing, which is the only reason this is worth writing
+    down: the first version of this test passed when run alone and the fix was to stop using a
+    fixed offset.
+
+    What makes it worth more than the three lines is the comment above it:
+
+    > `+0.1` cannot cross a boundary from a value that already has microseconds of its own only by
+    > accident, so it is the accepting case
+
+    That was written believing the arithmetic had been checked. It had not, and it is false in the
+    most ordinary case there is. Trap 216 is this, from earlier in this file: a test one step from a
+    boundary is a coin flip. Here the lesson had been written down once already and then not
+    applied, which means writing it down is not the same as having learned it, and the only thing
+    that actually caught it was running the test twenty times instead of once.
+
+    The offset is now half of whatever is left in the current second, derived from the real
+    fraction, which is positive and short of the boundary whatever the fraction happens to be. The
+    assertion message carries the start time, the fraction and the offset, so a future failure says
+    which of those went wrong rather than only that a number did not match. Twenty runs, twenty
+    passes.
