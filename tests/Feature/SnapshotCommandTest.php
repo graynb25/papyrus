@@ -311,11 +311,18 @@ class SnapshotCommandTest extends TestCase
      */
     public function test_it_stops_first_and_starts_last(): void
     {
-        $this->invoke(['--yes', '--into='.$this->backups()]);
+        $result = $this->invoke(['--yes', '--into='.$this->backups()]);
 
         $events = array_column($this->calls, 'event');
 
         $this->assertSame(['stop', 'start'], $events, 'the install has to be down while the files are copied');
+
+        // The other half of the message pair: something was stopped here, so the reader is told.
+        $this->assertStringContainsString(
+            'Starting Papyrus again',
+            $result['output'],
+            'something was stopped, so the reader has to be told it is being put back',
+        );
     }
 
     /**
@@ -473,6 +480,24 @@ class SnapshotCommandTest extends TestCase
 
         $this->assertSame(0, $result['code'], $result['output']);
         $this->assertSame(['stop'], array_column($this->calls, 'event'), 'nothing was running, so nothing is started');
+
+        /*
+         * And the console must not claim it is starting something.
+         *
+         * The assertion above was here from the start and it passed while the command printed
+         * "Starting Papyrus again..." unconditionally, because it checks what was called and not
+         * what was said. Found by running it: on a real install with nothing running, the record
+         * said "it was not running, so there was nothing to start" and the console said the
+         * opposite.
+         *
+         * So the message is asserted too, here and in the case below where something was running.
+         * One assertion about behaviour is not one assertion about what the reader is told.
+         */
+        $this->assertStringNotContainsString(
+            'Starting Papyrus again',
+            $result['output'],
+            'nothing was started, so nothing may say that something is',
+        );
     }
 
     /**

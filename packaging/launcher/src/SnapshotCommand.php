@@ -492,8 +492,21 @@ final class SnapshotCommand
     ): int {
         $record->enter('restarting', 'bringing Papyrus back up');
 
-        $say('');
-        $say('  Starting Papyrus again...');
+        /*
+         * Only when something was stopped, which is what RestoreCommand already does and what the
+         * run record two lines below says in words.
+         *
+         * This line printed unconditionally, so a reader who closed their Papyrus window and ran a
+         * snapshot was told "Starting Papyrus again..." while nothing was started and nothing was
+         * listening. Measured on a real install on 2026-10-15: the record said "it was not running,
+         * so there was nothing to start" and the console said it was starting. A message that
+         * describes an action that did not happen is the same shape as a fallback that names a
+         * broken thing, and a reader who believes their app came back will not go and look.
+         */
+        if ($wasRunning) {
+            $say('');
+            $say('  Starting Papyrus again...');
+        }
 
         $started = $wasRunning ? $this->control->start($say) : [];
 
