@@ -269,10 +269,38 @@ final class SuwayomiConfiguration
          * the start of an escape sequence and rejects `"\s"`, so that wrote a path Suwayomi cannot
          * parse, and it did so quietly, into a backup setting nobody reads until a backup is
          * missing. A callback hands the value over as a string with no interpretation of it.
+         *
+         * ## Why the value is not captured with \S+
+         *
+         * The first version captured it as `(\S+|"[^"]*")`. Those two alternatives are tried in that
+         * order, so `\S+` wins even on a quoted path, and `\S+` stops at the first whitespace. A
+         * Windows path under a folder called `My Books` has a space in it, so the capture took
+         * `C:\My Books` and the rest, ` \Reader`, fell into the trailing group and was put
+         * back after the new value:
+         *
+         *     server.backupPath = "C:\\My Projects\\papyrus\\...\\backups" Projects\\...\\backups"
+         *
+         * That is not a wrong value, it is a file HOCON refuses to parse, and the next start dies
+         * with `Expecting end of input or a comma, got '\'`. Measured on this project's own install,
+         * which sits under `C:\My Projects`, by running `papyrus snapshot` and watching
+         * the restart fail: the backup itself was a correct pair of both databases with hashes, and
+         * the install would not come back afterwards.
+         *
+         * Every start made it worse, because the trailing group is carried into the next run too,
+         * so the line grew a copy of itself each time.
+         *
+         * Two tests named `preparing twice does not grow the file` and `preparing repeatedly settles
+         * on one value` passed the whole time, because the fixture was under `sys_get_temp_dir()`,
+         * which on this machine is `%LOCALAPPDATA%\Temp` and has no space in it. The
+         * tests could not fail because the thing they were about never happened in them.
+         *
+         * So the capture is now `"[^"]*"` first, which takes a quoted value whole however much of it
+         * is whitespace or a `#`, and only then `[^#]*?` up to an optional trailing comment, which is
+         * what takes an unquoted value that contains a space.
          */
         $replaced = preg_replace_callback(
-            '/^('.preg_quote($key, '/').'\s*=\s*)(\S+|"[^"]*")(.*)$/m',
-            static fn (array $matches): string => $matches[1].$value.$matches[3],
+            '/^('.preg_quote($key, '/').'\s*=\s*)("[^"]*"|[^#]*?)(\s+#.*)?$/m',
+            static fn (array $matches): string => $matches[1].$value.($matches[3] ?? ''),
             $contents,
             1,
             $count,
@@ -284,6 +312,53 @@ final class SuwayomiConfiguration
 
         if (@file_put_contents($path, $replaced) === false) {
             throw new RuntimeException('Could not write '.$path.', so '.$key.' was not changed.');
+        }
+
+        $this->assertTheLineIsWhole($path, $key, $value);
+    }
+
+    /**
+     * Read the line back and accept nothing but the value that was written.
+     *
+     * Every earlier version of this wrote the file and returned, which is how a truncated value
+     * became a file Suwayomi cannot parse: nothing here had failed, the write had succeeded, and the
+     * consequence arrived on the next start rather than on this one, in a process that is not this
+     * one. A reader took a correct backup and was left with an install that would not start.
+     *
+     * The cost of the check is one small read of a file this method has just written, on a path that
+     * runs once per setting per start. The cost of not having it is the defect above.
+     *
+     * @throws RuntimeException when the line is missing, or holds anything but the value
+     */
+    private function assertTheLineIsWhole(string $path, string $key, string $value): void
+    {
+        $written = @file_get_contents($path);
+
+        if (! is_string($written)) {
+            throw new RuntimeException(
+                'Could not read '.$path.' back, so '.$key.' cannot be known to be right.'
+            );
+        }
+
+        $found = preg_match(
+            '/^'.preg_quote($key, '/').'\s*=\s*("[^"]*"|[^#]*?)(\s+#.*)?$/m',
+            $written,
+            $matches,
+        );
+
+        if ($found !== 1) {
+            throw new RuntimeException($key.' is not in '.$path.' at all, after writing it.');
+        }
+
+        if (trim($matches[1]) !== $value) {
+            throw new RuntimeException(sprintf(
+                'Refusing to leave %s in a state Suwayomi cannot parse. Wanted %s = %s, and the '
+                .'line reads: %s',
+                $path,
+                $key,
+                $value,
+                trim($matches[0]),
+            ));
         }
     }
 }

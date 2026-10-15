@@ -29,7 +29,23 @@ class SuwayomiConfigurationTest extends TestCase
     {
         parent::setUp();
 
-        $this->scratch = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-suwayomi-'.getmypid().'-'.uniqid();
+        /*
+         * The space in `papyrus suwayomi` is the whole point of this line.
+         *
+         * This used to be `papyrus-suwayomi-<pid>-<uniqid>` under `sys_get_temp_dir()`, which on the
+         * machine this was found on is `%LOCALAPPDATA%\Temp`. No space, so every value
+         * this class writes had no space in it, so the capture that stopped at the first whitespace
+         * matched the whole value and behaved.
+         *
+         * Two tests in this file exist to catch exactly that and both passed against the broken
+         * method, because the fixture could not reproduce it. The defect only appears when the path
+         * has a space, which it does for any reader who puts an install in a folder called
+         * `My Books` or `Paper Comics`, which is most of them.
+         *
+         * So the fixture has a space in it now, deliberately, and changing this line back to a
+         * hyphen is how fifteen tests here go back to being unable to fail.
+         */
+        $this->scratch = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus suwayomi '.getmypid().'-'.uniqid();
 
         mkdir($this->scratch, 0o777, true);
     }
@@ -368,9 +384,14 @@ class SuwayomiConfigurationTest extends TestCase
 
         $contents = (string) file_get_contents($configuration->configurationFile($this->scratch));
 
-        preg_match('/^server\.backupPath = "(.*)"$/m', $contents, $matches);
-
-        $this->assertNotEmpty($matches, 'the path has to be written, quoted, on its own line');
+        /*
+         * The match result is checked rather than asserted afterwards, because `assertNotEmpty` on
+         * the array does not tell PHPStan that offset 1 is there, and this file is not in
+         * `phpstan.neon`'s paths so nothing else would have caught it. `fail()` is what narrows.
+         */
+        if (preg_match('/^server\.backupPath = "(.*)"$/m', $contents, $matches) !== 1) {
+            $this->fail('the path has to be written, quoted, on its own line');
+        }
 
         $value = $matches[1];
 
@@ -490,6 +511,105 @@ class SuwayomiConfigurationTest extends TestCase
             (string) file_get_contents($path),
             'four starts must produce the same file as one, or every start rewrites it',
         );
+    }
+
+    /**
+     * A line already corrupted by the old capture is repaired, not carried forward.
+     *
+     * This is the state `build/papyrus-data` was actually found in after one `papyrus snapshot`, on
+     * an install whose path contains a space:
+     *
+     *     server.backupPath = "C:\\My Projects\\papyrus\\...\\backups" Projects\\...\\backups"
+     *
+     * The old capture took the value up to the first whitespace, so the rest of the line was carried
+     * into every later run and the line grew. HOCON then refused the whole file with `Expecting end
+     * of input or a comma, got '\'`, and the JVM would not start.
+     *
+     * A reader who already has this file has to be able to start the app, so the repair has to be
+     * part of the fix rather than something a reader is asked to do by hand. Without this, every one
+     * of them is stuck until they edit a file in a folder they may not know they have.
+     */
+    public function test_a_line_a_previous_version_duplicated_is_repaired(): void
+    {
+        $configuration = $this->configuration();
+        $path = $configuration->configurationFile($this->scratch);
+
+        $configuration->prepare($this->scratch, 4567);
+
+        // Written the way the old capture left it: the correct value, then the tail it cut off.
+        $correct = $this->backupPathLine($path);
+
+        $this->assertNotNull($correct, 'the path has to be written before it can be corrupted');
+
+        $value = substr($correct, strlen('server.backupPath = '));
+
+        file_put_contents(
+            $path,
+            str_replace(
+                $correct,
+                'server.backupPath = '.$value.' '.$value.' # default: ""',
+                (string) file_get_contents($path),
+            ),
+        );
+
+        $broken = (string) $this->backupPathLine($path);
+
+        $this->assertStringContainsString(
+            $value.' '.$value,
+            $broken,
+            'the fixture has to be genuinely broken or this test proves nothing',
+        );
+
+        $configuration->prepare($this->scratch, 4567);
+
+        $repaired = (string) $this->backupPathLine($path);
+        $repairedValue = substr($repaired, strlen('server.backupPath = '));
+
+        $this->assertSame(
+            $value,
+            $this->valueOf($repairedValue),
+            'preparing has to put the line back to one value, or the next start reads a file '
+                .'Suwayomi cannot parse',
+        );
+
+        $this->assertSame(
+            1,
+            substr_count((string) file_get_contents($path), 'server.backupPath = '),
+            'and exactly one assignment, because a second one is a second key of the same name',
+        );
+    }
+
+    /**
+     * The value part of a `key = value # comment` line, with the comment taken off.
+     *
+     * The repair keeps whatever trailing comment Suwayomi had written, because that comment is the
+     * metadata it uses to judge whether its own file is out of date, so an assertion on the whole
+     * line would be asserting that the repair throws information away.
+     */
+    private function valueOf(string $rest): string
+    {
+        if (preg_match('/^("[^"]*"|[^#]*?)(\s+#.*)?$/', $rest, $m) !== 1) {
+            return $rest;
+        }
+
+        return trim($m[1]);
+    }
+
+    /**
+     * The `server.backupPath` line, trimmed, or null when it is not there.
+     *
+     * Read by walking the lines rather than by a pattern over the whole file, so a key that appears
+     * inside a comment cannot be mistaken for the key itself.
+     */
+    private function backupPathLine(string $path): ?string
+    {
+        foreach (explode("\n", (string) file_get_contents($path)) as $line) {
+            if (str_starts_with(trim($line), 'server.backupPath')) {
+                return trim($line);
+            }
+        }
+
+        return null;
     }
 
     // ---------------------------------------------------------------- failure has to be loud
