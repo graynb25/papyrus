@@ -5696,3 +5696,134 @@ eturn null that a generator never needs.
 
     The fix is not more care with the shell. It is that every count a verification prints must be a
     count it actually took, and a language where the functions exist.
+
+267. **A fixture whose path has no space in it cannot test anything a space breaks, and two
+     tests named for the defect were passing the whole time.**
+
+    Running `papyrus snapshot` produced a correct pair of both databases and then left the install
+    unable to start. The JVM's own log named the line:
+
+        server.conf: 70: Expecting end of input or a comma, got '\'
+
+    and the line said this:
+
+        server.backupPath = "C:\\My Projects\\papyrus\\...\\backups" Paper Comics\\papyrus\\...\\backups"
+
+    The value, written twice. `setValue()` captured the existing value as `(\S+|"[^"]*")`, and
+    those alternatives are tried in that order, so `\S+` wins even on a quoted path, and `\S+` stops
+    at the first whitespace. This project sits under `C:\My Projects`, so the capture
+    took `C:\My Books` and the rest of the line fell into the trailing group and was put back
+    after the new value. Every start grew it again.
+
+    Two tests exist for exactly this. `test_preparing_twice_does_not_grow_the_file` and
+    `test_preparing_repeatedly_settles_on_one_value` both passed, for as long as the defect was
+    live. The fixture was:
+
+        sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-suwayomi-'.getmypid().'-'.uniqid()
+
+    `sys_get_temp_dir()` here is `%LOCALAPPDATA%\Temp`. No space. So every value
+    written had no space in it, so `\S+` matched the whole value and behaved.
+
+    Reverting the fix now kills both, and kills them without the new read-back assertion, so the
+    tests are the thing that catches it:
+
+        Failed asserting that 347 is identical to 249
+        the value, duplicated five times after four starts
+
+    **The general form is the one in trap 265, and it is worth stating again because it cost more
+    this time.** A fixture is not a data set, and the more specific version is worse: a fixture
+    whose *own name* differs from the input it models. `ReaderSnapshotTest` used a real library
+    because the numbers were to hand, and cost 224 seconds. This one used a path with no space
+    because that is what `sys_get_temp_dir()` returns, and cost the backup feature.
+
+    The tell is worth having: when a test is named after a shape, check that the fixture has that
+    shape. A test for a path with a space, held in a path with no space, is a test that reads as
+    covering something and covers nothing.
+
+    The fix has two halves and both are needed. The capture is now `"[^"]*"` first, which takes a
+    quoted value whole however much of it is whitespace or a `#`, and only then `[^#]*?` up to an
+    optional trailing comment. And every `setValue()` reads the line back afterwards and refuses to
+    leave anything but the value it wrote, because the write always succeeded, nothing ever failed,
+    and the consequence arrived on the next start in a process that is not this one.
+
+268. **A checker written to confirm the thing you already know is the one that has to be
+     distrusted, and mine answered "yes" about the file the JVM had just refused.**
+
+    To verify the fix against the real artefact, I wrote a checker for the exact condition typesafe
+    had quoted: a backslash outside quotes. It reported that `server.conf` was fine.
+
+    That file had killed a JVM four minutes earlier. The checker was wrong in the ordinary way,
+    because its rule was "a value holding a backslash and no quote", and the broken value held both,
+    so the quote test passed it. The line is a quoted string followed by a trailing token, and a
+    rule about unquoted values does not describe it.
+
+    Fixed, it then reported `# Network does not parse` on line 1, because it had not been taught
+    that a comment is not an assignment. That one is the cheaper mistake and it is still a confident
+    wrong answer about a file that had been read correctly a hundred times.
+
+    So the rule was restated as typesafe states it, rather than paraphrased: a value is either one
+    quoted string and nothing after it, or a bare run holding neither a quote nor a backslash.
+
+    **The general form.** A verification written after the defect is known is the one with the least
+    independent checking, because the expected answer is already in mind and a rule that is slightly
+    wrong reads as agreement. That is trap 266 for the third time in this file, and the three times
+    are the point: this is not a habit I am going to shake, it is a shape the work has.
+
+    What catches it is to run the checker against the broken thing first and require it to say so.
+    A checker that cannot call the known-bad case broken has not been tested, and it is about to be
+    trusted with a claim.
+
+    Which it was. My first version of it, and I printed its verdict about the real file before
+    noticing.
+
+269. **A test that reaches outside its own scratch directory is not a test of the class, it is a
+     report about whoever ran the build last.**
+
+    `DataLocationTest::test_choosing_a_location_does_not_create_it` failed on a full-suite run, for
+    the first time in this project's history, and nothing had changed in it:
+
+        Failed asserting that directory "<repo>\build\papyrus-data" does not exist.
+
+    The test builds its own root at `build/dataloc-<pid>` and derives the candidate directory as
+    `dirname($root).'/papyrus-data'`, which is `build/papyrus-data`. That is not a test path. It is
+    the data directory the real launcher creates when it is run out of `build/install`, because a
+    portable install keeps its data beside itself rather than in `%LOCALAPPDATA%`. So the test
+    passed until the first time anybody ran the install, which on this project was during an
+    unrelated verification.
+
+    The trap is not the collision. It is that the obvious repair is to delete the directory, and that
+    directory holds a reader's backups. A test failure whose cheapest fix destroys somebody's data is
+    worse than a test that never existed, because it is a trap with a prize in it.
+
+    Fixed by putting the install root inside a per-run scratch directory, so
+    `dirname($root).'/papyrus-data'` is inside a directory this run created and nobody else can
+    write to. The intent is untouched, because the candidate was always only ever a sibling of the
+    root.
+
+    **The general form.** When a test's fixture reaches into a path the project itself uses, the
+    failure is about the machine's state rather than about the code, and it will not reproduce on the
+    next person's machine, which is exactly when a real defect of the same name would be dismissed.
+    A path a test asserts about should be one the test made.
+
+    Which brings up the second half of this, which is the part that is actually dangerous.
+
+    Running that install left 1217 untracked files under `build/`, because `build/papyrus-data` was
+    not in `.gitignore`. Three of them were a `database.sqlite`, a Suwayomi `.mv.db` and a real
+    `.env` carrying a generated `APP_KEY`. A `git add -A` would have committed all three, which
+    section 8 forbids in as many words, and the ignore file already had the identical case written
+    down for `build/health-data` a few lines above:
+
+        A scratch data directory the launcher is pointed at ... It holds a database, logs and a lock
+        file, none of which belong in a repository, and it appears the first time anyone runs the
+        launcher from the repository root.
+
+    "the first time anyone runs the launcher from the repository root" is this case exactly. The rule
+    was written, it was written about a different directory, and the directory next to it behaved the
+    same way. That is trap 267's shape one level out: the thing you knew was true of the thing in
+    front of you, and you did not check whether it was true of the thing beside it.
+
+    So `/build/papyrus-data/` is ignored now, next to `/build/health-data/`, for the same reason and
+    in the same words. And the count that made it worth doing is the number to remember: **1217
+    untracked entries, 3 of them a database or a secret, sitting in the working tree for as long as
+    it took to notice.** A `git status` that is not clean is not noise to be ignored when you did not
+    expect it.
