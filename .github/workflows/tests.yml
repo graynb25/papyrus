@@ -6,6 +6,30 @@ on:
       - main
   pull_request:
 
+# One run per branch, and a newer commit cancels an unfinished older one.
+#
+# This repository is worked on in long sessions that land several commits in a row, and without this
+# every one of them started a run that then ran to completion. Measured on 2026-10-15, five pushes in
+# one session:
+#
+#     685e1af   46.5 min
+#     6697149   55.2 min
+#     2ced03c   63.2 min
+#     5bb8f35   53.0 min
+#
+# 218 minutes of a finite free allowance, spent on four commits that were each superseded by the next
+# within minutes.
+#
+# `cancel-in-progress` is the whole point. A cancelled run stops consuming the runner, so pushing five
+# times in a row costs roughly the last run rather than the sum of all five.
+#
+# The group is keyed on the workflow and the ref, so a push to main cancels the previous push to main
+# and leaves pull request runs alone. Keying it on the branch alone would cancel a pull request's run
+# when the branch it targets moves, which is a different thing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
