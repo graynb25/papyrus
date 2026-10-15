@@ -3,26 +3,81 @@
 ## The short version
 
 ```
-php -d memory_limit=2048M artisan test --without-tty
-php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G
-php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/
-python .tools/suwayomi/check-dashes.py
+composer ci:check
+python tools/check-machine-detail.py
+python tools/test-check-machine-detail.py
 ```
 
-All four, every time. A change is not finished until all four have been run **against the change**,
-not against the branch it was based on.
+`composer ci:check` is what CI runs: pint, phpstan, and the suite. The last two are local-only and
+are stricter than CI was, so **a local run is stricter than CI**. Run all of it, every time. A change is
+not finished until it has been run **against the change**, not against the branch it was based on.
 
-Then commit and push. Both are expected without asking.
+Then commit. Pushing is a separate decision, below.
+
+Then commit.
+
+**Push is a separate decision, and it is not yours to make alone.** See *Commits and pushes* below.
+Local commits are free. A push spends CI minutes that somebody is paying for.
 
 ---
 
 ## Before you start
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** is the map. Read it first; it will save you an hour.
-- **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** is 226 numbered lessons. Each one is a
-  mistake that was actually made here. Grep it before solving anything that sounds familiar.
+- **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** is 260-odd numbered lessons. Each one
+  is a mistake that was actually made here. Grep it before solving anything that sounds familiar.
 - **[docs/DESKTOP-PACKAGING.md](docs/DESKTOP-PACKAGING.md)** if you are touching the launcher, and
   **[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)** if you are touching shipping.
+
+## How work happens here
+
+This project is developed with an AI agent against a human reviewer, and the standards below come
+from that arrangement rather than from taste.
+
+**Plan before you build.** Investigate what already exists first. Read the code, the tests, the gates,
+and the notes. Find the existing seam rather than adding a parallel one. Write the plan down, say what
+could break, and get agreement before doing anything larger than a one-line fix.
+
+**DRY is a requirement, not a preference.** One seam per responsibility. If a method already owns the
+thing, extend it.
+
+**Measure, never assume.** Do not say how something works until you have read it. Do not report a
+number you did not measure, and do not present an inference as a measurement: if it is inferred, say
+so in the same sentence. A surprising result is a reason to look, not a reason to report.
+
+**Ask before anything risky.** That means pushing, writing to a tracked file that has shipped, writing
+to an install or a data directory, starting or stopping an install, launching a sandbox, deleting, or
+changing a gate or a baseline. The shape of the ask is the point:
+
+> **Proposed:** what you would do. **Why:** measured, not assumed. **Risk:** what breaks if you are
+> wrong and how it is undone. **Cost:** in minutes or money. **Recommended:** what you think should be
+> chosen. **Reply with:** `go`.
+
+Ask even when you are confident. A confident wrong answer costs more than a question.
+
+**No know-it-all framing.** Do not write "obviously", "simply", "of course", "as I mentioned", or "I
+already told you". Each is a way of signalling that the reviewer does not need to read this, and every
+one has been wrong.
+
+**Tests are for behaviour, not for production.** A fixture is not a data set. Do not size one like the
+reader's library because those numbers are to hand: a test that inserts 22,332 rows one transaction at
+a time spends four minutes proving nothing the small version does not. Use a handful of rows and let a
+real install answer questions about scale.
+
+**Every finding carries six things:** severity (S, H, M, L), phase, risk, why it should be fixed, and
+a how that has been verified. Status is one of five marks, and the two that are not obvious are worth
+naming, because the difference between them is the whole point:
+
+| | Meaning |
+| --- | --- |
+| done, verified | the verification is named |
+| not done | live risk |
+| risky, needs planning | we know and it is dangerous. A decision waiting to be made properly |
+| not yet measured | nobody has established what it costs, so it cannot honestly be graded yet |
+| deferred | a decision not to do it now, and what would change it |
+
+**A finding stays ungraded until it has been measured.** Assigning a severity from reasoning about
+which branch was not looked at is a guess wearing a severity.
 
 ## Conventions
 
@@ -74,6 +129,11 @@ Two more things that are specific to that layer:
   thing rather than observing it.
 - **Confirm a new test fails before you keep the fix.** Revert the fix, run the test, watch it fail,
   restore. A test that has never failed has not been shown to test anything.
+- **Run a test more than once if it touches time, ports or processes.** One green run of a boundary
+  test is not evidence. Three tests here read the clock twice and compared the two readings, which is
+  wrong however carefully the arithmetic is done, because the variable is which second it lands in.
+  One failed on a real run with `3601 is identical to 3600`. Run it twenty times before you believe it,
+  and look for a seam that injects the clock before you widening an assertion. Lesson 265.
 
 ### Mutation checks
 
@@ -116,12 +176,32 @@ A run that checked nothing is not a passing run. `ANCHOR MISSING` is the one to 
 
 ## Commits
 
-Write the commit message for someone reading `git log` in a year with no context. What broke, what
-the cause was, and what you measured. Not what files changed.
+Write the commit message for someone reading `git log` in a year with no context. What broke, what the
+cause was, and what you measured. Not what files changed.
 
 Long messages are fine and preferred when the reasoning is the point. Several in this history run
-thirty lines because the thirty lines are why the change is not going to be undone by the next
-person who cannot see the problem.
+thirty lines because the thirty lines are why the change is not going to be undone by the next person
+who cannot see the problem.
+
+## Commits and pushes
+
+These are two permissions and only one of them is usually granted.
+
+**A commit is free. A push is not.** A push starts a CI run, and CI runs on a shared, limited
+allowance. **Commit locally until the entire body of work is finished**, not between steps and not
+between commits in one task, and ask before pushing.
+
+State the cost before anything that triggers a run. The suite takes about 11 minutes locally and
+between 45 and 80 minutes on a Windows runner, so say so in minutes rather than letting it happen.
+
+`concurrency` is set with `cancel-in-progress: true`, so a second push cancels the first rather than
+stacking with it. That limits the damage of a mistake. It is not permission to push.
+
+Measured, so this is not theoretical: five commits pushed in one session started five full runs, at
+46.5, 55.2, 63.2 and 53.0 minutes. Roughly 218 minutes of a finite allowance, four of them on commits
+that were superseded within minutes. The reviewer had already asked for local commits. **A standing
+permission to commit is not a standing permission to push**, and reading it as one is the single most
+expensive mistake in this file. Lesson 264.
 
 ## Pull requests
 

@@ -5572,3 +5572,127 @@ eturn null that a generator never needs.
     was wrong. The `0.0.0` zip says it, loudly, to anybody who opens `build/dist`. The lesson from the
     filename is that a defect can sit next to its own proof for days without anybody looking at the
     directory where the proof is.
+
+264. **A standing permission to commit is not a standing permission to push, and the cost of a
+    push was known before five of them were made.**
+
+    One session, five commits pushed to `main`, five full CI runs started:
+
+    ```
+    685e1af   46.5 min
+    6697149   55.2 min
+    2ced03c   63.2 min
+    5bb8f35   53.0 min
+    ```
+
+    Roughly **218 minutes** of a limited free allowance, four of them on commits that were superseded
+    within minutes of each other, on a machine that was not paying for any of it. The fifth never ran:
+    *"The job was not started because recent account payments have failed or your spending limit needs
+    to be increased."*
+
+    The two facts that should have stopped it were both held at the time. The suite was measured at
+    936, 1016 and 1075 seconds across three runs, and a Windows CI runner is several times slower, so
+    the cost was not a mystery. And the constraint was already known, because it had been raised when
+    code signing came up and money came with it.
+
+    What was missing was not information. It was the step where the two facts are put next to each
+    other. One question, early, would have covered it:
+
+    > This will cost about an hour of your Actions allowance. Push now, or hold locally?
+
+    Four words of consequence. It was not asked once, in five opportunities.
+
+    **And the permission had been written down wrongly, which is the part worth keeping.** For years
+    this file said:
+
+    > Then commit and push. Both are expected without asking.
+
+    Read as a unit, that is a licence to push five times in an afternoon. It is now split in two, in
+    `CONTRIBUTING.md`, with the measurement above it: a commit is free, a push spends somebody's
+    minutes, and the two permissions are granted separately.
+
+    **The general form: a standing permission erodes the thing that made it worth granting.** It was
+    granted for ordinary work. Nothing about it said *for ever, without regard to cost*, and treating
+    it that way was not following the instruction, it was extending it past what anyone agreed to.
+
+    One mitigation, added the same day: `concurrency` with `cancel-in-progress: true`, so a second push
+    cancels the first rather than stacking with it. That caps the damage of the mistake. It does not
+    excuse the mistake and it is not permission to push.
+
+265. **A fixture is not a data set, and two mistakes about that cost 224 seconds a run.**
+
+    `ReaderSnapshotTest` built a SQLite database with 867 series and 21,467 chapters. Those were the
+    reader's real library numbers, taken from `AGENTS.md` because they were to hand.
+
+    Ten of its twelve callers wanted "a database with some rows in it": a path containing a space, a
+    `VACUUM INTO` that fails, output in a shape we do not understand. Four tests already passed small
+    sizes explicitly, because they cared about the counts. Nobody had asked whether the other eight did.
+
+    And the rows went in one `exec()` at a time, outside a transaction:
+
+    ```php
+    for ($i = 1; $i < $series; $i++) {
+        $pdo->exec('INSERT INTO series_states (suwayomi_manga_id) VALUES ('.$i.')');
+    }
+    ```
+
+    Every `exec()` outside a transaction is its own commit, and every commit is an fsync. 22,332 of
+    them, per call.
+
+    ```
+    224.7 s   before
+      1.8 s   after, and 13 of 13 passing
+    ```
+
+    The suite went from 15.6, 16.2 and 16.9 minutes to 11.14. The whole regression had arrived with
+    the snapshot work and nobody had connected the four-minute class to the hour-long CI run.
+
+    Two separate mistakes, and fixing only the first one is the more attractive option because it is
+    less work. The transaction is the mechanism. The size is the cause.
+
+    **Neither is the reason a test should not be library-sized.** The honest reason is that a synthetic
+    twenty thousand row database is not a small version of the reader's library, so a test passing on it
+    says nothing about one. The question a large fixture appears to answer, "does this survive real
+    scale", is answered by a real install and by the sandbox gate, and answered there properly.
+
+    The general form: **numbers copied out of production into a test are the numbers of a different
+    system**, and they arrive looking like a specification when they are a copy.
+
+    A note on the fix, because it nearly went wrong: making the bulk insert transactional and folding
+    the first row into the loop passed the speed target and failed three assertions by exactly one.
+    The counts were not the problem. The shape was, and the comment above the fixture now says so, so
+    the next tidy-up does not remove it and break three tests the same way.
+
+266. **Three false negatives in one verification command, and the strongest evidence in this file
+    came from the failures of the checker.**
+
+    The command was checking a document for five coloured status marks. It reported three unmet
+    requirements and one of them was real. The other two were the checker being wrong, and a third was
+    hiding in the same output:
+
+    | Reported | Actually |
+    | --- | --- |
+    | three good references look dangling | the heading pattern required a trailing dot after `0.3` |
+    | zero of the colour marks are present | PowerShell cannot cast a surrogate pair to `[char]` |
+    | (nothing) | it called `preg_match_all`, a PowerShell function that does not exist |
+
+    That last one is the dangerous shape. The others printed a wrong number. This one printed nothing,
+    and nothing reads as agreement.
+
+    All three came from writing the verification in the shell it happened to be convenient in, rather
+    than in something that could tell it was wrong. Rewritten in PHP, which handles unicode and whose
+    functions exist, it found the real fault immediately and then a second one after the first was
+    fixed.
+
+    The real fault is worth as much as the lesson: the eleven findings were in a table and their
+    reasoning was in a separate block underneath, so a finding's severity and a finding's risk lived in
+    different places. That was found by a shape check, not by reading it.
+
+    **The general form: a check that cannot report its own failure is not a check.** Three of the four
+    traps in this section about verifying things turned on a verification reporting a confident wrong
+    answer, and here three of them happened at once in a single command. What makes the difference
+    between them is whether anything distinguishes "I looked and found nothing" from "I did not manage
+    to look", and a shell pipeline cannot make that distinction.
+
+    The fix is not more care with the shell. It is that every count a verification prints must be a
+    count it actually took, and a language where the functions exist.

@@ -689,13 +689,35 @@ sitting silently in a queue tells you nothing.
 ## Tests
 
 ```bash
-php artisan test
-vendor/bin/pint --test
-vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+composer ci:check          # pint, phpstan and the suite: what CI runs
+python tools/check-machine-detail.py
+python tools/test-check-machine-detail.py
 ```
 
-`composer test` runs all three. PHPStan needs the memory limit, since the default 128M
-crashes its parallel workers.
+The last two are local-only and stricter than CI was, so **a local run is stricter than a green tick**.
+PHPStan needs the memory limit, since the default 128M crashes its parallel workers.
+
+## Working on this
+
+Before you change anything: **[CONTRIBUTING.md](CONTRIBUTING.md)** holds the standards this codebase
+is held to, and **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** holds 266 numbered lessons,
+each one a mistake that was actually made here. Grep the notes before solving anything that sounds
+familiar; several of them are about verification that reported a confident wrong answer.
+
+Three of those lessons are worth knowing without reading the rest, because they have cost this project
+real time and will cost the next person the same:
+
+- **A fixture is not a data set.** Tests here once built a database with the reader's real library
+  numbers, inserted row by row outside a transaction: 224 seconds a run, to prove nothing a small
+  version does not.
+- **A test that reads a clock twice is wrong however carefully the arithmetic is done**, because the
+  variable is which second it lands in. Three of them did. Run a boundary test twenty times before you
+  believe it, and look for a seam that injects the clock before you widening an assertion.
+- **A check that reads filenames cannot find content.** The build reported "no developer data across
+  12,672 files" while a real network address sat in a comment. Effort is not coverage.
+
+Commits are local and pushes are a separate, asked-for decision, because CI minutes are somebody's
+budget. See *Commits and pushes* in CONTRIBUTING.md.
 
 ### The sandbox gate
 
