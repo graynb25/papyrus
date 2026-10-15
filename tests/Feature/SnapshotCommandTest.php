@@ -643,7 +643,7 @@ class SnapshotCommandTest extends TestCase
                 return [
                     'status' => 0,
                     'output' => (string) json_encode([
-                        'counts' => ['series_states' => 867, 'chapter_states' => 21467],
+                        'counts' => ['series_states' => 40, 'chapter_states' => 200],
                         'bytes' => (int) filesize($target),
                     ]),
                 ];

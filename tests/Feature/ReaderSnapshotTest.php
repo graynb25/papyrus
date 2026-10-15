@@ -65,8 +65,41 @@ class ReaderSnapshotTest extends TestCase
         return $this->workspace.DIRECTORY_SEPARATOR.$name;
     }
 
-    /** A real SQLite database with the two tables the manifest counts. */
-    private function database(int $series = 867, int $chapters = 21467, string $name = 'database.sqlite'): string
+    /** Enough rows that a count is not trivially one, and small enough to build in milliseconds. */
+    private const SMALL_SERIES = 3;
+
+    private const SMALL_CHAPTERS = 5;
+
+    /**
+     * The size the copy test uses, which is the largest anything in this file asks for.
+     *
+     * It was the reader's own library, 867 series and 21,467 chapters, because those numbers were to
+     * hand. That is the wrong reason to choose a size. Whether a `VACUUM INTO` and a manifest survive
+     * a library-sized database is a question about a real install, and the clean-machine sandbox gate
+     * is where that is answered, against a database that is not made of numbers copied out of
+     * somebody's `series_states` table.
+     */
+    private const COPY_SERIES = 40;
+
+    private const COPY_CHAPTERS = 200;
+
+    /**
+     * A real SQLite database with the two tables the manifest counts.
+     *
+     * It has to be real. `VACUUM INTO` is the thing under test, and a stub for the runner would
+     * prove that this class can call a closure, which is not what it is for.
+     *
+     * ## Why the default is small
+     *
+     * It used to default to the reader's own library, 867 series and 21,467 chapters, because those
+     * numbers were to hand and nobody asked whether a test needed them. Ten of the twelve call sites
+     * wanted "a database with some rows in it": a path containing a space, a `VACUUM INTO` that
+     * fails, output in a shape we do not understand. Four tests already passed small sizes explicitly
+     * because they cared about the counts.
+     *
+     * So the default is now small, and the one test that is about a realistic library says so.
+     */
+    private function database(int $series = self::SMALL_SERIES, int $chapters = self::SMALL_CHAPTERS, string $name = 'database.sqlite'): string
     {
         $path = $this->workspace.DIRECTORY_SEPARATOR.$name;
 
@@ -76,20 +109,40 @@ class ReaderSnapshotTest extends TestCase
         $pdo->exec('CREATE TABLE chapter_states (id INTEGER PRIMARY KEY, series_state_id INTEGER)');
 
         $pdo->beginTransaction();
+
+        // One transaction for the bulk, not one per row.
+        //
+        // Every `exec()` outside a transaction is its own commit, and every commit is an fsync. At 867
+        // series and 21,467 chapters that is 22,332 of them per call, which is where this class spent
+        // 224 seconds.
+        //
+        // The first row is inserted explicitly and the loop then covers the rest, which is how it was
+        // before, and the count is what three tests assert on. An earlier version of this change
+        // folded the first row into the loop and every one of them failed by one, so the shape is
+        // kept deliberately rather than tidied.
         $pdo->exec('INSERT INTO series_states (suwayomi_manga_id) VALUES (1)');
-        $pdo->commit();
+
+        $seriesStatement = $pdo->prepare('INSERT INTO series_states (suwayomi_manga_id) VALUES (?)');
 
         for ($i = 1; $i < $series; $i++) {
-            $pdo->exec('INSERT INTO series_states (suwayomi_manga_id) VALUES ('.$i.')');
+            $seriesStatement->execute([$i]);
         }
+
+        $pdo->commit();
 
         $pdo->beginTransaction();
         $pdo->exec('INSERT INTO chapter_states (series_state_id) VALUES (1)');
         $pdo->commit();
 
+        $pdo->beginTransaction();
+
+        $chapterStatement = $pdo->prepare('INSERT INTO chapter_states (series_state_id) VALUES (?)');
+
         for ($i = 1; $i < $chapters; $i++) {
-            $pdo->exec('INSERT INTO chapter_states (series_state_id) VALUES ('.$i.')');
+            $chapterStatement->execute([$i]);
         }
+
+        $pdo->commit();
 
         unset($pdo);
 
@@ -326,30 +379,30 @@ class ReaderSnapshotTest extends TestCase
      */
     public function test_it_copies_a_real_database_and_counts_what_it_held(): void
     {
-        $database = $this->database(867, 21467);
+        $database = $this->database(self::COPY_SERIES, self::COPY_CHAPTERS);
         $target = $this->target();
 
         $result = (new ReaderSnapshot)->capture($database, $target, $this->php(), $this->ini());
 
         $this->assertFileExists($target);
-        $this->assertSame(867, $result->seriesStates);
-        $this->assertSame(21467, $result->chapterStates);
+        $this->assertSame(self::COPY_SERIES, $result->seriesStates);
+        $this->assertSame(self::COPY_CHAPTERS, $result->chapterStates);
         $this->assertSame(hash_file('sha256', $target), $result->sha256);
         $this->assertSame((int) filesize($target), $result->bytes);
 
         $copy = new \PDO('sqlite:'.$target, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
 
         $this->assertSame(
-            867,
+            self::COPY_SERIES,
             (int) $copy->query('SELECT COUNT(*) FROM series_states')->fetchColumn(),
             'the copy has to hold what the original held, not merely exist',
         );
-        $this->assertSame(21467, (int) $copy->query('SELECT COUNT(*) FROM chapter_states')->fetchColumn());
+        $this->assertSame(self::COPY_CHAPTERS, (int) $copy->query('SELECT COUNT(*) FROM chapter_states')->fetchColumn());
 
         unset($copy);
 
         $this->assertSame(
-            '867 series and 21,467 chapter states, '.number_format($result->bytes).' bytes',
+            self::COPY_SERIES.' series and '.self::COPY_CHAPTERS.' chapter states, '.number_format($result->bytes).' bytes',
             $result->describe(),
         );
     }
