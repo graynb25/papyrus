@@ -154,7 +154,7 @@ class ImportProgressTest extends TestCase
          * the refusal escaped uncaught and the reader saw nothing at all. Found by a test that
          * was about the queue and happened to dispatch an inspect of a temp file.
          */
-        $path = tempnam(sys_get_temp_dir(), 'papyrus-not-a-backup-');
+        $path = $this->temporaryFile('papyrus-not-a-backup-');
         file_put_contents((string) $path, 'this is not a backup');
 
         $job = new RunBackupImport($this->user->id, (string) $path, inspectOnly: true);

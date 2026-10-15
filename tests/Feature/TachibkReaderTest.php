@@ -66,7 +66,7 @@ class TachibkReaderTest extends TestCase
         $this->assertTrue($this->reader()->recognises($this->built), 'a backup should be recognised');
 
         // A CBZ this server writes is a zip, and a gzipped page image is gzip. Neither is this.
-        $cbz = (string) tempnam(sys_get_temp_dir(), 'papyrus-cbz-');
+        $cbz = (string) $this->temporaryFile('papyrus-cbz-');
         $zip = new ZipArchive;
         $zip->open($cbz, ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $zip->addFromString('001.jpg', 'not really a jpeg');
@@ -76,7 +76,7 @@ class TachibkReaderTest extends TestCase
         @unlink($cbz);
 
         // Gzip on its own is the whole first check, and it is not enough.
-        $gzipped = (string) tempnam(sys_get_temp_dir(), 'papyrus-gz-');
+        $gzipped = (string) $this->temporaryFile('papyrus-gz-');
         file_put_contents($gzipped, (string) gzencode('compressed, and still not a backup'));
 
         $this->assertFalse($this->reader()->recognises($gzipped), 'gzip alone is not a backup');

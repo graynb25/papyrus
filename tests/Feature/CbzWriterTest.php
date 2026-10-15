@@ -79,7 +79,7 @@ class CbzWriterTest extends TestCase
      */
     private function open(string $raw): ZipArchive
     {
-        $file = tempnam(sys_get_temp_dir(), 'cbz');
+        $file = $this->temporaryFile('cbz');
 
         file_put_contents($file, $raw);
 

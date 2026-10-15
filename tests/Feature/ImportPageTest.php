@@ -44,7 +44,7 @@ class ImportPageTest extends TestCase
         $this->user = User::factory()->create();
         $this->actingAs($this->user);
 
-        $this->file = tempnam(sys_get_temp_dir(), 'papyrus-import-');
+        $this->file = $this->temporaryFile('papyrus-import-');
         file_put_contents((string) $this->file, 'not really a backup, but a real file');
     }
 

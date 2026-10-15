@@ -124,7 +124,7 @@ trait BuildsTachibkBackups
     protected function buildTachibkBackup(string $path = ''): string
     {
         if ($path === '') {
-            $path = (string) tempnam(sys_get_temp_dir(), 'papyrus-tachibk-');
+            $path = (string) $this->temporaryFile('papyrus-tachibk-');
         }
 
         file_put_contents($path, $this->tachibkBytes());

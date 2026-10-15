@@ -45,7 +45,7 @@ class LocalReaderAccountTest extends TestCase
 
         $this->skipUnlessFortifyHas(Features::registration());
 
-        $this->envPath = tempnam(sys_get_temp_dir(), 'papyrus-env-').'.env';
+        $this->envPath = $this->temporaryFile('papyrus-env-', 'env');
 
         file_put_contents($this->envPath, implode("\n", [
             'APP_KEY=base64:abc123',

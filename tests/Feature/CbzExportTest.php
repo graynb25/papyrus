@@ -145,7 +145,7 @@ class CbzExportTest extends TestCase
             ->streamedContent();
 
         $zip = new ZipArchive;
-        $file = tempnam(sys_get_temp_dir(), 'cbz');
+        $file = $this->temporaryFile('cbz');
         file_put_contents($file, $body);
 
         try {

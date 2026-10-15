@@ -456,8 +456,16 @@ trait BuildsTachimangaBackups
         $manga->execute([9267, '/comics/nameless-source', 'Nameless Source', $this->timestamps['in_library_at'], 2_848_420_679_472_350_100]);
     }
 
+    /*
+     * Inside a scratch directory rather than `tempnam()` in the system temp.
+     *
+     * `tempnam()` creates the file it names, so the old `tempnam(...).'.'.$suffix` made two files and
+     * abandoned one every call. Measured on 2026-10-15: 6,475 orphaned siblings of exactly this shape
+     * in `%LOCALAPPDATA%\Temp`, all of them from this line, enough accumulated that `tempnam()` stopped
+     * returning a path there and took 22 tests with it. See `TestCase`.
+     */
     private function temporaryPath(string $suffix): string
     {
-        return tempnam(sys_get_temp_dir(), 'papyrus-fixture-').'.'.$suffix;
+        return $this->temporaryFile('papyrus-fixture-', $suffix);
     }
 }

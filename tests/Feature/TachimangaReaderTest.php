@@ -66,7 +66,7 @@ class TachimangaReaderTest extends TestCase
         $this->assertTrue($reader->recognises($this->built), 'a real backup should be recognised');
 
         // A CBZ export this server writes is also a zip. The magic bytes alone would claim it.
-        $cbz = tempnam(sys_get_temp_dir(), 'papyrus-cbz-');
+        $cbz = $this->temporaryFile('papyrus-cbz-');
         $zip = new ZipArchive;
         $zip->open($cbz, ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $zip->addFromString('001.jpg', 'not really a jpeg');
@@ -82,7 +82,7 @@ class TachimangaReaderTest extends TestCase
 
     public function test_reading_a_non_backup_is_refused_rather_than_returning_nothing(): void
     {
-        $junk = tempnam(sys_get_temp_dir(), 'papyrus-junk-');
+        $junk = $this->temporaryFile('papyrus-junk-');
         file_put_contents($junk, 'this is not an archive of any kind');
 
         try {

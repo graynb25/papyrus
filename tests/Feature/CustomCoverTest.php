@@ -156,7 +156,7 @@ class CustomCoverTest extends TestCase
     {
         $image = imagecreatetruecolor($width, $height);
         imagefill($image, 0, 0, (int) imagecolorallocate($image, 20, 90, 160));
-        imagejpeg($image, $path = tempnam(sys_get_temp_dir(), 'cov').'.jpg', 90);
+        imagejpeg($image, $path = $this->temporaryFile('cov', 'jpg'), 90);
         imagedestroy($image);
 
         return new UploadedFile($path, $name, 'image/jpeg', null, true);
@@ -166,7 +166,7 @@ class CustomCoverTest extends TestCase
     {
         $image = imagecreatetruecolor($width, $height);
         imagefill($image, 0, 0, (int) imagecolorallocate($image, 200, 40, 40));
-        imagepng($image, $path = tempnam(sys_get_temp_dir(), 'cov').'.png');
+        imagepng($image, $path = $this->temporaryFile('cov', 'png'));
         imagedestroy($image);
 
         return new UploadedFile($path, $name, 'image/png', null, true);

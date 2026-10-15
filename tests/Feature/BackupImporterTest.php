@@ -813,7 +813,7 @@ class BackupImporterTest extends TestCase
 
     public function test_a_file_no_reader_recognises_is_refused_by_name(): void
     {
-        $path = tempnam(sys_get_temp_dir(), 'papyrus-not-a-backup');
+        $path = $this->temporaryFile('papyrus-not-a-backup');
         file_put_contents($path, 'this is not a backup');
 
         try {
