@@ -5827,3 +5827,58 @@ eturn null that a generator never needs.
     untracked entries, 3 of them a database or a secret, sitting in the working tree for as long as
     it took to notice.** A `git status` that is not clean is not noise to be ignored when you did not
     expect it.
+
+270. **An assertion about behaviour is not an assertion about the report, and a command whose job
+     is largely to report is exactly where the two come apart.**
+
+    Closing the Papyrus window and running `papyrus snapshot` printed:
+
+        Stopping Papyrus...
+          Nothing was running, so nothing needed stopping.
+
+        Starting Papyrus again...
+
+        A pair has been written to ...
+
+    and then started nothing. No process, nothing on 4567, nothing on 8000.
+
+    `SnapshotCommand::conclude()` printed that line before the `$wasRunning` test that decides
+    whether anything is started. The reader who does the ordinary thing, close the window and take a
+    backup, is told their app is coming back when it is not, and a reader who believes that will not
+    go and look.
+
+    What makes it worth a number rather than a line is the rest of the same run. The run record for
+    that very snapshot says:
+
+        "restarting": { "state": "done", "message": "it was not running, so there was nothing to
+         start" }
+
+    and `RestoreCommand` guards the identical line with `if ($wasRunning)`. One command disagreed
+    with its own record and with its sibling, and the console is the one the reader reads.
+
+    The test for this already existed:
+
+        $this->assertSame(['stop'], array_column($this->calls, 'event'));
+
+    Nothing running, nothing started. It passed for as long as the message was wrong, because it
+    asserts what was **called** and not what was **said**.
+
+    **The general form.** A command that does a thing and a command that tells you about the thing
+    are two contracts, and a test on the first says nothing about the second. That is most acute
+    where the reporting is most of the product: a backup, a restore, a health check, a refusal. The
+    reader has no other way to find out what happened, so the words are the interface, and words
+    that describe an action that did not happen are worse than no words, because they are checked
+    less often than exit codes.
+
+    The cheap form of the rule: when a test proves something was or was not done, add the assertion
+    that says so. Both halves, in both directions. "Nothing was started" should also be checked for
+    the absence of the message claiming something was, and "something was started" for its presence,
+    because a command that is silent in one of those cases has a defect the first assertion cannot
+    see.
+
+    Removing the guard now kills the test, with the misleading output quoted in the failure, which
+    is the check being about the message rather than about the exit code.
+
+    Found by doing the thing rather than by reading it. The round trip this defect came out of was
+    the first time `snapshot` had been run against a real install in this project's history, and it
+    is the third defect in these notes that only a real run produced.
