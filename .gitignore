@@ -113,6 +113,12 @@ yarn-error.log
 # anyone runs the install. That test now builds its own, but the collision is worth remembering
 # before adding another one that reaches outside its own scratch directory.
 /build/papyrus-data/
+# The backups folder the checkout's own backups page reads. BackupLibrary::forThisInstall() resolves
+# it as dirname(database)/backups, so on this checkout that is database/backups, and it is the same
+# kind of thing as /build/papyrus-data above: both halves of a real backup, which is a reader's
+# library, and an .env next to it in some configurations. Ignored here for the same reason rather
+# than after the first `git add -A` takes one, which is what happened to the directory above.
+/database/backups/
 # What packaging/dev-workers.ps1 writes when it starts the queue and the scheduler for this
 # checkout. They are a running process's output, so they change every few seconds and are of no
 # interest to anybody reading the repository; the answer they would give is what `-Status` prints.
