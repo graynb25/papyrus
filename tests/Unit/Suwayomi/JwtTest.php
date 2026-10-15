@@ -12,7 +12,11 @@ class JwtTest extends TestCase
 
     public function test_it_reads_the_expiry_from_the_token(): void
     {
-        $this->assertSame(time() + 300, Jwt::expiry($this->accessToken(300)));
+        // One clock reading for both sides. This used to mint with the helper's own `time()` and then
+        // compare against a fresh `time() + 300`, so a second ticking in between gave 301 against 300.
+        $now = 1800000000;
+
+        $this->assertSame($now + 300, Jwt::expiry($this->accessToken(300, $now)));
     }
 
     public function test_it_reads_a_string_claim(): void

@@ -174,10 +174,12 @@ class RunRecordTest extends TestCase
      */
     public function test_a_run_that_stopped_reporting_reads_as_stalled(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 600));
+        $now = 1800000000;
+
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', $now - 600));
         $record->enter('stopping');
 
-        $view = $record->view();
+        $view = $record->view($now);
 
         $this->assertTrue($view['stalled'], 'six minutes of silence is a dead launcher, not a slow one');
         $this->assertFalse($view['finished'], 'and it must not claim to have finished');
@@ -185,9 +187,11 @@ class RunRecordTest extends TestCase
 
     public function test_a_run_that_is_reporting_is_not_stalled(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 600));
+        $now = 1800000000;
 
-        $this->assertFalse($record->view()['stalled'], 'a run that has not started a stage is not stalled');
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', $now - 600));
+
+        $this->assertFalse($record->view($now)['stalled'], 'a run that has not started a stage is not stalled');
     }
 
     /**
@@ -195,13 +199,15 @@ class RunRecordTest extends TestCase
      */
     public function test_a_finished_run_is_not_stalled_however_old(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 86400));
+        $now = 1800000000;
+
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', $now - 86400));
 
         foreach (RunRecord::RESTORE_STAGES as $stage) {
             $record->skip($stage);
         }
 
-        $view = $record->view();
+        $view = $record->view($now);
 
         $this->assertTrue($view['finished']);
         $this->assertFalse($view['stalled']);
@@ -210,12 +216,26 @@ class RunRecordTest extends TestCase
 
     /**
      * How old it is, so a reader can see that a run from last week is not running now.
+     *
+     * The clock is passed in rather than read twice. `view()` takes one as its first argument and
+     * defaults to `time()`, and this test used to build the start stamp from `time() - 3600` and then
+     * let `view()` read the clock again. When the second ticked in between, the age came back 3601
+     * and the assertion failed, which it did on a real run:
+     *
+     *     Failed asserting that 3601 is identical to 3600.
+     *
+     * Roughly one run in however long the two calls take to straddle a second boundary. The seam to
+     * avoid that has been in the signature the whole time and was simply not being used, which is
+     * trap 261 again from the other end: there the fix was to derive an offset from the real clock,
+     * and here the fix is not to read the clock twice.
      */
     public function test_it_reports_its_age(): void
     {
-        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', time() - 3600));
+        $now = 1800000000;
 
-        $this->assertSame(3600, $record->view()['age_seconds']);
+        $record = RunRecord::begin($this->path(), 'restore', RunRecord::RESTORE_STAGES, 't', gmdate('c', $now - 3600));
+
+        $this->assertSame(3600, $record->view($now)['age_seconds']);
     }
 
     /**

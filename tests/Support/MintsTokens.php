@@ -16,6 +16,12 @@ namespace Tests\Support;
  * using one would quietly exercise the wrong path instead of the real one.
  *
  * The default lifetimes are measured from a v2.3.2243 server.
+ *
+ * Every method here takes the issuing time rather than reading the clock, so a test that compares a
+ * token's `exp` against a number of its own cannot be off by one because the second ticked between
+ * the mint and the assertion. That is not hypothetical: `JwtTest` did exactly this and would fail on
+ * any run where the two calls straddled a boundary. `RunRecord::view()` has had an injectable clock
+ * in its first argument the whole time for the same reason.
  */
 trait MintsTokens
 {
@@ -25,20 +31,20 @@ trait MintsTokens
     /** Measured: the refresh token carries exp = issued + 5,184,000 (60 days). */
     protected const REFRESH_LIFETIME = 5_184_000;
 
-    protected function accessToken(int $lifetime = self::ACCESS_LIFETIME): string
+    protected function accessToken(int $lifetime = self::ACCESS_LIFETIME, ?int $now = null): string
     {
-        return $this->jwt(['token_type' => 'access'], $lifetime);
+        return $this->jwt(['token_type' => 'access'], $lifetime, $now);
     }
 
-    protected function refreshToken(int $lifetime = self::REFRESH_LIFETIME): string
+    protected function refreshToken(int $lifetime = self::REFRESH_LIFETIME, ?int $now = null): string
     {
-        return $this->jwt(['token_type' => 'refresh'], $lifetime);
+        return $this->jwt(['token_type' => 'refresh'], $lifetime, $now);
     }
 
     /**
      * @param  array<string, mixed>  $claims
      */
-    protected function jwt(array $claims = [], ?int $lifetime = 60): string
+    protected function jwt(array $claims = [], ?int $lifetime = 60, ?int $now = null): string
     {
         $segment = static fn (array $value): string => rtrim(
             strtr(base64_encode((string) json_encode($value)), '+/', '-_'),
@@ -48,7 +54,7 @@ trait MintsTokens
         $payload = array_merge(
             ['iss' => 'suwayomi-server', 'aud' => 'suwayomi-server-api'],
             $claims,
-            ['exp' => time() + (int) $lifetime],
+            ['exp' => ($now ?? time()) + (int) $lifetime],
         );
 
         return $segment(['alg' => 'HS256', 'typ' => 'JWT']).'.'.$segment($payload).'.signature';

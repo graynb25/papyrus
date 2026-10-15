@@ -5415,3 +5415,40 @@ eturn null that a generator never needs.
     assertion message carries the start time, the fraction and the offset, so a future failure says
     which of those went wrong rather than only that a number did not match. Twenty runs, twenty
     passes.
+
+    **And then the full suite found two more of the same shape, in code I had not touched.**
+    `RunRecordTest::test_it_reports_its_age` failed on a real run with:
+
+    ```
+    Failed asserting that 3601 is identical to 3600.
+    ```
+
+    It built the start stamp from `time() - 3600`, formatted it, and then let `view()` read the
+    clock again. Same fault, one second between the two readings. And `JwtTest` compared
+    `time() + 300` against a token the helper had minted from its own `time() + 300`.
+
+    The sharper lesson is not about offsets. It is that **the seam to avoid this already existed and
+    was not being used.** `RunRecord::view()` has taken an injectable clock as its first argument
+    since it was written:
+
+    ```php
+    public function view(?int $now = null, int $stalledAfter = 120): array
+    {
+        $now ??= time();
+    ```
+
+    Three tests were passing `time()` themselves and letting the default fire. The fix was to use the
+    parameter, not to widen an assertion. `MintsTokens` now takes the issuing time for the same
+    reason, so every token a test mints can be placed on the clock deliberately rather than at
+    whatever second the run happened to start in.
+
+    So the order of the lesson matters. Above, the fix was to derive a safe offset from the real
+    clock because there was no way to hold the clock still. Here, there was one in the signature the
+    whole time, and the test that used it badly was three lines long.
+
+    **A test that reads a clock twice and compares the two readings is wrong however carefully the
+    arithmetic is done**, because the variable is which second it lands in, and that is not a
+    property of the code under test. Search for it rather than waiting to be told: the shape is
+    `time() - N` on one line and an exact assertion on a number derived from it on another. Three
+    instances had been sitting in this repository, in three files, for the length of time it took
+    one of them to lose a coin toss in front of me.
