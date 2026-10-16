@@ -272,10 +272,26 @@ $startLog = 'C:\results\launcher-start.log'
 # app and opens nothing at all. The two checks at the end of the start section exist because of it.
 #
 # Through cmd.exe, because a .cmd file needs a command interpreter, and the installer is not run in
-# the guest, so the .lnk a reader clicks does not exist here; this is the file it points at. The
-# path is quoted because the install root has a space in it and Start-Process joins an argument
-# list with spaces without quoting, which would hand cmd.exe "C:\Program" and "Files\Papyrus\Papyrus.cmd"
-# and name a file that does not exist.
+# the guest, so the .lnk a reader clicks does not exist here; this is the file it points at. And
+# through a runner batch, written below, rather than by handing the shortcut's path to cmd.exe
+# directly. That is not indirection for its own sake. Two failures, both reproduced on the host
+# before either was believed, put the runner there.
+#
+# The first is quoting. `@('/c', '"' + $shortcut + '"')` is not the two arguments it reads as: the
+# comma binds tighter than +, so PowerShell built four elements, `'/c', '"', $shortcut, '"'`, and
+# Start-Process joins an argument list with spaces. cmd.exe received a quote standing apart from
+# the path at each end, `/c " C:\Program Files\Papyrus\Papyrus.cmd "`, applied its own /c rules to
+# that, was left with an unquoted path, and tried to run `C:\Program`. What it writes is
+# `'C:\Program' is not recognized as an internal or external command`, and that is exactly what the
+# guest reported in the failed sandbox run. A single correctly built argument runs the same file,
+# so the invocation was the suspect rather than the shortcut.
+#
+# The second is the exit code. -PassThru with redirected streams returns a process object whose
+# `ExitCode` reads empty on this machine, before and after `WaitForExit()`, and the launcher cannot
+# be started with -Wait because it is meant to outlive this script's watch; the -Wait form in
+# `Invoke-Captured` does populate the code, which is why the php commands above it read fine. So
+# the runner writes `%errorlevel%` to a file the moment the shortcut returns, and the failure path
+# below reads that file instead of the process object.
 #
 # Started detached so this script keeps control and can keep reporting. The launcher outlives this
 # script by design, since it leaves four processes running that the probe section then exercises.
@@ -291,7 +307,22 @@ $shortcut = Join-Path $root 'Papyrus.cmd'
 $emptyStdin = 'C:\results\launcher-stdin.txt'
 [System.IO.File]::WriteAllText($emptyStdin, '')
 
-$startProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '"' + $shortcut + '"') -NoNewWindow -PassThru `
+# Written immediately above the call that opens it, for the same reason the stdin file is, and with
+# every concatenated element parenthesized: the comma precedence that mangled the direct form
+# splits `'call "' + $shortcut + '"'` into three separate lines without them, measured on the host,
+# and the runner then runs a line reading `call "`, reports 9009, and never touches the shortcut.
+$shortcutRunner = 'C:\results\start-papyrus.cmd'
+$shortcutExit = 'C:\results\launcher-exit.txt'
+[System.IO.File]::WriteAllLines($shortcutRunner, @(
+    '@echo off',
+    ('call "' + $shortcut + '"'),
+    'set "PAPYRUS_SHORTCUT_EXIT=%errorlevel%"',
+    'echo launcher exit code: %PAPYRUS_SHORTCUT_EXIT%',
+    ('echo %PAPYRUS_SHORTCUT_EXIT% > "' + $shortcutExit + '"'),
+    'exit /b %PAPYRUS_SHORTCUT_EXIT%'
+))
+
+$startProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $shortcutRunner) -NoNewWindow -PassThru `
     -RedirectStandardInput $emptyStdin -RedirectStandardOutput $startLog -RedirectStandardError 'C:\results\launcher-start.err'
 
 if ($null -eq $startProcess) {
@@ -526,7 +557,21 @@ if (-not $startProcess.HasExited) {
     Check 'a screenshot of the guest was written' ($screenBytes -gt 0) `
         $(if ($screenBytes -gt 0) { "$screenPath, $screenBytes bytes" } elseif ($screenProblem -ne '') { "the capture failed: $screenProblem" } else { 'nothing was written' })
 } else {
-    Say "  Papyrus.cmd exited with code $($startProcess.ExitCode)"
+    # From the runner's file, not the process object, for the reason in the comment where the
+    # runner is written: ExitCode reads empty on the object a redirected no-wait Start-Process
+    # returns, and the runner recorded the code when the shortcut returned.
+    $exitText = if (Test-Path $shortcutExit) {
+        ([string](Get-Content $shortcutExit -Raw -ErrorAction SilentlyContinue)).Trim()
+    } else {
+        ''
+    }
+    $exitCode = $null
+
+    if ($exitText -match '^-?\d+$') {
+        $exitCode = [int]$exitText
+    }
+
+    Say "  Papyrus.cmd exited with code $(if ($null -eq $exitCode) { 'not recorded' } else { $exitCode })"
 
     foreach ($file in @($startLog, 'C:\results\launcher-start.err')) {
         if (Test-Path $file) {
@@ -538,7 +583,8 @@ if (-not $startProcess.HasExited) {
         }
     }
 
-    Check 'the launcher exited cleanly' ($startProcess.ExitCode -eq 0) "exit $($startProcess.ExitCode)"
+    Check 'the launcher exited cleanly' ($exitCode -eq 0) `
+        $(if ($null -eq $exitCode) { "no code was recorded at $shortcutExit" } else { "exit $exitCode" })
 }
 
 if ($null -eq $appPort) {
