@@ -833,12 +833,30 @@ foreach ($wanted in @('README.txt', 'summary.txt', 'health.txt', 'processes.txt'
 $collected = @(Get-ChildItem (Join-Path $bundleDir 'collected') -Filter '*.txt' -ErrorAction SilentlyContinue)
 $emptyCollected = @($collected | Where-Object { $_.Length -eq 0 })
 $emptyNames = @($emptyCollected | ForEach-Object { $_.Name })
+$withContent = @($collected | Where-Object { $_.Length -gt 0 })
 
 # Counted and weighed. The count alone passed a bundle of nine files that were every one 0 KB, and
 # an empty bundle is exactly what a reader sends when the app is broken, which is the case this
 # bundle exists for. Existence is not content.
-Check 'the bundle has collected logs' ($collected.Count -ge 5 -and $emptyCollected.Count -eq 0) `
-    "found $($collected.Count), empty: $(if ($emptyNames.Count -gt 0) { $emptyNames -join ', ' } else { 'none' })"
+#
+# Two of the nine are empty whenever the install is healthy, and it is the install being healthy
+# that makes them empty. frankenphp.log is Caddy's log at level ERROR, so it says nothing when
+# nothing errored, and php-error.log is PHP's error log, so it says nothing when nothing failed.
+# Measured on 2026-10-15: the first run with every other check passing failed this one for those
+# two files. Adding a name here is a claim that the file is silent in the healthy state, and the
+# claim needs a reason like the two above.
+$silentByDesign = @('frankenphp.txt', 'php.txt')
+$unexpectedlyEmpty = @($emptyCollected | Where-Object { $_.Name -notin $silentByDesign } |
+    ForEach-Object { $_.Name })
+$emptyText = if ($emptyNames.Count -gt 0) { $emptyNames -join ', ' } else { 'none' }
+
+$collectedDetail = if ($unexpectedlyEmpty.Count -gt 0) {
+    "found $($collected.Count), $($withContent.Count) with content, unexpectedly empty: $($unexpectedlyEmpty -join ', ')"
+} else {
+    "found $($collected.Count), $($withContent.Count) with content, empty by design: $emptyText"
+}
+
+Check 'the bundle has collected logs' ($collected.Count -ge 5 -and $unexpectedlyEmpty.Count -eq 0) $collectedDetail
 
 $suwayomiCollected = Join-Path $bundleDir 'collected\suwayomi.txt'
 if (Test-Path $suwayomiCollected) {
