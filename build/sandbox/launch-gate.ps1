@@ -56,10 +56,25 @@ function Say([string]$line) {
 
 # --- 1. a guest must not already be running ------------------------------------------------
 foreach ($name in @('vmmemWindowsSandbox', 'WindowsSandboxServer')) {
-    $running = Get-Process -Name $name -ErrorAction SilentlyContinue
+    $running = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
 
-    if ($running) {
-        Say "REFUSING TO LAUNCH: $name is already running (pids $(@($running).ProcessId -join ', '))."
+    if ($running.Count -gt 0) {
+        # Counted as well as named, and the pid read off `Id`.
+        #
+        # This refused a run once with an empty list between its parentheses. Reading the member
+        # list settled why: `ProcessId` is not a member of the process objects PowerShell 5.1
+        # returns, so it reads as nothing, with no error, for a live process and for this shell's
+        # own process alike. The refusal could therefore print `(pids )` while a guest was really
+        # running. `Id` is the member that exists. A process object that cannot answer at all
+        # prints `unreadable` rather than nothing, so "one guest, these pids" and "something
+        # matched and no pid could be read" are different messages.
+        $pids = @($running | ForEach-Object {
+            $id = $null
+            try { $id = $_.Id } catch { $id = $null }
+            if ($null -eq $id) { 'unreadable' } else { [string]$id }
+        })
+
+        Say "REFUSING TO LAUNCH: $name is already running ($($running.Count) matched, pids: $($pids -join ', '))."
         Say 'Only one guest at a time, and Windows Sandbox reports a refusal by exiting zero in silence.'
         exit 1
     }
