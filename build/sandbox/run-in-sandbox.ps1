@@ -263,17 +263,46 @@ if (-not (Test-Path $resolvedIni)) {
 # the failure it is looking for is worse than one that crashes.
 $startLog = 'C:\results\launcher-start.log'
 
+# Papyrus.cmd, the file the desktop shortcut runs, rather than `php papyrus.php start`.
+#
+# A reader never runs `php papyrus.php start`, and for the whole life of this gate it was the only
+# thing the gate started, so 55 green checks said nothing about the shortcut anybody double clicks
+# and nothing about whether a browser opens, which is the one thing a reader actually sees. It is
+# also the only entry point that passes `--open`, and without that argument the launcher starts the
+# app and opens nothing at all. The two checks at the end of the start section exist because of it.
+#
+# Through cmd.exe, because a .cmd file needs a command interpreter, and the installer is not run in
+# the guest, so the .lnk a reader clicks does not exist here; this is the file it points at. The
+# path is quoted because the install root has a space in it and Start-Process joins an argument
+# list with spaces without quoting, which would hand cmd.exe "C:\Program" and "Files\Papyrus\Papyrus.cmd"
+# and name a file that does not exist.
+#
 # Started detached so this script keeps control and can keep reporting. The launcher outlives this
 # script by design, since it leaves four processes running that the probe section then exercises.
 #
-# Quoted because the install root now has a space in it, and Start-Process joins an argument list
-# with spaces without quoting. Unquoted, PHP receives "C:\Program" and "Files\Papyrus\...\papyrus.php"
-# and reports "Could not open input file: Files\...", which names a file that does not exist and
-# reads as a broken install. The same applies to the stop call below.
-$startProcess = Start-Process -FilePath $launcherPhp -ArgumentList @('"' + $launcher + '"', 'start') -NoNewWindow -PassThru `
-    -RedirectStandardOutput $startLog -RedirectStandardError 'C:\results\launcher-start.err'
+# The stdin redirect is a real empty file, written here, immediately above the call that opens it.
+# Two measured failures taught that shape: `-RedirectStandardInput 'NUL'` makes Start-Process
+# return nothing, with no error, and the run dies with an empty pid and no launcher log at all,
+# because PowerShell will not open the null device as an input file; and an empty file created
+# three hundred lines further down does not exist yet when this call runs, which fails in exactly
+# the same way. With the file here, the `pause` in Papyrus.cmd's failure path reads end of file
+# and returns, so a stopped install cannot sit at a keypress.
+$shortcut = Join-Path $root 'Papyrus.cmd'
+$emptyStdin = 'C:\results\launcher-stdin.txt'
+[System.IO.File]::WriteAllText($emptyStdin, '')
 
-Say "  launcher started, pid $($startProcess.Id), watching its output"
+$startProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '"' + $shortcut + '"') -NoNewWindow -PassThru `
+    -RedirectStandardInput $emptyStdin -RedirectStandardOutput $startLog -RedirectStandardError 'C:\results\launcher-start.err'
+
+if ($null -eq $startProcess) {
+    # Start-Process returns nothing when it cannot open a redirect target, and everything below
+    # would read an empty pid as a broken install. Named here rather than at the first use.
+    Check 'the shortcut started' $false 'Start-Process returned nothing, so nothing was started'
+    Save-Report
+    exit 1
+}
+
+Say "  Papyrus.cmd started, pid $($startProcess.Id), watching its output"
 
 # Reported every few seconds so progress is visible while the launcher works. The readiness poll
 # is one attempt a second for up to sixty, so a minute of silence is normal and more than that is
@@ -294,6 +323,13 @@ $appPort = $null
 $seen = 0
 $deadline = (Get-Date).AddMinutes(4)
 $reportedPort = $null
+
+# Watched while the start runs, because the browser can open and then close, and "the shortcut
+# opened a browser" is a claim about what happened during the start rather than about what is
+# still true four minutes later. `msedge` is the browser a clean Windows guest has; the rest cost
+# nothing to look for.
+$browserNames = @('msedge', 'chrome', 'firefox', 'opera', 'brave', 'vivaldi')
+$browserSeen = $false
 
 while (-not $startProcess.HasExited -and (Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 10
@@ -332,6 +368,15 @@ while (-not $startProcess.HasExited -and (Get-Date) -lt $deadline) {
         if ($match) {
             $reportedPort = [int]$match.Matches[0].Groups[1].Value
             Say "  launcher reported app port $reportedPort, using that rather than a guessed one"
+        }
+    }
+
+    if (-not $browserSeen) {
+        $appeared = @(Get-Process -Name $browserNames -ErrorAction SilentlyContinue)
+
+        if ($appeared.Count -gt 0) {
+            $browserSeen = $true
+            Say "  a browser appeared while starting: $(@($appeared | ForEach-Object { $_.ProcessName } | Select-Object -Unique) -join ', ')"
         }
     }
 }
@@ -431,8 +476,57 @@ if (-not $startProcess.HasExited) {
 
     Check 'health reports the scheduler dispatching' ($healthText -match 'schedule\s+dispatching') `
         'the health line is what a reader is shown, so it has to be right and not merely the process'
+
+    # ---------------------------------------------------------------------------------------
+    # What the shortcut did that nothing else here does.
+    #
+    # Papyrus.cmd is the only entry point in this repository that passes `--open`, so a browser
+    # that opened during this start is the shortcut's doing and cannot be anything else's. Both
+    # halves are required: the launcher's own line says the shortcut asked, and a browser process
+    # says the ask did something. A browser without the line would be something else opening one,
+    # and a line without a browser is the silent failure this check exists to catch.
+    Section 'the shortcut opened a browser'
+
+    $alive = @(Get-Process -Name $browserNames -ErrorAction SilentlyContinue)
+    $asked = Select-String -Path $startLog -Pattern 'Asked your browser to open it' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    Check 'the shortcut opened a browser' ($browserSeen -and $null -ne $asked) `
+        "browser seen while starting: $browserSeen; alive now: $($alive.Count); the launcher said it asked: $($null -ne $asked)"
+
+    # ---------------------------------------------------------------------------------------
+    # What the reader would have seen.
+    #
+    # A process existing is not a page having rendered, and the check above cannot tell a loaded
+    # page from an error tab. So the screen is captured, and the file is left where a person can
+    # look at it. The guest is gone when the run ends, which is why the capture is written to the
+    # results folder rather than kept inside the guest.
+    Section 'a screenshot of the guest'
+
+    $screenPath = 'C:\results\screen-after-start.png'
+    $screenProblem = ''
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+        $canvas = [System.Drawing.Graphics]::FromImage($bitmap)
+        $canvas.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+        $bitmap.Save($screenPath, [System.Drawing.Imaging.ImageFormat]::Png)
+        $canvas.Dispose()
+        $bitmap.Dispose()
+    } catch {
+        $screenProblem = $_.Exception.Message
+    }
+
+    $screenBytes = if (Test-Path $screenPath) { (Get-Item $screenPath).Length } else { 0 }
+
+    Check 'a screenshot of the guest was written' ($screenBytes -gt 0) `
+        $(if ($screenBytes -gt 0) { "$screenPath, $screenBytes bytes" } elseif ($screenProblem -ne '') { "the capture failed: $screenProblem" } else { 'nothing was written' })
 } else {
-    Say "  launcher exited with code $($startProcess.ExitCode)"
+    Say "  Papyrus.cmd exited with code $($startProcess.ExitCode)"
 
     foreach ($file in @($startLog, 'C:\results\launcher-start.err')) {
         if (Test-Path $file) {
@@ -545,8 +639,23 @@ if ($null -ne $appPort) {
     $up = Get-Body "http://127.0.0.1:$appPort/up"
     Check '/up is 200' ($up.Status -eq 200) "got $($up.Status)"
 
-    # A rendered page, not merely a 200. An app that returns its own error page is answering.
-    Check '/up returns html' ($up.Body -match '<!DOCTYPE html>|<html')
+    # The app's own page, not merely a page.
+    #
+    # This matched `<!DOCTYPE html>|<html` for the life of the gate. Its own comment named the
+    # failure it existed to catch: an app returning its own error page while still answering. A
+    # Laravel 500 is a doctype page, so the check accepted exactly what the comment said it would
+    # not, and the comment was the half that was right.
+    #
+    # Three conditions, because the two obvious ones are each satisfied by the wrong page: a blank
+    # shell carries the app's title, and a heading alone says nothing about which app rendered it.
+    # So the body must carry the title AND the rendered heading, and must not carry the markers a
+    # 500 or a debug error page leaves. Proven against six bodies, of which two are the app's page.
+    $hasTitle = $up.Body -match '<title>\s*Papyrus\s*</title>'
+    $hasHeading = $up.Body -match 'Application up'
+    $noErrorMarkers = $up.Body -notmatch 'Server Error|Whoops|Stack trace'
+
+    Check '/up rendered its own page' ($hasTitle -and $hasHeading) "title=$hasTitle heading=$hasHeading"
+    Check '/up carries no error page' $noErrorMarkers
 }
 
 Section 'suwayomi'
@@ -676,14 +785,28 @@ foreach ($wanted in @('README.txt', 'summary.txt', 'health.txt', 'processes.txt'
 }
 
 $collected = @(Get-ChildItem (Join-Path $bundleDir 'collected') -Filter '*.txt' -ErrorAction SilentlyContinue)
-Check 'the bundle has collected logs' ($collected.Count -ge 5) "found $($collected.Count)"
+$emptyCollected = @($collected | Where-Object { $_.Length -eq 0 })
+$emptyNames = @($emptyCollected | ForEach-Object { $_.Name })
+
+# Counted and weighed. The count alone passed a bundle of nine files that were every one 0 KB, and
+# an empty bundle is exactly what a reader sends when the app is broken, which is the case this
+# bundle exists for. Existence is not content.
+Check 'the bundle has collected logs' ($collected.Count -ge 5 -and $emptyCollected.Count -eq 0) `
+    "found $($collected.Count), empty: $(if ($emptyNames.Count -gt 0) { $emptyNames -join ', ' } else { 'none' })"
 
 $suwayomiCollected = Join-Path $bundleDir 'collected\suwayomi.txt'
 if (Test-Path $suwayomiCollected) {
     $suwayomiLines = @(Get-Content $suwayomiCollected | Where-Object { $_.Trim() -ne '' })
     $suwayomiSource = @(Get-Content (Join-Path $data 'logs\suwayomi.log') -ErrorAction SilentlyContinue |
         Where-Object { $_.Trim() -ne '' })
-    Check 'no line was lost collecting suwayomi output' ($suwayomiLines.Count -eq $suwayomiSource.Count) "$($suwayomiLines.Count) collected, $($suwayomiSource.Count) in the source"
+
+    # Both counts have to be real before the equality means anything: zero collected and zero in the
+    # source is equal, so this passed on an empty bundle in the same words that mean a clean
+    # collection of everything. The source is the thing being collected from, and it is never empty
+    # in a running install.
+    Check 'no line was lost collecting suwayomi output' `
+        ($suwayomiSource.Count -gt 0 -and $suwayomiLines.Count -eq $suwayomiSource.Count) `
+        "$($suwayomiLines.Count) collected, $($suwayomiSource.Count) in the source"
 }
 
 Section 'https'
