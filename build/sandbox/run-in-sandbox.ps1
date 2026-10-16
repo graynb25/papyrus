@@ -202,8 +202,12 @@ function Invoke-Captured([string]$exe, [string[]]$arguments, [string]$label) {
     $process = Start-Process -FilePath $exe -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 
-    $out = if (Test-Path $outFile) { [string](Get-Content $outFile -Raw) } else { '' }
-    $err = if (Test-Path $errFile) { [string](Get-Content $errFile -Raw) } else { '' }
+    # ReadAllText rather than `[string](Get-Content -Raw)`, measured 2026-10-16: on an empty file
+    # Get-Content -Raw answers $null, and [string]$null is $null too, so that cast does not save it
+    # and the .Trim() below throws "You cannot call a method on a null-valued expression."
+    # ReadAllText answers '' for an empty file, so Out and Err are strings for every caller.
+    $out = if (Test-Path $outFile) { [System.IO.File]::ReadAllText($outFile) } else { '' }
+    $err = if (Test-Path $errFile) { [System.IO.File]::ReadAllText($errFile) } else { '' }
 
     Say "  $label exit code: $($process.ExitCode)"
 
@@ -620,15 +624,20 @@ if (Test-Path $resolvedIni) {
     # assumption was wrong, and it sent the investigation looking for a second fault that was
     # never there.
     #
-    # The `-c` path is quoted separately, because the data directory now contains a space and
-    # Start-Process joins -ArgumentList with spaces without quoting. Unquoted, PHP receives
-    # "C:\papyrus" and "data\php\php.ini" as two arguments and reports "Could not open input
-    # file: data\php\php.ini", which names a file that does not exist and reads as a broken
-    # install. This gate ran clean for its whole life only because C:\papyrus-data had no space
-    # in it.
-    $version = Invoke-Captured $launcherPhp @('-c', '"' + $resolvedIni + '"', '-r', '"echo PHP_VERSION;"') 'php-resolved-ini'
+    # The `-c` path needs quoting, and one argument string rather than pieces. Unquoted, PHP
+    # receives "C:\papyrus" and "data\php\php.ini" as two arguments and reports "Could not open
+    # input file: data\php\php.ini", which names a file that does not exist and reads as a broken
+    # install. Quoted but in list form it fails quietly instead: the comma binds tighter than `+`,
+    # the quote characters become elements of their own, and Start-Process joins the pieces with
+    # spaces, so php is handed ` C:\papyrus data\php\php.ini ` and silently ignores it, exiting 0
+    # and printing the version anyway. The 2026-10-15 run passed this check on 6 bytes of 8.5.11,
+    # which says nothing about the ini.
+    # One string reaches php verbatim, and the probe asks for memory_limit, which only the ini
+    # sets: 512M against php's 128M default. Measured 2026-10-16 with the bundled php and a path
+    # containing a space.
+    $version = Invoke-Captured $launcherPhp @('-c "' + $resolvedIni + '" -r "echo PHP_VERSION, '' '', ini_get(''memory_limit'');"') 'php-resolved-ini'
     Say "  bundled PHP with the launcher's resolved ini: $($version.Out.Trim())"
-    Check 'the launchers resolved ini loads cleanly' ($version.Code -eq 0) "exit $($version.Code)"
+    Check 'the launchers resolved ini loads cleanly' ($version.Code -eq 0 -and $version.Out -match '512M') "exit $($version.Code): $($version.Out.Trim())"
 } else {
     Check 'the launcher resolved an ini' $false "no file at $resolvedIni"
 }
