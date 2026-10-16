@@ -590,4 +590,30 @@ class SeriesAutoFetchTest extends TestCase
             ->assertSee(__('The source returned no chapters'))
             ->assertDontSee(__('The chapter list did not load'));
     }
+
+    /**
+     * F26's sweep: `series()` is a render-time read, and a server that answers
+     * nothing must render as a named failure rather than a 500. The
+     * not-in-catalogue callout underneath is a different verdict, and showing it
+     * here would be a wrong diagnosis: the server never said the manga id was
+     * unknown, it said nothing at all.
+     */
+    public function test_the_page_renders_when_the_server_cannot_be_read(): void
+    {
+        Queue::fake();
+
+        Http::fake(function (Request $request) {
+            if (str_contains((string) $request->body(), 'mutation Login')) {
+                return Http::response(['data' => ['login' => ['accessToken' => 't', 'refreshToken' => 'r']]]);
+            }
+
+            return Http::response('The server is not answering.', 500);
+        });
+
+        Livewire::actingAs($this->user)
+            ->test('pages::series', ['manga' => 76])
+            ->assertOk()
+            ->assertSee('This series could not be read')
+            ->assertDontSee('This series is not in the catalogue');
+    }
 }

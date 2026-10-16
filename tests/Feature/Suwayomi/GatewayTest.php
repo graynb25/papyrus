@@ -186,6 +186,60 @@ class GatewayTest extends TestCase
     }
 
     /**
+     * The fresh-install shape: no credentials, no cached token, and a server
+     * that answers anonymously. The query must go out with no Authorization
+     * header rather than failing before a request leaves the machine.
+     */
+    public function test_it_queries_anonymously_when_no_credentials_are_configured(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $requests = 0;
+        $authorized = null;
+
+        Http::fake(function (Request $request) use (&$requests, &$authorized) {
+            $requests++;
+            $authorized = $request->hasHeader('Authorization');
+
+            return Http::response(['data' => ['aboutServer' => ['version' => '2.3.2243']]]);
+        });
+
+        $data = app(Gateway::class)->execute('query { aboutServer { version } }');
+
+        $this->assertSame('2.3.2243', $data['aboutServer']['version']);
+        $this->assertFalse($authorized, 'A request with no token must not carry an Authorization header.');
+        $this->assertSame(1, $requests);
+    }
+
+    /**
+     * A server that requires auth still answers an anonymous request, it just
+     * answers with an auth error. That is a credentials problem, not an
+     * unreachable server, and the one re-authentication attempt still runs
+     * before the failure is reported as unauthenticated.
+     */
+    public function test_a_server_that_refuses_anonymous_requests_reports_unauthenticated(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $requests = 0;
+
+        Http::fake(function () use (&$requests) {
+            $requests++;
+
+            return Http::response($this->expiredTokenBody('extensions'));
+        });
+
+        try {
+            app(Gateway::class)->execute('query { extensions { totalCount } }');
+            $this->fail('Expected a SuwayomiException.');
+        } catch (SuwayomiException $e) {
+            $this->assertTrue($e->isUnauthenticated());
+        }
+
+        $this->assertSame(2, $requests, 'The one re-authentication retry still happens, then the failure is reported.');
+    }
+
+    /**
      * The matcher keys on the Kotlin class, so an ordinary source failure that
      * merely mentions the word must not trigger a re-login.
      */

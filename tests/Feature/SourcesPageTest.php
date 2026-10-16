@@ -54,6 +54,14 @@ class SourcesPageTest extends TestCase
      */
     private bool $catalogShouldFail = false;
 
+    /**
+     * Whether the extension list should answer with a server error.
+     *
+     * The F26 shape: Suwayomi could not be read at all, and the page must render
+     * with the failure named rather than answering 500 or drawing an empty list.
+     */
+    private bool $extensionListShouldFail = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -231,6 +239,10 @@ class SourcesPageTest extends TestCase
             }
 
             if (str_contains($query, 'extensions(')) {
+                if ($this->extensionListShouldFail) {
+                    return Http::response('The server is not answering.', 500);
+                }
+
                 return Http::response(['data' => ['extensions' => [
                     'totalCount' => count($this->filteredNodes($request)),
                     'nodes' => $this->filteredNodes($request),
@@ -287,6 +299,28 @@ class SourcesPageTest extends TestCase
         auth()->logout();
 
         $this->get('/sources')->assertRedirect();
+    }
+
+    /**
+     * F26. The sandbox run of 2026-10-15 passed all 58 checks while the guest's
+     * Suwayomi was up and answering and this page showed the app's 500: the list
+     * and the count both threw and nothing caught either.
+     *
+     * The callout stands in place of the list, because "Nothing installed yet"
+     * over a server that could not be read is a lie the reader would act on.
+     */
+    public function test_the_page_renders_when_the_extension_list_cannot_be_read(): void
+    {
+        $this->store();
+
+        $this->extensionListShouldFail = true;
+
+        $this->get('/sources')
+            ->assertOk()
+            ->assertSee('The extension list did not load')
+            ->assertSee('Suwayomi returned HTTP 500')
+            ->assertDontSee('Nothing installed yet')
+            ->assertDontSee('0 extensions');
     }
 
     public function test_it_lists_stores_with_the_signing_key_shown_in_full(): void

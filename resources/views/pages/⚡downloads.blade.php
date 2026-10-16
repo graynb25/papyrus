@@ -3,6 +3,7 @@
 use App\Downloads\DownloadLedger;
 use App\Models\Download;
 use App\Suwayomi\SeriesGateway;
+use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -122,7 +123,17 @@ new #[Title('Downloads')] class extends Component
             return [];
         }
 
-        $series = app(SeriesGateway::class)->fetchMany($mangaIds);
+        try {
+            $series = app(SeriesGateway::class)->fetchMany($mangaIds);
+        } catch (SuwayomiException) {
+            /*
+             * A render-time read, so a server that cannot name a single series must
+             * not take the page down with it. Empty labels leave every row its own
+             * fallback, "Unknown series" and the chapter id, which is what the row
+             * can still prove on its own.
+             */
+            return [];
+        }
 
         $labels = [];
 

@@ -757,22 +757,49 @@ new #[Title('Sources')] class extends Component
     }
 
     /**
+     * The catalogue as one read: the rows, the count, or why neither could be had.
+     *
+     * One try for both, because a failure here is one fact the page tells once; two
+     * computeds catching independently would each hold half of it and need to agree
+     * on the other half. `extensions()` and `total()` stay the names the page calls.
+     * This is where SuwayomiException is caught so the page renders with the reason
+     * instead of answering 500, which is what the sandbox run of 2026-10-15 measured:
+     * the guest's Suwayomi was up and answering, and this page showed the app's 500
+     * page while all 58 checks passed.
+     *
+     * @return array{extensions: Collection<int, array<string, mixed>>, total: int, error: string|null}
+     */
+    #[Computed]
+    public function catalogue(): array
+    {
+        try {
+            $extensions = app(ExtensionManager::class)->extensions(
+                $this->filters(),
+                self::PER_PAGE,
+                ($this->page - 1) * self::PER_PAGE,
+            );
+
+            $total = app(ExtensionManager::class)->extensionCount($this->filters());
+        } catch (SuwayomiException $e) {
+            return ['extensions' => new Collection(), 'total' => 0, 'error' => $e->getMessage()];
+        }
+
+        return ['extensions' => $extensions, 'total' => $total, 'error' => null];
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     #[Computed]
     public function extensions(): Collection
     {
-        return app(ExtensionManager::class)->extensions(
-            $this->filters(),
-            self::PER_PAGE,
-            ($this->page - 1) * self::PER_PAGE,
-        );
+        return $this->catalogue['extensions'];
     }
 
     #[Computed]
     public function total(): int
     {
-        return app(ExtensionManager::class)->extensionCount($this->filters());
+        return $this->catalogue['total'];
     }
 
     #[Computed]
@@ -1467,11 +1494,24 @@ new #[Title('Sources')] class extends Component
             </flux:callout>
         @endif
 
-        <p class="text-sm text-zinc-500 dark:text-zinc-400">
-            {{ trans_choice('{1} :count extension|[2,*] :count extensions', $this->total, ['count' => Number::format($this->total)]) }}
-        </p>
+        @if ($this->catalogue['error'] === null)
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                {{ trans_choice('{1} :count extension|[2,*] :count extensions', $this->total, ['count' => Number::format($this->total)]) }}
+            </p>
+        @endif
 
-        @if ($this->extensions->isEmpty())
+        @if ($this->catalogue['error'] !== null)
+            {{--
+                One read serves the count above and the list below, so a failure is
+                one fact told once. Drawing an empty catalogue over an unreadable
+                server would be a lie twice: "0 extensions" is the same lie as
+                "Nothing installed yet", with a number on it.
+            --}}
+            <flux:callout variant="danger" icon="exclamation-triangle">
+                <flux:heading class="mb-1">{{ __('The extension list did not load') }}</flux:heading>
+                <p class="text-sm">{{ $this->catalogue['error'] }}</p>
+            </flux:callout>
+        @elseif ($this->extensions->isEmpty())
             <flux:callout variant="secondary" icon="magnifying-glass">
                 @if ($this->stores->isEmpty())
                     {{ __('Add a store first, then refresh the catalogue.') }}

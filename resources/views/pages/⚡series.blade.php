@@ -651,12 +651,37 @@ new #[Title('Series')] class extends Component
     }
 
     /**
+     * Why the server could not answer for this series, or null when the last read
+     * succeeded.
+     *
+     * Set by {@see series()}. The view tells its two verdicts apart, because "the
+     * server never answered" is no knowledge at all about the manga id, while the
+     * other callout is a claim about the id itself.
+     */
+    public ?string $seriesError = null;
+
+    /**
      * @return array<string, mixed>|null
      */
     #[Computed]
     public function series(): ?array
     {
-        return app(SeriesGateway::class)->find($this->manga);
+        try {
+            $series = app(SeriesGateway::class)->find($this->manga);
+        } catch (SuwayomiException $e) {
+            /*
+             * A render-time read, so an unreachable server must render as a named
+             * failure rather than a 500. Clearing on the next successful read is
+             * what lets a poll or a manual retry recover the page.
+             */
+            $this->seriesError = $e->getMessage();
+
+            return null;
+        }
+
+        $this->seriesError = null;
+
+        return $series;
     }
 
     /**
@@ -1319,7 +1344,18 @@ new #[Title('Series')] class extends Component
 <div class="w-full space-y-7">
     @php($series = $this->series)
 
-    @if ($series === null)
+    @if ($this->seriesError !== null)
+        {{--
+            A verdict the branch below must not swallow: the server said nothing at
+            all, so nothing here is knowledge about the manga id, and calling it "not
+            in the catalogue" would send the reader looking for a series that may be
+            sitting on their shelf.
+        --}}
+        <flux:callout variant="danger" icon="exclamation-triangle">
+            <flux:heading level="2" class="mb-1">{{ __('This series could not be read') }}</flux:heading>
+            <p class="text-sm">{{ $this->seriesError }}</p>
+        </flux:callout>
+    @elseif ($series === null)
         <flux:callout variant="secondary" icon="question-mark-circle">
             <flux:heading level="2" class="mb-1">{{ __('This series is not in the catalogue') }}</flux:heading>
             <p class="text-sm">

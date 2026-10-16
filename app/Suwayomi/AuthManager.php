@@ -3,11 +3,18 @@
 namespace App\Suwayomi;
 
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Auth against Suwayomi's UI_LOGIN mode.
+ *
+ * An install with no credentials configured runs anonymously rather than
+ * failing. The bundled server answers without auth, `.env.example` documents
+ * both values as optional, and {@see token()} returns null so callers send no
+ * Authorization header. The credentials check only fires when something
+ * actually needs to log in.
  *
  * Measured token lifetimes, from a v2.3.2243 server:
  *
@@ -65,9 +72,14 @@ class AuthManager
     /**
      * A valid bearer token, renewing if the one we hold is spent.
      *
+     * Null means the request goes out anonymously: the install has no
+     * credentials configured and nothing in the cache can be renewed. Decided
+     * here, before the lock, so anonymous requests are not serialised behind
+     * one process that is authenticating.
+     *
      * @throws SuwayomiException
      */
-    public function token(): string
+    public function token(): ?string
     {
         if ($this->tokens !== null && $this->accessUsable($this->tokens)) {
             return $this->tokens['accessToken'];
@@ -79,7 +91,13 @@ class AuthManager
             return $this->adopt($cached)['accessToken'];
         }
 
-        return $this->renew($cached)['accessToken'];
+        if ($this->credentials() === null && $this->usableRefreshToken(null, $cached) === null) {
+            return null;
+        }
+
+        $tokens = $this->renew($cached);
+
+        return $tokens === null ? null : $tokens['accessToken'];
     }
 
     /**
@@ -91,14 +109,15 @@ class AuthManager
      */
     public function login(): array
     {
-        $username = config('papyrus.suwayomi.username');
-        $password = config('papyrus.suwayomi.password');
+        $credentials = $this->credentials();
 
-        if (blank($username) || blank($password)) {
+        if ($credentials === null) {
             throw SuwayomiException::unavailable(
                 'SUWAYOMI_USERNAME and SUWAYOMI_PASSWORD are not set. Suwayomi must run with AuthMode.UI_LOGIN.'
             );
         }
+
+        [$username, $password] = $credentials;
 
         $response = $this->transport->post([
             'query' => <<<'GQL'
@@ -132,12 +151,47 @@ class AuthManager
     public function isAuthenticated(): bool
     {
         try {
-            $this->token();
-
-            return true;
+            return $this->token() !== null;
         } catch (SuwayomiException) {
             return false;
         }
+    }
+
+    /**
+     * Attach the bearer token to a raw request, when there is one.
+     *
+     * The gateway goes through {@see Transport}, which already omits the
+     * header for a null token. The three streaming GETs build their own
+     * requests, so the branch lives here once rather than in each of them.
+     */
+    public function attachToken(PendingRequest $request): PendingRequest
+    {
+        $token = $this->token();
+
+        return $token === null ? $request : $request->withToken($token);
+    }
+
+    /**
+     * The configured credentials, as [username, password], or null when the
+     * install runs without any.
+     *
+     * A blank pair is the fresh-install shape and not an error: the bundled
+     * server answers anonymously and `.env.example` documents both values as
+     * optional. It is only an error when something actually has to log in,
+     * which is why the throw lives in {@see login()}.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function credentials(): ?array
+    {
+        $username = config('papyrus.suwayomi.username');
+        $password = config('papyrus.suwayomi.password');
+
+        if (blank($username) || blank($password)) {
+            return null;
+        }
+
+        return [(string) $username, (string) $password];
     }
 
     /**
@@ -165,11 +219,11 @@ class AuthManager
 
     /**
      * @param  array{accessToken?: mixed, refreshToken?: mixed, accessExpiresAt?: mixed, refreshExpiresAt?: mixed}|null  $stale
-     * @return array{accessToken: string, refreshToken: string|null, accessExpiresAt: int|null, refreshExpiresAt: int|null}
+     * @return array{accessToken: string, refreshToken: string|null, accessExpiresAt: int|null, refreshExpiresAt: int|null}|null
      *
      * @throws SuwayomiException
      */
-    private function renew(?array $stale): array
+    private function renew(?array $stale): ?array
     {
         /*
          * The lock, and what happens when it cannot be taken.
@@ -207,12 +261,15 @@ class AuthManager
     /**
      * The refresh itself, under the lock that stops two processes refreshing at once.
      *
+     * Null means there was nothing left to authenticate with, so the caller
+     * goes anonymous rather than failing.
+     *
      * @param  array{accessToken?: mixed, refreshToken?: mixed, accessExpiresAt?: mixed, refreshExpiresAt?: mixed}|null  $stale
-     * @return array{accessToken: string, refreshToken: string|null, accessExpiresAt: int|null, refreshExpiresAt: int|null}
+     * @return array{accessToken: string, refreshToken: string|null, accessExpiresAt: int|null, refreshExpiresAt: int|null}|null
      */
-    private function underLock(?array $stale): array
+    private function underLock(?array $stale): ?array
     {
-        return cache()->lock(self::LOCK_KEY, 10)->block(5, function () use ($stale): array {
+        return cache()->lock(self::LOCK_KEY, 10)->block(5, function () use ($stale): ?array {
             // Re-check under the lock. Without this every process that queued
             // on the lock would issue its own refresh, because each one read
             // the cache before the lock and so all of them saw a spent token.
@@ -229,13 +286,25 @@ class AuthManager
                     return $this->refresh($refresh);
                 } catch (SuwayomiException $e) {
                     // A dead or rotated refresh token is ordinary over a
-                    // 60 day life, so fall back to credentials rather than
-                    // surfacing it. The reason is logged because a store that
-                    // silently re-authenticates forever is its own kind of bug.
-                    Log::info('Suwayomi refresh token rejected, logging in instead.', [
+                    // 60 day life, so fall back rather than surfacing it. The
+                    // reason is logged because a store that silently
+                    // re-authenticates forever is its own kind of bug.
+                    Log::info('Suwayomi refresh token rejected.', [
                         'message' => $e->getMessage(),
                     ]);
                 }
+            }
+
+            if ($this->credentials() === null) {
+                /*
+                 * The pair that was cached just failed and no credentials are
+                 * configured, so there is nothing to log in with. Drop it, or
+                 * every later request pays the same failed refresh before it
+                 * goes out anonymously.
+                 */
+                $this->forget();
+
+                return null;
             }
 
             return $this->login();

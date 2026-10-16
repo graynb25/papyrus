@@ -54,6 +54,14 @@ class DownloadRowLabelTest extends TestCase
      */
     private array $sent = [];
 
+    /**
+     * Whether the server answers the batched series call with a failure.
+     *
+     * The F26 sweep: the rows must still render when the server cannot be read,
+     * with their documented fallbacks rather than a 500.
+     */
+    private bool $seriesUnreadable = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -77,6 +85,10 @@ class DownloadRowLabelTest extends TestCase
             }
 
             if (str_contains($query, 'mangas(')) {
+                if ($this->seriesUnreadable) {
+                    return Http::response('The server is not answering.', 500);
+                }
+
                 return Http::response(['data' => ['mangas' => ['nodes' => $this->nodesFor($query)]]]);
             }
 
@@ -369,6 +381,26 @@ class DownloadRowLabelTest extends TestCase
             ->test('pages::downloads')
             ->assertOk()
             ->assertDontSee('Only I Have an EX-Grade Summon');
+    }
+
+    /**
+     * F26's sweep: the labels come from the server, and a server that cannot be
+     * read must not take the page down with it. Every row keeps its documented
+     * fallback, which is the name the row itself can prove.
+     */
+    public function test_the_rows_survive_a_server_that_cannot_name_the_series(): void
+    {
+        $this->givenDownloads(
+            [4987 => ['title' => 'Only I Have an EX-Grade Summon', 'chapters' => [14430 => 'Chapter 1']]],
+            [[4987, 14430]],
+        );
+
+        $this->seriesUnreadable = true;
+
+        Livewire::test('pages::downloads')
+            ->assertOk()
+            ->assertSee('Unknown series')
+            ->assertSee('Chapter 14430');
     }
 
     /**

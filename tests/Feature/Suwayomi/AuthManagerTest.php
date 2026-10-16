@@ -128,14 +128,181 @@ class AuthManagerTest extends TestCase
         $this->assertSame(0, $this->refreshCalls, 'Forget must log in, not refresh: the refresh token is suspect too.');
     }
 
-    public function test_it_refuses_to_guess_when_credentials_are_missing(): void
+    /**
+     * The fresh install shape: `.env.example` ships both values blank and the
+     * bundled server answers anonymously, so there is nothing to log in with
+     * and nothing to log in for. The token is null and no request leaves the
+     * machine. Only `/sources` ever noticed, as a 500.
+     */
+    public function test_blank_credentials_and_nothing_to_renew_mean_no_token_and_no_request(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $requests = 0;
+
+        Http::fake(function () use (&$requests) {
+            $requests++;
+
+            return Http::response(['data' => ['ok' => true]]);
+        });
+
+        $this->assertNull(app(AuthManager::class)->token());
+        $this->assertSame(0, $requests, 'Nothing may leave the machine when there is nothing to authenticate with.');
+    }
+
+    /**
+     * The anonymous answer is decided before the lock is ever asked for. If it
+     * were decided inside, this test would wait out the five second lock
+     * timeout and then throw, serialising every anonymous request behind one
+     * process that is authenticating.
+     */
+    public function test_the_anonymous_answer_does_not_wait_on_the_token_lock(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $token = Cache::lock('suwayomi.tokens:lock', 60)->get(
+            static fn () => app(AuthManager::class)->token()
+        );
+
+        $this->assertNull($token);
+    }
+
+    /**
+     * Blank credentials only mean anonymous when there is nothing to renew.
+     * A pair cached while the server still accepted logins must keep working,
+     * because the refresh token is the only thing that can authenticate then.
+     */
+    public function test_blank_credentials_still_renew_with_a_live_refresh_token(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $this->fakeLogin();
+
+        cache()->put('suwayomi.tokens', [
+            'accessToken' => $this->accessToken(-10),
+            'refreshToken' => $this->refreshToken(),
+            'accessExpiresAt' => time() - 10,
+            'refreshExpiresAt' => time() + 50000,
+        ], 3600);
+
+        $token = app(AuthManager::class)->token();
+
+        $this->assertNotNull($token);
+        $this->assertSame(1, $this->refreshCalls);
+        $this->assertSame(0, $this->loginCalls, 'Blank credentials must not cost a login while the refresh token works.');
+    }
+
+    /**
+     * A dead refresh token with no credentials ends anonymous, and the dead
+     * pair is dropped: keeping it would pay the same failed refresh before
+     * every single request.
+     */
+    public function test_a_rejected_refresh_token_with_blank_credentials_goes_anonymous_and_is_dropped(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $requests = 0;
+
+        Http::fake(function (Request $request) use (&$requests) {
+            $requests++;
+
+            $query = $request->data()['query'] ?? '';
+
+            if (str_contains($query, 'mutation Refresh')) {
+                $this->refreshCalls++;
+
+                return Http::response(['errors' => [[
+                    'message' => 'The token was expected to have 3 parts, but got 0.',
+                ]]]);
+            }
+
+            $this->loginCalls++;
+
+            return Http::response(['data' => ['login' => [
+                'accessToken' => $this->accessToken(),
+                'refreshToken' => $this->refreshToken(),
+            ]]]);
+        });
+
+        cache()->put('suwayomi.tokens', [
+            'accessToken' => $this->accessToken(-10),
+            'refreshToken' => $this->refreshToken(),
+            'accessExpiresAt' => time() - 10,
+            'refreshExpiresAt' => time() + 50000,
+        ], 3600);
+
+        $auth = app(AuthManager::class);
+
+        $this->assertNull($auth->token());
+        $this->assertSame(1, $this->refreshCalls);
+        $this->assertSame(0, $this->loginCalls, 'Blank credentials must not even attempt a login.');
+
+        $this->assertNull($auth->token());
+        $this->assertSame(1, $requests, 'A dead pair must not be retried on every request.');
+    }
+
+    /**
+     * The guard moved to credentials-only territory, but it stays: reaching
+     * `login()` with a blank pair is still a mistake worth a clear message,
+     * not an anonymous request.
+     */
+    public function test_login_itself_still_refuses_blank_credentials(): void
     {
         config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
 
         $this->expectException(SuwayomiException::class);
         $this->expectExceptionMessageMatches('/SUWAYOMI_USERNAME/');
 
-        app(AuthManager::class)->token();
+        app(AuthManager::class)->login();
+    }
+
+    /**
+     * The three streaming GETs build their own requests rather than going
+     * through the gateway, so the null branch lives in `attachToken()` once.
+     */
+    public function test_attach_token_omits_the_header_when_there_is_no_token(): void
+    {
+        config(['papyrus.suwayomi.username' => null, 'papyrus.suwayomi.password' => null]);
+
+        $authorized = null;
+
+        Http::fake(function (Request $request) use (&$authorized) {
+            $authorized = $request->hasHeader('Authorization');
+
+            return Http::response('ok');
+        });
+
+        app(AuthManager::class)
+            ->attachToken(Http::withOptions(['stream' => true]))
+            ->get('https://suwayomi.example/api/v1/manga/1/thumbnail');
+
+        $this->assertFalse($authorized);
+    }
+
+    public function test_attach_token_adds_the_header_when_there_is_a_token(): void
+    {
+        $access = $this->accessToken();
+
+        cache()->put('suwayomi.tokens', [
+            'accessToken' => $access,
+            'refreshToken' => $this->refreshToken(),
+            'accessExpiresAt' => time() + 300,
+            'refreshExpiresAt' => time() + 50000,
+        ], 3600);
+
+        $authorized = null;
+
+        Http::fake(function (Request $request) use (&$authorized) {
+            $authorized = $request->header('Authorization')[0] ?? null;
+
+            return Http::response('ok');
+        });
+
+        app(AuthManager::class)
+            ->attachToken(Http::withOptions(['stream' => true]))
+            ->get('https://suwayomi.example/api/v1/manga/1/thumbnail');
+
+        $this->assertSame('Bearer '.$access, $authorized);
     }
 
     /**

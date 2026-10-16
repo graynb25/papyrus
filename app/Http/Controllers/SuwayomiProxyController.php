@@ -79,10 +79,10 @@ class SuwayomiProxyController extends Controller
         }
 
         try {
-            $response = Http::withToken($auth->token())
-                ->withOptions(['stream' => true])
-                ->timeout((int) config('papyrus.suwayomi.timeout', 28))
-                ->send('GET', $url);
+            $response = $auth->attachToken(
+                Http::withOptions(['stream' => true])
+                    ->timeout((int) config('papyrus.suwayomi.timeout', 28))
+            )->send('GET', $url);
         } catch (ConnectionException $e) {
             throw SuwayomiException::unavailable($e->getMessage(), $e);
         }

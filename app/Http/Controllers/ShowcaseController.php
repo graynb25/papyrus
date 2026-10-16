@@ -214,10 +214,10 @@ class ShowcaseController extends Controller
         $url = rtrim((string) config('papyrus.suwayomi.url'), '/')."/api/v1/manga/{$manga}/thumbnail";
 
         try {
-            $response = Http::withToken($auth->token())
-                ->withOptions(['stream' => true])
-                ->timeout((int) config('papyrus.suwayomi.timeout', 28))
-                ->send('GET', $url);
+            $response = $auth->attachToken(
+                Http::withOptions(['stream' => true])
+                    ->timeout((int) config('papyrus.suwayomi.timeout', 28))
+            )->send('GET', $url);
         } catch (Throwable) {
             /*
              * Anything thrown here - a dead connection, a token that could not

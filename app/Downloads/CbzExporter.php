@@ -330,10 +330,10 @@ class CbzExporter
     private function open(string $pageUrl)
     {
         try {
-            return Http::withToken($this->auth->token())
-                ->withOptions(['stream' => true])
-                ->timeout((int) config('papyrus.suwayomi.timeout', 28))
-                ->send('GET', $this->absolute($pageUrl));
+            return $this->auth->attachToken(
+                Http::withOptions(['stream' => true])
+                    ->timeout((int) config('papyrus.suwayomi.timeout', 28))
+            )->send('GET', $this->absolute($pageUrl));
         } catch (ConnectionException $e) {
             throw SuwayomiException::unavailable($e->getMessage(), $e);
         }
