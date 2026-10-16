@@ -112,6 +112,7 @@ const NEVER_SHIPPED = [
     'database/database.sqlite-journal' => 'a journal left beside the library',
     'database/database.sqlite-wal' => 'a write ahead log left beside the library',
     'database/database.sqlite-shm' => 'shared memory state left beside the library',
+    'database/backups' => 'copies of the developer library made during development',
     'storage/design-review' => 'screenshots taken during development',
 ];
 
