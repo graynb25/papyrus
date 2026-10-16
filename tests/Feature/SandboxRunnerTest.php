@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\StripsScriptComments;
 
 /**
  * The Windows Sandbox runners, and the two ways each one fails silently.
@@ -32,6 +33,8 @@ use PHPUnit\Framework\TestCase;
  */
 class SandboxRunnerTest extends TestCase
 {
+    use StripsScriptComments;
+
     private const DIR = 'build/sandbox';
 
     /**
@@ -135,32 +138,6 @@ class SandboxRunnerTest extends TestCase
     }
 
     /**
-     * The script with its comments removed, which is the only thing worth asserting on.
-     *
-     * Both assertions in this file that read the raw file were wrong the first time, and for the
-     * same reason: the runner explains at length why it does *not* use the gate's ports, so the
-     * numbers `8402` and `4571` appear in the prose on purpose, and a substring check over the whole
-     * file reported the explanation as the defect.
-     *
-     * That is the "a grep that cannot match what is there is not evidence it is absent" family
-     * pointed the other way: a grep that matches too much is not evidence of anything either. A check
-     * which reads the comments is reporting on the author's explanation rather than on the program.
-     */
-    private static function code(string $file): string
-    {
-        $lines = explode("\n", (string) file_get_contents(self::DIR.'/'.$file));
-
-        $kept = [];
-        foreach ($lines as $line) {
-            if (! str_starts_with(ltrim($line), '#')) {
-                $kept[] = $line;
-            }
-        }
-
-        return implode("\n", $kept);
-    }
-
-    /**
      * The hold runner uses the ports a reader actually sees.
      *
      * This is the property that keeps lesson 228 from recurring. The gate forces 8402 and 4571 so
@@ -170,7 +147,7 @@ class SandboxRunnerTest extends TestCase
      */
     public function test_the_hold_runner_uses_a_real_installs_ports(): void
     {
-        $code = self::code('hold-open.ps1');
+        $code = $this->scriptCode(self::DIR.'/hold-open.ps1');
 
         $this->assertStringContainsString(
             '$appPort = 8000',
@@ -226,7 +203,7 @@ class SandboxRunnerTest extends TestCase
      */
     public function test_the_hold_runner_holds_rather_than_stopping(): void
     {
-        $code = self::code('hold-open.ps1');
+        $code = $this->scriptCode(self::DIR.'/hold-open.ps1');
 
         $hold = strpos($code, 'while ($true)');
         $this->assertNotFalse($hold, 'the runner must hold the terminal open, which keeps the app alive');

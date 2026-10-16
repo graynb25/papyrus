@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Papyrus\Launcher\BrowserLauncher;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\StripsScriptComments;
 
 /**
  * Opening the reader's browser at the address the launcher just bound.
@@ -27,6 +28,8 @@ use PHPUnit\Framework\TestCase;
  */
 class BrowserLauncherTest extends TestCase
 {
+    use StripsScriptComments;
+
     /**
      * The command, on the loopback URL the launcher actually produces.
      */
@@ -151,10 +154,18 @@ class BrowserLauncherTest extends TestCase
                 .'reader runs',
         );
 
-        // The gate runs the launcher directly, so it must NOT open a browser on a machine with none.
+        /*
+         * The gate starts Papyrus.cmd, and the shortcut owns `--open`. The gate's own code
+         * must not also ask for a browser, or its "the shortcut opened a browser" check
+         * could pass with the shortcut's flag gone.
+         *
+         * Read as code rather than raw text: the gate's comments quote `--open` while
+         * explaining exactly that, and the first version of this check read the raw file
+         * and reported the explanation as the defect.
+         */
         $this->assertStringNotContainsString(
             '--open',
-            (string) file_get_contents(dirname(__DIR__, 2).'/build/sandbox/run-in-sandbox.ps1'),
+            $this->scriptCode(dirname(__DIR__, 2).'/build/sandbox/run-in-sandbox.ps1'),
             'the clean-room gate must not ask for a browser',
         );
     }

@@ -635,9 +635,18 @@ if (Test-Path $resolvedIni) {
 
 Section 'probing'
 
-function Get-Body([string]$url) {
+# `method`, `form` and `session` exist for the reader path below: registering and opening the
+# sources page is the one walk in this script that needs cookies, and a POST. They are optional so
+# every earlier probe is unchanged, and the catch stays the single place that turns a failed
+# request into a readable status and body rather than a thrown exception.
+function Get-Body([string]$url, [string]$method = 'Get', $form = $null, $session = $null) {
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+        $request = @{ Uri = $url; UseBasicParsing = $true; TimeoutSec = 30; Method = $method }
+
+        if ($null -ne $form) { $request.Body = $form }
+        if ($null -ne $session) { $request.WebSession = $session }
+
+        $response = Invoke-WebRequest @request
         return @{ Status = [int]$response.StatusCode; Body = [string]$response.Content }
     } catch {
         # A 503 is an answer, not a failure to connect, and it is the one that matters here.
@@ -752,6 +761,88 @@ if ($appPort -and $appListeners.Count -gt 0) {
     $appAddresses = @($appListeners | ForEach-Object { $_.LocalAddress } | Select-Object -Unique)
     $appLoopback = @($appAddresses | Where-Object { $_ -notin @('127.0.0.1', '::1') }).Count -eq 0
     Check 'papyrus is bound to loopback' $appLoopback "addresses: $($appAddresses -join ', ')"
+}
+
+# The install's own answer to the question this gate never asked it.
+#
+# The run of 2026-10-15 passed 58 of 58 checks over an install that could not read a single source,
+# because no check ever asked the application to talk to its own manga server. This asks that
+# question with the application's own command, through the application's own php and the ini the
+# launcher resolved: it exits nonzero and names the reason when the app cannot reach Suwayomi, so a
+# green line here is the app having read the server back. Its output is kept in
+# C:\results\suwayomi-check.out beside the report.
+#
+# PAPYRUS_ENV is how the launcher points its children at the data directory's `.env`. Without it
+# artisan finds no `.env` at all and queries the default port 4567 rather than the port this gate
+# chose, which would fail a healthy install for the wrong reason.
+#
+# The whole command is one argument string. Written as separate pieces, @('-c', '"' + $ini + '"',
+# '"' + $artisan + '"', 'suwayomi:check') binds as eight arguments with the quote characters
+# standing alone between the paths, and Start-Process joins those with spaces, so php is handed
+# ` C:\papyrus data\php\php.ini ` and reports "Could not open input file" (measured 2026-10-16,
+# bundled php, paths containing spaces). The single string below reaches php verbatim, argv correct
+# and the ini loaded.
+$env:PAPYRUS_ENV = Join-Path $data '.env'
+
+$check = Invoke-Captured $launcherPhp @('-c "' + $resolvedIni + '" "' + (Join-Path $root 'artisan') + '" suwayomi:check') 'suwayomi-check'
+
+Check 'the install answers its own suwayomi:check' ($check.Code -eq 0) "exit $($check.Code)"
+Check 'suwayomi:check read the server version' ($check.Out -match 'Server version.*2\.4') 'its output names no 2.4 server'
+
+Section 'the reader path'
+
+# The walk this gate never made, and the difference between an install that serves pages and one a
+# reader can use.
+#
+# The same run that passed 58 checks showed the app's 500 page at /sources behind the login: every
+# probe was green and no check had ever signed in and opened a page. This section makes the first
+# account the way the browser makes it, from the register form, and then opens the page a reader
+# opens, requiring it to render.
+#
+# The account is throwaway because the guest is: it never outlives the run. Creating it closes
+# registration behind it on a single-reader install, which is that posture working rather than a
+# problem. The password satisfies `Password::defaults()` in production (12 characters, mixed case,
+# letters, numbers, symbols) because a packaged install carries no APP_ENV and so reads as
+# production.
+$password = 'Papyrus-gate-7!Kx'
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+$registerPage = Get-Body "http://127.0.0.1:$appPort/register" -session $session
+Check 'the register page renders' ($registerPage.Status -eq 200) "got $($registerPage.Status)"
+
+$registerToken = [regex]::Match($registerPage.Body, 'name="_token"\s+value="([^"]+)"').Groups[1].Value
+Check 'the register form offered a csrf token' ($registerToken -ne '') 'no _token field was in the page'
+
+if ($registerToken -ne '') {
+    $created = Get-Body "http://127.0.0.1:$appPort/register" -method 'Post' -session $session -form @{
+        _token = $registerToken
+        name = 'Sandbox Gate'
+        email = 'sandbox-gate@example.test'
+        password = $password
+        password_confirmation = $password
+    }
+
+    Check 'the register form creates the account' ($created.Status -eq 200) `
+        "final status $($created.Status) after its redirects"
+
+    $sources = Get-Body "http://127.0.0.1:$appPort/sources" -session $session
+
+    # Three checks, split the way the /up checks are: the status, then the body being this app's
+    # page, then the thing this run is here to prove. The eyebrow is the sources page's own
+    # sentence and appears on no other page; the callout is the app's own words for "the catalogue
+    # could not be read", so its absence is the app having read Suwayomi. A 500 page carries
+    # neither.
+    $hasEyebrow = $sources.Body -match 'Keiyoushi, on your terms'
+    $hasErrorMarkers = $sources.Body -match 'Server Error|Whoops|Stack trace'
+    $hasCallout = $sources.Body -match 'The extension list did not load'
+
+    Check 'the sources page renders for the reader' ($sources.Status -eq 200) "got $($sources.Status)"
+    Check 'the sources page is the app page, not an error page' ($hasEyebrow -and -not $hasErrorMarkers) `
+        "eyebrow=$hasEyebrow error markers=$hasErrorMarkers"
+    Check 'the sources page read its catalogue' ($hasEyebrow -and -not $hasCallout) `
+        "eyebrow=$hasEyebrow failure callout=$hasCallout"
+} else {
+    Say '  no csrf token, so no account and no sources page: the reader path stops here'
 }
 
 Section 'the database is in the data directory, not the install'
@@ -872,6 +963,27 @@ if (Test-Path $suwayomiCollected) {
         ($suwayomiSource.Count -gt 0 -and $suwayomiLines.Count -eq $suwayomiSource.Count) `
         "$($suwayomiLines.Count) collected, $($suwayomiSource.Count) in the source"
 }
+
+# Copied out of the guest, in the same run that made it.
+#
+# The bundle is what a reader sends when the app is broken, and it exists only inside a machine
+# that is disposed of with the window. Copying it into the results folder, on the host side of the
+# mapping, is what makes the gate's own bundle something anyone can look at afterwards. Cleared
+# first so the counts below are this run's and not a previous run's, and copied rather than moved
+# so the artifact stays where the checks above found it.
+$resultsBundle = 'C:\results\diagnostics'
+
+if (Test-Path $resultsBundle) { Remove-Item -Path $resultsBundle -Recurse -Force }
+
+New-Item -ItemType Directory -Force -Path $resultsBundle | Out-Null
+Copy-Item -Path (Join-Path $bundleDir '*') -Destination $resultsBundle -Recurse -Force
+
+$inBundle = @(Get-ChildItem $bundleDir -Recurse -File -ErrorAction SilentlyContinue)
+$outOfGuest = @(Get-ChildItem $resultsBundle -Recurse -File -ErrorAction SilentlyContinue)
+
+Check 'the bundle was copied out of the guest' `
+    ($inBundle.Count -ge 5 -and $outOfGuest.Count -eq $inBundle.Count) `
+    "copied $($outOfGuest.Count) of $($inBundle.Count) files to C:\results\diagnostics"
 
 Section 'https'
 
