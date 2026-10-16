@@ -81,8 +81,8 @@ Get-NetTCPConnection -LocalPort 4567 -State Listen
 ```
 
 `LocalAddress` of `:::4567` or `0.0.0.0` means every interface, and the pin is not in effect.
-`127.0.0.1` or `::1` means loopback only. `papyrus health` reports the port and not the
-address, so it will not tell you which of those you have.
+`127.0.0.1` or `::1` means loopback only. `papyrus health` prints the port and a `bound to:`
+reading on the `suwayomi` and `web` lines, so it can tell you which of those you have.
 
 Setting `SUWAYOMI_URL` alone never restricted anything. It is a URL the PHP app fetches, and a
 server on `0.0.0.0` is perfectly happy to answer it from another machine. That was measured on

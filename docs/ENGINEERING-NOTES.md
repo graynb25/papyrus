@@ -6060,3 +6060,86 @@ section 3 of the operating notes, and I read them and still ran the wrong one.
 The general form, and it is the same as trap 267 and 269 and 270 and 271: **a thing done in a hurry, in
 a place where it had never been done before, is the place defects live.** The pre-flight exists for
 exactly that moment and it costs five minutes.
+
+275. **A check that cannot pass is not a check either, and the healthy shape is the one that says so.**
+
+    The F22 fix asked the diagnostics bundle for content instead of existence, and it wrote the
+    strictest version of that: every collected file non-zero. The first full run with it, on an
+    otherwise green install, failed:
+
+        [FAIL] the bundle has collected logs  found 9, empty: frankenphp.txt, php.txt
+
+    Those two are empty because the install is healthy. `frankenphp.log` is Caddy's log at level
+    ERROR, so it has nothing to say when nothing errored, and `php-error.log` is PHP's error log, so
+    it has nothing to say when nothing failed. The collector writes an empty file for a silent source
+    on purpose, so absence stays visible in the bundle, and a test pins that behaviour. The rule as
+    written could never pass, and the reasoning behind it had only asked the other question: would a
+    bundle that collected nothing pass this? It would not, and that was F22 fixed. Nobody asked
+    whether a bundle where everything worked would pass.
+
+    The general form is trap 266 mirrored. 266 says a check that cannot fail is not a check. This is
+    the other half: **a check that cannot pass is not a check either, and it fails the loudest way
+    there is, on the healthy case it exists to protect.** Both halves are answered by the same small
+    step, which is to run the check against both known states before keeping it: the shape that must
+    fail, and the shape that must pass, each one measured rather than imagined. The F22 finding was
+    written from the broken run alone.
+
+    The fix names the two silent-by-design files, requires content from every other, and was run
+    extracted from the script that ships against four shapes: the measured healthy one passes, an all
+    empty bundle fails naming the seven, a lost source fails naming it, and a third file going quiet
+    fails by name the day it happens.
+
+276. **An array literal is not a command line, and the comma binds before the plus.**
+
+    The F18 fix had to start the shortcut through cmd.exe, and the shortest way to write it looked
+    right:
+
+        @('/c', '"' + $shortcut + '"')
+
+    which is not two elements. The comma binds tighter than the plus, so that is four: the switch, a
+    quote, the path, and another quote. `Start-Process` joins its argument list with spaces, so
+    cmd.exe received `/c " C:\Program Files\Papyrus\Papyrus.cmd "` and tried to run `C:\Program`.
+    Measured twice: the broken construction exited 9009 and recorded no exit code, and the fixed one
+    parsed the real exit code out of the file the runner writes.
+
+    The general rule: **a command line is assembled by a command line's rules, not by array syntax.**
+    Parenthesise the concatenation, or better, stop building a command line in the caller at all.
+    The fix writes a small runner `.cmd` whose text cmd.exe owns, and passes it as a single element
+    with no spaces in its path. A path with a space never reaches the caller's own quoting, because
+    the caller no longer quotes anything.
+
+277. **`ExitCode` is empty until the process has been waited for, and empty is not zero.**
+
+    `Start-Process -PassThru` without `-Wait` returns the object before the process has finished, and
+    reading `ExitCode` on it returns nothing, silently. The same invocation with `-Wait` reads the
+    code correctly, which is why one helper in this project has always worked and the other one read
+    a blank. A blank read here is not zero: the launcher's exit code was the number the check existed
+    to report, and the check reported an absence instead.
+
+    The gate no longer depends on it. The runner writes `%errorlevel%` to a file, and the check reads
+    the file, saying `not recorded` when it is absent. **Three states, named: zero, not zero, and not
+    recorded.** The third is a real answer about the check, and collapsing it into either of the
+    others is how a property that was never read becomes a passing verdict.
+
+278. **A guard that refuses over a file its own list knows how to remove, and names no remedy.**
+
+    The rebuild refused:
+
+        the build contains files that must not ship:
+          - database/backups/papyrus-20261015-163725.sqlite
+          - database/backups/suwayomi-20261015-163725.mv.db
+        Refusing to report success.
+
+    Both halves were right: the walk check exists because anything matching a library's shape in an
+    artifact is either the developer's data or a build artefact, and those files were the developer's
+    data. But the same script already strips `database/database.sqlite` and the journal, wal and shm
+    beside it, printing a line as it goes, because a developer's library is normal in a checkout. The
+    copies are the same class of file, one directory over, and the refusal did not say what to do
+    about them. They were not going anywhere on their own: the checkout's own backup run wrote them,
+    and every build would fail while they sat there.
+
+    The fix is not a leniency. `database/backups` joins the strip list, and the build prints
+    `removed: database/backups` like the rest. **When two rules in one script cover the same
+    location, the automatic one owns it, and the loud one firing anyway is a gap in the automatic
+    one, not a finding about the tree.** And a refusal that names its cause but not its remedy is
+    half of trap 273: the reader can see what is wrong and has nowhere to go.

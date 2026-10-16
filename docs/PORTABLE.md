@@ -62,7 +62,7 @@ php packaging/runtime/build-install.php ^
     --jar=<Suwayomi-Server-v2.4.2366.jar>
 ```
 
-That produces `build/install`, which is the portable payload: 12,641 files, 623 MB, and a
+That produces `build/install`, which is the portable payload: 12,672 files, 623.3 MB, and a
 `Papyrus.cmd` in the root. Copy it anywhere and run `Papyrus.cmd`.
 
 On first run it creates `papyrus-data` beside the folder, generates its own `.env`, applies

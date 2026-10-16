@@ -123,11 +123,11 @@ says what you lose:
 ```
     Papyrus health
 
-    ok    suwayomi   running  v2.4.2366  port 4567  the version Papyrus ships and tests against
-    ok    web        listening  port 8000  /ready 200  key ok  database ok
+    ok    suwayomi   running  v2.4.2366  port 4567  the version Papyrus ships and tests against  bound to: 127.0.0.1 (this machine only)
+    ok    web        listening  port 8000  /ready 200  key ok  database ok  bound to: ::1 (this machine only), 127.0.0.1 (this machine only)
     ok    queue      running  queue:work
     ok    scheduler  running  schedule:work
-    ok    queue      idle  nothing queued
+    ok    queue      idle  nothing queued yet
     ok    schedule   dispatching, last wrote 6s ago
     ok    database   ok  database.sqlite  5.3 MB
     ok    logging    ok, and a diagnostics bundle can be written on request
@@ -311,7 +311,7 @@ ten seconds, then start again.
 
 ### The first launch takes minutes
 
-Antivirus, mostly, and a slow disk. Papyrus writes 12,639 files on first launch. It is faster every
+Antivirus, mostly, and a slow disk. Papyrus writes 12,672 files on first launch. It is faster every
 time after.
 
 ### Moving Papyrus to another computer

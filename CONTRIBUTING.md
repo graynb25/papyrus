@@ -12,8 +12,6 @@ python tools/test-check-machine-detail.py
 are stricter than CI was, so **a local run is stricter than CI**. Run all of it, every time. A change is
 not finished until it has been run **against the change**, not against the branch it was based on.
 
-Then commit. Pushing is a separate decision, below.
-
 Then commit.
 
 **Push is a separate decision, and it is not yours to make alone.** See *Commits and pushes* below.
@@ -24,7 +22,7 @@ Local commits are free. A push spends CI minutes that somebody is paying for.
 ## Before you start
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** is the map. Read it first; it will save you an hour.
-- **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** is 260-odd numbered lessons. Each one
+- **[docs/ENGINEERING-NOTES.md](docs/ENGINEERING-NOTES.md)** is 270-odd numbered lessons. Each one
   is a mistake that was actually made here. Grep it before solving anything that sounds familiar.
 - **[docs/DESKTOP-PACKAGING.md](docs/DESKTOP-PACKAGING.md)** if you are touching the launcher, and
   **[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)** if you are touching shipping.
@@ -137,10 +135,10 @@ Two more things that are specific to that layer:
 
 ### Mutation checks
 
-`.tools/suwayomi/mutation-*.php`. They mutate a file, run a slice of the suite, and restore.
+`..\.tools\suwayomi\mutation-*.php`. They mutate a file, run a slice of the suite, and restore.
 
 ```
-php .tools/suwayomi/mutation-check-credentials.php
+php ..\.tools\suwayomi\mutation-check-credentials.php
 ```
 
 Four outcomes, and the distinction matters more than the count:
