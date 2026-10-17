@@ -14,7 +14,10 @@ use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
 use App\Models\SeriesState;
 use App\Models\Source;
+use App\Models\SourceHealth;
 use App\Models\User;
+use App\Models\UserSource;
+use App\Search\SearchFanout;
 use App\Search\TitleNormalizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -91,6 +94,9 @@ class MigrationTest extends TestCase
     /** @var array<int, array<string, mixed>> the source fetch calls, in order */
     private array $fetches = [];
 
+    /** @var array<int, string> suwayomi ids whose Search mutation the fake served */
+    private array $searchSwept = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -107,6 +113,7 @@ class MigrationTest extends TestCase
         $this->serverStatus = null;
         $this->sent = [];
         $this->fetches = [];
+        $this->searchSwept = [];
 
         $this->fakeSuwayomi();
     }
@@ -133,6 +140,8 @@ class MigrationTest extends TestCase
 
             if (str_contains($query, 'mutation Search')) {
                 $sourceId = (string) ($variables['source'] ?? '');
+                $this->searchSwept[] = $sourceId;
+
                 $hits = $this->searchHits[$sourceId] ?? [];
 
                 return Http::response(['data' => ['fetchSourceManga' => [
@@ -548,6 +557,7 @@ class MigrationTest extends TestCase
         $this->world();
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -564,6 +574,7 @@ class MigrationTest extends TestCase
         $this->world();
 
         app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -580,6 +591,7 @@ class MigrationTest extends TestCase
         $this->world();
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -596,6 +608,7 @@ class MigrationTest extends TestCase
         $this->world();
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -615,6 +628,7 @@ class MigrationTest extends TestCase
         $this->noChapters = [self::TO];
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -634,6 +648,7 @@ class MigrationTest extends TestCase
         $seen = [];
 
         app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
             function (int $done, int $total) use (&$seen): void {
@@ -682,6 +697,7 @@ class MigrationTest extends TestCase
         ];
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -712,7 +728,7 @@ class MigrationTest extends TestCase
         $this->meta[7001] = ['title' => "The Berserker's Second Playthrough", 'author' => 'Life Ruined'];
 
         // Asura is the series' own source, so it is the one excluded from the sweep.
-        $result = app(CandidateFinder::class)->find($this->source('Asura Scans', 0), $this->seriesNode(self::FROM));
+        $result = app(CandidateFinder::class)->find($this->user->id, $this->source('Asura Scans', 0), $this->seriesNode(self::FROM));
 
         $this->assertContains(7001, array_column($result['candidates'], 'manga_id'));
     }
@@ -725,6 +741,7 @@ class MigrationTest extends TestCase
         $this->searchHits[(string) $idle->suwayomi_source_id] = [8001 => "The Berserker's Second Playthrough"];
 
         $result = app(CandidateFinder::class)->find(
+            $this->user->id,
             $this->source('Asura Scans', 0),
             $this->seriesNode(self::FROM),
         );
@@ -739,9 +756,95 @@ class MigrationTest extends TestCase
         $from = $this->source('Asura Scans', 0);
         $this->searchHits[(string) $from->suwayomi_source_id] = [9001 => "The Berserker's Second Playthrough"];
 
-        $result = app(CandidateFinder::class)->find($from, $this->seriesNode(self::FROM));
+        $result = app(CandidateFinder::class)->find($this->user->id, $from, $this->seriesNode(self::FROM));
 
         $this->assertNotContains(9001, array_column($result['candidates'], 'manga_id'));
+    }
+
+    /**
+     * A source the reader turned off, and a source the ledger marked dead, take
+     * no part in the full sweep, and take no part in the number announced.
+     *
+     * The fanout has skipped both by default since long before this, for measured
+     * reasons that hold here word for word: a disabled source is a reader decision,
+     * and a dead one spends its entire timeout answering nothing on every run. The
+     * sweep used to ignore both, so "every installed source" was accurate and still
+     * walked walls the search had already measured useless.
+     */
+    public function test_the_sweep_walks_the_sources_a_search_would_run_and_none_beyond(): void
+    {
+        $this->world();
+
+        $lagoon = $this->source('Lagoon Scans', 2);
+        UserSource::setDisabledFor($this->user, [$lagoon->suwayomi_source_id], true);
+
+        $mangadexThree = $this->source('MangaDex (3)', 3, 'https://mangadex.test');
+        SourceHealth::create([
+            'source_id' => $mangadexThree->suwayomi_source_id,
+            'name' => $mangadexThree->name,
+            'lang' => 'en',
+            'is_dead' => true,
+        ]);
+
+        $result = app(CandidateFinder::class)->find(
+            $this->user->id,
+            $this->source('Asura Scans', 0),
+            $this->seriesNode(self::FROM),
+        );
+
+        // Default world: seven installed. The sweep loses its own source, the
+        // disabled one and the dead one, leaving MangaFire and MangaDex 4, 5, 6.
+        $this->assertSame(4, $result['meta']['sources_total']);
+        $this->assertNotContains('Lagoon Scans', array_column($result['candidates'], 'source_name'));
+
+        $this->assertSame(
+            [
+                (string) (self::fromSourceId() + 1),
+                (string) (self::fromSourceId() + 4),
+                (string) (self::fromSourceId() + 5),
+                (string) (self::fromSourceId() + 6),
+            ],
+            $this->searchSwept,
+            'The sweep asked exactly the sources a search would run, in its own order.',
+        );
+    }
+
+    /**
+     * The one definition, stated against both surfaces that schedule searches.
+     *
+     * The acceptance the plan named for this item: for the same reader and the
+     * same source set, what the fanout counts as runnable and what a full sweep
+     * walks are the same rows, and they differ only by the source being left.
+     * The fanout runs uncapped here because the cap is its own decision about
+     * cost, not a different idea of what is installed.
+     */
+    public function test_the_search_scope_and_the_migrate_sweep_agree_on_what_will_run(): void
+    {
+        $this->world();
+
+        $lagoon = $this->source('Lagoon Scans', 2);
+        $own = $this->source('Asura Scans', 0);
+
+        UserSource::setDisabledFor($this->user, [$lagoon->suwayomi_source_id], true);
+
+        $fanout = app(SearchFanout::class)
+            ->targets($this->user, ['limit' => -1])
+            ->map(fn (Source $source): int => (int) $source->suwayomi_source_id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $sweep = app(CandidateFinder::class)
+            ->sweepTargets($this->user->id, (string) $own->suwayomi_source_id)
+            ->map(fn (Source $source): int => (int) $source->suwayomi_source_id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            array_values(array_diff($fanout, [(int) $own->suwayomi_source_id])),
+            $sweep,
+        );
     }
 
     /**
@@ -1195,6 +1298,35 @@ class MigrationTest extends TestCase
         Queue::assertPushed(FindMigrationCandidates::class);
     }
 
+    /**
+     * The row carries its denominator from the press on.
+     *
+     * Measured live on 2026-10-16: the press rendered "0 / ?" until the job's
+     * first throttled write arrived five seconds in, so the bar stayed hidden
+     * and the count read as a placeholder. The press knows the number its sweep
+     * will walk, because the page and the sweep now read one definition of what
+     * will run.
+     */
+    public function test_a_search_starts_at_zero_with_the_count_its_sweep_will_walk(): void
+    {
+        $this->world();
+        Queue::fake();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('findSources')
+            ->assertOk();
+
+        /** @var MigrationSearch $row */
+        $row = MigrationSearch::forUser($this->user->id)->firstOrFail();
+
+        $this->assertSame(0, $row->sources_searched);
+        $this->assertSame(
+            6,
+            $row->sources_total,
+            'The default world installs 6 sources other than the one the series reads from.',
+        );
+    }
+
     public function test_the_page_shows_the_ranked_candidates(): void
     {
         $this->world();
@@ -1222,10 +1354,21 @@ class MigrationTest extends TestCase
         Livewire::test('pages::migrate', ['manga' => self::FROM])
             ->assertOk()
             ->assertSee('3 / 82')
-            ->assertSee('Searching every installed source');
+            ->assertSee('Searching the other sources');
     }
 
-    public function test_the_page_polls_only_while_a_search_is_running(): void
+    /**
+     * The poll rides the searching card, and settling is the stop.
+     *
+     * The page used to declare its poll through a `with()` array, and nothing in
+     * Livewire or volt ever calls that method, so the directive never reached the
+     * rendered page: the row turned ready in the database while the card kept
+     * saying it was searching, until a full reload. Measured twice live on
+     * 2026-10-16. The idiom is the search page's, proven there with a probe: the
+     * directive sits on the block that shows progress, and the block unmounting
+     * stops it.
+     */
+    public function test_the_searching_card_polls_and_a_settled_search_rides_nothing(): void
     {
         $this->world();
 
@@ -1234,13 +1377,22 @@ class MigrationTest extends TestCase
             'state' => MigrationSearch::SEARCHING,
         ]);
 
-        $polling = Livewire::test('pages::migrate', ['manga' => self::FROM])->instance()->with();
-        $this->assertSame(['poll' => '3000ms'], $polling);
+        $running = Livewire::test('pages::migrate', ['manga' => self::FROM])->html();
+        $this->assertTrue(
+            str_contains($running, 'wire:poll'),
+            'With a search in flight the page must actually poll, which the old with() route never arranged.',
+        );
 
-        MigrationSearch::forUser($this->user->id)->update(['state' => MigrationSearch::READY, 'candidates' => []]);
+        MigrationSearch::forUser($this->user->id)->update([
+            'state' => MigrationSearch::READY,
+            'candidates' => [],
+        ]);
 
-        $idle = Livewire::test('pages::migrate', ['manga' => self::FROM])->instance()->with();
-        $this->assertSame([], $idle, 'A reader looking at a finished list should not pay for a poll.');
+        $settled = Livewire::test('pages::migrate', ['manga' => self::FROM])->html();
+        $this->assertFalse(
+            str_contains($settled, 'wire:poll'),
+            'A reader looking at a finished list should not pay for a poll.',
+        );
     }
 
     public function test_the_page_says_so_when_nothing_else_has_the_series(): void
@@ -1303,7 +1455,16 @@ class MigrationTest extends TestCase
 
         $search->forceFill(['updated_at' => now()->subSeconds(MigrationSearch::STALL_AFTER_SECONDS + 60)])->save();
 
-        $this->assertSame([], Livewire::test('pages::migrate', ['manga' => self::FROM])->instance()->with());
+        $html = Livewire::test('pages::migrate', ['manga' => self::FROM])->html();
+
+        $this->assertFalse(
+            str_contains($html, 'wire:poll'),
+            'A stalled search must not keep the page polling.',
+        );
+        $this->assertTrue(
+            str_contains($html, 'The search could not finish'),
+            'The stalled search is a failure the page states, not a silent stop.',
+        );
     }
 
     /**
@@ -1325,9 +1486,12 @@ class MigrationTest extends TestCase
         $search->refresh();
 
         $this->assertFalse($search->isStalled());
-        $this->assertSame(
-            ['poll' => '3000ms'],
-            Livewire::test('pages::migrate', ['manga' => self::FROM])->instance()->with(),
+        $this->assertTrue(
+            str_contains(
+                Livewire::test('pages::migrate', ['manga' => self::FROM])->html(),
+                'wire:poll',
+            ),
+            'A search that is still reporting keeps its poll.',
         );
     }
 

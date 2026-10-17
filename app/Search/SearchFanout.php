@@ -5,10 +5,8 @@ namespace App\Search;
 use App\Jobs\SearchSourceJob;
 use App\Models\SearchRun;
 use App\Models\Source;
-use App\Models\SourceHealth;
 use App\Models\SourcePreference;
 use App\Models\User;
-use App\Models\UserSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -165,7 +163,7 @@ class SearchFanout
     public function targets(User $user, array $options = []): Collection
     {
         $query = Source::query()
-            ->installed()
+            ->runnableFor($user->id, (bool) ($options['include_dead'] ?? false))
             ->when(
                 $options['langs'] ?? null,
                 fn ($q, $langs) => $q->whereIn('lang', (array) $langs),
@@ -175,29 +173,6 @@ class SearchFanout
                 fn ($q, $content) => $q->whereIn('content_warning', (array) $content),
             )
             ->orderBy('name');
-
-        // Sources the user has explicitly disabled never run.
-        $disabled = UserSource::forUser($user->id)
-            ->where('disabled', true)
-            ->pluck('source_id')
-            ->all();
-
-        if ($disabled !== []) {
-            $query->whereNotIn('suwayomi_source_id', $disabled);
-        }
-
-        // Dead sources are skipped unless explicitly asked for, because each
-        // one would otherwise burn a full timeout on every future run.
-        if (! ($options['include_dead'] ?? false)) {
-            $dead = SourceHealth::query()
-                ->where('is_dead', true)
-                ->pluck('source_id')
-                ->all();
-
-            if ($dead !== []) {
-                $query->whereNotIn('suwayomi_source_id', $dead);
-            }
-        }
 
         $limit = (int) ($options['limit'] ?? 60);
 

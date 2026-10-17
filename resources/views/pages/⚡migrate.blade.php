@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\FindMigrationCandidates;
+use App\Migration\CandidateFinder;
 use App\Migration\SeriesMigrator;
 use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
@@ -95,16 +96,32 @@ new #[Title('Move to another source')] class extends Component {
          * A new row per attempt, and the old ones stay until the reader leaves. The
          * page renders only the newest, so a second search supersedes the first
          * without leaving a stale list one click away.
+         *
+         * The denominator rides the row from the press on, counted from the rows
+         * the sweep will walk. Measured live on 2026-10-16: without it the card
+         * read "0 / ?" for the whole first stretch, because the total only ever
+         * came from the job's first throttled write five seconds in, and a bar
+         * with no total is not drawn at all.
          */
+        $total = app(CandidateFinder::class)
+            ->sweepTargets(auth()->id(), (string) ($series['source']['id'] ?? ''))
+            ->count();
+
         $search = MigrationSearch::createFor(auth()->id(), [
             'from_manga_id' => $this->manga,
             'state' => MigrationSearch::SEARCHING,
+            'sources_searched' => 0,
+            'sources_total' => $total,
         ]);
 
         FindMigrationCandidates::dispatch($search->getKey(), auth()->id(), $this->manga);
 
         Flux::toast(
-            text: __('This searches every installed source and takes about half a minute.'),
+            text: trans_choice(
+                'Searching :count other installed source, about half a minute.|Searching :count other installed sources, about half a minute.',
+                $total,
+                ['count' => $total],
+            ),
             heading: __('Searching'),
             variant: 'info',
         );
@@ -167,16 +184,6 @@ new #[Title('Move to another source')] class extends Component {
         return $search !== null
             && $search->state === MigrationSearch::SEARCHING
             && ! $search->isStalled();
-    }
-
-    public function with(): array
-    {
-        // Polling only while a search is genuinely in flight. Once it settles, or is
-        // given up on, the page stops asking, because a reader looking at a finished
-        // list should not be paying for a request every three seconds.
-        $polling = $this->stillRunning();
-
-        return $polling ? ['poll' => self::REFRESH_MS . 'ms'] : [];
     }
 
     /**
@@ -335,34 +342,49 @@ new #[Title('Move to another source')] class extends Component {
 
         {{-- Searching --------------------------------------------------------- --}}
         @if ($this->stillRunning())
-            <flux:card class="p-4">
-                <div class="flex items-center justify-between gap-4">
-                    <flux:heading size="sm" level="3">{{ __('Searching every installed source') }}</flux:heading>
-                    <flux:text size="sm" class="tabular-nums text-zinc-500">
-                        {{ $search->sources_searched }} / {{ $search->sources_total ?: '?' }}
-                    </flux:text>
-                </div>
+            {{--
+                The poll rides the card it refreshes, and the card's unmounting when
+                the search settles is the stop.
 
-                {{--
-                    A determinate bar, because the count is known. Measured: this
-                    takes about 22 seconds across 82 sources, and the page polls
-                    every three.
-                --}}
-                @if ($search->sources_total > 0)
-                    <div
-                        class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
-                        role="progressbar"
-                        aria-valuemin="0"
-                        aria-valuemax="{{ $search->sources_total }}"
-                        aria-valuenow="{{ $search->sources_searched }}"
-                    >
-                        <div
-                            class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
-                            style="width: {{ (int) round(($search->sources_searched / $search->sources_total) * 100) }}%"
-                        ></div>
+                The page used to declare polling through a `with()` array, and nothing
+                in Livewire or volt ever calls such a method, so the directive never
+                reached the rendered page and the page never polled at all: the row
+                turned ready in the database while the card kept saying it was
+                searching, until a full reload. Measured twice live on 2026-10-16.
+                This is the search page's idiom, proven there with a probe: the
+                directive sits on the block that shows progress, and a directive on
+                an empty element is not reliably started at all.
+            --}}
+            <div wire:poll.{{ $this::REFRESH_MS / 1000 }}s>
+                <flux:card class="p-4">
+                    <div class="flex items-center justify-between gap-4">
+                        <flux:heading size="sm" level="3">{{ __('Searching the other sources') }}</flux:heading>
+                        <flux:text size="sm" class="tabular-nums text-zinc-500">
+                            {{ $search->sources_searched }} / {{ $search->sources_total ?: '?' }}
+                        </flux:text>
                     </div>
-                @endif
-            </flux:card>
+
+                    {{--
+                        A determinate bar, because the count is known. Measured: this
+                        takes about 22 seconds across 82 sources, and the page polls
+                        every three.
+                    --}}
+                    @if ($search->sources_total > 0)
+                        <div
+                            class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="{{ $search->sources_total }}"
+                            aria-valuenow="{{ $search->sources_searched }}"
+                        >
+                            <div
+                                class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
+                                style="width: {{ (int) round(($search->sources_searched / $search->sources_total) * 100) }}%"
+                            ></div>
+                        </div>
+                    @endif
+                </flux:card>
+            </div>
         @endif
 
         {{-- Failed ------------------------------------------------------------ --}}

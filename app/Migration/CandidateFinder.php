@@ -71,8 +71,30 @@ class CandidateFinder
     ) {}
 
     /**
+     * The sources a full sweep walks: the one definition of what will run,
+     * without the source being left.
+     *
+     * The page reads this for the number it announces at the press, and the job
+     * walks the same rows, so the search row carries "0 / 68" from its first
+     * render instead of a placeholder until the first throttled write, five
+     * seconds in. Ordered by suwayomi_source_id, because a run whose sweep order
+     * moves between renders would be describing a moving list.
+     *
+     * @return Collection<int, Source>
+     */
+    public function sweepTargets(int $readerId, string $excludeSuwayomiId): Collection
+    {
+        return Source::query()
+            ->runnableFor($readerId)
+            ->where('suwayomi_source_id', '!=', $excludeSuwayomiId)
+            ->orderBy('suwayomi_source_id')
+            ->get();
+    }
+
+    /**
      * Ranked candidates for a series, best first.
      *
+     * @param  int  $readerId  the sweep walks this reader's runnable sources
      * @param  array<string, mixed>  $current  the series as SeriesGateway::find returns it
      * @param  callable(int, int): void|null  $onProgress  called after each source
      *                                                     with searched and total, so a
@@ -83,20 +105,13 @@ class CandidateFinder
      *                                                     purpose so it can.
      * @return array{candidates: array<int, array<string, mixed>>, meta: array<string, int>}
      */
-    public function find(
-        Source $from,
-        array $current,
-        ?callable $onProgress = null,
-    ): array {
-        $currentSourceId = (string) $from->suwayomi_source_id;
-
-        $sources = Source::query()
-            ->where('is_installed', true)
-            ->where('suwayomi_source_id', '!=', $currentSourceId)
-            ->orderBy('suwayomi_source_id')
-            ->get();
-
-        return $this->sweepAndRank($sources, $current, $onProgress);
+    public function find(int $readerId, Source $from, array $current, ?callable $onProgress = null): array
+    {
+        return $this->sweepAndRank(
+            $this->sweepTargets($readerId, (string) $from->suwayomi_source_id),
+            $current,
+            $onProgress,
+        );
     }
 
     /**

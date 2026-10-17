@@ -77,6 +77,47 @@ class Source extends Model
     }
 
     /**
+     * Sources that will actually run something when asked: installed on the
+     * mirror, not switched off by this reader, and not dead in the ledger.
+     *
+     * There is one definition of "installed and will run", because two surfaces
+     * schedule searches and they must not walk different rows: the search fanout,
+     * and the migration sweep. The fanout has skipped both kinds by default since
+     * long before this existed, for measured reasons that hold anywhere the costs
+     * repeat: a disabled source is a reader decision, and a dead one spends its
+     * entire timeout answering nothing on every run. Dead sources can be asked
+     * for explicitly by name, and that ask keeps its escape hatch here.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeRunnableFor(Builder $query, int $readerId, bool $includeDead = false): Builder
+    {
+        $disabled = UserSource::forUser($readerId)
+            ->where('disabled', true)
+            ->pluck('source_id')
+            ->all();
+
+        $dead = $includeDead
+            ? []
+            : SourceHealth::query()
+                ->where('is_dead', true)
+                ->pluck('source_id')
+                ->all();
+
+        return $query
+            ->installed()
+            ->when(
+                $disabled !== [],
+                fn (Builder $q): Builder => $q->whereNotIn('suwayomi_source_id', $disabled),
+            )
+            ->when(
+                $dead !== [],
+                fn (Builder $q): Builder => $q->whereNotIn('suwayomi_source_id', $dead),
+            );
+    }
+
+    /**
      * Filter by allowed content ratings.
      *
      * @param  Builder<static>  $query

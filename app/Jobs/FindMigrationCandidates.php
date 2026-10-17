@@ -141,6 +141,7 @@ class FindMigrationCandidates implements ShouldQueue
 
         try {
             $result = $finder->find(
+                $this->userId,
                 $source,
                 $current,
                 function (int $searched, int $total) use ($search, &$lastWrite): void {

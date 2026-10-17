@@ -6234,3 +6234,19 @@ exactly that moment and it costs five minutes.
     general form: **a selector that names no dialog can name the wrong one, and then never
     fail.** Press buttons inside a named dialog through its `data-modal` scope, and treat a
     click that reports ok as the reason to measure the effect, not as the effect.
+
+286. **A hook nothing in the framework calls is not a hook, and a test that is its only caller tests nothing the page does.**
+
+    Measured on the migrate page on 2026-10-17: its poll was declared through a `with()` array
+    method, and the page never carried a `wire:poll` directive in its whole history, because
+    nothing in Livewire or volt calls such a method; the vendor tree holds no `with()` component
+    hook, and polling exists only as a rendered directive with no server-side feature behind it.
+    The row turned ready in the database twice live on 2026-10-16 while the card kept saying it
+    was searching until a full reload, which is the symptom the migration plan recorded. The
+    test called `instance()->with()` and asserted the array it returned, so it stayed green
+    through every one of those live failures: the test was the method's only caller, and the
+    method was the mechanism's only referent. The general form: **a contract only the test
+    knows about was never a contract with the browser.** The replacement asserts what the
+    browser reads, that the rendered html carries `wire:poll` while a search runs and carries
+    none once it settles, on the block that shows progress, the same idiom the search page
+    proved working with a probe.
