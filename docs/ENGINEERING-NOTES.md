@@ -6382,3 +6382,34 @@ exactly that moment and it costs five minutes.
     while the reader's half keeps its claims, so the join needs an agreement check between the
     id and the title behind it, and absent one the lens can carry read state across series.**
     Nothing in the batch defends a reader from that; the register names the condition.
+
+295. **The boot's handlers live until the parent teardown runs, and a teardown that never calls the parent keeps them on the stack.**
+
+   Measured on 2026-10-17, on the full suite's summary: five tests marked risky, all five in
+   `SupervisorProcessIdentityTest`, each carrying both messages, "Test code or tested code did
+   not remove its own error handlers" and the exception handlers one beneath it. The class sets
+   no handler anywhere, and neither do the launcher classes it exercises, so the flags named a
+   fault the code did not contain.
+
+   The hunt, in the order it happened, because the shape matters. The summary JSON counts risky
+   but prints no names, and the harness funnels phpunit's own stdout, so a redirect captured the
+   counts and nothing else; `--log-events-text`, written by PHPUnit's side channel, named all
+   five and both causes. A throwaway probe then walked both stacks the way the compare itself
+   does (set, capture, restore, and rebuild) around every step of one flagged test's body, and
+   the stacks sat flat across every launcher step: the push the flags report is not in the code
+   the test runs. Instrumenting the vendored compare itself, snapshot against restore, with a
+   watcher kept on a byte hash and the vendor file restored byte for byte afterwards, settled
+   it: a sibling launcher class whose sixteen tests all stay flat read one handler and none both
+   before and after, the flagged five read one flat at the snapshot and one extra of each kind
+   at the restore, and walking a probe test around its own parent calls showed the change land
+   inside `parent::setUp()` and leave inside `parent::tearDown()`. Laravel boots the application
+   there, `HandleExceptions` pushes its error and exception closures, and the framework's own
+   teardown pops them; the five skipped `parent::tearDown()` entirely, so the boot's handlers
+   rode on into the compare, and the repair is one call at the end of the file's own teardown.
+   Removing that call again put all five flags back, and putting it back removed them, so the
+   round trip worked from both ends.
+
+   Two lessons. A handler the runner flags is most likely to be one whose cleanup is a call you
+   left unmade rather than code that registered anything. And the risky count deserved reading
+   before the names were needed: it had been sitting in every suite summary the tool layer
+   prints, and nobody had looked at it.

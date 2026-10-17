@@ -76,6 +76,14 @@ class SupervisorProcessIdentityTest extends TestCase
         }
 
         @rmdir($this->root);
+
+        /*
+         * The app boot in setUp left its error and exception handlers on the stack, and the
+         * parent teardown is what takes them off. Every test in this file ended flagged as
+         * risky with a message about handlers the class never registered, which reads like a
+         * production fault and was a missing parent call.
+         */
+        parent::tearDown();
     }
 
     /**
