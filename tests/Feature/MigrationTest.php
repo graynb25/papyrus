@@ -82,6 +82,15 @@ class MigrationTest extends TestCase
     /** Sources whose listing throws "No chapters found". */
     private array $noChapters = [];
 
+    /**
+     * Chapter lists only a refresh sees, keyed by manga id.
+     *
+     * For a series whose chapter list the base world never served: the server shape
+     * of a series added from a search result and never opened, which reports zero
+     * chapters until something asks it to fetch them.
+     */
+    private array $refreshLists = [];
+
     /** Manga the server does not know, as ids. */
     private array $unknown = [];
 
@@ -119,6 +128,7 @@ class MigrationTest extends TestCase
         $this->meta = [];
         $this->sources = [];
         $this->noChapters = [];
+        $this->refreshLists = [];
         $this->unknown = [];
         $this->searchHits = [];
         $this->serverStatus = null;
@@ -184,6 +194,16 @@ class MigrationTest extends TestCase
                 if (in_array($mangaId, $this->noChapters, true)) {
                     return Http::response(['errors' => [[
                         'message' => 'java.lang.Exception: No chapters found',
+                    ]]]);
+                }
+
+                if (array_key_exists($mangaId, $this->refreshLists)) {
+                    // What the real server answers when the refresh is what first
+                    // fetches a series' chapters, which the current chapterLists
+                    // entry cannot express because find() has to keep reporting zero.
+                    return Http::response(['data' => ['fetchMangaAndChapters' => [
+                        'manga' => $this->mangaNode($mangaId),
+                        'chapters' => $this->refreshLists[$mangaId],
                     ]]]);
                 }
 
@@ -1073,6 +1093,84 @@ class MigrationTest extends TestCase
             $outcome['reason'],
         );
         $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
+    }
+
+    /**
+     * A series added straight from a search result has never been opened, so the
+     * server has not fetched its chapter list yet. Measured live on 2026-10-17:
+     * six freshly added series arrived at the move with no listing at all, and
+     * every move was refused on the strength of that. The leaving side now takes
+     * the second look the destination side already takes before it refuses.
+     */
+    public function test_a_leaving_series_with_an_unfetched_list_fetches_it_and_carries_on(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+
+        unset($this->chapterLists[self::FROM]);
+        $this->refreshLists[self::FROM] = $this->chaptersLabelled('Chapter ', 1, 5);
+
+        $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        $this->assertTrue($outcome['ok'], (string) $outcome['reason']);
+        $this->assertContains(self::FROM, $this->fetches, 'the carry is worth one fresh fetch before it is refused');
+
+        /** @var SeriesMigration $migration */
+        $migration = $outcome['migration'];
+        $this->assertSame(5, $migration->chapters_total);
+
+        $carried = ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::TO)->get();
+
+        $this->assertSame([2001], $carried->pluck('suwayomi_chapter_id')->values()->all());
+    }
+
+    /**
+     * The leaving-side twin of the emptied-destination test above: the list was
+     * there once, so the carry has something it cannot place, and a fresh fetch
+     * answers successfully with nothing in it. The mapper's line says chapters
+     * failed to match, which would be wrong here, so the refusal names the empty
+     * listing instead.
+     */
+    public function test_a_leaving_list_that_is_still_empty_after_a_fresh_fetch_is_refused_with_its_own_line(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        $this->chapterLists[self::FROM] = [];
+
+        $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        $this->assertFalse($outcome['ok']);
+        $this->assertSame(
+            'The source this series is leaving lists no chapters, so your read progress there could not be carried over.',
+            $outcome['reason'],
+        );
+        $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
+        $this->assertDatabaseCount('series_migrations', 0);
+    }
+
+    /** A fresh fetch that errors is the other way a leaving list can stay empty. */
+    public function test_a_leaving_list_whose_fresh_fetch_fails_is_refused_with_its_own_line(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        $this->chapterLists[self::FROM] = [];
+        $this->noChapters = [self::FROM];
+
+        $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        $this->assertFalse($outcome['ok']);
+        $this->assertSame(
+            'The source this series is leaving lists no chapters, so your read progress there could not be carried over.',
+            $outcome['reason'],
+        );
+        $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
+        $this->assertDatabaseCount('series_migrations', 0);
     }
 
     public function test_an_unmatched_series_is_left_alone(): void

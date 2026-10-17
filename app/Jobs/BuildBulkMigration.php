@@ -87,12 +87,21 @@ class BuildBulkMigration implements ShouldQueue
              * only reaches here for something it could not survive, such as the library itself
              * being unreadable. Leaving the row reading `running` is the state a page cannot
              * interpret.
+             *
+             * Only while it is still running, because the press of a stop can land inside the
+             * same window a throw did: the reader's own verdict for a run they stopped is the
+             * stop, and a failure stamp over it would tell them it broke when it did not.
+             * The exception still goes to the log either way.
              */
-            $run->update([
-                'state' => BulkMigration::FAILED,
-                'error' => $e->getMessage(),
-                'finished_at' => now(),
-            ]);
+            $run->refresh();
+
+            if ($run->state === BulkMigration::RUNNING) {
+                $run->update([
+                    'state' => BulkMigration::FAILED,
+                    'error' => $e->getMessage(),
+                    'finished_at' => now(),
+                ]);
+            }
 
             throw $e;
         }

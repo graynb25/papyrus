@@ -143,6 +143,29 @@ class BulkSourceMatcher
         $matched = 0;
 
         foreach ($onSource as $entry) {
+            /*
+             * The reader may have pressed stop since the last series finished.
+             *
+             * Checked here rather than after the compare, because the only outcome that
+             * matters is that the series in front of the loop is not compared once the
+             * reader has said stop: a press that lands during a compare lets that one
+             * finish, and every row it wrote stands, which is the polite part of the
+             * phrase "politely abandons". The final and cap exits below check as well,
+             * because they both write a state and must not overwrite the stop.
+             */
+            if ($this->hasBeenStopped($run)) {
+                /*
+                 * The counts are written on the way out, because the in-progress writes
+                 * above are throttled to every three seconds and a stop that lands before
+                 * the first one fires leaves the row reading zero directly above card rows
+                 * the run did create. The counters are the reader's "how far did it get",
+                 * and the rows are the same claim in a second form.
+                 */
+                $run->update(['series_checked' => $checked, 'series_matched' => $matched]);
+
+                return ['checked' => $checked, 'matched' => $matched, 'total' => $total];
+            }
+
             if ($checked >= $cap) {
                 $run->update([
                     'state' => BulkMigration::READY,
@@ -179,6 +202,14 @@ class BulkSourceMatcher
                 return ['checked' => $checked, 'matched' => $matched, 'total' => $total];
             }
 
+            /**
+             * Written before the compare, not after, so a run that dies mid series leaves
+             * the name of the one it died on. The library entry's title rather than the
+             * fetched one: the point of the line is naming what is about to be requested,
+             * and asking the destination for it first would put the request before the name.
+             */
+            $run->update(['current_title' => (string) $entry['title']]);
+
             $checked++;
 
             $outcome = $this->compareOne($run, $from, $to, (int) $entry['manga_id']);
@@ -196,15 +227,40 @@ class BulkSourceMatcher
             }
         }
 
-        $run->update([
-            'state' => BulkMigration::READY,
-            'series_checked' => $checked,
-            'series_matched' => $matched,
-            'error' => null,
-            'finished_at' => now(),
-        ]);
+        /*
+         * The stop can land between the last series' own state check and this write, so this
+         * exit re-checks rather than stamping READY over whatever the reader named. Counts
+         * still get written on the stopped path, because the stopped card shows them, but the
+         * state it named stands.
+         */
+        if ($this->hasBeenStopped($run)) {
+            $run->update(['series_checked' => $checked, 'series_matched' => $matched]);
+        } else {
+            $run->update([
+                'state' => BulkMigration::READY,
+                'series_checked' => $checked,
+                'series_matched' => $matched,
+                'error' => null,
+                'finished_at' => now(),
+            ]);
+        }
 
         return ['checked' => $checked, 'matched' => $matched, 'total' => $total];
+    }
+
+    /**
+     * Whether the reader has said stop since the loop last looked.
+     *
+     * A method rather than an inline compare, because the loop top and the final exit make
+     * the same claim and should read it the same way, and because a stop is otherwise a
+     * timing race a test fixture cannot win on purpose: this is the one place a stop is
+     * believed, which is the override point a test needs.
+     */
+    protected function hasBeenStopped(BulkMigration $run): bool
+    {
+        $run->refresh();
+
+        return $run->state !== BulkMigration::RUNNING;
     }
 
     /**

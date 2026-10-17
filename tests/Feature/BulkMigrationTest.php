@@ -14,7 +14,9 @@ use App\Models\SeriesMigration;
 use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
+use App\Support\ImageUrl;
 use App\Support\Library;
+use App\Suwayomi\SeriesGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -144,6 +146,22 @@ class BulkMigrationTest extends TestCase
             ->assertSee(route('migrate.sources'), escape: false);
     }
 
+    public function test_the_target_picker_offers_a_source_the_reader_holds_nothing_on(): void
+    {
+        /*
+         * The destination is picked before anything has moved, so holding nothing on it is
+         * the normal case, not a reason to hide it. When both pickers read the same list of
+         * sources carrying holdings, the first move to a source with none of the reader's
+         * series could not be picked at all.
+         */
+        $this->seriesOnFrom(76, 'One Piece', 2442);
+
+        $this->page()
+            ->assertSee('MangaFire')
+            ->set('to', self::TO_SOURCE)
+            ->assertSee('MangaFire (en)');
+    }
+
     /*
      * ---------------------------------------------------------------------------
      * Comparing.
@@ -171,6 +189,47 @@ class BulkMigrationTest extends TestCase
 
         Queue::assertNothingPushed();
         $this->assertSame(0, BulkMigration::query()->count());
+    }
+
+    public function test_a_new_run_stamps_the_names_of_both_sources(): void
+    {
+        /*
+         * The running card and the history section name the two ends. They read stamped
+         * columns, not the source table: a source that left the table later must not turn a
+         * finished run into bare numbers. Caught live as "Looking up your series on
+         * 524110931382140732" instead of the source's name.
+         */
+        Queue::fake();
+
+        $this->page()
+            ->set('from', self::FROM_SOURCE)
+            ->set('to', self::TO_SOURCE)
+            ->call('compare');
+
+        $run = BulkMigration::query()->latest('id')->first();
+
+        $this->assertSame('Asura Scans', $run->from_source_name);
+        $this->assertSame('MangaFire', $run->to_source_name);
+    }
+
+    public function test_a_run_of_unresolvable_sources_stamps_their_ids_instead(): void
+    {
+        /*
+         * A leaving source can hold series with no source row at all (the numeric wart in
+         * the leaving list). The id it stamps is legible on its own, and the fallback in the
+         * run card then agrees with the row rather than inventing a name.
+         */
+        Queue::fake();
+
+        $this->page()
+            ->set('from', '7777777777777777')
+            ->set('to', self::TO_SOURCE)
+            ->call('compare');
+
+        $run = BulkMigration::query()->latest('id')->first();
+
+        $this->assertSame('7777777777777777', $run->from_source_name);
+        $this->assertSame('MangaFire', $run->to_source_name);
     }
 
     public function test_comparing_dispatches_the_job_for_the_signed_in_reader(): void
@@ -579,13 +638,19 @@ class BulkMigrationTest extends TestCase
         $this->seriesOnFrom(77, 'Two', 10);
         $this->seriesElsewhere(3000, 'Three', 10, '7777777777777777');
 
-        /*
-         * MangaFire is deliberately absent: it has no series on it, and listing it would only
-         * offer a choice that can produce "nothing in your library is on that source".
-         */
         $this->page()
             ->assertSee('Asura Scans')
-            ->assertDontSee('MangaFire');
+            // The numeric wart: a series sits on an id with no source row left, so the
+            // leaving list renders the raw id rather than an empty name.
+            ->assertSee('7777777777777777');
+
+        /*
+         * A source with nothing of the reader's on it is not a place to leave: a run out of
+         * it can only produce "nothing in your library is on that source". It remains a fine
+         * destination (the reader picks the source their library is about to live on), so
+         * the refusal is scoped to the leaving menu rather than to the whole page.
+         */
+        $this->page()->assertDontSee('$set(\'from\', \''.self::TO_SOURCE.'\')');
     }
 
     public function test_the_page_says_so_when_nothing_in_the_library_has_a_source(): void
@@ -606,10 +671,14 @@ class BulkMigrationTest extends TestCase
             ->assertSee('Hiding a Logistics Center')
             ->assertSee('Same as here: 41 chapters.')
             ->assertSee('Same author')
-            ->assertSee(__('Move the ticked series'));
+            ->assertSee(__('Move the ticked series'))
+
+            // Both ends pictured, the way the wizard's rows answer the identity question.
+            ->assertSee((string) ImageUrl::thumbnail(76, ImageUrl::defaultFormat()))
+            ->assertSee((string) ImageUrl::thumbnail(2033, ImageUrl::defaultFormat()));
     }
 
-    public function test_the_page_puts_the_series_with_nowhere_to_go_out_of_the_way_but_counts_them(): void
+    public function test_the_series_with_nowhere_to_go_are_cards_with_the_two_exits(): void
     {
         $this->seriesOnFrom(76, 'Something Obscure', 12);
         $this->searchHits[self::TO_SOURCE] = [];
@@ -617,8 +686,312 @@ class BulkMigrationTest extends TestCase
         $this->matcher()->run($this->startRun());
 
         $this->page()
-            ->assertSee(__('Nothing on that source is on the new one'))
-            ->assertSee('1 series is not on the new source');
+            ->assertSee('Something Obscure')
+            ->assertSee(__('No alternatives found'))
+            ->assertSee(__('Search manually'))
+            ->assertSee(__("Don't migrate"))
+            ->assertSee('One series with nowhere to go.');
+    }
+
+    public function test_a_set_aside_row_hides_from_the_cards_and_the_run_still_counts_it(): void
+    {
+        $this->seriesOnFrom(76, 'Something Obscure', 12);
+        $this->searchHits[self::TO_SOURCE] = [];
+
+        $this->matcher()->run($this->startRun());
+
+        $this->page()
+            ->assertSee('Something Obscure')
+            ->call('setAsideItem', 76)
+            ->assertDontSee('Something Obscure')
+            ->assertSee('You set one aside. It is still on the old source.')
+
+            // The run counted it; the cards are the thing that hid, not the total.
+            ->assertSee('One series with nowhere to go.');
+    }
+
+    /**
+     * The poll rides the comparing card, and settling is the stop.
+     *
+     * The page declared its poll through a `with()` array, the same route the wizard page
+     * was caught on: nothing in Livewire or volt ever calls that method, so the directive
+     * never reached the rendered page and the page never polled at all. Measured live
+     * twice on 2026-10-17: run 4 went ready at 19:32:38 and the card still read
+     * "Looking up your series" at 19:33:10, and run 5, ready 19:39:40, was the same
+     * seconds later, until a reload. The idiom is the wizard's: the directive sits on the
+     * block that shows progress, and the block unmounting stops it.
+     */
+    public function test_the_comparing_card_polls_and_a_ready_run_rides_nothing(): void
+    {
+        $run = $this->startRun();
+
+        $running = $this->page()->html();
+        $this->assertTrue(
+            str_contains($running, 'wire:poll'),
+            'With a comparison in flight the page must actually poll, which the old with() route never arranged.',
+        );
+
+        $run->update(['state' => BulkMigration::READY, 'finished_at' => now()]);
+
+        $settled = $this->page()->html();
+        $this->assertFalse(
+            str_contains($settled, 'wire:poll'),
+            'A reader looking at a finished comparison should not pay for a poll.',
+        );
+    }
+
+    /**
+     * A run whose series all moved keeps its rows after the page is reloaded.
+     *
+     * The offer table used to key on pending rows alone, so once the move emptied it the
+     * card answered with the one sentence it knows for an empty table, that nothing on
+     * the source was on the new one, over a run whose rows all say moved. Measured live
+     * on 2026-10-17 against the rebuilt scratch library: the run had just moved six
+     * series and the reloaded page denied it.
+     */
+    public function test_a_run_that_moved_every_series_keeps_its_rows_after_a_reload(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        // What a successful move does to the rows, which its own tests cover directly.
+        BulkMigrationItem::query()
+            ->forUser($this->user->id)
+            ->where('bulk_migration_id', $run->id)
+            ->update(['status' => BulkMigrationItem::MOVED, 'reason' => null]);
+
+        $this->page()
+            ->assertSee('Hiding a Logistics Center')
+            ->assertSee('moved', escape: false)
+            ->assertDontSee(__('Nothing on that source is on the new one'))
+            ->assertDontSee('Tick all');
+    }
+
+    /**
+     * A row refused at move time keeps its row and its reason too.
+     *
+     * Same family as the moved rows above: the table vanishing when nothing is pending
+     * also swallowed the refusals, the only copy of a reason the reader was given. The
+     * refusal's cause and rhyme live in the mover's tests; this pin is that the row the
+     * reader must still be able to read stays on the page those words came out through.
+     */
+    public function test_a_refused_series_keeps_its_row_and_its_reason(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        // What a refused move does to the row, which the mover's tests cover directly.
+        BulkMigrationItem::query()
+            ->forUser($this->user->id)
+            ->where('bulk_migration_id', $run->id)
+            ->update([
+                'status' => BulkMigrationItem::REFUSED,
+                'reason' => 'The source this series is leaving lists no chapters, so your read progress there could not be carried over.',
+            ]);
+
+        $this->page()
+            ->assertSee('Hiding a Logistics Center')
+            ->assertSee('refused', escape: false)
+            ->assertSee('The source this series is leaving lists no chapters')
+            ->assertSee(__('Look for another'))
+            ->assertDontSee(__('Nothing on that source is on the new one'));
+    }
+
+    public function test_the_run_names_the_series_it_is_about_to_compare(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->seriesOnFrom(77, 'The Berserkers Second Playthrough', 12);
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        /*
+         * One of the two, not an exact one: the name left standing is the one the run was
+         * last in front of, and which of the two that is belongs to the library batch's
+         * order, which this fixture does not own. What the test owns is that the field
+         * names a series the run compared rather than nobody.
+         */
+        $this->assertContains(
+            $run->fresh()->current_title,
+            ['Hiding a Logistics Center', 'The Berserkers Second Playthrough'],
+        );
+    }
+
+    public function test_a_stop_between_two_series_keeps_the_compared_and_leaves_the_rest(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->seriesOnFrom(77, 'The Berserkers Second Playthrough', 12);
+        $this->seriesOnFrom(78, 'Never Reached', 3);
+        $this->searchHits[self::TO_SOURCE] = [];
+
+        $matcher = new class(app(CandidateFinder::class), app(SeriesGateway::class), app(Library::class)) extends BulkSourceMatcher
+        {
+            public int $looked = 0;
+
+            /*
+             * A stop that lands after two compares, without a timing race. The prod path is
+             * the same act the page's cancel press performs: the row's state stops reading
+             * RUNNING, and the loop trusts exactly that.
+             */
+            protected function hasBeenStopped(BulkMigration $run): bool
+            {
+                $run->refresh();
+
+                if (++$this->looked >= 3) {
+                    $run->update(['state' => BulkMigration::CANCELLED, 'finished_at' => now()]);
+
+                    return true;
+                }
+
+                return false;
+            }
+        };
+
+        $run = $this->startRun();
+        $tally = $matcher->run($run);
+
+        $this->assertSame(BulkMigration::CANCELLED, $run->fresh()->state);
+        $this->assertSame(2, $tally['checked'], 'the series after the stop was not asked about');
+
+        /*
+         * The row says the same thing as the tally. This is the assert the first version
+         * of this test failed, and rightly: the stop return before it wrote no counts, so
+         * a reader who stopped a run inside the progress-throttle window saw a card that
+         * said zero above rows the run had made.
+         */
+        $this->assertSame(2, $run->fresh()->series_checked);
+        $this->assertSame(2, BulkMigrationItem::query()->count());
+        $this->assertNotNull($run->fresh()->finished_at);
+
+        /*
+         * Exactly one of the three has no row, and which one belongs to the library
+         * batch's order, which this fixture does not own. What the test owns is that the
+         * stop left exactly one out, and left it out with no row behind at all.
+         */
+        $uncompared = collect([76, 77, 78])
+            ->reject(fn (int $id): bool => BulkMigrationItem::query()->where('from_manga_id', $id)->exists())
+            ->values();
+
+        $this->assertCount(1, $uncompared, 'one series was never asked about');
+    }
+
+    public function test_a_death_that_lands_after_a_stop_does_not_rename_the_stop(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+
+        $matcher = new class(app(CandidateFinder::class), app(SeriesGateway::class), app(Library::class)) extends BulkSourceMatcher
+        {
+            public function run(BulkMigration $run, int $limit = 0): array
+            {
+                // The stop lands inside the same window in which the run then dies.
+                $run->update(['state' => BulkMigration::CANCELLED, 'finished_at' => now()]);
+
+                throw new \RuntimeException('the library could not be read');
+            }
+        };
+
+        $run = $this->startRun();
+        $job = new BuildBulkMigration($run->id, (int) $this->user->id);
+
+        try {
+            $job->handle($matcher);
+            $this->fail('the job rethrows what the matcher could not survive');
+        } catch (\RuntimeException) {
+            // The rethrow is the prod behavior this test keeps.
+        }
+
+        $this->assertSame(BulkMigration::CANCELLED, $run->fresh()->state, 'the reader named the outcome, not the death');
+        $this->assertNull($run->fresh()->error);
+    }
+
+    public function test_the_reader_can_stop_a_run_that_is_still_going(): void
+    {
+        $run = $this->startRun();
+
+        $this->page()
+            ->assertSee(__('Stop comparing'))
+            ->call('cancel')
+            ->assertSee(__('The comparison stopped'));
+
+        $this->assertSame(BulkMigration::CANCELLED, $run->fresh()->state);
+        $this->assertNotNull($run->fresh()->finished_at);
+
+        // A second press has nothing to stop, and changes nothing.
+        $this->page()->call('cancel');
+
+        $this->assertSame(BulkMigration::CANCELLED, $run->fresh()->state);
+    }
+
+    public function test_a_run_stopped_by_the_reader_shows_what_it_compared_and_what_it_never_reached(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->seriesOnFrom(77, 'The Berserkers Second Playthrough', 12);
+        $this->seriesOnFrom(78, 'Never Reached', 3);
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $matcher = new class(app(CandidateFinder::class), app(SeriesGateway::class), app(Library::class)) extends BulkSourceMatcher
+        {
+            public int $looked = 0;
+
+            /*
+             * A stop after two compares, the same seam the engine-side stop test uses. The
+             * run below is then a real partial: two named rows, and one series with no row
+             * at all. Hand-picking the counters would fabricate a run whose numbers and
+             * rows disagree, which is the state the page is for preventing.
+             */
+            protected function hasBeenStopped(BulkMigration $run): bool
+            {
+                $run->refresh();
+
+                if (++$this->looked >= 3) {
+                    $run->update(['state' => BulkMigration::CANCELLED, 'finished_at' => now()]);
+
+                    return true;
+                }
+
+                return false;
+            }
+        };
+
+        $run = $this->startRun();
+        $matcher->run($run);
+
+        /*
+         * Which series the stop left out belongs to the library batch's order, which this
+         * fixture does not own. What the test owns is the count: two names named in the
+         * run's rows, one absent entirely, and the page showing both numbers honestly.
+         */
+        $titles = [
+            76 => 'Hiding a Logistics Center',
+            77 => 'The Berserkers Second Playthrough',
+            78 => 'Never Reached',
+        ];
+
+        $comparedIds = BulkMigrationItem::query()
+            ->where('bulk_migration_id', $run->id)
+            ->pluck('from_manga_id')
+            ->all();
+
+        $awaiting = collect($titles)
+            ->reject(fn (string $title, int $id): bool => in_array($id, $comparedIds, true))
+            ->values();
+
+        $this->assertCount(1, $awaiting, 'the stop left one series without a row');
+        $this->assertSame(2, $run->fresh()->series_checked);
+
+        $this->page()
+            ->assertSee(__('The comparison stopped'))
+            ->assertSee('You stopped it, so 1 series was never looked at.')
+            ->assertSee($awaiting[0]);
     }
 
     /*
@@ -784,6 +1157,16 @@ class BulkMigrationTest extends TestCase
             'a destination the reader cannot read is a row that fails when they press it',
         );
         $this->assertSame(0, $run->fresh()->series_matched);
+
+        /*
+         * And on the page it sits with the nowhere to go cards, carrying the reason it
+         * carries, rather than being an untickable row among the tickable ones: the move
+         * is not offered and the row is not hidden either.
+         */
+        $this->page()
+            ->assertSee('One series with nowhere to go.')
+            ->assertSee('Hiding a Logistics Center')
+            ->assertDontSee(__('Move the ticked series'));
     }
 
     /**

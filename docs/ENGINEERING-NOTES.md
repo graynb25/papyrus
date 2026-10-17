@@ -6238,18 +6238,19 @@ exactly that moment and it costs five minutes.
 286. **A hook nothing in the framework calls is not a hook, and a test that is its only caller tests nothing the page does.**
 
     Measured on the migrate page on 2026-10-17: its poll was declared through a `with()` array
-    method, and the page never carried a `wire:poll` directive in its whole history, because
-    nothing in Livewire or volt calls such a method; the vendor tree holds no `with()` component
-    hook, and polling exists only as a rendered directive with no server-side feature behind it.
-    The row turned ready in the database twice live on 2026-10-16 while the card kept saying it
-    was searching until a full reload, which is the symptom the migration plan recorded. The
-    test called `instance()->with()` and asserted the array it returned, so it stayed green
-    through every one of those live failures: the test was the method's only caller, and the
-    method was the mechanism's only referent. The general form: **a contract only the test
-    knows about was never a contract with the browser.** The replacement asserts what the
-    browser reads, that the rendered html carries `wire:poll` while a search runs and carries
-    none once it settles, on the block that shows progress, the same idiom the search page
-    proved working with a probe.
+    method, and the page never carried a `wire:poll` directive in its whole history. Livewire
+    4.4.7 does ship a `with()` feature, `SupportWithMethod`, and what it does is call the method
+    and merge the returned array into the view's data: the template receives a `$poll` variable
+    the template never names, and no vendor code ever turns a `with()` return into a directive.
+    Polling exists only as a rendered attribute. The row turned ready in the database twice live
+    on 2026-10-16 while the card kept saying it was searching until a full reload, which is the
+    symptom the migration plan recorded. The test called `instance()->with()` and asserted the
+    array it returned, so it stayed green through every one of those live failures: the test was
+    the method's only caller, and the method was the mechanism's only referent. The general form:
+    **a contract only the test knows about was never a contract with the browser.** The
+    replacement asserts what the browser reads, that the rendered html carries `wire:poll` while
+    a search runs and carries none once it settles, on the block that shows progress, the same
+    idiom the search page proved working with a probe.
 
 287. **A refusal scenario named for its cause is not named for its message, because the cause and the message live in two different stages.**
 
@@ -6300,3 +6301,84 @@ exactly that moment and it costs five minutes.
     general form: **a report's parts are read as one claim even when they were made at different
     moments, so every count earns a named vintage, and where a list cannot name every row inside
     a count, the rule of the list is stated on it rather than left for the reader to discover.**
+
+291. **A path that leaves early must still write what it did, because the page reads the row that
+     survives it.**
+
+    Measured on 2026-10-17, on the stop feature's own test. The comparison loop checked for a stop
+    at the top of every series, written the counts into the row only once every three seconds, and
+    returned straight from the check without writing anything. A stop that landed inside that
+    window left the row at `series_checked = 0` above the two item rows it had made, and the page
+    rendered the contradiction: "You stopped it, so 3 series were never looked at." naming one
+    more than the rows backed. The test that caught it asserted the tally first, which passed,
+    and the row second, which did not, because the tally is the loop's own arithmetic and the row
+    is the only thing the reader's page reads. The general form: **an exit that arrives after the
+    work owns the record of that work; a throttled writer has gaps, and early exits fall in them.**
+    Write the counts on the way out, and assert the row, not the return value.
+
+292. **A fix on one page has no force on the page copied from it, and nothing re-proves the whole unless somebody does it on purpose.**
+
+    Measured on the bulk sources page on 2026-10-17: this walk built it from the same blueprint
+    as the single series wizard, and it landed with the wizard's `with()` poll idiom exactly as
+    trap 286 found it there, dead method and all, after the trap was written and the wizard was
+    fixed. The correction sat one file away, inside the same working tree, while the copy was
+    being written, and nothing flagged the transcription: the wizard's poll test cannot run
+    another page's render, and there is no lint rule that heeds a Livewire idiom. Live on the
+    copy, run 4 went ready at 19:32:38 and the card still read "Looking up your series" at
+    19:33:10; run 5, ready 19:39:40, was the same seconds later; both settled only after a
+    reload or a reader's click. After the same fix ran here, run 7 was caught between two
+    passive browser reads, the first saying "Matching: SPY×FAMILY, 1 / 7" and the second the
+    settled card, with nothing clicked between them: the flip the wizard's idiom produces,
+    now on the second page, with the directive riding the block that unmounts when the run
+    settles.
+
+    The layered lesson: **a transcription reproduces whatever it transcribes, including a bug
+    the source no longer has; a page whose predecessor was proven behavior by behavior is
+    proven nowhere until those proofs are run against it too.** The verification that carries
+    is the one aimed at the copy's own rendered html, exactly what the wizard's replacement
+    test became.
+
+293. **A page's empty state answers for every way the page can end up empty, and one of those ways is not empty.**
+
+    Measured on the bulk sources page on 2026-10-17, live: the offer table keyed on pending
+    rows alone, so once the move completed the card fell into the one copy it owns for an
+    empty table, "Nothing on that source is on the new one", over a run whose every row said
+    moved. Rows refused at move time, the only written record of a refusal's reason, rendered
+    nowhere in that state. The badges for both already existed inside the table's own loop,
+    unreachable, because the rows that carry them never satisfied the loop's collection. Both
+    were caught in the same press: the walk moved six series on the rebuilt scratch library,
+    reloaded the page, and the page denied the move it had just made. The fix reads the table
+    from the rows that hold a destination and are not skipped, so pending rows keep the tick
+    row above them, and a decided row keeps its place, its numbers, its badge and its reason;
+    the exits disappear on a moved row, because a moved row is not waiting for anything. The
+    general form: **the copy an empty state prints is a claim about how the page came to be
+    empty, and a state no design line was written for will answer with the nearest line it
+    has, so a table whose rows keep changing after the reader acts has to be read from the
+    rows and not from the reader's next action.**
+
+294. **The reader's half outlives the server's half, and a lens that joins them by id turns a rebuilt server into fiction on its own terms.**
+
+    Measured on the scratch walk of 2026-10-17, after the host restart killed the scratch
+    Suwayomi with no restore: the server came back with an empty database and handed the first
+    small manga ids to entirely different series, while Papyrus's own `series_states` rows
+    survived the restart untouched, because they live in the reader's sqlite. The library lens
+    merges the persisted rows onto the live server library by manga id, so every stale row
+    joined whatever now wears its id: the pickers counted holdings on five languages with real
+    counts, and the leaving list named "Mini - Jujutsu Kaisen dj" and "Beyond Memory" inside
+    them, series the review reader never saved, because ids 118 and 862 were reassigned in the
+    rebuild. The page said nothing: nothing in the lens compares the id against the title it
+    carries. The eight stale rows were removed by explicit id as the review reader's throwaway
+    data, after a readback of what each row had joined, and what came out the other side reads
+    clean: eight rows, one source's language at a time, nothing held by a series the reader
+    never saved.
+
+    Two facts worth keeping apart. The first is walk data: the eight fixtures re-added from
+    search are unfetched, `chapters_here` 0 for all of them, which was exactly the condition
+    that produced the pre-restart refusals, and run 4's move drove the new from side fetch
+    backstop over them live: six series moved with zero refusals in about nine seconds, the
+    one to three seconds between item timestamps being each live fetch, and the card's own
+    line counted 2,213 chapters kept their place. The second is the hazard that stays open,
+    now the register holds it: **a server that loses its data and rebuilds reassumes its id space,
+    while the reader's half keeps its claims, so the join needs an agreement check between the
+    id and the title behind it, and absent one the lens can carry read state across series.**
+    Nothing in the batch defends a reader from that; the register names the condition.

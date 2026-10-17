@@ -130,6 +130,36 @@ class SeriesMigrator
         $mapping = null;
 
         if ($settings->carryChapters) {
+            /*
+             * A series added straight from a search result has never been opened, so
+             * the server has not fetched its chapter list yet, and a list of zero
+             * chapters maps against the new source to nothing. Measured live on
+             * 2026-10-17: six freshly added series arrived at the move with no
+             * listings at all and every move was refused on the strength of that.
+             * The destination guard above already takes this second look; the
+             * leaving side takes it now too. A list that stays empty after the
+             * fetch is a source stating there was never anything to match against,
+             * which is the leave-side line below rather than the mapper's, because
+             * the mapper's line reads as if chapters were listed and simply failed
+             * to match.
+             */
+            if (($from['chapters']['totalCount'] ?? 0) === 0) {
+                try {
+                    $refreshed = $this->series->refresh($fromMangaId);
+                    $fresh = $refreshed['series'];
+
+                    if ($refreshed['error'] !== null
+                        || $fresh === null
+                        || ($fresh['chapters']['totalCount'] ?? 0) === 0) {
+                        return $this->refuse(__('The source this series is leaving lists no chapters, so your read progress there could not be carried over.'));
+                    }
+
+                    $from = $fresh;
+                } catch (SuwayomiException $e) {
+                    return $this->refuse($e->getMessage());
+                }
+            }
+
             $mapping = $this->mapper->map(
                 $from['chapters']['nodes'] ?? [],
                 $to['chapters']['nodes'] ?? [],

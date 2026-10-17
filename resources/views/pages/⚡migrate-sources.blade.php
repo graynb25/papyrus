@@ -4,6 +4,7 @@ use App\Jobs\BuildBulkMigration;
 use App\Migration\BulkMover;
 use App\Models\BulkMigration;
 use App\Models\BulkMigrationItem;
+use App\Support\ImageUrl;
 use App\Support\Library;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
@@ -43,6 +44,19 @@ new #[Title('Move a whole source')] class extends Component
      */
     public array $approved = [];
 
+    /**
+     * Series the reader said to leave behind, as from_manga_id => bool.
+     *
+     * These are the rows the comparison found nothing for. They carry no move to refuse, so
+     * the action is the reader saying they do not want to look at the row again, and the
+     * page keeps counting what it set aside rather than pretending the rows went away.
+     * Reset with the run, because the choice belongs to the run the reader saw it in, not
+     * to the reader's browser forever: an earlier run re-opened shows its rows again.
+     *
+     * @var array<int, bool>
+     */
+    public array $setAside = [];
+
     /** The run being shown, pinned by the reader or the newest one. */
     public ?int $runId = null;
 
@@ -63,14 +77,18 @@ new #[Title('Move a whole source')] class extends Component
     public const REFRESH_MS = 3000;
 
     /**
-     * Sources with at least one of this reader's series on them, biggest first.
+    /**
+     * Sources with at least one of this reader's series on them, biggest first. This
+     * collection feeds the picker for the source being left.
      *
      * ## Why the count is on the button
      *
      * Because the reader's question is "which of these is the one holding my library", and a
      * list of 82 names does not answer that. Putting the number on each entry answers it
-     * before the click, and a source with nothing on it is not offered at all, because
-     * choosing it can only ever produce "nothing in your library is on that source".
+     * before the click, and a source with nothing on it is not offered as a place to leave,
+     * because a run out of it can only ever produce "nothing in your library is on that
+     * source". The target picker is a different collection ({@see installedSources()}),
+     * because the target is chosen before anything has moved there.
      *
      * @return \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool}>
      */
@@ -111,6 +129,33 @@ new #[Title('Move a whole source')] class extends Component
         return $out->sortByDesc('count')->values();
     }
 
+    /**
+     * Every installed source, alphabetical, for the picker of where the library is going.
+     *
+     * The destination is picked before anything has moved, so holdings say nothing about
+     * whether a source may be chosen: a reader moving off a source that died is picking the
+     * one their library is about to live on, which by definition holds nothing yet. The
+     * first bulk move to a fresh source was impossible to pick when this list was also the
+     * holdings list, which is how that was caught. Offered with name and language only, the
+     * way the target list on the reference design reads, and the source being left is
+     * skipped in the menu rather than here, because here the page does not know it yet.
+     *
+     * @return \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string}>
+     */
+    #[Computed]
+    public function installedSources(): \Illuminate\Support\Collection
+    {
+        return \App\Models\Source::query()
+            ->where('is_installed', true)
+            ->orderBy('display_name')
+            ->get()
+            ->map(fn ($source): array => [
+                'source_id' => (string) $source->suwayomi_source_id,
+                'display_name' => (string) ($source->display_name ?? $source->suwayomi_source_id),
+                'lang' => (string) ($source->lang ?? ''),
+            ]);
+    }
+
     /** The run this page is showing. The newest one, unless the reader pinned another. */
     #[Computed]
     public function run(): ?BulkMigration
@@ -129,12 +174,80 @@ new #[Title('Move a whole source')] class extends Component
      * looking for the ones that need a decision and a long tail of "not there" buries them.
      * Both counts are still stated above the table.
      *
+     * A row whose only answer was a destination that could not be read is not here: it has
+     * nothing to tick and one reason to show, which is the missing family's shape, so it
+     * stays with the other no-alternative rows rather than being an untickable one among
+     * the tickable.
+     *
      * @return \Illuminate\Support\Collection<int, BulkMigrationItem>
      */
     #[Computed]
     public function offers(): \Illuminate\Support\Collection
     {
-        return $this->items()->filter(fn (BulkMigrationItem $i): bool => $i->to_manga_id !== null)->values();
+        return $this->items()->filter(
+            fn (BulkMigrationItem $item): bool => $item->to_manga_id !== null
+                && $item->status === BulkMigrationItem::PENDING,
+        )->values();
+    }
+
+    /**
+     * Stop a comparison that is still going.
+     *
+     * Writes the state and returns; the job notices between two series and leaves with
+     * everything it compared intact. This is deliberately cheaper than killing the job:
+     * the one attempt rule means the next run is fresh anyway, so what stop has to
+     * guarantee is only that the series in front of the loop is not searched after the
+     * reader said stop, and the job owns that check because the loop is the job's.
+     */
+    public function updatedRunId(): void
+    {
+        /*
+         * A pinned run is a record with its own rows. The set asides name series of the run
+         * they were pressed in, so pinning another one puts its rows back: the choice
+         * belongs to the run, and a different run owes the reader nothing about it.
+         */
+        $this->reset('setAside');
+    }
+
+    public function cancel(): void
+    {
+        $run = $this->run;
+
+        if ($run === null || $run->state !== BulkMigration::RUNNING) {
+            return;
+        }
+
+        $run->update(['state' => BulkMigration::CANCELLED, 'finished_at' => now()]);
+
+        Flux::toast(
+            text: __('Stopped. The series it already compared are kept, and nothing moves until you tick them.'),
+            heading: __('Stopped'),
+            variant: 'info',
+        );
+    }
+
+    public function setAsideItem(int $fromMangaId): void
+    {
+        $this->setAside[$fromMangaId] = true;
+    }
+
+    /** Whether a missing row is currently set aside. */
+    public function isSetAside(BulkMigrationItem $item): bool
+    {
+        return array_key_exists((int) $item->from_manga_id, $this->setAside);
+    }
+
+    /**
+     * How many rows are set aside in the run being shown.
+     *
+     * Counted against this run's rows, not the raw keys, so a set aside from an earlier
+     * run never inflates the count after the reader switches back: the sentence under the
+     * try button and the rows it describes have to agree.
+     */
+    #[Computed]
+    public function setAsideCount(): int
+    {
+        return $this->missing->filter(fn (BulkMigrationItem $item): bool => $this->isSetAside($item))->count();
     }
 
     /** @return \Illuminate\Support\Collection<int, BulkMigrationItem> */
@@ -146,6 +259,48 @@ new #[Title('Move a whole source')] class extends Component
         return $run === null
             ? collect()
             : BulkMigrationItem::query()->forUser(auth()->id())->where('bulk_migration_id', $run->id)->get();
+    }
+
+    /**
+     * The series the comparison found nowhere to send.
+     *
+     * Both shapes land here: the ones the destination does not list, and the ones whose
+     * only answer was a destination that could not be read. The former says "not there",
+     * the latter says what happened, and they are one card family because they ask the
+     * same question of the reader: this row has nothing to tick, what do you want for it.
+     *
+     * @return \Illuminate\Support\Collection<int, BulkMigrationItem>
+     */
+    #[Computed]
+    public function missing(): \Illuminate\Support\Collection
+    {
+        return $this->items()->filter(
+            fn (BulkMigrationItem $item): bool => $item->status === BulkMigrationItem::SKIPPED,
+        )->values();
+    }
+
+    /**
+     * The rows the offer table is made of: offers while they stand, and the decisions
+     * they became.
+     *
+     * The table used to key on pending offers alone, which made it vanish the moment a
+     * move completed: a reader reloading after the move read that nothing on the source
+     * was on the new one, over a run whose items all said moved, and rows refused at
+     * move time had nowhere at all. Read here instead as "compared, found something,
+     * not set up for the dead end cards": pending still carry the tick row above; a
+     * moved row keeps its numbers under its badge; a refused row keeps the reason it
+     * was given. The dead ends stay in the missing family because they ask for a
+     * decision, and these no longer do.
+     *
+     * @return \Illuminate\Support\Collection<int, BulkMigrationItem>
+     */
+    #[Computed]
+    public function comparisonRows(): \Illuminate\Support\Collection
+    {
+        return $this->items()->filter(
+            fn (BulkMigrationItem $item): bool => $item->to_manga_id !== null
+                && $item->status !== BulkMigrationItem::SKIPPED,
+        )->values();
     }
 
     /**
@@ -173,9 +328,22 @@ new #[Title('Move a whole source')] class extends Component
             return;
         }
 
+        /*
+         * The names are stamped at creation, not looked up at reading time: a run long
+         * outlives what the source table holds about it, and the whole history section on
+         * this page reads these columns. A source with no row at all stamps its id, which
+         * is how the rest of this page renders an unresolvable source.
+         */
+        $sourceRows = \App\Models\Source::query()
+            ->whereIn('suwayomi_source_id', [$this->from, $this->to])
+            ->get()
+            ->keyBy(fn ($source): string => (string) $source->suwayomi_source_id);
+
         $run = BulkMigration::createFor(auth()->id(), [
             'from_source_id' => $this->from,
             'to_source_id' => $this->to,
+            'from_source_name' => (string) ($sourceRows->get((string) $this->from)->display_name ?? $this->from),
+            'to_source_name' => (string) ($sourceRows->get((string) $this->to)->display_name ?? $this->to),
             'state' => BulkMigration::RUNNING,
             'started_at' => now(),
         ]);
@@ -185,8 +353,10 @@ new #[Title('Move a whole source')] class extends Component
         $this->runId = $run->getKey();
         $this->report = null;
 
-        // A new comparison means every tick from the previous one is meaningless.
+        // A new comparison means every tick and every set aside from the previous one is
+        // meaningless: both are page state for the run that was showing.
         $this->reset('approved');
+        $this->reset('setAside');
 
         Flux::toast(
             text: __('Comparing your library against that source. This is one request per series, so it takes a while.'),
@@ -311,11 +481,6 @@ new #[Title('Move a whole source')] class extends Component
         return $run !== null && $run->state === BulkMigration::RUNNING && ! $run->isStalled();
     }
 
-    public function with(): array
-    {
-        return $this->stillRunning() ? ['poll' => self::REFRESH_MS . 'ms'] : [];
-    }
-
     /**
      * The chapter comparison, phrased for a reader.
      *
@@ -407,8 +572,18 @@ new #[Title('Move a whole source')] class extends Component
             BulkMigration::READY => __('Ready'),
             BulkMigration::RUNNING => __('Comparing'),
             BulkMigration::FAILED => __('Stopped'),
+            BulkMigration::CANCELLED => __('Stopped by you'),
             default => $run->state,
         };
+    }
+
+    /** Whether the run has rows the reader can still act on: ready, or stopped part way by them. */
+    public function isDecidable(): bool
+    {
+        $run = $this->run;
+
+        return $run !== null
+            && in_array($run->state, [BulkMigration::READY, BulkMigration::CANCELLED], strict: true);
     }
 };
 ?>
@@ -477,21 +652,16 @@ new #[Title('Move a whole source')] class extends Component
 
                     <flux:dropdown placement="bottom-start" class="w-full">
                         <flux:button variant="outline" class="w-full justify-between" icon="chevron-down">
-                            {{ $this->labelFor($this->to, $sources) ?? __('Choose a source') }}
+                            {{ $this->labelFor($this->to, $this->installedSources) ?? __('Choose a source') }}
                         </flux:button>
 
                         <flux:menu class="max-h-80 overflow-y-auto">
-                            @foreach ($sources as $one)
+                            @foreach ($this->installedSources as $one)
                                 @continue($one['source_id'] === $this->from)
 
                                 <flux:menu.item wire:click="$set('to', '{{ $one['source_id'] }}')">
                                     {{ $one['display_name'] }}
                                     <span class="text-zinc-500">({{ $one['lang'] }})</span>
-                                    <span class="ms-auto tabular-nums text-zinc-500">{{ $one['count'] }}</span>
-
-                                    @unless ($one['installed'])
-                                        <flux:badge size="xs" color="orange">{{ __('not installed') }}</flux:badge>
-                                    @endunless
                                 </flux:menu.item>
                             @endforeach
                         </flux:menu>
@@ -514,43 +684,73 @@ new #[Title('Move a whole source')] class extends Component
             </div>
 
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ __('Stop after 0 means every series on the first source. The number beside each source is how many of your series sit on it.') }}
+                {{ __('Stop after 0 means every series on the first source. The numbers in the moving away from list are how many of your series sit on each one.') }}
             </p>
         @endif
     </flux:card>
 
     {{-- Comparing ---------------------------------------------------------- --}}
     @if ($this->stillRunning() && $run !== null)
-        <flux:card class="space-y-3 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <flux:heading size="sm" level="3">
-                    {{ __('Looking up your series on') }} {{ $run->to_source_name ?? $this->to }}
-                </flux:heading>
+        {{--
+            The poll rides the card it refreshes, and the card's unmounting when
+            the run settles is the stop.
 
-                <flux:text size="sm" class="tabular-nums text-zinc-500">
-                    {{ $run->series_checked }} / {{ $run->series_total ?: '?' }}
-                </flux:text>
-            </div>
+            This page declared polling through a `with()` array, exactly the way the
+            wizard page did before it: nothing in Livewire or volt ever calls such a
+            method, so no directive ever reached the rendered page and the run went
+            ready in the database while the card kept saying it was still looking up
+            series, until a reload. Measured live twice on 2026-10-17: run 4 was ready
+            19:32:38 and the card still read "Looking up" at 19:33:10; run 5 was ready
+            19:39:40 and it was the same seconds later.
+        --}}
+        <div wire:poll.{{ $this::REFRESH_MS / 1000 }}s>
+            <flux:card class="space-y-3 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <flux:heading size="sm" level="3">
+                        {{ __('Looking up your series on') }} {{ $run->to_source_name ?? $this->to }}
+                    </flux:heading>
 
-            @if ($run->series_total > 0)
-                <div
-                    class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
-                    role="progressbar"
-                    aria-valuemin="0"
-                    aria-valuemax="{{ $run->series_total }}"
-                    aria-valuenow="{{ $run->series_checked }}"
-                >
-                    <div
-                        class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
-                        style="width: {{ (int) round(($run->series_checked / max(1, $run->series_total)) * 100) }}%"
-                    ></div>
+                    <flux:button size="xs" variant="ghost" wire:click="cancel" wire:target="cancel">
+                        {{ __('Stop comparing') }}
+                    </flux:button>
                 </div>
-            @endif
 
-            <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ __('This is one request per series to the source you are moving to. A shelf of eighty takes a minute or two.') }}
-            </p>
-        </flux:card>
+                @if ($run->current_title !== null)
+                    {{-- One line about what is being requested right now, because the run is one
+                         request per series and the series in flight is the only thing that
+                         explains what the number is waiting on. It truncates rather than wraps,
+                         safe to lose: the complete name is in the library. --}}
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="truncate text-sm">
+                            {{ __('Matching') }}: <span class="italic">{{ $run->current_title }}</span>
+                        </p>
+
+                        <flux:text size="sm" class="shrink-0 tabular-nums text-zinc-500">
+                            {{ $run->series_checked }} / {{ $run->series_total ?: '?' }}
+                        </flux:text>
+                    </div>
+                @endif
+
+                @if ($run->series_total > 0)
+                    <div
+                        class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="{{ $run->series_total }}"
+                        aria-valuenow="{{ $run->series_checked }}"
+                    >
+                        <div
+                            class="h-full rounded-full bg-vermilion-500 transition-[width] duration-500"
+                            style="width: {{ (int) round(($run->series_checked / max(1, $run->series_total)) * 100) }}%"
+                        ></div>
+                    </div>
+                @endif
+
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('This is one request per series to the source you are moving to. A shelf of eighty takes a minute or two.') }}
+                </p>
+            </flux:card>
+        </div>
     @endif
 
     {{-- Stopped, and why --------------------------------------------------- --}}
@@ -570,9 +770,11 @@ new #[Title('Move a whole source')] class extends Component
     @endif
 
     {{-- The result, and the decision ---------------------------------------- --}}
-    @if ($run !== null && $run->state === BulkMigration::READY)
+    @if ($run !== null && $this->isDecidable())
         <flux:callout variant="secondary" icon="information-circle">
-            <flux:heading level="2" size="sm" class="mb-1">{{ __('What was found') }}</flux:heading>
+            <flux:heading level="2" size="sm" class="mb-1">
+                {{ $run->state === BulkMigration::CANCELLED ? __('The comparison stopped') : __('What was found') }}
+            </flux:heading>
 
             <p class="text-sm">
                 {{
@@ -581,6 +783,18 @@ new #[Title('Move a whole source')] class extends Component
 
                 @if ($run->series_total > $run->series_checked)
                     {{ __('Your library holds :total on that source.', ['total' => number_format($run->series_total)]) }}
+                @endif
+
+                @if ($run->state === BulkMigration::CANCELLED)
+                    {{-- The stop's own truth: what never got looked at is named rather than
+                         let the reader wonder whether the run was finished when they pressed. --}}
+                    {{
+                        trans_choice(
+                            'You stopped it, so :count series was never looked at.|You stopped it, so :count series were never looked at.',
+                            max(0, $run->series_total - $run->series_checked),
+                            ['count' => number_format(max(0, $run->series_total - $run->series_checked))],
+                        )
+                    }}
                 @endif
 
                 {{
@@ -603,6 +817,26 @@ new #[Title('Move a whole source')] class extends Component
                     }}
                 @endif
             </p>
+
+            @php($neverLookedAt = $run->seriesNeverLookedAt())
+
+            @if ($neverLookedAt !== [])
+                <details class="mt-1 text-sm">
+                    <summary class="cursor-pointer text-zinc-500 hover:underline dark:text-zinc-400">
+                        {{ trans_choice(
+                            'Which one was never looked at|Which ones were never looked at',
+                            count($neverLookedAt),
+                            ['count' => number_format(count($neverLookedAt))],
+                        ) }}
+                    </summary>
+
+                    <ul class="mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-300">
+                        @foreach ($neverLookedAt as $title)
+                            <li>{{ $title }}</li>
+                        @endforeach
+                    </ul>
+                </details>
+            @endif
 
             @if ($run->error !== null)
                 <p class="mt-1 text-sm text-amber-600 dark:text-amber-400">{{ $run->error }}</p>
@@ -675,28 +909,67 @@ new #[Title('Move a whole source')] class extends Component
                     </flux:button>
                 </div>
             </div>
+        @endif
 
-            {{-- The offers, each with the numbers beside it --}}
+        {{-- The table stays open whenever the run holds a row with a destination to send it to:
+              offers ride with the tick row above, and a finished run re-renders it so a moved
+              or refused row keeps its place, its numbers and its words, instead of the page
+              telling the reader that nothing matched. --}}
+        @if ($this->comparisonRows->isNotEmpty())
             <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                @foreach ($this->offers as $item)
+                @foreach ($this->comparisonRows as $item)
                     @php($author = $this->authorVerdict($item))
 
                     <div class="flex flex-wrap items-center gap-3 p-4">
-                        <flux:checkbox
-                            wire:model.live="approved.{{ $item->from_manga_id }}"
-                            label="{{ $item->title }}"
-                            class="shrink-0"
-                        />
+                        @php($fromCover = ImageUrl::thumbnail((int) $item->from_manga_id, ImageUrl::defaultFormat()))
+
+                        {{-- The reader's own series, pictured. The table asks where a shelf goes
+                             and the reader knows a shelf by what it looks like; the same atom the
+                             wizard's candidate rows use, fed the same way. --}}
+                        <div class="w-12 shrink-0">
+                            <x-cover.art :src="$fromCover" :alt="$item->title" :blur-up="false" :vt="false" />
+                        </div>
+
+                        {{-- The name is carried by the heading and the accessible name carries
+                             the checkbox; the visible label would render the title twice. --}}
+                        {{-- The tick only rides a row still waiting for its move: a decided one is
+                              history, and a checkbox offered to move a row twice is a lie. --}}
+                        @if ($item->status === BulkMigrationItem::PENDING)
+                            <flux:checkbox
+                                wire:model.live="approved.{{ $item->from_manga_id }}"
+                                aria-label="{{ $item->title }}"
+                                class="shrink-0"
+                            />
+                        @endif
 
                         <div class="min-w-0 flex-1">
                             <flux:heading size="sm" level="3" class="truncate">
                                 {{ $item->title }}
                             </flux:heading>
 
-                            @if ($item->to_title !== null && $item->to_title !== $item->title)
-                                <flux:text size="xs" class="truncate">
-                                    {{ __('on the new source it is called') }} <span class="italic">{{ $item->to_title }}</span>
-                                </flux:text>
+                            @if ($item->to_title !== null)
+                                @php($toCover = ImageUrl::thumbnail((int) $item->to_manga_id, ImageUrl::defaultFormat()))
+                                @php($renamed = $item->to_title !== $item->title)
+
+                                {{-- The destination's own picture beside its name, because this
+                                     row is the same identity question the wizard asks and the
+                                     wizard's row answers it the same way. When the name did not
+                                     survive the move, the line below says what changed. --}}
+                                <div class="mt-1 flex items-center gap-2">
+                                    <div class="w-8 shrink-0">
+                                        <x-cover.art :src="$toCover" :alt="$item->to_title ?? $item->title" :blur-up="false" :vt="false" />
+                                    </div>
+
+                                    @if ($renamed)
+                                        <flux:text size="xs" class="truncate">
+                                            {{ __('on the new source it is called') }} <span class="italic">{{ $item->to_title }}</span>
+                                        </flux:text>
+                                    @else
+                                        <flux:text size="xs" class="truncate">
+                                            {{ __('on the new source') }}
+                                        </flux:text>
+                                    @endif
+                                </div>
                             @endif
 
                             <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -727,15 +1000,20 @@ new #[Title('Move a whole source')] class extends Component
                             @endif
                         </div>
 
-                        {{-- The full wizard, for anything this table got wrong --}}
-                        <flux:button
-                            size="xs"
-                            variant="ghost"
-                            href="{{ route('migrate', ['manga' => $item->from_manga_id]) }}"
-                            wire:navigate
-                        >
-                            {{ __('Look for another') }}
-                        </flux:button>
+                        {{-- The full wizard, for anything this table got wrong. A moved row is
+                              not wrong: its identity lives on the new source now, and the wizard
+                              on the old id would ask about a series the from side no longer
+                              lists. --}}
+                        @unless ($item->status === BulkMigrationItem::MOVED)
+                            <flux:button
+                                size="xs"
+                                variant="ghost"
+                                href="{{ route('migrate', ['manga' => $item->from_manga_id]) }}"
+                                wire:navigate
+                            >
+                                {{ __('Look for another') }}
+                            </flux:button>
+                        @endunless
                     </div>
                 @endforeach
             </flux:card>
@@ -743,35 +1021,98 @@ new #[Title('Move a whole source')] class extends Component
             <flux:callout variant="secondary" icon="magnifying-glass">
                 <flux:heading level="2" size="sm" class="mb-1">{{ __('Nothing on that source is on the new one') }}</flux:heading>
                 <p class="text-sm">
-                    {{ __('Every series was looked up and none of them came back with a match close enough to offer.') }}
+                    @if ($run->state === BulkMigration::CANCELLED)
+                        {{
+                            __('Of the :checked series the run looked at, none came back with a match close enough to offer.', [
+                                'checked' => number_format($run->series_checked),
+                            ])
+                        }}
+                    @else
+                        {{ __('Every series was looked up and none of them came back with a match close enough to offer.') }}
+                    @endif
                 </p>
             </flux:callout>
         @endif
 
-        {{-- The ones with nowhere to go, kept out of the way but counted --}}
-        @php($missing = $this->items->where('status', BulkMigrationItem::SKIPPED))
+        {{-- The rows the comparison found nothing to send, as cards with actions rather
+             than a folded list. Tachimanga's stills give them the two exits a dead end
+             needs, and the fold counted these rows without answering them; the summary
+             sentence above still counts all of them, so the count and the cards agree. --}}
+        @if ($this->missing->isNotEmpty())
+            <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-1 pt-4">
+                    <flux:heading size="sm" level="3">{{ __('No alternatives found') }}</flux:heading>
 
-        @if ($missing->isNotEmpty())
-            <details class="text-sm">
-                <summary class="cursor-pointer text-zinc-500 hover:underline dark:text-zinc-400">
-                    {{ trans_choice(
-                        ':count series is not on the new source|:count series are not on the new source',
-                        $missing->count(),
-                        ['count' => number_format($missing->count())],
-                    ) }}
-                </summary>
+                    <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400">
+                        {{
+                            trans_choice(
+                                'One series with nowhere to go.|:count series with nowhere to go.',
+                                $this->missing->count(),
+                                ['count' => number_format($this->missing->count())],
+                            )
+                        }}
+                    </flux:text>
+                </div>
 
-                <ul class="mt-2 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-300">
-                    @foreach ($missing as $item)
-                        <li>
-                            {{ $item->title }}
+                @foreach ($this->missing as $item)
+                    @continue($this->isSetAside($item))
+
+                    <div class="flex flex-wrap items-center gap-3 p-4">
+                        @php($cover = ImageUrl::thumbnail((int) $item->from_manga_id, ImageUrl::defaultFormat()))
+
+                        <div class="w-12 shrink-0">
+                            <x-cover.art :src="$cover" :alt="$item->title" :blur-up="false" :vt="false" />
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                            <flux:heading size="sm" level="3" class="truncate">
+                                {{ $item->title }}
+                            </flux:heading>
+
                             @if ($item->reason !== null)
-                                <span class="text-zinc-500">({{ $item->reason }})</span>
+                                <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ $item->reason }}</p>
+                            @else
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ __('No alternatives found') }}
+                                </p>
                             @endif
-                        </li>
-                    @endforeach
-                </ul>
-            </details>
+                        </div>
+
+                        {{-- The two exits a dead end has: the wizard, which searches every
+                             installed source for this one series rather than the chosen
+                             destination, or writing it off. "Don't migrate" is the wording
+                             the still shows for exactly this menu, and it does not read as
+                             abandoning a move here, because the row IS the move there is
+                             nothing left to abandon. --}}
+                        <div class="flex items-center gap-2">
+                            <flux:button
+                                size="xs"
+                                variant="ghost"
+                                href="{{ route('migrate', ['manga' => $item->from_manga_id]) }}"
+                                wire:navigate
+                            >
+                                {{ __('Search manually') }}
+                            </flux:button>
+
+                            <flux:button size="xs" variant="ghost" wire:click="setAsideItem({{ $item->from_manga_id }})">
+                                {{ __("Don't migrate") }}
+                            </flux:button>
+                        </div>
+                    </div>
+                @endforeach
+
+                @if ($this->setAsideCount > 0)
+                    <p class="px-4 pb-4 pt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{
+                            trans_choice(
+                                'You set one aside. It is still on the old source.|You set all :count of them aside. They are still on the old source.',
+                                $this->setAsideCount,
+                                ['count' => number_format($this->setAsideCount)],
+                            )
+                        }}
+                    </p>
+                @endif
+            </flux:card>
         @endif
     @endif
 

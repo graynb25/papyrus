@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\OwnedModel;
+use App\Support\Library;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -33,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $to_source_name
  * @property string $state running|ready|failed
  * @property string|null $error
+ * @property string|null $current_title
  * @property int $series_total
  * @property int $series_checked
  * @property int $series_matched
@@ -46,6 +48,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'to_source_name',
     'state',
     'error',
+    'current_title',
     'series_total',
     'series_checked',
     'series_matched',
@@ -76,6 +79,17 @@ class BulkMigration extends OwnedModel
     public const READY = 'ready';
 
     public const FAILED = 'failed';
+
+    /**
+     * The reader pressed stop and the job saw it between two series.
+     *
+     * Deliberately distinct from FAILED, because "it broke" and "the reader stopped it" are
+     * different things to say and different things to do next: a broken run names what broke,
+     * a stopped one names what survived. Tachimanga offers no stop at all; one attempt then a
+     * fresh run is already this job's design, and a visible stop makes that honest instead of
+     * implying the reader has to choose between waiting and killing the worker.
+     */
+    public const CANCELLED = 'cancelled';
 
     /**
      * How long a run may go untouched before the page stops calling it running.
@@ -129,6 +143,33 @@ class BulkMigration extends OwnedModel
     /** Whether the reader can be shown something to decide about. */
     public function isOffered(): bool
     {
-        return $this->state === self::READY && $this->items()->where('status', '!=', BulkMigrationItem::SKIPPED)->exists();
+        return in_array($this->state, [self::READY, self::CANCELLED], strict: true)
+            && $this->items()->where('status', '!=', BulkMigrationItem::SKIPPED)->exists();
+    }
+
+    /**
+     * A stopped run tells the reader which series it never reached.
+     *
+     * A cancelled run may be complete by coincidence (the press landed after the last
+     * series), so the sentence is only about the ones it can name as unlooked at. The
+     * complements are on the item rows, not inferred from counters, so the page cannot
+     * name a series it has no row for.
+     *
+     * @return array<int, string>
+     */
+    public function seriesNeverLookedAt(): array
+    {
+        if ($this->state !== self::CANCELLED) {
+            return [];
+        }
+
+        $compared = $this->items()->pluck('from_manga_id')->all();
+
+        return app(Library::class)->entries($this->user_id)
+            ->filter(fn (array $entry): bool => (string) $entry['source_id'] === $this->from_source_id
+                && ! in_array((int) $entry['manga_id'], $compared, true))
+            ->pluck('title')
+            ->values()
+            ->all();
     }
 }
