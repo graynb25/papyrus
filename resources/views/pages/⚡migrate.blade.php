@@ -7,6 +7,7 @@ use App\Migration\SeriesMigrator;
 use App\Models\AniListAccount;
 use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
+use App\Support\ImageUrl;
 use App\Suwayomi\SeriesGateway;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
@@ -336,7 +337,10 @@ new #[Title('Move to another source')] class extends Component {
      *
      * Count and gap together, because either alone misleads: 41 against 41 is the
      * same series, and 333 against 41 is a different entry that happens to share a
-     * title. Measured on both counts for the same series.
+     * title. Measured on both counts for the same series. Every compared line ends
+     * with when it was counted, because the live move of 2026-10-17 measured the
+     * destination differently between search and press, and only the row knowing
+     * its own vintage keeps the two numbers from reading as one claim.
      */
     public function chapterVerdict(array $candidate): string
     {
@@ -357,7 +361,7 @@ new #[Title('Move to another source')] class extends Component {
 
         if ((int) $delta === 0) {
             return trans_choice(
-                'Same as here: :count chapters.',
+                'Same as here: :count chapter, counted when the search ran.|Same as here: :count chapters, counted when the search ran.',
                 (int) $chapters,
                 ['count' => (int) $chapters],
             );
@@ -365,14 +369,14 @@ new #[Title('Move to another source')] class extends Component {
 
         return (int) $delta > 0
             ? trans_choice(
-                    ':count chapters, further along.',
+                    ':count chapter, :delta more than here, counted when the search ran.|:count chapters, :delta more than here, counted when the search ran.',
                     (int) $chapters,
-                    ['count' => (int) $chapters],
+                    ['count' => (int) $chapters, 'delta' => (int) $delta],
                 )
             : trans_choice(
-                    ':count chapters, behind.',
+                    ':count chapter, :delta fewer than here, counted when the search ran.|:count chapters, :delta fewer than here, counted when the search ran.',
                     (int) $chapters,
-                    ['count' => (int) $chapters],
+                    ['count' => (int) $chapters, 'delta' => abs((int) $delta)],
                 );
     }
 
@@ -600,6 +604,22 @@ new #[Title('Move to another source')] class extends Component {
                             @php($author = $this->authorVerdict($candidate))
 
                             <div class="flex flex-wrap items-center gap-3 p-4">
+                                {{-- The destination's own cover. The reader is being
+                                     asked whether this is the same series, and the
+                                     fastest read is the picture, which is why every
+                                     grid page already shows one: the atom derives
+                                     the url from the candidate's manga id and serves
+                                     it through the app's own proxy, AD-3. --}}
+                                <div class="w-12 shrink-0" aria-hidden="false">
+                                    @php($cover = ImageUrl::thumbnail((int) $candidate['manga_id'], ImageUrl::defaultFormat()))
+                                    <x-cover.art
+                                        :src="$cover"
+                                        :alt="$candidate['title'].' on '.$candidate['source_name'].' ('.$candidate['source_lang'].')'"
+                                        :blur-up="false"
+                                        :vt="false"
+                                    />
+                                </div>
+
                                 {{-- Rank. A number rather than a badge, because the
                                      ordering is the claim being made. --}}
                                 <span class="w-6 shrink-0 text-sm tabular-nums text-zinc-400">

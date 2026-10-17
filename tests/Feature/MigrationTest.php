@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Models\UserSource;
 use App\Search\SearchFanout;
 use App\Search\TitleNormalizer;
+use App\Support\ImageUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -1399,7 +1400,12 @@ class MigrationTest extends TestCase
             ->assertSee('MangaFire')
             ->assertSee('Lagoon Scans')
             ->assertSee('Same author')
-            ->assertSee('Same as here: 5 chapters.');
+            ->assertSee('Same as here: 5 chapters, counted when the search ran.');
+
+        /** The destination pictures itself, and the gap is stated, not implied. */
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->assertSee(ImageUrl::thumbnail(self::TO, ImageUrl::defaultFormat()))
+            ->assertSee('3 chapters, 2 fewer than here, counted when the search ran.');
     }
 
     public function test_the_page_shows_a_search_in_progress_with_a_count(): void

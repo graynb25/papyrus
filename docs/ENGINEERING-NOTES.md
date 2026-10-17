@@ -6275,3 +6275,28 @@ exactly that moment and it costs five minutes.
     empty case is not a guard against the absent case, and the choice that skips a stage is
     exactly what produces the absent case.** Guard `!== null && !== []` at the callout, and the
     tests that exist because of the choice, not the ones that exercise the default.
+
+289. **A green suite proves the tree's migrations, and proves nothing about the checkout's applied ones.**
+
+    Measured on 2026-10-17, on the first live press covered by this session's batch. The test
+    environment rebuilds its schema from the migrations on every run, so all 2,063 tests passed
+    while the checkout's own `database/database.sqlite` still had the table without this batch's
+    columns, and the first live move died with `table series_migrations has no column named
+    carried_chapters` while writing the run row. The transaction rolled back clean, the reader's
+    data untouched, and `php artisan migrate` was one 13 ms migration away. The general form:
+    **the schema the tests run against is not the schema the reader runs against, and a green
+    suite has never promoted a migration into a database.** A batch's own database is a live
+    thing that only `migrate` touches.
+
+290. **A count and the list beside it must reconcile; a reader who adds them up and falls short believes something broke.**
+
+    Measured in the same walk. The summary said 54 chapters found no match, and the details list
+    named 12. Both true: the count is FROM rows minus carried rows, and the FROM list carries
+    doubled scanlator variants that collapse to one destination row each, while the list names
+    the rows that got nothing. The reader cannot do that arithmetic, and the first reader to try
+    came out of the guess with a defect. Measured in the same press: the row said 1,194 chapters
+    at search time, and the listing the press actually fetched matched 2,388 of the 2,442 it had
+    to place, so a row's count is the candidate as searched, not the destination as pressed. The
+    general form: **a report's parts are read as one claim even when they were made at different
+    moments, so every count earns a named vintage, and where a list cannot name every row inside
+    a count, the rule of the list is stated on it rather than left for the reader to discover.**
