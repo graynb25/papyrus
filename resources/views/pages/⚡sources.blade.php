@@ -1953,21 +1953,6 @@ new #[Title('Sources')] class extends Component
                                     {{ $extension['pkgName'] }}
                                 </p>
 
-                                @if (($notice = $this->noticeFor($extension)) !== null)
-                                    {{--
-                                        The site's known behaviour, on the card so it is read
-                                        before any press on any view these cards render. The
-                                        press on one of these cards asks a second time with
-                                        the same sentences, in the dialog at the foot of the
-                                        page (owner, 2026-10-17). The facts behind both live in
-                                        config/source-notices.php; this copy is the deliverable
-                                        the owner reads line by line.
-                                    --}}
-                                    <p class="mt-2 flex items-start gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                        <flux:icon name="{{ $notice['icon'] }}" class="mt-0.5 size-3.5 shrink-0" />
-                                        <span>{{ $notice['text'] }}</span>
-                                    </p>
-                                @endif
                             </div>
 
                             @unless ($installed)
@@ -2076,8 +2061,9 @@ new #[Title('Sources')] class extends Component
         `@close`, which empties the pending names with nothing installed.
 
         Owner, 2026-10-17: the press on one of these sources is where the warning belongs.
-        The rows read the same sentences the cards do through noticeFor(), so the facts stay
-        in one place. Confirming installs the pending names.
+        The rows read the site's sentences straight from the config through noticeFor(): the one
+        place the conduct copy lives, since the owner had the notice block removed from the cards
+        (2026-10-17) after it warped the layout beside it. Confirming installs the pending names.
     --}}
     <flux:modal
         name="install-warning"

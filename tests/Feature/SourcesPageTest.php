@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ExtensionStore;
 use App\Models\Source;
 use App\Models\User;
+use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -1418,12 +1419,13 @@ class SourcesPageTest extends TestCase
         ));
 
         /*
-         * The known behaviour sentence appears twice: once on the card, once in the
-         * dialog. That count is the one seam holding: the dialog read the same copy
-         * the card does, through noticeFor(), rather than carrying a second copy of
-         * the facts that could drift from it.
+         * The dialog is the one place the sentence renders now. The owner had the
+         * notice block removed from the cards on 2026-10-17, because it warped the
+         * layout next to it, so a second occurrence would mean the removal did not
+         * take. One copy, and it is the dialog's, read from the config through
+         * noticeFor().
          */
-        $this->assertSame(2, substr_count(
+        $this->assertSame(1, substr_count(
             $page->html(),
             'This site is known to block readers that search aggressively.',
         ));
@@ -1614,15 +1616,17 @@ class SourcesPageTest extends TestCase
         );
     }
 
-    public function test_an_extension_whose_site_is_known_to_act_up_says_so_on_its_card(): void
+    public function test_the_conduct_sentence_has_no_home_on_the_card(): void
     {
         /*
-         * The four ban names are the owner's, given 2026-10-16; Comix is the
-         * different class, corroborated upstream by Keiyoushi extensions-source
-         * issues 12130 and 16684. The notice lives on the card so it is read
-         * before any install press, which is the acceptance the plan named.
-         * Counted once per string so a stray occurrence elsewhere cannot pass
-         * this by accident.
+         * Owner, 2026-10-17, on the notice block this card used to carry: it
+         * should be removed, it warps everything else close to it, and that is
+         * what the UI/UX sweep is for. The press carries the sentence now, in
+         * the install warning (the ask test pins that), so the card holds none.
+         * The page is asserted to have rendered the card itself as well: an
+         * empty page would pass an absence check too, and that is not the page
+         * this pins. The matcher's own verdicts are pinned at their seam,
+         * SourceNotices::kind(), in the two tests below.
          */
         $this->serveExtensions([
             $this->extension('eu.kanade.tachiyomi.extension.en.kaynscans', 'Kayn Scans', false, true),
@@ -1630,13 +1634,15 @@ class SourcesPageTest extends TestCase
             $this->extension('eu.kanade.tachiyomi.extension.all.mangafire', 'MangaFire', false, true),
         ]);
 
-        $html = $this->page()
+        $page = $this->page()
             ->set('view', 'available')
             ->assertOk()
-            ->html();
+            ->assertSee('Kayn Scans');
 
-        $this->assertSame(1, substr_count($html, 'This site is known to block readers that search aggressively.'));
-        $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
+        $html = $page->html();
+
+        $this->assertSame(0, substr_count($html, 'This site is known to block readers that search aggressively.'));
+        $this->assertSame(0, substr_count($html, 'Searches from extensions here come back scrambled'));
     }
 
     public function test_a_name_merely_containing_comix_is_not_the_comix_the_evidence_names(): void
@@ -1652,19 +1658,14 @@ class SourcesPageTest extends TestCase
          * ride on a substring, and these two real shapes pin the match against
          * a drift back to substring or word-boundary matching: "GEDE Comix"
          * would survive a word-boundary matcher, and only exact matching
-         * refuses both of these.
+         * refuses both of these. Read at the matcher itself, since the cards
+         * no longer render the notice (owner, 2026-10-17); the positive is in
+         * the same breath so the refusals cannot pass while the matcher
+         * matches nothing at all.
          */
-        $this->serveExtensions([
-            $this->extension('eu.kanade.tachiyomi.extension.all.globalcomix', 'GlobalComix', false, true),
-            $this->extension('eu.kanade.tachiyomi.extension.en.gedecomix', 'GEDE Comix', false, true),
-        ]);
-
-        $html = $this->page()
-            ->set('view', 'available')
-            ->assertOk()
-            ->html();
-
-        $this->assertSame(0, substr_count($html, 'Searches from extensions here come back scrambled'));
+        $this->assertSame(SourceNotices::SCRAMBLE, SourceNotices::kind('Comix'));
+        $this->assertNull(SourceNotices::kind('GlobalComix'));
+        $this->assertNull(SourceNotices::kind('GEDE Comix'));
     }
 
     public function test_the_named_site_keeps_a_qualifier_suffix_name(): void
@@ -1674,17 +1675,9 @@ class SourcesPageTest extends TestCase
          * recognises, and that shape is legitimately the named site: "Comix
          * (all)" is still Comix. This is why the match is exact on the name
          * and then tolerant of one parenthetical qualifier, rather than
-         * substring.
+         * substring. Read at the matcher itself, since the cards no longer
+         * render the notice (owner, 2026-10-17).
          */
-        $this->serveExtensions([
-            $this->extension('eu.kanade.tachiyomi.extension.all.comix', 'Comix (all)', false, true),
-        ]);
-
-        $html = $this->page()
-            ->set('view', 'available')
-            ->assertOk()
-            ->html();
-
-        $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
+        $this->assertSame(SourceNotices::SCRAMBLE, SourceNotices::kind('Comix (all)'));
     }
 }

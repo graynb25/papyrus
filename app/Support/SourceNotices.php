@@ -15,8 +15,9 @@ namespace App\Support;
  *
  * Only the sites named here get a notice. A partnership between sites stays out
  * of this file until something public and attributable documents one. When a
- * site's behaviour changes, this is the one file to correct, and the card copy
- * that represents it lives beside the page that renders it.
+ * site's behaviour changes, this is the one file to correct. Since 2026-10-17
+ * the copy is read at the install press, in the page's warning dialog, and the
+ * cards carry none of it.
  */
 final class SourceNotices
 {
