@@ -6159,3 +6159,64 @@ exactly that moment and it costs five minutes.
     The general form: every test written with `assertSee()` passed the whole time this
     duplication existed, because seeing the text is true for any number of copies. Where a
     rendered thing must be exactly one, the assertion is a count.
+
+280. **A stub for one response, written in the shape of a neighbouring response, carries a layer the real call does not have.**
+
+    The automatic-load cycle needed the fake to answer two mutations it had never mirrored
+    before, and both were first written by copying a neighbouring branch's nesting and renaming
+    what differed. Each carried one wrapping layer the real call does not return, and the
+    gates that run on every edit caught it twice before the shape said what the code reads.
+    The general form: **a stub inherits its shape from the call it stands in for, and from
+    nothing near it.** The extra layer is invisible in a green test, because reading one key
+    too deep hands back nothing and the rest of the assertion does not care; it costs its
+    sentence the first time someone trusts the stub's world over the call's.
+
+281. **A conf key's type is in the exception, and conf normalization can rewrite the file after the failure.**
+
+    The rebuilt scratch server's first boot died before any port listened:
+    `ConfigException$WrongType: extensionStores has type STRING rather than LIST`. The line had
+    been written as a bare string because one store and one value read scalar to the writer,
+    while the server accepts a list, which the error named plainly. Worse, after the failure the
+    server had normalized the file itself, so the line on disk no longer said what had been
+    written there. Measured 2026-10-16 in the scratch root; the recipe beside the jar now
+    carries the list form. The general form: **the type of a configuration key is read from the
+    error, not from the key's name.** And after a conf-driven failure, diff the file against
+    what was meant before editing by eye, because the file may no longer be the one left.
+
+282. **A reply is not the work it acknowledges, and a persisted catalogue outlives both the restart and the comment that says otherwise.**
+
+    Measured live on 2026-10-17, cold trust on the scratch server: the `fetchExtensions` reply
+    arrived before the fetch itself had downloaded or parsed anything, named zero extensions,
+    and the same server held 1,434 a minute later. The render riding on that reply said "0
+    extensions" with nothing explained, and the same walk found the catalogue surviving a
+    restart, so the comment above refresh() claiming "after a restart is nothing at all" was
+    describing a server that no longer exists; it is corrected in the same batch. The general
+    form: **a call that acknowledges asynchronously turns a running fetch into a settled zero
+    the moment the reply is counted.** Whether a state survives a restart is measured by
+    restarting it, not by trusting the sentence that mentions it.
+
+283. **A conduct notice attaches to sites, and containment matching turns one site's name into an accusation against every other name containing it.**
+
+    The first matcher matched inside the name rather than against it, and the live catalogue
+    paid for it: filtering "Comix" on the real Keiyoushi index lists eight extension names
+    (GlobalComix, ArbxComix, Comix, GEDE Comix, ILikeComix, KingComiX, PornComix, ComixTopia),
+    and seven of them are unaffiliated publishers that received the scramble notice. The two
+    upstream issues behind the class, Keiyoushi extensions-source 12130 and 16684, name exactly
+    one extension, the English "Comix". The fix, exact on the name plus a parenthetical
+    qualifier, was pinned by the two live shapes a word-boundary matcher would still have
+    accused: "GEDE Comix" survives a boundary matcher and dies on exact matching. The general
+    form: **a notice about a site's conduct sits on evidence about that site, and a substring
+    match is similarity, which is not evidence.** When the live corpus can drift against a
+    matcher, the corpus belongs in the test: real names measured off the real list, one that
+    must match and two that must not.
+
+284. **State set inside one Livewire testable belongs to that testable, and a second one mounts a fresh component with the property back at its default.**
+
+    The note's first test called `trust` on one testable and then asked a second `page()` for
+    the html, and the note never appeared: the fresh mount re-read the property's default and
+    rendered the page honestly, minus everything the action had just decided. The existing
+    failure-reporting test chains `assertSee` on the same instance for exactly this reason, and
+    the general form explains it: **an action's state is readable in the request it ran in, and
+    every helper that mounts a component starts from defaults.** Assertions about what an
+    action produced chain onto the instance the action ran on, or set the property up front and
+    test the render as its own question.

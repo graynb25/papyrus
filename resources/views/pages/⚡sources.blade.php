@@ -171,8 +171,9 @@ new #[Title('Sources')] class extends Component
     /**
      * Ask the server to re-read every store, then mirror the result.
      *
-     * Without this the list is whatever the server last fetched, which after a
-     * restart is nothing at all.
+     * Without this the list is whatever the server last fetched: a server that
+     * has never fetched holds nothing at all, while a cached catalogue
+     * survives a restart, measured on 2026-10-17 with v2.4.2366.
      */
     public function refresh(): void
     {
