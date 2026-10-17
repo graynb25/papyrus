@@ -6250,3 +6250,28 @@ exactly that moment and it costs five minutes.
     browser reads, that the rendered html carries `wire:poll` while a search runs and carries
     none once it settles, on the block that shows progress, the same idiom the search page
     proved working with a probe.
+
+287. **A refusal scenario named for its cause is not named for its message, because the cause and the message live in two different stages.**
+
+    Measured on the migrate page on 2026-10-17, while writing the acceptance tests for the two
+    protective refusals. The first test asserted the reader-facing line for a destination emptied
+    between search and move as "That source lists no chapters for it, so there is nothing to move
+    to." and the run refused it: **that sentence belongs to the other path.** When a fresh fetch
+    succeeds with an empty list, the move still walks into the mapper, which refuses because none
+    of the reader's chapters could be matched, so the line the reader sees is "None of this
+    reader's chapters could be matched to the new source, so nothing would carry over." Only a
+    fetch that *errors* takes the no-chapters path, and the fixture needs both the empty list and
+    the fake 503 set to reach it. The general form: **the fixture names where it stops; the
+    message names where it stops; those are two different places unless measured, and every
+    assertion between them is a guess the first run will catch.
+
+288. **A nullable column behind a boolean cast reads as null and not as false, and an `!== []` guard waves it into the loop.**
+
+    Same session, found by the run rather than by reading: `series_migrations.unmatched_chapters`
+    stores `null` when the reader chose not to carry chapters at all, because nothing was
+    attempted, and the summary callout guarded it with `!== []`, which `null` passes (they are
+    different things), so `foreach` took null. The two failing tests were the two not-carried
+    moves, which is why the default path never saw it. The general form: **a guard against the
+    empty case is not a guard against the absent case, and the choice that skips a stage is
+    exactly what produces the absent case.** Guard `!== null && !== []` at the callout, and the
+    tests that exist because of the choice, not the ones that exercise the default.

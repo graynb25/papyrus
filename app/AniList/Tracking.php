@@ -99,24 +99,32 @@ class Tracking
      * progress ping: while one is queued or running, later pings for the same
      * series are absorbed, and the push that eventually runs sees the final
      * state rather than an intermediate one.
+     *
+     * Answers whether a push is now on its way, because the migration summary
+     * records what was asked and must not claim a push nobody booked: a reader
+     * who disconnected between the dialog and the confirm gets `false` on the
+     * row, not a queued truth.
      */
-    public function scheduleSync(User|int $user, int $mangaId): void
+    public function scheduleSync(User|int $user, int $mangaId): bool
     {
         $userId = $user instanceof User ? (int) $user->getKey() : $user;
 
         if (AniListAccount::forUser($userId)->exists() === false) {
-            return;
+            return false;
         }
 
         $key = $this->pendingKey($userId, $mangaId);
 
         if (Cache::has($key)) {
-            return;
+            // One is already on its way, and it is the same push by (user, manga).
+            return true;
         }
 
         Cache::put($key, true, now()->addMinutes(5));
 
         SyncAniListProgress::dispatch($userId, $mangaId);
+
+        return true;
     }
 
     /**

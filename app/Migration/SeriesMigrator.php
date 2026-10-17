@@ -2,6 +2,8 @@
 
 namespace App\Migration;
 
+use App\AniList\Tracking;
+use App\Downloads\DownloadLedger;
 use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
 use App\Models\Source;
@@ -39,8 +41,11 @@ use Illuminate\Support\Facades\DB;
  * the download centre offers to delete them. A reader who downloaded chapters to
  * read on a train should not lose that copy because they moved the series.
  *
- * Nothing here touches the download rows. They keep the old manga id, which is what
- * lets the centre find them with one lookup and label them as stranded.
+ * Nothing here touches the download rows by default. They keep the old manga id,
+ * which is what lets the centre find them with one lookup and label them as
+ * stranded. The settings dialog offers to remove them: when the reader asks, the
+ * work is not done here either, it is the ledger's {@see DownloadLedger::forgetSeries()},
+ * run after the transaction, with the counts written onto the row.
  */
 class SeriesMigrator
 {
@@ -48,15 +53,28 @@ class SeriesMigrator
         private readonly SeriesGateway $series,
         private readonly ChapterMapper $mapper,
         private readonly ReadingState $state,
+        private readonly DownloadLedger $downloads,
+        private readonly Tracking $tracking,
     ) {}
 
     /**
      * Attempt a migration.
      *
+     * ## What the reader allowed
+     *
+     * `null` settings mean the move this page has always made: everything
+     * carried, downloads kept, nobody told. Anything else is the dialog's
+     * answers, and the row records them so the completion summary can say "as
+     * you chose" about each one. The carrying itself stays behind the same
+     * chapter number match as before, the choices only open and close the doors
+     * onto it, and a reader who declined the carry is not refused for having no
+     * match, because there was never a match to look for.
+     *
      * @return array{ok: bool, reason: string|null, migration: SeriesMigration|null}
      */
-    public function migrate(User|int $user, int $fromMangaId, int $toMangaId): array
+    public function migrate(User|int $user, int $fromMangaId, int $toMangaId, ?MigrationSettings $settings = null): array
     {
+        $settings ??= MigrationSettings::defaults();
         $userId = $user instanceof User ? (int) $user->getKey() : $user;
 
         if ($fromMangaId === $toMangaId) {
@@ -104,19 +122,33 @@ class SeriesMigrator
             }
         }
 
-        $mapping = $this->mapper->map(
-            $from['chapters']['nodes'] ?? [],
-            $to['chapters']['nodes'] ?? [],
-        );
+        /*
+         * The mapping is the carry's proof, so when the reader declined the carry
+         * the mapper never runs: there is no read state to place, and refusing a
+         * move for an empty map would block a re-point the reader asked for.
+         */
+        $mapping = null;
 
-        if ($mapping['map'] === []) {
-            return $this->refuse(__('None of this reader\'s chapters could be matched to the new source, so nothing would carry over.'));
+        if ($settings->carryChapters) {
+            $mapping = $this->mapper->map(
+                $from['chapters']['nodes'] ?? [],
+                $to['chapters']['nodes'] ?? [],
+            );
+
+            if ($mapping['map'] === []) {
+                return $this->refuse(__('None of this reader\'s chapters could be matched to the new source, so nothing would carry over.'));
+            }
         }
 
-        $result = DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $from, $candidate, $mapping): SeriesMigration {
-            $moved = $this->state->moveSeries($userId, $fromMangaId, $toMangaId, $mapping['map']);
-
-            unset($moved);
+        $result = DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $from, $candidate, $mapping, $settings): SeriesMigration {
+            $this->state->moveSeries(
+                $userId,
+                $fromMangaId,
+                $toMangaId,
+                $mapping['map'] ?? [],
+                $settings->carryChapters,
+                $settings->carryShelves,
+            );
 
             return SeriesMigration::updateOrCreate(
                 ['user_id' => $userId, 'from_manga_id' => $fromMangaId],
@@ -126,12 +158,50 @@ class SeriesMigrator
                     'to_source_id' => (string) $candidate['source_id'],
                     'from_source_name' => (string) $from['source']['name'],
                     'to_source_name' => (string) $candidate['source_name'],
-                    'chapters_total' => (int) $mapping['total'],
-                    'chapters_carried' => count($mapping['map']),
-                    'unmatched_chapters' => $mapping['unmatched'],
+                    'chapters_total' => $mapping === null ? 0 : (int) $mapping['total'],
+                    'chapters_carried' => $mapping === null ? 0 : count($mapping['map']),
+                    'unmatched_chapters' => $mapping['unmatched'] ?? null,
+                    'carried_chapters' => $settings->carryChapters,
+                    'carried_shelves' => $settings->carryShelves,
+
+                    /*
+                     * The other two answers are outcomes of work that must not run
+                     * inside this transaction, so they are written after it, once
+                     * what they describe has actually happened.
+                     */
+                    'tracking_requested' => false,
+                    'remove_downloads' => $settings->removeDownloads,
+                    'downloads_removed' => 0,
+                    'downloads_cancelled' => 0,
+                    'downloads_unremoved' => 0,
                 ],
             );
         });
+
+        /*
+         * Both asks deliberately reach past the transaction's boundary: deleting
+         * downloads is one server call per chapter, and the tracker push is a
+         * queued job. Holding a reader's state work hostage to either would be the
+         * wrong trade, so they run after the commit and the row is updated to
+         * record what actually happened rather than what was intended. Neither
+         * ask runs when the reader made neither choice.
+         */
+        $downloads = $settings->removeDownloads
+            ? $this->downloads->forgetSeries($user, $fromMangaId)
+            : ['removed' => 0, 'cancelled' => 0, 'unremoved' => 0];
+
+        $queued = $settings->tellTracking
+            ? $this->tracking->scheduleSync($user, $toMangaId)
+            : false;
+
+        if ($settings->removeDownloads || $settings->tellTracking) {
+            $result->update([
+                'downloads_removed' => $downloads['removed'],
+                'downloads_cancelled' => $downloads['cancelled'],
+                'downloads_unremoved' => $downloads['unremoved'],
+                'tracking_requested' => $queued,
+            ]);
+        }
 
         return ['ok' => true, 'reason' => null, 'migration' => $result];
     }

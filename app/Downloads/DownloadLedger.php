@@ -5,6 +5,7 @@ namespace App\Downloads;
 use App\Jobs\SyncDownloads;
 use App\Models\Download;
 use App\Models\User;
+use App\Support\ReadingState;
 use App\Suwayomi\DownloadGateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
@@ -455,6 +456,50 @@ class DownloadLedger
         $row->delete();
 
         return true;
+    }
+
+    /**
+     * Empty one series' downloads out of this reader's ledger.
+     *
+     * Lives here rather than in the migrator for the same reason
+     * {@see ReadingState::moveSeries()} does: the ledger owns these
+     * rows, and a second writer would be a second place to get the states wrong.
+     *
+     * Settled downloads lose their pages on the server and their row. Pending
+     * ones hold no pages yet, so they leave the shared queue and record that
+     * they left; letting one finish would strand it against a series that is no
+     * longer there.
+     *
+     * This is deliberately not inside the migrator's transaction: it is one
+     * server call per chapter, which is the shape this file's transaction rules
+     * exist to keep out. The counts travel back as the answer, and the summary
+     * reports a partial removal as what it is rather than as silence.
+     *
+     * @return array{removed: int, cancelled: int, unremoved: int}
+     */
+    public function forgetSeries(User|int $user, int $mangaId): array
+    {
+        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+
+        $removed = 0;
+        $cancelled = 0;
+        $unremoved = 0;
+
+        foreach (Download::forUser($userId)->where('suwayomi_manga_id', $mangaId)->get() as $row) {
+            $ok = $row->isSettled()
+                ? $this->forget($user, (int) $row->suwayomi_chapter_id)
+                : $this->cancel($user, (int) $row->suwayomi_chapter_id);
+
+            if (! $ok) {
+                $unremoved++;
+
+                continue;
+            }
+
+            $row->isSettled() ? $removed++ : $cancelled++;
+        }
+
+        return ['removed' => $removed, 'cancelled' => $cancelled, 'unremoved' => $unremoved];
     }
 
     /**

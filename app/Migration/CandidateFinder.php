@@ -232,6 +232,14 @@ class CandidateFinder
                     'manga_id' => (int) $hit['id'],
                     'site' => $site,
                     'source_id' => (string) $source->suwayomi_source_id,
+
+                    /*
+                     * The mirror's own key, because /browse/{source} binds a mirror row
+                     * and the candidate's source_id is the server's id. A blocked row's
+                     * "Search manually" is a link to this source's search page, which
+                     * is why the row carries both.
+                     */
+                    'source_browse_id' => (int) $source->getKey(),
                     'source_name' => (string) $source->display_name,
                     'source_lang' => (string) $source->lang,
                     'title' => $hitTitle,

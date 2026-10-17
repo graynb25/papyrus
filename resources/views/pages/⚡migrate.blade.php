@@ -2,7 +2,9 @@
 
 use App\Jobs\FindMigrationCandidates;
 use App\Migration\CandidateFinder;
+use App\Migration\MigrationSettings;
 use App\Migration\SeriesMigrator;
+use App\Models\AniListAccount;
 use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
 use App\Suwayomi\SeriesGateway;
@@ -29,6 +31,37 @@ new #[Title('Move to another source')] class extends Component {
     public int $manga;
 
     public ?int $resultId = null;
+
+    /**
+     * The move the dialog is holding open, as the candidate's manga id.
+     *
+     * Armed by requestMove(), cleared by the cancel route and by a successful
+     * move. It is deliberately not what migrates: the migrator re-checks the
+     * candidate against the search regardless, this only names the row the
+     * dialog describes.
+     */
+    public ?int $pendingMove = null;
+
+    /**
+     * The dialog's four answers.
+     *
+     * Safe set on every open, because a remembered choice would outlive its
+     * context: a checked downloads box from yesterday must not delete pages
+     * from today's move.
+     */
+    public bool $carryChapters = true;
+    public bool $carryShelves = true;
+    public bool $tellTracking = false;
+    public bool $removeDownloads = false;
+
+    /**
+     * Candidates the reader stepped aside from on this look.
+     *
+     * Deliberately not stored with the search: a reload is a fresh look at the
+     * same list, and a row that was set aside comes back because nothing was
+     * decided against it. It is a to-do about attention, not a verdict.
+     */
+    public array $dismissed = [];
 
     public function mount(int $manga): void
     {
@@ -130,15 +163,54 @@ new #[Title('Move to another source')] class extends Component {
     }
 
     /**
-     * Move the series onto a candidate the reader chose.
+     * Arm the settings dialog for one candidate.
+     *
+     * The press no longer moves on contact. The dialog belongs to the press and
+     * takes its answers from there, which is the shape the install warning took
+     * on the sources page for the same reason: the request that arms it has to
+     * land before anything opens on it, so the page's root div translates the
+     * dispatched event into Flux's own modal-show.
+     */
+    public function requestMove(int $toManga): void
+    {
+        // The safe set on every open. A remembered choice outlived its context:
+        // yesterday's ticked downloads box has no business deleting anything
+        // from today's move.
+        $this->carryChapters = true;
+        $this->carryShelves = true;
+        $this->tellTracking = $this->trackConnected;
+        $this->removeDownloads = false;
+
+        $this->pendingMove = $toManga;
+
+        $this->dispatch('open-migration-settings');
+    }
+
+    /** The cancel route: close the dialog, leave everything as it was. */
+    public function closeMigrationDialog(): void
+    {
+        $this->pendingMove = null;
+    }
+
+    /**
+     * Move the series onto the candidate the dialog is holding open.
      *
      * The candidate is re-checked against the search inside the migrator, so a value
      * this method was tricked into accepting is refused there rather than trusted
      * here. See SeriesMigrator.
      */
-    public function moveTo(int $toManga): void
+    public function moveConfirmed(): void
     {
-        $outcome = app(SeriesMigrator::class)->migrate(auth()->user(), $this->manga, $toManga);
+        if ($this->pendingMove === null) {
+            return;
+        }
+
+        $outcome = app(SeriesMigrator::class)->migrate(auth()->user(), $this->manga, $this->pendingMove, new MigrationSettings(
+            carryChapters: $this->carryChapters,
+            carryShelves: $this->carryShelves,
+            tellTracking: $this->tellTracking,
+            removeDownloads: $this->removeDownloads,
+        ));
 
         if (! $outcome['ok']) {
             Flux::toast(
@@ -147,6 +219,9 @@ new #[Title('Move to another source')] class extends Component {
                 variant: 'danger',
             );
 
+            // Deliberately not closed: the reason a move refuses is usually about
+            // what is ticked and what the source now lists, both of which are
+            // answers this dialog can still change.
             return;
         }
 
@@ -154,18 +229,88 @@ new #[Title('Move to another source')] class extends Component {
         $migration = $outcome['migration'];
 
         $this->resultId = $migration->getKey();
+        $this->pendingMove = null;
+
+        $this->dispatch('close-migration-settings');
 
         Flux::toast(
-            text: trans_choice(
-                ':count chapter kept its place.|:count chapters kept their place.',
-                (int) $migration->chapters_carried,
-                ['count' => (int) $migration->chapters_carried],
-            ),
+            text: $migration->carried_chapters
+                ? trans_choice(
+                    ':count chapter kept its place.|:count chapters kept their place.',
+                    (int) $migration->chapters_carried,
+                    ['count' => (int) $migration->chapters_carried],
+                )
+                : __('Moved.'),
             heading: __('Moved'),
             variant: 'success',
         );
 
         $this->dispatch('$refresh');
+    }
+
+    /**
+     * Take one candidate out of this look.
+     *
+     * Not stored with the search: this is a to-do about attention, not a verdict
+     * about the source, and the row returns the next time anyone opens the page.
+     */
+    public function dismiss(int $mangaId): void
+    {
+        $this->dismissed[] = $mangaId;
+    }
+
+    /**
+     * Whether this reader's progress has an AniList account to go to.
+     *
+     * The dialog's tracking row exists only when it can do something, because a
+     * checkbox that is wired to nothing is a promise the page would be making
+     * up. Cached as a computed: the page renders it twice per request.
+     */
+    #[Computed]
+    public function trackConnected(): bool
+    {
+        return AniListAccount::forUser((int) auth()->id())->exists();
+    }
+
+    /**
+     * The candidate the dialog is holding open, or null when nothing is.
+     *
+     * A computed and read as a property: the dialog reads it in three places,
+     * and calling the scan again would be a search row read per read.
+     */
+    #[Computed]
+    public function pendingCandidate(): ?array
+    {
+        $search = $this->search;
+
+        if ($this->pendingMove === null || $search === null) {
+            return null;
+        }
+
+        foreach ($search->candidates as $candidate) {
+            if ((int) $candidate['manga_id'] === $this->pendingMove) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The candidates still on the board, best first.
+     *
+     * Stepping aside removes the row and lets the numbering close behind it, so
+     * the list keeps a rank for every row it shows. The search row is untouched.
+     */
+    #[Computed]
+    public function shownCandidates(): array
+    {
+        $dismissed = array_map('intval', $this->dismissed);
+
+        return array_values(array_filter(
+            $this->search?->candidates ?? [],
+            fn (array $candidate): bool => ! in_array((int) $candidate['manga_id'], $dismissed, true),
+        ));
     }
 
     /**
@@ -263,7 +408,11 @@ new #[Title('Move to another source')] class extends Component {
     }
 }; ?>
 
-<div class="w-full space-y-6">
+<div
+    class="w-full space-y-6"
+    x-on:open-migration-settings.window="$dispatch('modal-show', { name: 'migration-settings' })"
+    x-on:close-migration-settings.window="$dispatch('modal-close', { name: 'migration-settings' })"
+>
     @php($series = $this->series)
     @php($search = $this->search)
 
@@ -415,35 +564,57 @@ new #[Title('Move to another source')] class extends Component {
                     </flux:button>
                 </flux:callout>
             @else
-                <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                    {{ trans_choice(
-                        'Found on :count source, best first. The numbers are what was measured, not a guess.|Found on :count sources, best first. The numbers are what was measured, not a guess.',
-                        count($search->candidates),
-                        ['count' => count($search->candidates)],
-                    ) }}
-                </flux:text>
+                {{-- $shown is the board the reader sees: set-aside rows are out and
+                     the ranking closes behind them. The count below the text is
+                     theirs, because a list that says 2 while showing 1 is a
+                     sentence undoing itself. --}}
+                @php($shown = $this->shownCandidates)
 
-                <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                    @foreach ($search->candidates as $index => $candidate)
-                        @php($blocked = $this->candidateBlocked($candidate))
-                        @php($author = $this->authorVerdict($candidate))
+                @if (count($shown) === 0)
+                    {{-- Everything was set aside. The search found rows, so neither
+                         the found count nor a now empty list should describe this;
+                         the thing that happened is the reader's own two clicks. --}}
+                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                        {{ trans_choice(
+                            'You set the only candidate aside.|You set all :count candidates aside.',
+                            count($search->candidates),
+                            ['count' => count($search->candidates)],
+                        ) }}
+                    </flux:text>
+                @endif
 
-                        <div class="flex flex-wrap items-center gap-3 p-4">
-                            {{-- Rank. A number rather than a badge, because the
-                                 ordering is the claim being made. --}}
-                            <span class="w-6 shrink-0 text-sm tabular-nums text-zinc-400">
-                                {{ $index + 1 }}
-                            </span>
+                @if (count($shown) > 0)
+                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                        {{ trans_choice(
+                            'Found on :count source, best first. The numbers are what was measured, not a guess.|Found on :count sources, best first. The numbers are what was measured, not a guess.',
+                            count($shown),
+                            ['count' => count($shown)],
+                        ) }}
+                    </flux:text>
+                @endif
 
-                            <div class="min-w-0 flex-1">
-                                <flux:heading size="sm" level="3" class="truncate">
-                                    {{ $candidate['title'] }}
-                                </flux:heading>
+                @if (count($shown) > 0)
+                    <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                        @foreach ($shown as $index => $candidate)
+                            @php($blocked = $this->candidateBlocked($candidate))
+                            @php($author = $this->authorVerdict($candidate))
 
-                                <flux:text size="xs" class="truncate">
-                                    {{ $candidate['source_name'] }}
-                                    <span class="text-zinc-500">({{ $candidate['source_lang'] }})</span>
-                                </flux:text>
+                            <div class="flex flex-wrap items-center gap-3 p-4">
+                                {{-- Rank. A number rather than a badge, because the
+                                     ordering is the claim being made. --}}
+                                <span class="w-6 shrink-0 text-sm tabular-nums text-zinc-400">
+                                    {{ $index + 1 }}
+                                </span>
+
+                                <div class="min-w-0 flex-1">
+                                    <flux:heading size="sm" level="3" class="truncate">
+                                        {{ $candidate['title'] }}
+                                    </flux:heading>
+
+                                    <flux:text size="xs" class="truncate">
+                                        {{ $candidate['source_name'] }}
+                                        <span class="text-zinc-500">({{ $candidate['source_lang'] }})</span>
+                                    </flux:text>
 
                                 {{-- The measured signals, each stated. A reader is
                                      being asked to choose, so the reasons are shown
@@ -471,13 +642,35 @@ new #[Title('Move to another source')] class extends Component {
                             </div>
 
                             @if ($blocked === null)
-                                <flux:button size="xs" variant="primary" wire:click="moveTo({{ (int) $candidate['manga_id'] }})">
+                                <flux:button size="xs" variant="primary" wire:click="requestMove({{ (int) $candidate['manga_id'] }})">
                                     {{ __('Move here') }}
                                 </flux:button>
+                            @else
+                                {{-- The two moves a dead end keeps, which is what the
+                                     Tachimanga row menu offers at the same spot: look
+                                     at the source for yourself, or step this one out
+                                     of the way of the ones that can take the move. --}}
+                                <div class="flex items-center gap-2">
+                                    @if (($candidate['source_browse_id'] ?? null) !== null)
+                                        <flux:button
+                                            size="xs"
+                                            icon="magnifying-glass"
+                                            href="{{ route('browse', ['source' => $candidate['source_browse_id'], 'q' => $series['title']]) }}"
+                                            wire:navigate
+                                        >
+                                            {{ __('Search manually') }}
+                                        </flux:button>
+                                    @endif
+
+                                    <flux:button size="xs" variant="ghost" wire:click="dismiss({{ (int) $candidate['manga_id'] }})">
+                                        {{ __('Not this one') }}
+                                    </flux:button>
+                                </div>
                             @endif
                         </div>
-                    @endforeach
-                </flux:card>
+                        @endforeach
+                    </flux:card>
+                @endif
             @endif
         @endif
 
@@ -493,26 +686,84 @@ new #[Title('Move to another source')] class extends Component {
                 {{--
                     The alignment report, which is the point of the whole exercise.
                     A transfer that silently lost three chapters and one that carried
-                    everything look identical otherwise.
+                    everything look identical otherwise. Told from the run row, which
+                    is also where the reader's own choices live: the page says "as you
+                    chose" about every line a choice made, because the row recorded
+                    what was asked alongside what happened.
                 --}}
-                <p class="mt-2 text-sm">
-                    {{ trans_choice(
-                        ':count chapter kept its place.|:count chapters kept their place.',
-                        (int) $this->result->chapters_carried,
-                        ['count' => (int) $this->result->chapters_carried],
-                    ) }}
-                    @if ($this->result->chaptersLost() > 0)
-                        <span class="text-amber-600 dark:text-amber-400">
-                            {{ trans_choice(
-                                ':count chapter found no match.|:count chapters found no match.',
-                                $this->result->chaptersLost(),
-                                ['count' => $this->result->chaptersLost()],
-                            ) }}
-                        </span>
+                @php($result = $this->result)
+
+                @if ($result->carried_chapters)
+                    <p class="mt-2 text-sm">
+                        {{ trans_choice(
+                            ':count chapter kept its place.|:count chapters kept their place.',
+                            (int) $result->chapters_carried,
+                            ['count' => (int) $result->chapters_carried],
+                        ) }}
+                        @if ($result->chaptersLost() > 0)
+                            <span class="text-amber-600 dark:text-amber-400">
+                                {{ trans_choice(
+                                    ':count chapter found no match.|:count chapters found no match.',
+                                    $result->chaptersLost(),
+                                    ['count' => $result->chaptersLost()],
+                                ) }}
+                            </span>
+                        @endif
+                    </p>
+                @else
+                    {{-- The carry the reader unticked. The rows stayed on the old
+                         chapter ids, where they still hold the place, which is the
+                         same fact the honesty block promises for downloads. --}}
+                    <p class="mt-2 text-sm">
+                        {{ __('Its read progress stayed on the old source, as you chose.') }}
+                    </p>
+                @endif
+
+                <p class="text-sm">
+                    @if ($result->carried_shelves)
+                        {{ __('It kept its shelves.') }}
+                    @else
+                        {{ __('It came off its shelves, as you chose.') }}
                     @endif
                 </p>
 
-                @if ($this->result->unmatched_chapters !== [])
+                @if ($result->tracking_requested)
+                    <p class="text-sm">
+                        {{ __('AniList was told to catch up with its progress.') }}
+                    </p>
+                @endif
+
+                @if ($result->remove_downloads)
+                    <p class="text-sm">
+                        {{ trans_choice(
+                            ':count downloaded chapter was deleted.|:count downloaded chapters were deleted.',
+                            (int) $result->downloads_removed,
+                            ['count' => (int) $result->downloads_removed],
+                        ) }}
+
+                        @if ($result->downloads_cancelled > 0)
+                            {{ trans_choice(
+                                ':count queued download was taken off the queue.|:count queued downloads were taken off the queue.',
+                                (int) $result->downloads_cancelled,
+                                ['count' => (int) $result->downloads_cancelled],
+                            ) }}
+                        @endif
+                    </p>
+
+                    @if ($result->downloads_unremoved > 0)
+                        <p class="text-sm text-amber-600 dark:text-amber-400">
+                            {{ trans_choice(
+                                ':count of them could not be deleted and is still listed in the download centre.|:count of them could not be deleted and are still listed in the download centre.',
+                                (int) $result->downloads_unremoved,
+                                ['count' => (int) $result->downloads_unremoved],
+                            ) }}
+                        </p>
+                    @endif
+                @endif
+
+                {{-- Null matters here: a not-carried move records that nothing was
+                     attempted, which the cast leaves as null rather than []. --}}
+                @if ($result->unmatched_chapters !== null && $result->unmatched_chapters !== [])
                     <details class="mt-2 text-sm">
                         <summary class="cursor-pointer text-zinc-500 hover:underline dark:text-zinc-400">
                             {{ __('Which ones did not match') }}
@@ -532,4 +783,100 @@ new #[Title('Move to another source')] class extends Component {
             </flux:callout>
         @endif
     @endif
+
+    {{--
+        The settings dialog, one for the whole page rather than one per candidate,
+        for the same reason the install warning carries: the dialog belongs to the
+        press, not to the row, and the destination it names is whichever candidate
+        that press was on.
+
+        Opened from the response rather than from the click, with the race the
+        install warning's comment records inverted in one place: the request that
+        arms the move has to land before anything opens on it, so the root div
+        re-dispatches Flux's own modal-show when the actions dispatch
+        open-migration-settings. The confirm is a plain wire button rather than
+        flux:modal.close, so the move, the pending reset and the close run as one
+        request; on a refusal the dialog stays open, because the reason a move
+        refuses is usually about what is ticked.
+    --}}
+    <flux:modal
+        name="migration-settings"
+        class="max-w-md"
+        @close="closeMigrationDialog"
+    >
+        @php($pending = $this->pendingCandidate)
+
+        @if ($pending !== null)
+            <div class="flex items-start gap-4">
+                <span
+                    class="mt-0.5 flex size-10 flex-none items-center justify-center rounded-xl bg-vermilion-600/10 text-vermilion-600 dark:bg-vermilion-500/15 dark:text-vermilion-400"
+                    aria-hidden="true"
+                >
+                    <flux:icon name="arrows-right-left" class="size-5" />
+                </span>
+
+                <div class="min-w-0">
+                    <flux:heading size="lg">
+                        {{ __('What the move carries') }}
+                    </flux:heading>
+
+                    <flux:subheading class="mt-1">
+                        {{ __('Moving to') }}
+                        <strong class="font-semibold text-zinc-900 dark:text-zinc-100">{{ $pending['title'] }}</strong>
+                        {{ __('on') }} {{ $pending['source_name'] }}
+                        <span class="text-zinc-500">({{ $pending['source_lang'] }})</span>
+                    </flux:subheading>
+
+                    {{--
+                        Four rows because that is what a move can touch, and no more
+                        than the engine actually parameterizes. The tracking row is
+                        absent for a reader with no AniList account: a checkbox wired
+                        to nothing would be a promise the page making up. The notes
+                        sit under their rows the import page's form does.
+                    --}}
+                    <div class="mt-4 space-y-3">
+                        <flux:checkbox label="{{ __('Read progress') }}" wire:model="carryChapters" />
+                        <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('Chapters read here stay read there, matched on chapter number.') }}
+                        </p>
+
+                        <flux:checkbox label="{{ __('Shelves') }}" wire:model="carryShelves" />
+                        <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('It stays on its shelves.') }}
+                        </p>
+
+                        @if ($this->trackConnected)
+                            <flux:checkbox label="{{ __('Tell AniList') }}" wire:model="tellTracking" />
+                            <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ __('Your progress on it is pushed to AniList after the move.') }}
+                            </p>
+                        @endif
+
+                        <flux:checkbox label="{{ __('Remove downloaded pages') }}" wire:model="removeDownloads" />
+                        <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('The pages the old home holds are deleted after the move. Left alone they stay on disk, and the download centre can delete them later.') }}
+                        </p>
+                    </div>
+
+                    <flux:subheading class="mt-4">
+                        {{ __('Nothing moves until this is confirmed, and cancelling leaves everything as it is.') }}
+                    </flux:subheading>
+                </div>
+            </div>
+
+            <div class="mt-7 flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Never mind') }}</flux:button>
+                </flux:modal.close>
+
+                <flux:button
+                    variant="primary"
+                    wire:click="moveConfirmed"
+                    wire:loading.attr="disabled"
+                >
+                    {{ __('Move here') }}
+                </flux:button>
+            </div>
+        @endif
+    </flux:modal>
 </div>

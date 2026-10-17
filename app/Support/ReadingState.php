@@ -707,25 +707,39 @@ class ReadingState
      * over. That is the exact failure it exists to catch.
      *
      * @param  array<int, int>  $chapterMap  old chapter id to new chapter id
+     * @param  bool  $carryChapters  false leaves every read row on the old id, which
+     *                               is the reader declining the carry: the place stays recorded where it was,
+     *                               the way stranded downloads do, and the moved series starts with no pointer
+     * @param  bool  $carryShelves  false removes the old row's memberships instead
+     *                              of copying them, so the series arrives unfiled; the categories themselves
+     *                              are the reader's either way and nothing here deletes one
      * @return array{chapter_rows_moved: int, chapter_rows_merged: int, series_merged: bool}
      */
-    public function moveSeries(User|int $user, int $fromMangaId, int $toMangaId, array $chapterMap): array
-    {
+    public function moveSeries(
+        User|int $user,
+        int $fromMangaId,
+        int $toMangaId,
+        array $chapterMap,
+        bool $carryChapters = true,
+        bool $carryShelves = true,
+    ): array {
         $userId = $user instanceof User ? (int) $user->getKey() : $user;
 
-        return DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $chapterMap): array {
+        return DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $chapterMap, $carryChapters, $carryShelves): array {
             $moved = 0;
             $merged = 0;
 
             /*
              * Chapter rows first, because the series row's last_read_chapter_id is
-             * remapped using the same table and should see the final ids.
+             * remapped using the same table and should see the final ids. Skipped
+             * whole when the reader declined the carry, so the rows stay behind on
+             * the old ids rather than being rewritten or dropped.
              */
             $rows = ChapterState::forUser($userId)
                 ->where('suwayomi_manga_id', $fromMangaId)
                 ->get();
 
-            foreach ($rows as $row) {
+            foreach ($carryChapters ? $rows : [] as $row) {
                 $oldId = (int) $row->suwayomi_chapter_id;
                 $newId = $chapterMap[$oldId] ?? null;
 
@@ -763,7 +777,7 @@ class ReadingState
                 $merged++;
             }
 
-            $seriesMerged = $this->moveSeriesState($userId, $fromMangaId, $toMangaId, $chapterMap);
+            $seriesMerged = $this->moveSeriesState($userId, $fromMangaId, $toMangaId, $chapterMap, $carryChapters, $carryShelves);
 
             return [
                 'chapter_rows_moved' => $moved,
@@ -778,8 +792,14 @@ class ReadingState
      *
      * @param  array<int, int>  $chapterMap
      */
-    private function moveSeriesState(int $userId, int $fromMangaId, int $toMangaId, array $chapterMap): bool
-    {
+    private function moveSeriesState(
+        int $userId,
+        int $fromMangaId,
+        int $toMangaId,
+        array $chapterMap,
+        bool $carryChapters,
+        bool $carryShelves,
+    ): bool {
         $source = SeriesState::forUser($userId)->where('suwayomi_manga_id', $fromMangaId)->first();
 
         if ($source === null) {
@@ -790,7 +810,19 @@ class ReadingState
 
         if ($target === null) {
             $source->suwayomi_manga_id = $toMangaId;
-            $this->remapChapterPointer($source, $chapterMap);
+
+            /*
+             * Without the carry the pointer names a chapter id of the old home, so
+             * instead of being remapped it is dropped: resuming into a chapter id
+             * this reader's new home holds no state for is the worse half of the
+             * choice. The rows stayed on the old id, so the place itself survives
+             * there, the way stranded downloads do.
+             */
+            if ($carryChapters) {
+                $this->remapChapterPointer($source, $chapterMap);
+            } else {
+                $source->last_read_chapter_id = null;
+            }
 
             // Cleared on this path too, not only when two rows merge. The fingerprint
             // is a hash over chapter ids in order and every one of them is about to
@@ -799,6 +831,14 @@ class ReadingState
             // it and this one did not.
             $source->chapter_list_fingerprint = null;
             $source->chapter_list_checked_at = null;
+
+            if (! $carryShelves) {
+                // On this path the row is re-pointed rather than replaced, so its
+                // memberships ride along by construction. A carry the reader
+                // declined must not ride, so they are removed here, on the row the
+                // move is keeping.
+                CategorySeries::query()->where('series_state_id', (int) $source->getKey())->delete();
+            }
 
             $source->save();
 
@@ -824,12 +864,16 @@ class ReadingState
         /*
          * The last chapter read is a chapter id, so it moves with the chapters. If
          * that chapter found no counterpart the pointer is dropped rather than left
-         * addressing a chapter id this reader no longer has any state for.
+         * addressing a chapter id this reader no longer has any state for. Without
+         * the carry it is the destination's own pointer that survives untouched:
+         * the rows making up the old place never moved.
          */
-        $lastRead = (int) ($source->last_read_chapter_id ?? 0);
-        $target->last_read_chapter_id = $lastRead === 0
-            ? $target->last_read_chapter_id
-            : ($chapterMap[$lastRead] ?? $target->last_read_chapter_id);
+        if ($carryChapters) {
+            $lastRead = (int) ($source->last_read_chapter_id ?? 0);
+            $target->last_read_chapter_id = $lastRead === 0
+                ? $target->last_read_chapter_id
+                : ($chapterMap[$lastRead] ?? $target->last_read_chapter_id);
+        }
 
         // Every chapter id changed, so the fingerprint describing them is void.
         $target->chapter_list_fingerprint = null;
@@ -837,19 +881,24 @@ class ReadingState
 
         $target->save();
 
-        $this->mergeShelves($source, $target, $userId);
+        $this->mergeShelves($source, $target, $userId, $carryShelves);
         $source->delete();
 
         return true;
     }
 
     /**
-     * Carry the source series' shelf memberships onto the destination.
+     * Carry the source series' shelf memberships onto the destination, or return
+     * the reader's declined ones to nothing.
      *
-     * Many-to-many, so this is a union rather than a copy. A reader who filed the
-     * old series on two shelves and the new one on a third should end up on all
-     * three, and a shelf they were on must not be quietly forgotten because the
-     * destination already had a row.
+     * Copying is a union rather than a copy: a reader who filed the old series on
+     * two shelves and the new one on a third should end up on all three, and a
+     * shelf they were on must not be quietly forgotten because the destination
+     * already had a row.
+     *
+     * Either way the source row's memberships are removed, because the row itself
+     * is about to be deleted and the destination has been given what it keeps.
+     * The categories themselves are the reader's, and neither path deletes one.
      *
      * Written through the query builder rather than the pivot model, because
      * `category_series` carries a `user_id` that the pivot's own definition does not
@@ -857,37 +906,39 @@ class ReadingState
      * through a migration. {@see Library::attach()} sets the same four columns and
      * this deliberately matches it.
      */
-    private function mergeShelves(SeriesState $source, SeriesState $target, int $userId): void
+    private function mergeShelves(SeriesState $source, SeriesState $target, int $userId, bool $carryShelves = true): void
     {
         $sourceId = (int) $source->getKey();
         $targetId = (int) $target->getKey();
 
-        $categories = CategorySeries::query()
-            ->where('series_state_id', $sourceId)
-            ->pluck('category_id')
-            ->all();
+        if ($carryShelves) {
+            $categories = CategorySeries::query()
+                ->where('series_state_id', $sourceId)
+                ->pluck('category_id')
+                ->all();
 
-        $existing = CategorySeries::query()
-            ->where('series_state_id', $targetId)
-            ->pluck('category_id')
-            ->all();
+            $existing = CategorySeries::query()
+                ->where('series_state_id', $targetId)
+                ->pluck('category_id')
+                ->all();
 
-        $now = now();
-        $rows = [];
+            $now = now();
+            $rows = [];
 
-        foreach (array_diff($categories, $existing) as $categoryId) {
-            $rows[] = [
-                'user_id' => $userId,
-                'category_id' => (int) $categoryId,
-                'series_state_id' => $targetId,
-                'added_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
+            foreach (array_diff($categories, $existing) as $categoryId) {
+                $rows[] = [
+                    'user_id' => $userId,
+                    'category_id' => (int) $categoryId,
+                    'series_state_id' => $targetId,
+                    'added_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
 
-        if ($rows !== []) {
-            DB::connection()->table('category_series')->insert($rows);
+            if ($rows !== []) {
+                DB::connection()->table('category_series')->insert($rows);
+            }
         }
 
         CategorySeries::query()->where('series_state_id', $sourceId)->delete();

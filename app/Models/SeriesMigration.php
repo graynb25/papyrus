@@ -26,6 +26,13 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
  * @property int $chapters_total
  * @property int $chapters_carried
  * @property array<int, string>|null $unmatched_chapters
+ * @property bool $carried_chapters
+ * @property bool $carried_shelves
+ * @property bool $tracking_requested
+ * @property bool $remove_downloads
+ * @property int $downloads_removed
+ * @property int $downloads_cancelled
+ * @property int $downloads_unremoved
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  */
@@ -39,6 +46,13 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
     'chapters_total',
     'chapters_carried',
     'unmatched_chapters',
+    'carried_chapters',
+    'carried_shelves',
+    'tracking_requested',
+    'remove_downloads',
+    'downloads_removed',
+    'downloads_cancelled',
+    'downloads_unremoved',
 ])]
 class SeriesMigration extends OwnedModel
 {
@@ -57,6 +71,13 @@ class SeriesMigration extends OwnedModel
             'chapters_total' => 'integer',
             'chapters_carried' => 'integer',
             'unmatched_chapters' => 'array',
+            'carried_chapters' => 'boolean',
+            'carried_shelves' => 'boolean',
+            'tracking_requested' => 'boolean',
+            'remove_downloads' => 'boolean',
+            'downloads_removed' => 'integer',
+            'downloads_cancelled' => 'integer',
+            'downloads_unremoved' => 'integer',
         ];
     }
 

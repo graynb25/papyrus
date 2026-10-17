@@ -2,10 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\AniList\Tracking;
 use App\Jobs\FindMigrationCandidates;
+use App\Jobs\SyncAniListProgress;
 use App\Migration\CandidateFinder;
 use App\Migration\ChapterMapper;
+use App\Migration\MigrationSettings;
 use App\Migration\SeriesMigrator;
+use App\Models\AniListAccount;
 use App\Models\Category;
 use App\Models\CategorySeries;
 use App\Models\ChapterState;
@@ -97,6 +101,12 @@ class MigrationTest extends TestCase
     /** @var array<int, string> suwayomi ids whose Search mutation the fake served */
     private array $searchSwept = [];
 
+    /** Chapter ids whose downloaded pages the fake deleted, in order. */
+    private array $deletes = [];
+
+    /** Chapter ids whose delete the fake refuses, so a server that cannot delete is a case. */
+    private array $deleteFails = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -114,6 +124,8 @@ class MigrationTest extends TestCase
         $this->sent = [];
         $this->fetches = [];
         $this->searchSwept = [];
+        $this->deletes = [];
+        $this->deleteFails = [];
 
         $this->fakeSuwayomi();
     }
@@ -195,6 +207,17 @@ class MigrationTest extends TestCase
                 }
 
                 return Http::response(['data' => ['manga' => $this->mangaNode($mangaId)]]);
+            }
+
+            if (str_contains($query, 'mutation DeleteDownloaded')) {
+                $chapterId = (int) ($variables['input']['id'] ?? 0);
+                $this->deletes[] = $chapterId;
+
+                if (in_array($chapterId, $this->deleteFails, true)) {
+                    return Http::response('down', 503);
+                }
+
+                return Http::response(['data' => ['deleteDownloadedChapter' => ['clientMutationId' => '1']]]);
             }
 
             return Http::response(['data' => []]);
@@ -909,7 +932,7 @@ class MigrationTest extends TestCase
         $this->assertSame('MangaFire', $migration->to_source_name);
         $this->assertSame(5, $migration->chapters_total);
         $this->assertSame(5, $migration->chapters_carried);
-        $this->assertNull($migration->carriedRatio() === null ? null : null);
+        $this->assertSame(1.0, $migration->carriedRatio());
     }
 
     public function test_a_migration_reports_the_chapters_it_could_not_place(): void
@@ -1000,20 +1023,55 @@ class MigrationTest extends TestCase
         $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
     }
 
-    public function test_a_destination_with_no_chapters_is_refused(): void
+    /**
+     * A listing that was there when the search ran and is gone by the time of
+     * the move. The refresh answers successfully, with an empty list, and it is
+     * the mapper that refuses, because it is the thing that found nothing to
+     * carry. Measured live on a DMCA-emptied listing on 2026-10-16.
+     */
+    public function test_a_destination_emptied_between_search_and_move_is_refused(): void
     {
         $this->world();
         $this->fileInLibrary(self::FROM);
+        $this->markRead(self::FROM, 1001);
         $this->readySearch();
 
-        // A candidate the search never fetched: the migrator finds an empty list and
-        // fetches. If that also yields nothing, there is nothing to move to.
         unset($this->chapterLists[self::TO]);
         $this->chapterLists[self::TO] = [];
 
         $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
 
         $this->assertFalse($outcome['ok']);
+        $this->assertSame(
+            'None of this reader\'s chapters could be matched to the new source, so nothing would carry over.',
+            $outcome['reason'],
+        );
+        $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
+        $this->assertDatabaseCount('series_migrations', 0);
+    }
+
+    /** A fresh fetch that errors is the other way a destination can vanish. */
+    public function test_a_destination_whose_fresh_fetch_fails_is_refused_with_its_own_line(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        // Gone quietly (an empty list at find time) and loudly (the refresh the
+        // guard books then refuses). The quiet case is the test above it: this
+        // one is the server answering "no chapters" to the second fetch, which
+        // is the line the guard was written to say.
+        $this->chapterLists[self::TO] = [];
+        $this->noChapters = [self::TO];
+
+        $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        $this->assertFalse($outcome['ok']);
+        $this->assertSame(
+            'That source lists no chapters for it, so there is nothing to move to.',
+            $outcome['reason'],
+        );
+        $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
     }
 
     public function test_an_unmatched_series_is_left_alone(): void
@@ -1031,6 +1089,10 @@ class MigrationTest extends TestCase
         $outcome = app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
 
         $this->assertFalse($outcome['ok']);
+        $this->assertSame(
+            'None of this reader\'s chapters could be matched to the new source, so nothing would carry over.',
+            $outcome['reason'],
+        );
         $this->assertDatabaseHas('series_states', ['suwayomi_manga_id' => self::FROM]);
     }
 
@@ -1541,7 +1603,8 @@ class MigrationTest extends TestCase
         $this->readySearch();
 
         Livewire::test('pages::migrate', ['manga' => self::FROM])
-            ->call('moveTo', self::TO)
+            ->call('requestMove', self::TO)
+            ->call('moveConfirmed')
             ->assertOk()
             ->assertSee('4 chapters kept their place.')
             ->assertSee('1 chapter found no match.')
@@ -1555,7 +1618,8 @@ class MigrationTest extends TestCase
         $this->readySearch();
 
         Livewire::test('pages::migrate', ['manga' => self::FROM])
-            ->call('moveTo', 9999)
+            ->call('requestMove', 9999)
+            ->call('moveConfirmed')
             ->assertOk();
 
         // The toast is rendered by Flux on the client, so the durable claim is that
@@ -1565,5 +1629,514 @@ class MigrationTest extends TestCase
             'user_id' => $this->user->id,
             'suwayomi_manga_id' => self::FROM,
         ]);
+    }
+
+    // Migration settings ---------------------------------------------------
+
+    /**
+     * An unparameterized move is the move this page has always made. The settings
+     * dialog parameterizes what carries; it must not change the default, so
+     * everything about this row is what today's move writes too.
+     *
+     * The twenty migrator tests above it are the rest of the guard: they run the
+     * default and would fail on any drift in what carrying means.
+     */
+    public function test_a_move_without_choices_carries_everything_and_keeps_downloads(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+
+        $this->assertTrue($migration->carried_chapters);
+        $this->assertTrue($migration->carried_shelves);
+        $this->assertFalse($migration->tracking_requested);
+        $this->assertFalse($migration->remove_downloads);
+        $this->assertSame(0, $migration->downloads_removed);
+        $this->assertSame(0, $migration->downloads_cancelled);
+        $this->assertSame(0, $migration->downloads_unremoved);
+
+        // And the state work is the work of today: the chapter moved and its
+        // shelf membership rode along on the re-pointed row.
+        $this->assertSame(1, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::TO)->count());
+        $this->assertSame(1, CategorySeries::count());
+    }
+
+    public function test_shelves_the_reader_did_not_offer_do_not_follow(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(carryShelves: false),
+        );
+
+        $this->assertFalse(SeriesMigration::forUser($this->user->id)->first()->carried_shelves);
+
+        // On a plain re-point the row itself moves and the memberships used to
+        // ride along on it. Left unasked, they stay behind.
+        $state = SeriesState::forUser($this->user->id)->first();
+        $this->assertSame(self::TO, $state->suwayomi_manga_id);
+        $this->assertSame(0, CategorySeries::where('series_state_id', $state->getKey())->count());
+    }
+
+    public function test_leaving_shelves_behind_keeps_the_destination_its_reader_filed(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->fileInLibrary(self::TO, ['Finished']);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(carryShelves: false),
+        );
+
+        $state = SeriesState::forUser($this->user->id)->first();
+
+        // The two rows merged, and only the destination's own shelving survived.
+        // The reader's categories are theirs either way: a membership was dropped,
+        // not a shelf.
+        $this->assertSame(1, CategorySeries::where('series_state_id', $state->getKey())->count());
+        $this->assertSame('Finished', Category::find(
+            CategorySeries::where('series_state_id', $state->getKey())->first()->category_id
+        )->name);
+        $this->assertSame(2, Category::forUser($this->user->id)->count());
+    }
+
+    public function test_place_the_reader_left_behind_stays_recorded_on_the_old_source(): void
+    {
+        $this->world();
+        $state = $this->fileInLibrary(self::FROM);
+        $state->last_read_chapter_id = 1001;
+        $state->save();
+        $this->markRead(self::FROM, 1001);
+        $this->markRead(self::FROM, 1002);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(carryChapters: false),
+        );
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+
+        $this->assertFalse($migration->carried_chapters);
+        $this->assertTrue($migration->carried_shelves);
+
+        // Nothing was attempted, so the row records an attempt of nothing rather
+        // than a carried zero wearing the stats of a real one.
+        $this->assertSame(0, $migration->chapters_total);
+        $this->assertSame(0, $migration->chapters_carried);
+        $this->assertNull($migration->unmatched_chapters);
+
+        // The rows stay on the old ids, untouched, still holding the reader's
+        // place the way stranded downloads do.
+        $this->assertSame(2, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::FROM)->count());
+        $this->assertSame(0, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::TO)->count());
+
+        // And the moved series has nowhere to continue from: the pointer named a
+        // chapter of the old home, and leaving it would resume into nothing.
+        $moved = SeriesState::forUser($this->user->id)->first();
+        $this->assertSame(self::TO, $moved->suwayomi_manga_id);
+        $this->assertNull($moved->last_read_chapter_id);
+    }
+
+    public function test_place_left_behind_leaves_the_destination_its_own_place(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $lastRead = $this->fileInLibrary(self::TO, ['Finished']);
+        $lastRead->last_read_chapter_id = 2002;
+        $lastRead->save();
+        $this->markRead(self::FROM, 1001);
+        $this->markRead(self::TO, 2002);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(carryChapters: false),
+        );
+
+        $moved = SeriesState::forUser($this->user->id)->first();
+
+        // The two rows merged, so the surviving pointer is the destination's own,
+        // not the old source's and not null.
+        $this->assertSame(self::TO, $moved->suwayomi_manga_id);
+        $this->assertSame(2002, $moved->last_read_chapter_id);
+
+        $this->assertSame(1, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::FROM)->count());
+        $this->assertSame(1, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::TO)->count());
+    }
+
+    public function test_downloads_asked_gone_are_deleted_and_counted(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        foreach ([1001, 1002] as $chapterId) {
+            Download::createFor($this->user->id, [
+                'suwayomi_chapter_id' => $chapterId,
+                'suwayomi_manga_id' => self::FROM,
+                'state' => Download::FINISHED,
+                'page_count' => 20,
+                'finished_at' => now(),
+            ]);
+        }
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(removeDownloads: true),
+        );
+
+        $this->assertSame([1001, 1002], $this->deletes);
+        $this->assertDatabaseCount('downloads', 0);
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+        $this->assertTrue($migration->remove_downloads);
+        $this->assertSame(2, $migration->downloads_removed);
+        $this->assertSame(0, $migration->downloads_cancelled);
+        $this->assertSame(0, $migration->downloads_unremoved);
+    }
+
+    public function test_downloads_still_coming_are_taken_off_the_queue_not_deleted(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        Download::createFor($this->user->id, [
+            'suwayomi_chapter_id' => 1001,
+            'suwayomi_manga_id' => self::FROM,
+            'state' => Download::QUEUED,
+        ]);
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(removeDownloads: true),
+        );
+
+        // A queued row holds no pages, so there is nothing to delete: it leaves
+        // the shared queue and records that it left, and the series the download
+        // was for is already gone.
+        $this->assertSame([], $this->deletes);
+        $this->assertDatabaseHas('downloads', [
+            'suwayomi_chapter_id' => 1001,
+            'state' => Download::CANCELLED,
+        ]);
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+        $this->assertSame(0, $migration->downloads_removed);
+        $this->assertSame(1, $migration->downloads_cancelled);
+        $this->assertSame(0, $migration->downloads_unremoved);
+    }
+
+    public function test_downloads_the_server_could_not_delete_are_counted_and_left_listed(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        Download::createFor($this->user->id, [
+            'suwayomi_chapter_id' => 1001,
+            'suwayomi_manga_id' => self::FROM,
+            'state' => Download::FINISHED,
+            'page_count' => 20,
+            'finished_at' => now(),
+        ]);
+        Download::createFor($this->user->id, [
+            'suwayomi_chapter_id' => 1002,
+            'suwayomi_manga_id' => self::FROM,
+            'state' => Download::FINISHED,
+            'page_count' => 30,
+            'finished_at' => now(),
+        ]);
+        $this->deleteFails = [1002];
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(removeDownloads: true),
+        );
+
+        $this->assertSame([1001, 1002], $this->deletes);
+
+        // The one that refused keeps its row, error and all: the download centre
+        // still lists it, which is what keeps the count from being a claim.
+        $this->assertDatabaseHas('downloads', ['suwayomi_chapter_id' => 1002]);
+        $this->assertDatabaseMissing('downloads', ['suwayomi_chapter_id' => 1001]);
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+        $this->assertSame(1, $migration->downloads_removed);
+        $this->assertSame(1, $migration->downloads_unremoved);
+    }
+
+    /**
+     * The tracker push is a choice the settings carry, not a side effect.
+     *
+     * Pushing says only what the grant already says: this series' progress number.
+     * The move changes nothing about that number, so the queued push is the same
+     * push the next read event would have booked, made now instead of later.
+     */
+    public function test_telling_anilist_queues_a_push_of_the_new_series(): void
+    {
+        Queue::fake();
+
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+        $this->connectAniList();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(tellTracking: true),
+        );
+
+        Queue::assertPushed(SyncAniListProgress::class, fn (SyncAniListProgress $job): bool => $job->userId === $this->user->id && $job->mangaId === self::TO);
+
+        $this->assertTrue(SeriesMigration::forUser($this->user->id)->first()->tracking_requested);
+    }
+
+    public function test_a_move_the_reader_never_asked_to_report_says_nothing_to_anilist(): void
+    {
+        Queue::fake();
+
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+        $this->connectAniList();
+
+        app(SeriesMigrator::class)->migrate($this->user, self::FROM, self::TO);
+
+        Queue::assertNotPushed(SyncAniListProgress::class);
+        $this->assertFalse(SeriesMigration::forUser($this->user->id)->first()->tracking_requested);
+    }
+
+    /**
+     * A reader can disconnect between the dialog rendering and the confirm, and
+     * the row must not claim a push that was never asked of anyone.
+     */
+    public function test_an_anilist_ask_with_no_account_records_that_nothing_was_queued(): void
+    {
+        Queue::fake();
+
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        app(SeriesMigrator::class)->migrate(
+            $this->user,
+            self::FROM,
+            self::TO,
+            new MigrationSettings(tellTracking: true),
+        );
+
+        Queue::assertNotPushed(SyncAniListProgress::class);
+        $this->assertFalse(SeriesMigration::forUser($this->user->id)->first()->tracking_requested);
+    }
+
+    /** The account the AniList rows need, connected exactly the page connects one. */
+    private function connectAniList(): AniListAccount
+    {
+        return app(Tracking::class)->connect($this->user, 'anilist-token-1', 4242, 'Reader', now()->addYear());
+    }
+
+    // The dialog, the rows and the summary ---------------------------------
+
+    /**
+     * The press produces a question, not a move. The old press moved on contact;
+     * now nothing is written until the dialog is confirmed, and the confirm is
+     * what the old call did.
+     */
+    public function test_the_press_opens_a_dialog_and_only_the_dialog_moves(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+
+        $page = Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->assertDontSee('What the move carries')
+            ->call('requestMove', self::TO)
+            ->assertSee('What the move carries')
+            ->assertSee('Read progress')
+            ->assertSee('Shelves')
+            ->assertSee('Remove downloaded pages')
+            ->assertSet('pendingMove', self::TO)
+            ->assertSet('carryChapters', true)
+            ->assertSet('carryShelves', true)
+            ->assertSet('removeDownloads', false);
+
+        $this->assertDatabaseCount('series_migrations', 0);
+        $this->assertDatabaseHas('series_states', [
+            'user_id' => $this->user->id,
+            'suwayomi_manga_id' => self::FROM,
+        ]);
+
+        $page->call('moveConfirmed')->assertOk();
+
+        $this->assertDatabaseCount('series_migrations', 1);
+    }
+
+    /** The dialog's rows are the reader's to untick, and the move honors each one. */
+    public function test_the_confirm_carries_only_what_the_dialog_left_checked(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('requestMove', self::TO)
+            ->set('carryShelves', false)
+            ->set('carryChapters', false)
+            ->call('moveConfirmed')
+            ->assertOk();
+
+        $migration = SeriesMigration::forUser($this->user->id)->first();
+
+        $this->assertFalse($migration->carried_chapters);
+        $this->assertFalse($migration->carried_shelves);
+
+        $this->assertSame(1, ChapterState::forUser($this->user->id)->where('suwayomi_manga_id', self::FROM)->count());
+        $this->assertSame(0, CategorySeries::count());
+    }
+
+    /** A dead checkbox lies about what would happen, so the row only renders connected. */
+    public function test_the_anilist_row_appears_only_for_a_reader_with_one(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('requestMove', self::TO)
+            ->assertDontSee('Tell AniList');
+
+        $this->connectAniList();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('requestMove', self::TO)
+            ->assertSee('Tell AniList');
+    }
+
+    /**
+     * Tachimanga stills give a dead end two moves: look at the source yourself,
+     * or step aside from that candidate. Here they land on the rows the finder
+     * could not vouch for, and the exit takes one row, not the search.
+     */
+    public function test_a_source_that_cannot_take_the_move_offers_the_source_and_the_exit(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+
+        $lagoon = $this->source('Lagoon Scans', 2);
+
+        $candidates = $this->candidateList();
+        $candidates[1]['status'] = 'no_chapters';
+        $candidates[1]['source_browse_id'] = $lagoon->getKey();
+
+        MigrationSearch::createFor($this->user->id, [
+            'from_manga_id' => self::FROM,
+            'state' => MigrationSearch::READY,
+            'sources_searched' => 7,
+            'sources_total' => 7,
+            'candidates' => $candidates,
+        ]);
+
+        $page = Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->assertSee('This source lists no chapters for it.')
+            ->assertSee(__('Search manually'))
+            ->assertSee(route('browse', [
+                'source' => $lagoon->getKey(),
+                'q' => "The Berserker's Second Playthrough",
+            ]));
+
+        $page->call('dismiss', 4001)
+            ->assertDontSee('The Berserker’s Second Playthrough')
+            ->assertSee("The Berserker's Second Playthrough");
+    }
+
+    /**
+     * An empty board is the reader's own two clicks, and the page says that
+     * rather than letting a "found on 0 sources" line stand behind the search,
+     * which found two.
+     */
+    public function test_setting_every_candidate_aside_says_so_rather_than_a_found_count(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('dismiss', self::TO)
+            ->call('dismiss', 4001)
+            ->assertSee('You set all 2 candidates aside.')
+            ->assertDontSee('best first');
+    }
+
+    /** "As you chose" is a sentence the run row makes sayable, and the page says it. */
+    public function test_the_summary_reports_the_choices_as_the_reader_made_them(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM, ['Reading']);
+        $this->markRead(self::FROM, 1001);
+        $this->readySearch();
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('requestMove', self::TO)
+            ->set('carryChapters', false)
+            ->set('carryShelves', false)
+            ->call('moveConfirmed')
+            ->assertOk()
+            ->assertSee('Its read progress stayed on the old source, as you chose.')
+            ->assertSee('It came off its shelves, as you chose.');
+    }
+
+    /** The download lines of the summary are counts from the row, not intentions. */
+    public function test_the_summary_reports_the_downloads_the_move_deleted(): void
+    {
+        $this->world();
+        $this->fileInLibrary(self::FROM);
+        $this->readySearch();
+
+        Download::createFor($this->user->id, [
+            'suwayomi_chapter_id' => 1001,
+            'suwayomi_manga_id' => self::FROM,
+            'state' => Download::FINISHED,
+            'page_count' => 20,
+            'finished_at' => now(),
+        ]);
+
+        Livewire::test('pages::migrate', ['manga' => self::FROM])
+            ->call('requestMove', self::TO)
+            ->set('removeDownloads', true)
+            ->call('moveConfirmed')
+            ->assertOk()
+            ->assertSee('1 downloaded chapter was deleted.');
     }
 }
