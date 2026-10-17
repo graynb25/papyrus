@@ -6143,3 +6143,19 @@ exactly that moment and it costs five minutes.
     location, the automatic one owns it, and the loud one firing anyway is a gap in the automatic
     one, not a finding about the tree.** And a refusal that names its cause but not its remedy is
     half of trap 273: the reader can see what is wrong and has nowhere to go.
+
+279. **Two blocks that read one computed can agree their way into rendering one diagnosis twice, and `assertSee()` agrees with every copy.**
+
+    The series page has two callouts, the fetch failure above the scanlator filter and the
+    empty-chapter card inside the chapter area, and both read `emptyReason()`. Agreement was the
+    intent: they used to print their own sentences, and they disagreed about which failure was
+    which. Unifying them on the same computed got the wording right, and got it rendered twice
+    when `loadError` was set and the chapter count was zero, so a source that answered and had
+    nothing produced the same heading and body in both places. Measured on the walkthrough of
+    2026-10-16 with a DMCA-emptied listing, then reproduced by a test that counts the string on
+    the rendered HTML: `2` before the fix, `1` after, and the condition now says the standalone
+    callout renders only beside a chapter list still on the page.
+
+    The general form: every test written with `assertSee()` passed the whole time this
+    duplication existed, because seeing the text is true for any number of copies. Where a
+    rendered thing must be exactly one, the assertion is a count.
