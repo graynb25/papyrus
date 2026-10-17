@@ -1276,6 +1276,54 @@ class SourcesPageTest extends TestCase
 
         $this->assertSame(1, substr_count($html, 'This site is known to block readers that search aggressively.'));
         $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
+    }
+
+    public function test_a_name_merely_containing_comix_is_not_the_comix_the_evidence_names(): void
+    {
+        /*
+         * Measured live on 2026-10-17: the catalogue carries 8 extension names
+         * containing "comix" from several different publishers (GlobalComix,
+         * ArbxComix, Comix, GEDE Comix, ILikeComix, KingComiX, PornComix and
+         * ComixTopia), and the session before this one had shown the scramble
+         * notice on all of them. The two upstream issues that corroborate the
+         * class, Keiyoushi extensions-source 12130 and 16684, name exactly one
+         * extension, Comix (EN). An accusation of a site's conduct must not
+         * ride on a substring, and these two real shapes pin the match against
+         * a drift back to substring or word-boundary matching: "GEDE Comix"
+         * would survive a word-boundary matcher, and only exact matching
+         * refuses both of these.
+         */
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.all.globalcomix', 'GlobalComix', false, true),
+            $this->extension('eu.kanade.tachiyomi.extension.en.gedecomix', 'GEDE Comix', false, true),
+        ]);
+
+        $html = $this->page()
+            ->set('view', 'available')
+            ->assertOk()
+            ->html();
+
+        $this->assertSame(0, substr_count($html, 'Searches from extensions here come back scrambled'));
+    }
+
+    public function test_the_named_site_keeps_a_qualifier_suffix_name(): void
+    {
+        /*
+         * A store may append the language family into the name a reader
+         * recognises, and that shape is legitimately the named site: "Comix
+         * (all)" is still Comix. This is why the match is exact on the name
+         * and then tolerant of one parenthetical qualifier, rather than
+         * substring.
+         */
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.all.comix', 'Comix (all)', false, true),
+        ]);
+
+        $html = $this->page()
+            ->set('view', 'available')
+            ->assertOk()
+            ->html();
+
         $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
     }
 }

@@ -28,9 +28,15 @@ final class SourceNotices
      * The notice kind for an extension's display name, or null when its site
      * carries none of these behaviours.
      *
-     * Matched inside the name rather than against it, because the store appends
-     * the language family to the name a reader recognises: "Comix (all)" is
-     * still Comix, and "Kayn Scans (EN)" is still Kayn Scans.
+     * Matched on the name, not merely inside it. Measured live on 2026-10-17,
+     * when the matcher trusted substring containment it showed the scramble
+     * notice on every extension whose name happens to contain "comix", eight
+     * cards across seven unrelated publishers ("GlobalComix" and friends),
+     * while the two upstream issues that corroborate this class, Keiyoushi
+     * extensions-source 12130 and 16684, name exactly one extension, the
+     * English "Comix". The one tolerance kept is a parenthetical qualifier
+     * appended to the name, because a store writes the language family the
+     * reader recognises there: "Comix (all)" is still Comix.
      */
     public static function kind(string $extensionName): ?string
     {
@@ -40,13 +46,17 @@ final class SourceNotices
             return null;
         }
 
-        $name = mb_strtolower($extensionName);
+        $name = trim(mb_strtolower($extensionName));
 
         foreach ($sites as $site => $kind) {
-            if (is_string($site) && str_contains($name, mb_strtolower($site))) {
-                if (is_string($kind) && in_array($kind, [self::BAN, self::SCRAMBLE], true)) {
-                    return $kind;
-                }
+            if (! is_string($site) || ! is_string($kind) || ! in_array($kind, [self::BAN, self::SCRAMBLE], true)) {
+                continue;
+            }
+
+            $needle = trim(mb_strtolower($site));
+
+            if ($name === $needle || str_starts_with($name, $needle.' (')) {
+                return $kind;
             }
         }
 
