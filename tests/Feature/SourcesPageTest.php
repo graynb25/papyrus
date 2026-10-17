@@ -78,6 +78,34 @@ class SourcesPageTest extends TestCase
      */
     private bool $fetchShouldFail = false;
 
+    /**
+     * What the fetchExtensions mutation replies with, as pkgNames to count.
+     *
+     * The default is what every earlier test measured against: a reply
+     * carrying three extensions the page can then list. The empty reply is
+     * the live shape for a first fetch, measured on 2026-10-17: Suwayomi
+     * answers fetchExtensions before its own fetch has populated anything,
+     * which is what the page's note about an accepted but unpopulated fetch
+     * has to stay truthful over.
+     *
+     * @var array<int, string>
+     */
+    private array $fetchRepliesWith = [
+        'eu.kanade.tachiyomi.extension.en.one',
+        'eu.kanade.tachiyomi.extension.all.two',
+        'eu.kanade.tachiyomi.extension.en.three',
+    ];
+
+    /**
+     * Whether the server holds no extensions until its fetch has been accepted.
+     *
+     * The cold install too: reads that follow the accepted fetch can land
+     * either side of the fetch itself, since the reply and the population are
+     * not the same event upstream. Off by default, where the initial nodes of
+     * the fake stand for a server that already holds its catalogue.
+     */
+    private bool $catalogueArrivesAfterFetch = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -265,11 +293,10 @@ class SourcesPageTest extends TestCase
                     return Http::response('The server is not answering.', 500);
                 }
 
-                return Http::response(['data' => ['fetchExtensions' => ['extensions' => [
-                    ['pkgName' => 'eu.kanade.tachiyomi.extension.en.one'],
-                    ['pkgName' => 'eu.kanade.tachiyomi.extension.all.two'],
-                    ['pkgName' => 'eu.kanade.tachiyomi.extension.en.three'],
-                ]]]]);
+                return Http::response(['data' => ['fetchExtensions' => ['extensions' => array_map(
+                    fn (string $pkg): array => ['pkgName' => $pkg],
+                    $this->fetchRepliesWith,
+                )]]]);
             }
 
             /*
@@ -298,6 +325,19 @@ class SourcesPageTest extends TestCase
             if (str_contains($query, 'extensions(')) {
                 if ($this->extensionListShouldFail) {
                     return Http::response('The server is not answering.', 500);
+                }
+
+                /*
+                 * The cold shape, decided at read time: nothing until the fetch
+                 * has been accepted, the rows behind its next read. A flag read
+                 * now is the whole difference, because which side of the fetch
+                 * a read falls on is not knowable when the test is written.
+                 */
+                if ($this->catalogueArrivesAfterFetch && $this->fetchCount === 0) {
+                    return Http::response(['data' => ['extensions' => [
+                        'totalCount' => 0,
+                        'nodes' => [],
+                    ]]]);
                 }
 
                 return Http::response(['data' => ['extensions' => [
@@ -1231,6 +1271,101 @@ class SourcesPageTest extends TestCase
         $this->page()->call('trust', $store->id);
 
         $this->assertSame(0, $this->fetchCount);
+    }
+
+    public function test_an_accepted_fetch_that_holds_nothing_yet_gets_a_line_saying_so(): void
+    {
+        /*
+         * Measured live on 2026-10-17: trusting the store on a cold server ran
+         * the fetch, the reply named zero extensions, and the same server held
+         * 1,434 a minute later. Upstream answers fetchExtensions before its own
+         * fetch has populated anything, so a zero reply is not an answer yet.
+         * The load's own render riding on that zero reads as a silent failure,
+         * so after a short wait and one fresh count read, one that still holds
+         * nothing gets the line saying what is actually being waited for. The
+         * fake models the cold shape: nothing held, an empty reply, no
+         * population ever landing, and the line costs both these tests a real
+         * wait each.
+         */
+        $this->nodes = [];
+        $this->fetchRepliesWith = [];
+        $this->catalogueArrivesAfterFetch = false;
+
+        $store = $this->store();
+
+        /*
+         * The wait is itself the contract of the grace read: delete it and a
+         * zero right off the reply would be judged when the population could
+         * not have arrived, which is the shape the live run produced. A lower
+         * bound is the one claim a blocking wait can make honestly, and this
+         * test has read the clock twice only around its own real blocking
+         * call.
+         */
+        $started = microtime(true);
+
+        $html = $this->page()->call('trust', $store->id)->assertOk()->html();
+
+        $this->assertGreaterThanOrEqual(1.9, microtime(true) - $started);
+
+        $this->assertSame(1, substr_count(
+            $html,
+            'The server accepted the fetch and its catalogue holds no extensions yet.',
+        ));
+    }
+
+    public function test_a_fetch_that_lands_during_the_wait_does_not_get_the_line(): void
+    {
+        /*
+         * The other reading the live run produced: by the moment after the
+         * reply, the server can already hold the catalogue, and a line about a
+         * fetch still running over a list that exists would be the exact wrong
+         * answer the note exists to avoid. This fake answers as the live
+         * server behaved: nothing until the fetch is accepted, the rows
+         * behind its next read.
+         */
+        $this->fetchRepliesWith = [];
+        $this->catalogueArrivesAfterFetch = true;
+
+        $store = $this->store();
+
+        $html = $this->page()->call('trust', $store->id)->assertOk()->html();
+
+        $this->assertSame(0, substr_count(
+            $html,
+            'The server accepted the fetch and its catalogue holds no extensions yet.',
+        ));
+    }
+
+    public function test_a_note_from_an_earlier_load_retires_the_moment_the_list_is_real(): void
+    {
+        /*
+         * The note is about the moment of the fetch, not a permanent banner:
+         * the fetch populates the server behind Livewire's back, so a later
+         * render must retire it by reading the server rather than by waiting
+         * for an action to clear it. The property arrives here from an
+         * earlier request, over a catalogue that now holds rows, and the page
+         * must not argue with what the reader can see.
+         */
+        $this->assertSame(0, substr_count(
+            $this->page()->set('autoloadStillEmpty', true)->assertOk()->html(),
+            'The server accepted the fetch and its catalogue holds no extensions yet.',
+        ));
+    }
+
+    public function test_a_note_from_an_earlier_load_still_stands_when_nothing_arrived(): void
+    {
+        /*
+         * The retire-on-read contract cuts both ways: until the server holds
+         * something there is no moment the page could name as the wait's end,
+         * and a fresh count read that lands on nothing is the reading the
+         * retire gate was built to consult.
+         */
+        $this->nodes = [];
+
+        $this->assertSame(1, substr_count(
+            $this->page()->set('autoloadStillEmpty', true)->assertOk()->html(),
+            'The server accepted the fetch and its catalogue holds no extensions yet.',
+        ));
     }
 
     public function test_a_failed_auto_load_says_what_failed_and_keeps_the_manual_path(): void

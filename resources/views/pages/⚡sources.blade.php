@@ -50,6 +50,18 @@ new #[Title('Sources')] class extends Component
     public ?string $loadProblem = null;
 
     /**
+     * Whether the automatic load's fetch was accepted while the catalogue still
+     * holds nothing for it.
+     *
+     * Measured live on 2026-10-17: the server answers its fetchExtensions call
+     * before the fetch itself has populated anything, so a reply of zero is
+     * not an answer yet, and the render riding on that zero reads as a silent
+     * failure. Set only after a short wait and one fresh count read, and
+     * retired through autoloadNoteStillHolds the moment the list is real.
+     */
+    public bool $autoloadStillEmpty = false;
+
+    /**
      * Package names ticked for a bulk install. Cleared after every action, since
      * a stale selection would install something the user has since unticked.
      *
@@ -126,7 +138,7 @@ new #[Title('Sources')] class extends Component
          * under the button rather than in a toast that is gone in four seconds.
          */
         try {
-            $this->loadCatalogue();
+            $this->settleAutoload();
             $this->loadProblem = null;
         } catch (SuwayomiException $e) {
             $this->loadProblem = $e->getMessage();
@@ -174,6 +186,7 @@ new #[Title('Sources')] class extends Component
 
         $this->reset(['page', 'selected']);
         $this->loadProblem = null;
+        $this->autoloadStillEmpty = false;
 
         Flux::toast(
             text: trans_choice('{1} :count extension available|[2,*] :count extensions available', $count, ['count' => $count]),
@@ -198,6 +211,66 @@ new #[Title('Sources')] class extends Component
         app(SourceCatalog::class)->syncStores();
 
         return $count;
+    }
+
+    /**
+     * Take an automatic load's outcome and settle what the page says over it.
+     *
+     * A catalogue that arrived is an ended question. A reply that counted
+     * nothing is not: upstream answers its fetch call before the fetch itself
+     * has populated anything, measured live on 2026-10-17 when a cold trust
+     * answered zero and the same server held 1,434 a minute later. So the
+     * zero gets a short wait rather than the reader's render, and the truth
+     * about whether anything landed is judged at render time by
+     * autoloadNoteStillHolds, fresh against the server, because the reply and
+     * the population are separate events upstream and a single committed
+     * read cannot know which side of the fetch it fell on. The press paths
+     * keep their own toasts and never reach this.
+     */
+    private function settleAutoload(): void
+    {
+        $count = $this->loadCatalogue();
+
+        if ($count > 0) {
+            $this->autoloadStillEmpty = false;
+
+            return;
+        }
+
+        sleep(2);
+
+        $this->autoloadStillEmpty = true;
+    }
+
+    /**
+     * Whether the accepted-but-unpopulated fetch's note still belongs on the
+     * page.
+     *
+     * Read afresh on every render while it stands, because the fetch
+     * populates the server behind Livewire's back, and a reader's next look
+     * must retire the note the moment there is something to look at instead
+     * of waiting for an action that clears it. Unread keeps it standing, on
+     * the same reasoning settleAutoload records.
+     */
+    public function autoloadNoteStillHolds(): bool
+    {
+        if ($this->autoloadStillEmpty === false) {
+            return false;
+        }
+
+        try {
+            $holds = app(ExtensionManager::class)->extensionCount();
+        } catch (SuwayomiException) {
+            return true;
+        }
+
+        if ($holds > 0) {
+            $this->autoloadStillEmpty = false;
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -276,7 +349,7 @@ new #[Title('Sources')] class extends Component
         }
 
         try {
-            $this->loadCatalogue();
+            $this->settleAutoload();
             $this->loadProblem = null;
         } catch (SuwayomiException $e) {
             $this->loadProblem = $e->getMessage();
@@ -1614,6 +1687,19 @@ new #[Title('Sources')] class extends Component
             <p class="text-sm text-zinc-500 dark:text-zinc-400">
                 {{ trans_choice('{1} :count extension|[2,*] :count extensions', $this->total, ['count' => Number::format($this->total)]) }}
             </p>
+        @endif
+
+        @if ($this->catalogue['error'] === null && $this->autoloadNoteStillHolds())
+            {{--
+                The automatic load's reply was accepted upstream but named zero,
+                which reads on the count above exactly like a failure. This
+                line is the distinction the reader cannot know otherwise, and
+                autoloadNoteStillHolds judges it fresh each render so a filled
+                catalogue retires it on the next look.
+            --}}
+            <flux:callout variant="secondary" icon="arrow-path">
+                {{ __('The server accepted the fetch and its catalogue holds no extensions yet. The list fills the moment the server has something to show, and Refresh catalogue above re-runs the fetch.') }}
+            </flux:callout>
         @endif
 
         @if ($this->catalogue['error'] !== null)
