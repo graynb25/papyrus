@@ -632,6 +632,21 @@ new #[Title('Search')] class extends Component
     }
 
     /**
+     * Everything installed, not the filtered subset.
+     *
+     * The zero case it answers is "this reader has no source at all", which no
+     * filter can produce and no filter can fix. The mirror owns the count for
+     * the same reason the sources page computes from the mirror: asking the
+     * server for a list on every render measured 185ms against 30ms for the
+     * tables that already answer.
+     */
+    #[Computed]
+    public function installedSourceCount(): int
+    {
+        return Source::query()->installed()->count();
+    }
+
+    /**
      * The sources this run left out, and what each could not do.
      *
      * Only once the run has finished, because a source that has not reported yet is not
@@ -941,6 +956,22 @@ new #[Title('Search')] class extends Component
                 <span class="text-sm text-zinc-500 dark:text-zinc-400">
                     {{ trans_choice('{1} Searching :count source|[2,*] Searching :count sources', $this->eligibleSources, ['count' => $this->eligibleSources]) }}
                 </span>
+            @elseif ($this->installedSourceCount === 0)
+                {{--
+                    The reader owns no source at all: no filter can produce that
+                    shape and no filter can fix it, so the warning below would be
+                    a wrong answer about their own data. Named here with the
+                    direct route, because without it the next step is a sidebar
+                    hunt, which is the walk the F26 onboarding requirements
+                    exist to prevent.
+                --}}
+                <span class="text-sm text-amber-600 dark:text-amber-400">
+                    {{ __('No source is installed to search with.') }}
+                </span>
+
+                <flux:button size="sm" variant="outline" href="{{ route('sources') }}" wire:navigate>
+                    {{ __('Go to Sources') }}
+                </flux:button>
             @else
                 <span class="text-sm text-amber-600 dark:text-amber-400">
                     {{ __('No sources match these filters.') }}

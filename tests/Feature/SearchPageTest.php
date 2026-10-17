@@ -535,4 +535,30 @@ class SearchPageTest extends TestCase
         $this->assertSame(['Twin Source'], $group->alternativeNames());
         $this->assertSame(['Twin Source'], $group->sourceNames());
     }
+
+    public function test_a_reader_with_no_installed_source_is_sent_to_sources_rather_than_accused(): void
+    {
+        /*
+         * The F26 walk's last stuck seam: a fresh reader lands on an empty
+         * library, presses Go to search, and the one line waiting there used to
+         * be "No sources match these filters.", which names a problem their
+         * filters never touched, because they own no filter yet. Zero installed
+         * is a different situation from filters gone too narrow, so the two
+         * shapes are asserted apart, and the old line keeps its own case: one
+         * installed source, langs narrowed to a language no source carries.
+         */
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->assertOk()
+            ->assertSee('No source is installed to search with.')
+            ->assertSee('Go to Sources')
+            ->assertDontSee('No sources match these filters.');
+
+        $this->source('Alpha Manga');
+
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->set('langs', ['xx'])
+            ->assertOk()
+            ->assertSee('No sources match these filters.')
+            ->assertDontSee('No source is installed to search with.');
+    }
 }
