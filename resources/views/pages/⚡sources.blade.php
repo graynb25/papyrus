@@ -3,6 +3,7 @@
 use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
+use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SourceCatalog;
 use App\Suwayomi\SuwayomiException;
@@ -37,6 +38,16 @@ new #[Title('Sources')] class extends Component
     public int $page = 1;
 
     public const PER_PAGE = 50;
+
+    /**
+     * Why the catalogue did not load itself, when it did not.
+     *
+     * Toasts vanish and the store form is easy to leave; this is state on the
+     * page, so the failure and its recovery stay readable while the reader is
+     * deciding whether to trust the store they just added. Null once any load,
+     * automatic or pressed, has succeeded again.
+     */
+    public ?string $loadProblem = null;
 
     /**
      * Package names ticked for a bulk install. Cleared after every action, since
@@ -105,6 +116,22 @@ new #[Title('Sources')] class extends Component
 
         $this->storeUrl = '';
 
+        /*
+         * The catalogue loads itself here rather than waiting for a press the
+         * reader cannot know exists: measured in the round that produced F26's
+         * onboarding requirements, a store added and the list stayed empty until
+         * Refresh catalogue was found by hunting. This is the same body the
+         * button runs, not a second one. When the server cannot answer, the
+         * store and the trust flow both stand, and the page says what failed
+         * under the button rather than in a toast that is gone in four seconds.
+         */
+        try {
+            $this->loadCatalogue();
+            $this->loadProblem = null;
+        } catch (SuwayomiException $e) {
+            $this->loadProblem = $e->getMessage();
+        }
+
         Flux::toast(
             text: __('Read its signing key below, then decide whether to trust it.'),
             heading: __('Store added: :name', ['name' => $store->name]),
@@ -138,8 +165,7 @@ new #[Title('Sources')] class extends Component
     public function refresh(): void
     {
         try {
-            $count = app(SourceCatalog::class)->refreshExtensions();
-            app(SourceCatalog::class)->syncStores();
+            $count = $this->loadCatalogue();
         } catch (SuwayomiException $e) {
             Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -147,12 +173,31 @@ new #[Title('Sources')] class extends Component
         }
 
         $this->reset(['page', 'selected']);
+        $this->loadProblem = null;
 
         Flux::toast(
             text: trans_choice('{1} :count extension available|[2,*] :count extensions available', $count, ['count' => $count]),
             heading: __('Stores refreshed'),
             variant: 'success',
         );
+    }
+
+    /**
+     * The fetch and the store mirror as one run, so whatever path reaches for
+     * them reaches for the same one.
+     *
+     * Extracted from refresh() rather than duplicated, because an automatic
+     * load that differed subtly from the pressed one would be its own finding
+     * waiting to happen. The comment above refresh() is what this run means:
+     * after a restart the server's list is nothing at all, so a store added
+     * after one would otherwise hang there with nothing to show for itself.
+     */
+    private function loadCatalogue(): int
+    {
+        $count = app(SourceCatalog::class)->refreshExtensions();
+        app(SourceCatalog::class)->syncStores();
+
+        return $count;
     }
 
     /**
@@ -198,6 +243,66 @@ new #[Title('Sources')] class extends Component
             heading: __('Store trusted'),
             variant: 'success',
         );
+
+        $this->loadCatalogueWhenTheServerHasNone();
+    }
+
+    /**
+     * The second automatic load, for the reader who arrives at trust first.
+     *
+     * That shape is reachable from both directions: the store was added on a
+     * machine whose fetch failed at add time, or it was mirrored earlier while
+     * the server still held nothing (this checkout's own reader trusted
+     * Keiyoushi days before its catalogue was ever fetched). Trusting is then
+     * the first action left, so trust fetches, but only then. A server that
+     * already holds the catalogue is left alone: re-reading more than a
+     * thousand extension rows to announce a trust state spends upstream for
+     * nothing, and the pressed button keeps doing its own full run.
+     */
+    private function loadCatalogueWhenTheServerHasNone(): void
+    {
+        try {
+            $known = app(ExtensionManager::class)->extensionCount();
+        } catch (SuwayomiException) {
+            // Unread is treated as empty rather than as "skip": the load's own
+            // failure handling reports what it could not do, so the reader is
+            // never left with a silent skip and a page that shows fewer rows
+            // than the server would give.
+            $known = 0;
+        }
+
+        if ($known > 0) {
+            return;
+        }
+
+        try {
+            $this->loadCatalogue();
+            $this->loadProblem = null;
+        } catch (SuwayomiException $e) {
+            $this->loadProblem = $e->getMessage();
+        }
+    }
+
+    /**
+     * The site behaviour notice for one extension, or null.
+     *
+     * The kind comes from App\Support\SourceNotices, so the day a site's
+     * behaviour changes there is one file to correct and the facts outlive the
+     * wording; what a reader is told lives here with the page's other copy.
+     *
+     * @param  array<string, mixed>  $extension
+     * @return array{icon: string, text: string}|null
+     */
+    public function noticeFor(array $extension): ?array
+    {
+        $kind = SourceNotices::kind((string) ($extension['name'] ?? ''));
+
+        return $kind === null ? null : [
+            'icon' => $kind === SourceNotices::BAN ? 'exclamation-triangle' : 'arrow-path',
+            'text' => $kind === SourceNotices::BAN
+                ? __('This site is known to block readers that search aggressively. Space searches out or pin it; expect long bans, not errors you can retry away.')
+                : __('Searches from extensions here come back scrambled and pages can arrive broken. It does not ban: it sends you back to its own ad-laden site.'),
+        ];
     }
 
     public function revokeTrust(int $storeId): void
@@ -1253,6 +1358,17 @@ new #[Title('Sources')] class extends Component
             </div>
         </div>
 
+        @if ($loadProblem !== null)
+            {{--
+                The failure of the automatic load, and the recovery, in the
+                place the reader is looking: toasts vanish and this is where
+                their eyes already are while they read a signing key.
+            --}}
+            <flux:callout variant="warning" icon="exclamation-triangle">
+                {{ __('The catalogue did not load itself: :why. Refresh catalogue above is the recovery for it.', ['why' => $loadProblem]) }}
+            </flux:callout>
+        @endif
+
         @if ($this->stores->isEmpty())
             <flux:callout variant="secondary" icon="circle-stack">
                 {{ __('No store is registered yet. Add one below to begin.') }}
@@ -1358,7 +1474,7 @@ new #[Title('Sources')] class extends Component
                 </p>
             </div>
 
-            <flux:button type="submit" variant="primary" icon="plus">
+            <flux:button type="submit" variant="primary" icon="plus" wire:target="addStore" wire:loading.attr="disabled">
                 {{ __('Add store') }}
             </flux:button>
         </form>
@@ -1582,6 +1698,20 @@ new #[Title('Sources')] class extends Component
 
                                     {{ $extension['pkgName'] }}
                                 </p>
+
+                                @if (($notice = $this->noticeFor($extension)) !== null)
+                                    {{--
+                                        The site's known behaviour, on the card rather than in a
+                                        dialog at install time, so it is read before any press on
+                                        any view these cards render. The facts behind it live in
+                                        config/source-notices.php; this copy is the deliverable
+                                        the owner reads line by line.
+                                    --}}
+                                    <p class="mt-2 flex items-start gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                        <flux:icon name="{{ $notice['icon'] }}" class="mt-0.5 size-3.5 shrink-0" />
+                                        <span>{{ $notice['text'] }}</span>
+                                    </p>
+                                @endif
                             </div>
 
                             @unless ($installed)

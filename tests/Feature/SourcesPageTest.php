@@ -62,6 +62,22 @@ class SourcesPageTest extends TestCase
      */
     private bool $extensionListShouldFail = false;
 
+    /**
+     * How many times the server was asked to fetch its own catalogue.
+     *
+     * `fetchExtensions` is the mutation behind the manual Refresh catalogue
+     * button, and the auto-load tests count it because the extension list is
+     * served by this fake no matter what the real server remembered, so the
+     * rows appearing proves nothing on its own.
+     */
+    private int $fetchCount = 0;
+
+    /**
+     * Whether the catalogue fetch should answer with a server error, to prove
+     * the store still added and the failure still has words on the page.
+     */
+    private bool $fetchShouldFail = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -213,6 +229,47 @@ class SourcesPageTest extends TestCase
                     'isLegacy' => false,
                     'extensionListUrl' => null,
                 ]]]]]);
+            }
+
+            /*
+             * `addStore` sends its mutation, and without a stub the server fake
+             * answers the generic `ok` body, from which `addStore` throws
+             * "accepted the store URL but returned no store". Every auto-load
+             * test dies at that door instead of at the seam it tests, so the
+             * mutation is answered with the store shape the server returns.
+             */
+            if (str_contains($query, 'addExtensionStore')) {
+                $url = $this->requestVariables($request)['u'] ?? 'https://example.test/index.pb';
+
+                return Http::response(['data' => ['addExtensionStore' => ['extensionStore' => [
+                    'indexUrl' => $url,
+                    'name' => 'Test Store',
+                    'badgeLabel' => 'TEST',
+                    'signingKey' => '9add655a78e96c4eSTOREKEY',
+                    'contactWebsite' => null,
+                    'contactDiscord' => null,
+                    'isLegacy' => false,
+                    'extensionListUrl' => null,
+                ]]]]);
+            }
+
+            /*
+             * Same counting trap 63 documents, one level up: the fetch count is
+             * the auto-load tests' measurement, kept on a branch of its own
+             * rather than read back from anywhere else.
+             */
+            if (str_contains($query, 'fetchExtensions')) {
+                $this->fetchCount++;
+
+                if ($this->fetchShouldFail) {
+                    return Http::response('The server is not answering.', 500);
+                }
+
+                return Http::response(['data' => ['fetchExtensions' => ['extensions' => [
+                    ['pkgName' => 'eu.kanade.tachiyomi.extension.en.one'],
+                    ['pkgName' => 'eu.kanade.tachiyomi.extension.all.two'],
+                    ['pkgName' => 'eu.kanade.tachiyomi.extension.en.three'],
+                ]]]]);
             }
 
             /*
@@ -1118,5 +1175,107 @@ class SourcesPageTest extends TestCase
             ->call('install', $pkg)
             ->assertHasNoErrors()
             ->assertSee('Sync sources');
+    }
+
+    public function test_adding_a_store_loads_the_catalogue_itself(): void
+    {
+        /*
+         * The manual Refresh catalogue button was the only way a new store's rows
+         * reached the list, measured by the owner in the round that produced F26's
+         * onboarding requirements: store added, list empty, a hunt for a button
+         * whose existence is invisible. The run that adds the store now fetches the
+         * catalogue in the same request, so the list is waiting when the page
+         * paints again.
+         */
+        $this->page()->set('storeUrl', 'https://example.test/index.pb')->call('addStore');
+
+        $this->assertSame(1, $this->fetchCount, 'adding a store must fetch the catalogue itself');
+
+        $this->page()
+            ->set('view', 'available')
+            ->assertOk()
+            ->assertSee('Example');
+    }
+
+    public function test_trusting_recovers_a_catalogue_the_page_says_is_empty(): void
+    {
+        /*
+         * The other shape the guest session measured: the store arrived earlier
+         * (or its own fetch failed at add time), the catalogue is empty, and the
+         * first action left to the reader is trust. Trust now fetches in that
+         * case rather than toasting over nothing. The failed listing read is how
+         * the empty shape is reached here, because an unread server and an empty
+         * one lead the reader to the same wall.
+         */
+        $this->extensionListShouldFail = true;
+
+        $store = $this->store();
+
+        $this->page()->call('trust', $store->id);
+
+        $this->assertSame(1, $this->fetchCount, 'trust on an empty catalogue must fetch it');
+
+        $this->assertTrue(in_array($store->id, app(ExtensionManager::class)->trustedStoreIds($this->user), true));
+    }
+
+    public function test_trusting_does_not_refetch_a_catalogue_the_server_already_has(): void
+    {
+        /*
+         * Every machine beside one just started already holds the list: this
+         * checkout's reader trusted Keiyoushi on 2026-10-10 and its catalogue lives
+         * on the server. Re-fetching over a thousand extension rows on every trust
+         * spends upstream for nothing, so the skip is the contract, counted.
+         */
+        $store = $this->store();
+
+        $this->page()->call('trust', $store->id);
+
+        $this->assertSame(0, $this->fetchCount);
+    }
+
+    public function test_a_failed_auto_load_says_what_failed_and_keeps_the_manual_path(): void
+    {
+        /*
+         * The load runs in the same request as the action. When the server cannot
+         * answer it, the store is still added and the reader still holds the trust
+         * flow; the only honest thing to do is say what failed on the page, where
+         * it survives, instead of in a toast that is gone in four seconds.
+         */
+        $this->fetchShouldFail = true;
+
+        $this->page()
+            ->set('storeUrl', 'https://example.test/index.pb')
+            ->call('addStore')
+            ->assertOk()
+            ->assertSee('The catalogue did not load itself')
+            ->assertSee('Suwayomi returned HTTP 500');
+
+        $this->assertSame(1, ExtensionStore::query()->count());
+    }
+
+    public function test_an_extension_whose_site_is_known_to_act_up_says_so_on_its_card(): void
+    {
+        /*
+         * The four ban names are the owner's, given 2026-10-16; Comix is the
+         * different class, corroborated upstream by Keiyoushi extensions-source
+         * issues 12130 and 16684. The notice lives on the card so it is read
+         * before any install press, which is the acceptance the plan named.
+         * Counted once per string so a stray occurrence elsewhere cannot pass
+         * this by accident.
+         */
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.kaynscans', 'Kayn Scans', false, true),
+            $this->extension('eu.kanade.tachiyomi.extension.en.comix', 'Comix', false, true),
+            $this->extension('eu.kanade.tachiyomi.extension.all.mangafire', 'MangaFire', false, true),
+        ]);
+
+        $html = $this->page()
+            ->set('view', 'available')
+            ->assertOk()
+            ->html();
+
+        $this->assertSame(1, substr_count($html, 'This site is known to block readers that search aggressively.'));
+        $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
+        $this->assertSame(1, substr_count($html, 'Searches from extensions here come back scrambled'));
     }
 }
