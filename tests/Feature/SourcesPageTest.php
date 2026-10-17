@@ -1388,6 +1388,232 @@ class SourcesPageTest extends TestCase
         $this->assertSame(1, ExtensionStore::query()->count());
     }
 
+    public function test_a_flagged_source_asks_before_it_installs(): void
+    {
+        /*
+         * Owner, 2026-10-17: the press on one of those sources is where the warning
+         * belongs, not only the card above it. The facts asked about are the ones the
+         * config already tracks (the 403s, blocks, bans and scrambles), so the dialog
+         * reads the card's own sentences rather than carrying a second copy. This test
+         * pins the ask side: nothing is sent to the server until the reader answers.
+         */
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.kaynscans';
+
+        $this->serveExtensions([$this->extension($pkg, 'Kayn Scans', false, true)]);
+
+        $this->page()->call('trust', $store->id);
+
+        $page = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg);
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $this->assertSame(1, substr_count(
+            $page->html(),
+            'This source is tricky and risky',
+        ));
+
+        /*
+         * The known behaviour sentence appears twice: once on the card, once in the
+         * dialog. That count is the one seam holding: the dialog read the same copy
+         * the card does, through noticeFor(), rather than carrying a second copy of
+         * the facts that could drift from it.
+         */
+        $this->assertSame(2, substr_count(
+            $page->html(),
+            'This site is known to block readers that search aggressively.',
+        ));
+    }
+
+    public function test_the_ask_confirms_by_installing_and_mirroring(): void
+    {
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.kaynscans';
+
+        $this->serveExtensions([$this->extension($pkg, 'Kayn Scans', false, true)]);
+        $this->serveSources([$this->source(4242, $pkg, 'Kayn Scans (EN)')]);
+
+        $this->page()->call('trust', $store->id);
+
+        /*
+         * The confirm chains on the same instance, because the ask left its answer
+         * pending in that component's state and a second instance mounts with
+         * nothing pending (trap 284).
+         */
+        $page = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg)
+            ->call('installConfirmed')
+            ->assertHasNoErrors();
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4242,
+            'extension_pkg_name' => $pkg,
+            'is_installed' => true,
+        ]);
+
+        $page->assertSet('pendingInstall', []);
+    }
+
+    public function test_a_source_without_the_notice_installs_on_the_first_press(): void
+    {
+        /*
+         * The gate at the press is for the sites the config names, and for nothing
+         * else: a dialog on every install would teach the reader to click past
+         * warnings, which is the exact cost the owner named for unsigned
+         * installers. The existing mirror test pins that the install works; this
+         * one pins that it works without the ask.
+         */
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.fresh';
+
+        $this->serveExtensions([$this->extension($pkg, 'Fresh Scan', false, true)]);
+        $this->serveSources([$this->source(4242, $pkg, 'Fresh Scan (EN)')]);
+
+        $this->page()->call('trust', $store->id);
+
+        $page = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg)
+            ->assertHasNoErrors();
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $this->assertSame(0, substr_count($page->html(), 'This source is tricky and risky'));
+
+        $page->assertSet('pendingInstall', []);
+    }
+
+    public function test_a_bulk_selection_with_one_flagged_name_asks_before_installing_anything(): void
+    {
+        /*
+         * One ask for the whole selection, in the one modal for the page (the source
+         * chooser's own reason in ⚡search.blade.php), listing the flagged names.
+         * Confirmation installs the flagged ones along with the clean ones, because
+         * that is the request the press stood for; cancelling leaves everything
+         * uninstalled.
+         */
+        $store = $this->store();
+        $flagged = 'eu.kanade.tachiyomi.extension.en.kaynscans';
+        $clean = 'eu.kanade.tachiyomi.extension.en.fresh';
+
+        $this->serveExtensions([
+            $this->extension($flagged, 'Kayn Scans', false, true),
+            $this->extension($clean, 'Fresh Scan', false, true),
+        ]);
+        $this->serveSources([
+            $this->source(4242, $flagged, 'Kayn Scans (EN)'),
+            $this->source(4243, $clean, 'Fresh Scan (EN)'),
+        ]);
+
+        $this->page()->call('trust', $store->id);
+
+        $page = $this->page()
+            ->set('view', 'available')
+            ->set('selected', [$flagged, $clean])
+            ->call('installSelected');
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        /*
+         * One flagged name in the selection, so the header reads singular, and the
+         * clean companion is named as installing together with it rather than
+         * silently.
+         */
+        $this->assertSame(1, substr_count($page->html(), 'This source is tricky and risky'));
+        $this->assertSame(1, substr_count($page->html(), 'The install carries the 1 other selected extension with it.'));
+
+        $page->assertSet('selected', []);
+
+        $page->call('installConfirmed');
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4242,
+            'extension_pkg_name' => $flagged,
+            'is_installed' => true,
+        ]);
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4243,
+            'extension_pkg_name' => $clean,
+            'is_installed' => true,
+        ]);
+
+        $page->assertSet('pendingInstall', []);
+    }
+
+    public function test_an_update_press_is_not_the_ask(): void
+    {
+        /*
+         * The ask sits on the install of a site the config names. An update of an
+         * already installed extension is a new signed artefact but not a first
+         * contact with the site, so it keeps its single press, and this pins that
+         * the update route never arms the warning.
+         */
+        $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.kaynscans';
+
+        $this->serveExtensions([array_merge(
+            $this->extension($pkg, 'Kayn Scans', true, true),
+            ['hasUpdate' => true],
+        )]);
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+
+        $page = $this->page()->call('update', $pkg)->assertHasNoErrors();
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $page->assertSet('pendingInstall', []);
+    }
+
+    public function test_closing_the_warning_without_confirming_installs_nothing(): void
+    {
+        /*
+         * Cancel, esc, backdrop and the x all land on closeInstallWarning. The
+         * guarantee is the one the dialog promises: nothing installs on the way
+         * out, the pending names are cleared, and a stale second confirm press
+         * finds nothing to install.
+         */
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.kaynscans';
+
+        $this->serveExtensions([$this->extension($pkg, 'Kayn Scans', false, true)]);
+
+        $this->page()->call('trust', $store->id);
+
+        $page = $this->page()
+            ->set('view', 'available')
+            ->call('install', $pkg)
+            ->call('closeInstallWarning')
+            ->assertHasNoErrors();
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $page->assertSet('pendingInstall', []);
+
+        $page->call('installConfirmed');
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+    }
+
     public function test_an_extension_whose_site_is_known_to_act_up_says_so_on_its_card(): void
     {
         /*

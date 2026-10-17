@@ -79,6 +79,25 @@ new #[Title('Sources')] class extends Component
      */
     public array $failures = [];
 
+    /**
+     * The names the install warning is open on: the ones the notice list covers.
+     *
+     * Armed by an install press and emptied by both answers to the dialog, so it
+     * never sits armed while the dialog is closed.
+     *
+     * @var array<int, string>
+     */
+    public array $pendingInstall = [];
+
+    /**
+     * The rest of a bulk selection waiting behind the warning. Confirm installs
+     * them together with the flagged ones, because that is the request the press
+     * stood for; closing the dialog installs nothing.
+     *
+     * @var array<int, string>
+     */
+    public array $pendingClean = [];
+
     public function mount(): void
     {
         /*
@@ -426,31 +445,31 @@ new #[Title('Sources')] class extends Component
         return true;
     }
 
+    /**
+     * Install one extension, and ask first when its site is on the notice list.
+     *
+     * Owner, 2026-10-17: the press on one of those sources is where the warning
+     * belongs, not only the card above it. The ask arms the pending name and opens
+     * the dialog with the facts the config already tracks; a name without a notice
+     * keeps its single press, because a dialog on everything would teach readers
+     * to click past warnings.
+     */
     public function install(string $pkgName): void
     {
         if (! $this->canInstallName($pkgName)) {
             return;
         }
 
-        try {
-            app(ExtensionManager::class)->setInstalled($pkgName, true);
-        } catch (SuwayomiException $e) {
-            Flux::toast(text: $e->getMessage(), variant: 'danger');
+        if ($this->noticeFor($this->rowFor($pkgName) ?? []) !== null) {
+            $this->pendingInstall = [$pkgName];
+            $this->pendingClean = [];
+
+            $this->dispatch('open-install-warning');
 
             return;
         }
 
-        $this->failures = [];
-
-        $mirrored = $this->mirrorSources();
-
-        Flux::toast(
-            text: $mirrored
-                ? __('It is browsable now.')
-                : __('Installed, but the source list could not be refreshed. Press Sync sources.'),
-            heading: __('Installed'),
-            variant: $mirrored ? 'success' : 'info',
-        );
+        $this->installNames([$pkgName]);
     }
 
     public function uninstall(string $pkgName): void
@@ -572,6 +591,13 @@ new #[Title('Sources')] class extends Component
         );
     }
 
+    /**
+     * Install everything the selection chose, and ask first when the notice list
+     * covers any of it. One ask for the whole selection, in the one dialog the
+     * page carries. Confirming installs the flagged ones along with their clean
+     * companions, because that is the request the press stood for; closing the
+     * dialog installs nothing.
+     */
     public function installSelected(): void
     {
         $allowed = $this->installableFromSelection();
@@ -582,7 +608,83 @@ new #[Title('Sources')] class extends Component
             return;
         }
 
-        $result = app(ExtensionManager::class)->installMany($allowed);
+        $flagged = $this->flaggedAmong($allowed);
+
+        if ($flagged !== []) {
+            $this->pendingInstall = $flagged;
+            $this->pendingClean = array_values(array_diff($allowed, $flagged));
+
+            $this->dispatch('open-install-warning');
+
+            return;
+        }
+
+        $this->installNames($allowed);
+    }
+
+    /**
+     * The press after the warning. The pending names install straight through with
+     * no second guard: the ask already checked each row before arming, and asking
+     * the same question twice on one press is how a warning becomes furniture.
+     */
+    public function installConfirmed(): void
+    {
+        $names = array_values(array_merge($this->pendingInstall, $this->pendingClean));
+
+        $this->reset(['pendingInstall', 'pendingClean']);
+
+        $this->dispatch('close-install-warning');
+
+        if ($names === []) {
+            return;
+        }
+
+        $this->installNames($names);
+    }
+
+    /**
+     * The dialog closed without its button. Nothing installs, and the pending
+     * names go so no later request carries them along.
+     */
+    public function closeInstallWarning(): void
+    {
+        $this->reset(['pendingInstall', 'pendingClean']);
+    }
+
+    /**
+     * The install itself, with no ask in front of it. A single name keeps the
+     * single press's copy; more than one keeps the bulk count, because a toast
+     * that says one extension for two names would read as a lie.
+     *
+     * @param array<int, string> $names
+     */
+    private function installNames(array $names): void
+    {
+        if (count($names) === 1) {
+            try {
+                app(ExtensionManager::class)->setInstalled($names[0], true);
+            } catch (SuwayomiException $e) {
+                Flux::toast(text: $e->getMessage(), variant: 'danger');
+
+                return;
+            }
+
+            $this->failures = [];
+
+            $mirrored = $this->mirrorSources();
+
+            Flux::toast(
+                text: $mirrored
+                    ? __('It is browsable now.')
+                    : __('Installed, but the source list could not be refreshed. Press Sync sources.'),
+                heading: __('Installed'),
+                variant: $mirrored ? 'success' : 'info',
+            );
+
+            return;
+        }
+
+        $result = app(ExtensionManager::class)->installMany($names);
         $this->failures = $result['failed'];
 
         if ($this->failures !== []) {
@@ -1002,7 +1104,7 @@ new #[Title('Sources')] class extends Component
 
     public function canInstallName(string $pkgName): bool
     {
-        $row = $this->extensions->firstWhere('pkgName', $pkgName);
+        $row = $this->rowFor($pkgName);
 
         return $row !== null
             && ($row['isInstalled'] ?? false) !== true
@@ -1017,12 +1119,77 @@ new #[Title('Sources')] class extends Component
      */
     public function canUpdateName(string $pkgName): bool
     {
-        $row = $this->extensions->firstWhere('pkgName', $pkgName);
+        $row = $this->rowFor($pkgName);
 
         return $row !== null
             && ($row['isInstalled'] ?? false) === true
             && ($row['hasUpdate'] ?? false) === true
             && $this->isTrusted($row);
+    }
+
+    /**
+     * The catalogue row for one package name, or null when the list predates it.
+     *
+     * Every install and update guard reads the row again for the same reason this
+     * page re-checks trust: the rendered list is not evidence.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function rowFor(string $pkgName): ?array
+    {
+        return $this->extensions->firstWhere('pkgName', $pkgName);
+    }
+
+    /**
+     * The pressed names whose site the notice list covers, in the pressed order.
+     *
+     * @param array<int, string> $names
+     * @return array<int, string>
+     */
+    private function flaggedAmong(array $names): array
+    {
+        return array_values(array_filter(
+            $names,
+            fn (string $pkgName): bool => $this->noticeFor($this->rowFor($pkgName) ?? []) !== null,
+        ));
+    }
+
+    /**
+     * One row per name the warning asks about, read from the list at render time
+     * rather than captured at ask time, so the dialog states what the config says
+     * now rather than what it said when the press dispatched.
+     *
+     * Names left out by a catalogue refresh between ask and render are carried by
+     * the pages' pending state and installed on confirm, but they have nothing to
+     * warn about once their notice is gone.
+     *
+     * @return array<int, array<string, string>>
+     */
+    public function warningRows(): array
+    {
+        $rows = [];
+
+        foreach ($this->pendingInstall as $pkgName) {
+            $row = $this->rowFor($pkgName);
+
+            if ($row === null) {
+                continue;
+            }
+
+            $notice = $this->noticeFor($row);
+
+            if ($notice === null) {
+                continue;
+            }
+
+            $rows[] = [
+                'name' => (string) $row['name'],
+                'icon' => $notice['icon'],
+                'text' => $notice['text'],
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -1065,7 +1232,7 @@ new #[Title('Sources')] class extends Component
     }
 }; ?>
 
-<div class="w-full space-y-8">
+<div class="w-full space-y-8" x-on:open-install-warning.window="$dispatch('modal-show', { name: 'install-warning' })" x-on:close-install-warning.window="$dispatch('modal-close', { name: 'install-warning' })">
     <x-page.header>
         <x-slot:eyebrow>{{ __('Keiyoushi, on your terms.') }}</x-slot:eyebrow>
         <x-slot:title>{{ __('Sources') }}</x-slot:title>
@@ -1788,9 +1955,11 @@ new #[Title('Sources')] class extends Component
 
                                 @if (($notice = $this->noticeFor($extension)) !== null)
                                     {{--
-                                        The site's known behaviour, on the card rather than in a
-                                        dialog at install time, so it is read before any press on
-                                        any view these cards render. The facts behind it live in
+                                        The site's known behaviour, on the card so it is read
+                                        before any press on any view these cards render. The
+                                        press on one of these cards asks a second time with
+                                        the same sentences, in the dialog at the foot of the
+                                        page (owner, 2026-10-17). The facts behind both live in
                                         config/source-notices.php; this copy is the deliverable
                                         the owner reads line by line.
                                     --}}
@@ -1888,4 +2057,94 @@ new #[Title('Sources')] class extends Component
             </div>
         @endif
     </section>
+
+    {{--
+        The install warning.
+
+        One dialog for the whole page rather than one per card, for the reason the source
+        chooser in ⚡search.blade.php carries: the dialog belongs to the press, not to the
+        card, and the rows it names are whichever flagged names that press carried.
+
+        Opened from the response rather than from the click, which is the race the chooser's
+        comment records in the other direction: the Livewire round trip that arms the pending
+        names has to land before anything opens on them, so the root div re-dispatches Flux's
+        own `modal-show` when the actions dispatch `open-install-warning`. The confirm is a
+        plain wire button rather than `flux:modal.close`, so it runs as one request that
+        installs, clears the pending names and dispatches `close-install-warning`; going
+        through Flux's close would race that clear against a second wire call reading the
+        same names. Every other way out of the dialog (cancel, esc, backdrop, the x) fires
+        `@close`, which empties the pending names with nothing installed.
+
+        Owner, 2026-10-17: the press on one of these sources is where the warning belongs.
+        The rows read the same sentences the cards do through noticeFor(), so the facts stay
+        in one place. Confirming installs the pending names.
+    --}}
+    <flux:modal
+        name="install-warning"
+        class="max-w-md"
+        @close="closeInstallWarning"
+    >
+        <div class="flex items-start gap-4">
+            <span
+                class="mt-0.5 flex size-10 flex-none items-center justify-center rounded-xl bg-vermilion-600/10 text-vermilion-600 dark:bg-vermilion-500/15 dark:text-vermilion-400"
+                aria-hidden="true"
+            >
+                <flux:icon name="exclamation-triangle" class="size-5" />
+            </span>
+
+            <div class="min-w-0">
+                @if ($this->pendingInstall !== [])
+                    <flux:heading size="lg">
+                        @if (count($this->pendingInstall) > 1)
+                            {{ __('These sources are tricky and risky') }}
+                        @else
+                            {{ __('This source is tricky and risky') }}
+                        @endif
+                    </flux:heading>
+                @endif
+
+                <div class="mt-2 space-y-2.5">
+                    @foreach ($this->warningRows() as $row)
+                        <p class="flex items-start gap-2 text-sm leading-5 text-zinc-600 dark:text-zinc-400">
+                            <flux:icon name="{{ $row['icon'] }}" class="mt-0.5 size-4 shrink-0" />
+
+                            <span>
+                                <strong class="font-semibold text-zinc-900 dark:text-zinc-100">{{ $row['name'] }}</strong>
+
+                                {{ $row['text'] }}
+                            </span>
+                        </p>
+                    @endforeach
+                </div>
+
+                @if ($this->pendingClean !== [])
+                    <flux:subheading class="mt-3">
+                        {{ trans_choice(
+                            'The install carries the :count other selected extension with it.|The install carries the :count other selected extensions with it.',
+                            count($this->pendingClean),
+                            ['count' => count($this->pendingClean)],
+                        ) }}
+                    </flux:subheading>
+                @endif
+
+                <flux:subheading class="mt-3">
+                    {{ __('Nothing has installed yet. It installs on the next press, and cancelling leaves everything as it is.') }}
+                </flux:subheading>
+            </div>
+        </div>
+
+        <div class="mt-7 flex justify-end gap-2">
+            <flux:modal.close>
+                <flux:button variant="filled">{{ __('Never mind') }}</flux:button>
+            </flux:modal.close>
+
+            <flux:button
+                variant="danger"
+                wire:click="installConfirmed"
+                wire:loading.attr="disabled"
+            >
+                {{ __('Install anyway') }}
+            </flux:button>
+        </div>
+    </flux:modal>
 </div>

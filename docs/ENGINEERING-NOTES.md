@@ -6220,3 +6220,17 @@ exactly that moment and it costs five minutes.
     every helper that mounts a component starts from defaults.** Assertions about what an
     action produced chain onto the instance the action ran on, or set the property up front and
     test the render as its own question.
+
+285. **Two dialogs on one page can carry the same button label, and a click that reports ok is not a click that did the thing.**
+
+    Measured in the browser on 2026-10-17, walking the install warning: the store removal dialog
+    and the warning both carry a `Never mind`, and an unscoped click recorded ok while the
+    warning stayed open at opacity 1, read straight off the element. The pressed label belonged
+    to an element inside the other dialog, which is closed, and the warning received nothing;
+    the inference is confirmed afterwards by the scoped clicks, not by the click result. This
+    Flux version stamps `data-modal="<name>"` on the dialog element, and clicking scoped to
+    `dialog[data-modal="install-warning"]`, first the ghost close and then the dialog's own
+    cancel, each closed the dialog and ran the server clear in the same pass, measured. The
+    general form: **a selector that names no dialog can name the wrong one, and then never
+    fail.** Press buttons inside a named dialog through its `data-modal` scope, and treat a
+    click that reports ok as the reason to measure the effect, not as the effect.
