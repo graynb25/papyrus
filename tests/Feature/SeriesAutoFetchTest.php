@@ -591,6 +591,31 @@ class SeriesAutoFetchTest extends TestCase
             ->assertDontSee(__('The chapter list did not load'));
     }
 
+    public function test_an_empty_source_renders_its_facts_once(): void
+    {
+        /*
+         * The duplication measured on the dev walkthrough of 2026-10-16, then located in code:
+         * two callout blocks on this page both read `emptyReason()`, and on a source that
+         * answered and had nothing (`loadError` set, chapter count 0) both rendered the same
+         * heading and body, so the reader read the diagnosis twice and the retry under it twice.
+         * The standalone callout now renders only when there is a chapter list to pair it with.
+         *
+         * Counted on the rendered HTML rather than asserted with `assertSee()`, because
+         * `assertSee()` answers the same against two copies, which is exactly how the duplicate
+         * sat unmeasured.
+         */
+        $this->fakeSeries([], refreshError: 'Exception while fetching data (/fetchChapters) : No chapters found');
+
+        $component = Livewire::actingAs($this->user)
+            ->test('pages::series', ['manga' => 76])
+            ->call('refresh');
+
+        $expected = __('The source returned no chapters');
+        $seen = substr_count($component->html(), $expected);
+
+        $this->assertSame(1, $seen, "the empty-source callout rendered {$seen} times; one card and one retry is the contract");
+    }
+
     /**
      * F26's sweep: `series()` is a render-time read, and a server that answers
      * nothing must render as a named failure rather than a 500. The

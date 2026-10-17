@@ -1826,8 +1826,13 @@ new #[Title('Series')] class extends Component
                 false for every other failure: measured, a source answering
                 `Cloudflare bypass currently disabled` was told here that it had answered.
                 So both read `emptyReason()` and the text is chosen by what the fetch recorded.
+
+                That agreement had its own defect, measured twice on 2026-10-16: with an error
+                recorded and no chapters to show, both blocks fired and the same card rendered
+                twice. This one renders only while the list it talks over is still on the page;
+                the empty case keeps one card, and its retry.
             --}}
-            @if ($loadError !== null)
+            @if ($loadError !== null && $this->chapterCount > 0)
                 <flux:callout variant="warning" icon="exclamation-triangle">
                     <flux:heading level="3" class="mb-1">{{ $this->emptyReason[0] }}</flux:heading>
                     <p class="text-sm">
