@@ -1146,11 +1146,14 @@ new #[Title('Move a whole source')] class extends Component
                 </div>
             </div>
         @endif
+    @endif
 
-        {{-- The table stays open whenever the run holds a row with a destination to send it to:
-              offers ride with the tick row above, and a finished run re-renders it so a moved
-              or refused row keeps its place, its numbers and its words, instead of the page
-              telling the reader that nothing matched. --}}
+        {{-- The table rides the run open as well as settled, and stays open whenever the run
+              holds a row with a destination to send it to: landed rows appear as their
+              compares land, the stills' mid run card and the thing the cover strip marks,
+              while the decisions wait for the run. A finished run re-renders the rows so a
+              moved or refused row keeps its place, its numbers and its words, instead of
+              the page telling the reader that nothing matched. --}}
         @if ($this->comparisonRows->isNotEmpty())
             <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
                 @foreach ($this->comparisonRows as $item)
@@ -1161,9 +1164,20 @@ new #[Title('Move a whole source')] class extends Component
 
                         {{-- The reader's own series, pictured. The table asks where a shelf goes
                              and the reader knows a shelf by what it looks like; the same atom the
-                             wizard's candidate rows use, fed the same way. --}}
+                             wizard's candidate rows use, fed the same way. Mid run the atom's own
+                             progress hairline carries the landing mark: the row exists because
+                             the compare came back, so a landed row flies full, the mark rides the
+                             frame the library grid already owns, and it leaves with the run that
+                             holds it, because progress that outlives the run is noise the reader
+                             stops trusting. --}}
                         <div class="w-12 shrink-0">
-                            <x-cover.art :src="$fromCover" :alt="$item->title" :blur-up="false" :vt="false">
+                            <x-cover.art
+                                :src="$fromCover"
+                                :alt="$item->title"
+                                :blur-up="false"
+                                :vt="false"
+                                :progress="$run !== null && $run->state === BulkMigration::RUNNING ? 100 : null"
+                            >
                                 @if ($item->unread_here !== null)
                                     {{-- The chip is the number the reader's eye sorts a shelf by, and
                                          the words live in the accessible title for anyone who wants
@@ -1181,8 +1195,10 @@ new #[Title('Move a whole source')] class extends Component
                         {{-- The name is carried by the heading and the accessible name carries
                              the checkbox; the visible label would render the title twice. --}}
                         {{-- The tick only rides a row still waiting for its move: a decided one is
-                              history, and a checkbox offered to move a row twice is a lie. --}}
-                        @if ($item->status === BulkMigrationItem::PENDING)
+                              history, and a checkbox offered to move a row twice is a lie. Mid run
+                              it rides nothing at all: the flight is a readout, and the offer bar
+                              that would act on the tick waits for the run to settle. --}}
+                        @if ($item->status === BulkMigrationItem::PENDING && $this->isDecidable())
                             <flux:checkbox
                                 wire:model.live="approved.{{ $item->from_manga_id }}"
                                 aria-label="{{ $item->title }}"
@@ -1283,7 +1299,7 @@ new #[Title('Move a whole source')] class extends Component
                     </div>
                 @endforeach
             </flux:card>
-        @else
+        @elseif ($run !== null && $this->isDecidable())
             <flux:callout variant="secondary" icon="magnifying-glass">
                 <flux:heading level="2" size="sm" class="mb-1">{{ __('Nothing on that source is on the new one') }}</flux:heading>
                 <p class="text-sm">
@@ -1304,7 +1320,7 @@ new #[Title('Move a whole source')] class extends Component
              than a folded list. Tachimanga's stills give them the two exits a dead end
              needs, and the fold counted these rows without answering them; the summary
              sentence above still counts all of them, so the count and the cards agree. --}}
-        @if ($this->missing->isNotEmpty())
+        @if ($run !== null && $this->isDecidable() && $this->missing->isNotEmpty())
             <flux:card class="divide-y divide-zinc-200 dark:divide-zinc-700">
                 <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-1 pt-4">
                     <flux:heading size="sm" level="3">{{ __('No alternatives found') }}</flux:heading>
@@ -1380,7 +1396,6 @@ new #[Title('Move a whole source')] class extends Component
                 @endif
             </flux:card>
         @endif
-    @endif
 
     {{-- Earlier attempts -------------------------------------------------- --}}
     @if (BulkMigration::query()->forUser(auth()->id())->count() > 1)

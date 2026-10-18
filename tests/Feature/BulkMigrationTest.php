@@ -1349,6 +1349,101 @@ class BulkMigrationTest extends TestCase
     }
 
     /**
+     * The cover hairline is the run's in flight mark: a row whose compare has landed
+     * carries the cover atom's progress treatment at the bottom edge of its own cover,
+     * and the strip goes the moment the run settles, because progress that outlives
+     * its run is noise the reader stops trusting. The placement is the owner's call of
+     * 2026-10-18; the stills resolve their rows mid run and pin no edge themselves.
+     */
+    public function test_a_comparing_run_marks_each_landed_row_at_the_cover_s_edge(): void
+    {
+        $run = $this->startRun();
+
+        BulkMigrationItem::createFor($this->user->id, [
+            'bulk_migration_id' => $run->getKey(),
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Hiding a Logistics Center',
+            'to_title' => 'Hiding a Logistics Center',
+            'chapters_here' => 41,
+            'chapters_there' => 41,
+            'title_similarity' => 1.0,
+            'chapter_delta' => 0,
+            'author_overlap' => 1.0,
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        $this->page()
+            ->assertSee('cover-progress')
+            ->assertDontSee('approved.76');
+
+        $run->update(['state' => BulkMigration::READY, 'finished_at' => now()]);
+
+        $this->page()
+            ->assertSee('approved.76')
+            ->assertDontSee('cover-progress');
+    }
+
+    /**
+     * The flight is a readout, not a decision. Rows appear as their compares land so
+     * the mark that says "this one is accounted for" has somewhere to live, and
+     * everything that acts waits for the run to settle: the tick rides nothing mid
+     * run, the offer bar stays folded, and the dead end cards keep the decisions
+     * company, because a dead end is a question the run must be over to answer.
+     *
+     * The mark rides the cover atom's own progress treatment (the seam the library
+     * grid already pays for) rather than a second copy at the row.
+     */
+    public function test_the_flight_renders_landed_rows_but_not_acts(): void
+    {
+        $run = $this->startRun();
+
+        BulkMigrationItem::createFor($this->user->id, [
+            'bulk_migration_id' => $run->getKey(),
+            'from_manga_id' => 76,
+            'to_manga_id' => 2033,
+            'title' => 'Hiding a Logistics Center',
+            'to_title' => 'Hiding a Logistics Center',
+            'chapters_here' => 41,
+            'chapters_there' => 41,
+            'title_similarity' => 1.0,
+            'chapter_delta' => 0,
+            'author_overlap' => 1.0,
+            'status' => BulkMigrationItem::PENDING,
+        ]);
+
+        BulkMigrationItem::createFor($this->user->id, [
+            'bulk_migration_id' => $run->getKey(),
+            'from_manga_id' => 84,
+            'to_manga_id' => null,
+            'title' => 'Amagami-san Chi no Enai Musume',
+            'to_title' => null,
+            'chapters_here' => 12,
+            'chapters_there' => null,
+            'title_similarity' => 0.2,
+            'chapter_delta' => null,
+            'author_overlap' => null,
+            'status' => BulkMigrationItem::SKIPPED,
+            'reason' => 'Not found on any of the destinations this run compared.',
+        ]);
+
+        $this->page()
+            ->assertSee('Hiding a Logistics Center')
+            ->assertSee('cover-progress')
+            ->assertDontSee('approved.76')
+            ->assertDontSee('Move the ticked series')
+            ->assertDontSee('No alternatives found');
+
+        $run->update(['state' => BulkMigration::READY, 'finished_at' => now()]);
+
+        $this->page()
+            ->assertSee('Hiding a Logistics Center')
+            ->assertSee('approved.76')
+            ->assertSee('Move the ticked series')
+            ->assertSee('No alternatives found');
+    }
+
+    /**
      * The poll rides the comparing card, and settling is the stop.
      *
      * The page declared its poll through a `with()` array, the same route the wizard page
