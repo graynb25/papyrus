@@ -399,6 +399,56 @@ class HealthDashboardTest extends TestCase
             ->assertDontSee('skipped by you');
     }
 
+    /**
+     * The pin is the mirror of the skip: one writes `disabled`, the other writes
+     * `pinned_at`, and a run that reads both gets the intersection. The same two
+     * assertions skip carries, on the same row grain.
+     */
+    public function test_pinning_a_site_marks_every_variant_for_this_reader_only(): void
+    {
+        $this->health($this->source('https://mangadex.org', 'en', 'MangaDex en'));
+        $this->health($this->source('https://mangadex.org', 'ja', 'MangaDex ja'));
+        $bob = User::factory()->create();
+
+        $this->page()->call('pin', 'https://mangadex.org');
+
+        $this->assertSame(2, UserSource::forUser($this->user->id)->whereNotNull('pinned_at')->count());
+        $this->assertSame(0, UserSource::forUser($bob->id)->whereNotNull('pinned_at')->count());
+    }
+
+    public function test_pinning_narrows_the_search_to_the_pinned_site(): void
+    {
+        $mangadex = $this->source('https://mangadex.org', 'en', 'MangaDex en');
+        $other = $this->source('https://other.test', 'en', 'Other EN');
+
+        $this->page()->call('pin', 'https://mangadex.org');
+
+        $after = app(SearchFanout::class)->targets($this->user)->pluck('suwayomi_source_id')->all();
+        $this->assertSame([$mangadex->suwayomi_source_id], $after, 'Only the pinned site runs.');
+        $this->assertNotContains($other->suwayomi_source_id, $after);
+    }
+
+    public function test_unpinning_returns_the_search_to_every_runnable_source(): void
+    {
+        $this->health($this->source('https://mangadex.org', 'en', 'MangaDex en'));
+        $this->health($this->source('https://other.test', 'en', 'Other EN'));
+
+        $this->page()->call('pin', 'https://mangadex.org')->call('unpin', 'https://mangadex.org');
+
+        $this->assertSame(2, app(SearchFanout::class)->targets($this->user)->count());
+    }
+
+    public function test_a_pinned_site_is_labelled_and_can_be_cleared(): void
+    {
+        $this->health($this->source('https://mangadex.org', 'en'));
+
+        $this->page()->call('pin', 'https://mangadex.org')
+            ->assertSee('pinned by you')
+            ->assertSee('Pinned')
+            ->call('unpin', 'https://mangadex.org')
+            ->assertDontSee('pinned by you');
+    }
+
     public function test_trouble_sorts_above_working_which_sorts_above_unobserved(): void
     {
         $this->health($this->source('https://dead.test'), ['consecutive_failures' => 5, 'is_dead' => true]);

@@ -624,11 +624,38 @@ new #[Title('Search')] class extends Component
     #[Computed]
     public function eligibleSources(): int
     {
-        return app(SearchFanout::class)->targets(Auth::user(), [
+        return app(SearchFanout::class)->targets(Auth::user(), $this->fanoutOptions())->count();
+    }
+
+    /**
+     * The runnable sources this reader's pins leave out of the run, named.
+     *
+     * The honest half of the scope. With pins active, "no results" must never read
+     * as "nobody has this": the reader chose to ask fewer places, and this list
+     * says who was passed over. Empty for a reader without pins, and that absence
+     * is the frozen half of the rule, because a page with no pins in play renders
+     * nothing about pins at all.
+     */
+    #[Computed]
+    public function sourcesNotPinned(): Collection
+    {
+        return app(SearchFanout::class)->scopeFor(Auth::user(), $this->fanoutOptions())['skipped'];
+    }
+
+    /**
+     * The options every read of this page's scope uses: the run that gets scheduled,
+     * the cost line above the button and the not-asked list all build the same
+     * array, so one change to the filters reaches every read at once.
+     *
+     * @return array<string, mixed>
+     */
+    private function fanoutOptions(): array
+    {
+        return [
             'langs' => $this->langs === [] ? null : $this->langs,
             'content' => $this->content,
             'limit' => $this->limit,
-        ])->count();
+        ];
     }
 
     /**
@@ -956,6 +983,29 @@ new #[Title('Search')] class extends Component
                 <span class="text-sm text-zinc-500 dark:text-zinc-400">
                     {{ trans_choice('{1} Searching :count source|[2,*] Searching :count sources', $this->eligibleSources, ['count' => $this->eligibleSources]) }}
                 </span>
+
+                {{--
+                    With pins active the width of the search is a reader's own
+                    choice, so the page says who was passed over: "no results"
+                    on a pinned scope is not the world's answer, it is the
+                    reader's, and this line keeps it from reading otherwise.
+                    The names fold into a disclosure, because 80 pinned-away
+                    sources are a wall when asked by name and a list when
+                    asked deliberately.
+                --}}
+                @if ($this->sourcesNotPinned->isNotEmpty())
+                    <span class="text-sm text-zinc-500 dark:text-zinc-400">
+                        {{ trans_choice('{1} :count more is installed but not pinned, so it will not be asked.|[2,*] :count more are installed but not pinned, so they will not be asked.', $this->sourcesNotPinned->count(), ['count' => $this->sourcesNotPinned->count()]) }}
+                    </span>
+
+                    <details class="text-sm text-zinc-500 dark:text-zinc-400">
+                        <summary class="cursor-pointer select-none">{{ __('Which ones') }}</summary>
+
+                        <p class="mt-1 max-w-xl">
+                            {{ $this->sourcesNotPinned->pluck('display_name')->implode(', ') }}
+                        </p>
+                    </details>
+                @endif
             @elseif ($this->installedSourceCount === 0)
                 {{--
                     The reader owns no source at all: no filter can produce that

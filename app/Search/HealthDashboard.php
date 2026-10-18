@@ -2,6 +2,7 @@
 
 namespace App\Search;
 
+use App\Models\Source;
 use App\Models\SourceHealth;
 use App\Models\UserSource;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -171,15 +172,7 @@ class HealthDashboard
     public function variantsOf(string $site): Collection
     {
         return SourceHealth::query()
-            ->whereIn('source_id', function ($q) use ($site): void {
-                $q->select('suwayomi_source_id')
-                    ->from('sources')
-                    ->when(
-                        $site === 'unknown',
-                        fn ($w) => $w->whereNull('home_url')->orWhere('home_url', ''),
-                        fn ($w) => $w->where('home_url', $site),
-                    );
-            })
+            ->whereIn('source_id', Source::query()->ofSite($site)->select('suwayomi_source_id'))
             ->orderBy('lang')
             ->get();
     }

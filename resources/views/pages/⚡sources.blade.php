@@ -3,6 +3,7 @@
 use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
+use App\Models\UserSource;
 use App\Support\Library;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
@@ -876,6 +877,112 @@ new #[Title('Sources')] class extends Component
     }
 
     /**
+     * Pin every installed source on one site card, for this reader's searches.
+     *
+     * The mirror of the health page's `pin()`, in the seat a reader reaches first:
+     * this page is where the sites are laid out, and the card already shows the
+     * count of variants the pin would cover, so acting here needs no second page.
+     *
+     * The card's key is the bare host ({@see browseSites()} groups by `hostOf()`
+     * and lowercases it), so the members of a card are derived from that same
+     * helper via {@see cardSourceIds()}: a write and its badge must read the same
+     * set, and a raw `home_url` comparison would never equal the key the card
+     * actually sends.
+     *
+     * Installed only, deliberately, and the health drill-down is not: this page
+     * pins what this page displays, and the fanout's rule makes the distinction
+     * harmless anyway, because only runnable sources are ever asked whatever the
+     * pin rows say.
+     */
+    public function pinSite(string $site): void
+    {
+        $ids = $this->cardSourceIds($site);
+
+        if ($ids === []) {
+            return;
+        }
+
+        UserSource::setPinnedFor(auth()->id(), $ids, true);
+
+        unset($this->pinnedIds);
+
+        Flux::toast(
+            text: trans_choice(
+                '{1} Search asks this one variant alone while the pin stands.|[2,*] Search asks the :count variants of this site alone while the pin stands.',
+                count($ids),
+                ['count' => count($ids)],
+            ),
+            heading: __('Pinned for search'),
+            variant: 'success',
+        );
+    }
+
+    public function unpinSite(string $site): void
+    {
+        UserSource::setPinnedFor(auth()->id(), $this->cardSourceIds($site), false);
+
+        unset($this->pinnedIds);
+
+        Flux::toast(
+            text: __('Search is back to every source that can run.'),
+            heading: __('Pin cleared'),
+            variant: 'info',
+        );
+    }
+
+    /**
+     * The sources behind one card, keyed the way {@see browseSites()} keys its
+     * cards: the home_url's bare host, lowercased, and the local bucket for a
+     * source with none. The pin toggles and the badge all ask through this one
+     * derivation, so a card's write and its read can never disagree.
+     *
+     * @return array<int, int>
+     */
+    private function cardSourceIds(string $site): array
+    {
+        $host = $site === 'local' ? null : strtolower($site);
+
+        return Source::query()
+            ->installed()
+            ->get()
+            ->filter(fn (Source $source): bool => $this->hostOf($source->home_url) === $host)
+            ->pluck('suwayomi_source_id')
+            ->all();
+    }
+
+    /**
+     * The sources this reader has pinned, as Suwayomi ids.
+     *
+     * One query rather than one per card, and the read lives on the model, so this
+     * badge, the health badges and the fanout's rule are all reading the same rows.
+     *
+     * @return array<int, int>
+     */
+    #[Computed]
+    public function pinnedIds(): array
+    {
+        return UserSource::pinnedSourceIdsFor((int) auth()->id());
+    }
+
+    /**
+     * Whether any installed source behind one card is pinned.
+     *
+     * Any, not every, on the same reading the health page records for its badge:
+     * pins do not retire rows, so any pinned variant behind a card means the
+     * reader pinned that site.
+     */
+    public function isPinnedSite(string $site): bool
+    {
+        $pinned = $this->pinnedIds;
+
+        if ($pinned === []) {
+            return false;
+        }
+
+        return array_intersect($this->cardSourceIds($site), $pinned) !== [];
+    }
+
+    /**
      * Installed sources grouped by the site they belong to, for the browse picker.
      *
      * Grouped by `home_url` for the same reason the health dashboard groups by it: 82
@@ -1422,6 +1529,10 @@ new #[Title('Sources')] class extends Component
                                 </div>
 
                                 <div class="mt-auto flex items-center justify-between gap-2">
+                                    @if ($this->isPinnedSite($group['host'] ?? 'local'))
+                                        <flux:badge size="sm" color="zinc">{{ __('pinned by you') }}</flux:badge>
+                                    @endif
+
                                     <flux:badge size="sm" color="zinc">
                                         {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
                                     </flux:badge>
@@ -1449,6 +1560,36 @@ new #[Title('Sources')] class extends Component
                                         @endif
                                     </a>
                                 @endforeach
+
+                                {{--
+                                    The pin lives on the open card, beside the variants it
+                                    would cover, for the same reason the health page's is
+                                    in its drill-down: the count is on the face the reader
+                                    pressed, so a site with 61 variants is pinned by
+                                    someone who saw 61.
+                                --}}
+                                @if ($this->isPinnedSite($group['host'] ?? 'local'))
+                                    <flux:button size="sm" wire:click="unpinSite('{{ $group['host'] ?? 'local' }}')">
+                                        {{ __('Search every site again') }}
+                                    </flux:button>
+                                @else
+                                    @php($pinAction = 'pinSite('.Illuminate\Support\Js::from($group['host'] ?? 'local')->toHtml().')')
+
+                                    <x-confirm
+                                        :action="$pinAction"
+                                        :title="__('Search only this site while its pin stands?')"
+                                        :body="trans_choice(
+                                            'Search asks this one variant alone until the pin is cleared, and every other site waits out of the way.|[2,*] Search asks the :count variants of this site alone until the pin is cleared, and every other site waits out of the way.',
+                                            count($group['sources']),
+                                            ['count' => Number::format(count($group['sources']))],
+                                        )"
+                                        :confirm="__('Pin')"
+                                    >
+                                        <flux:button size="sm">
+                                            {{ __('Pin for search') }}
+                                        </flux:button>
+                                    </x-confirm>
+                                @endif
                             </div>
                         </details>
                     </li>

@@ -73,6 +73,52 @@ new #[Title('Health')] class extends Component {
         );
     }
 
+    /**
+     * Pin every variant of a site for this reader's searches.
+     *
+     * The mirror of skip(), and written beside it so the two halves of "what my
+     * searches reach" stand as one conversation: skip says "leave me alone", pin
+     * says "ask me first". A pin on site A does not switch anything off; it makes
+     * the pinned list the whole scope, and everything not pinned simply waits.
+     *
+     * Per-user for the same reading skip() records: the consequence is personal.
+     */
+    public function pin(string $site): void
+    {
+        $ids = $this->variantIds($site);
+
+        if ($ids === []) {
+            return;
+        }
+
+        UserSource::setPinnedFor(auth()->id(), $ids, true);
+
+        unset($this->pinnedIds);
+
+        Flux::toast(
+            text: trans_choice(
+                '{1} Search asks this one variant alone while the pin stands.|[2,*] Search asks the :count variants of this site alone while the pin stands.',
+                count($ids),
+                ['count' => count($ids)],
+            ),
+            heading: __('Pinned for search'),
+            variant: 'success',
+        );
+    }
+
+    public function unpin(string $site): void
+    {
+        UserSource::setPinnedFor(auth()->id(), $this->variantIds($site), false);
+
+        unset($this->pinnedIds);
+
+        Flux::toast(
+            text: __('Search is back to every source that can run.'),
+            heading: __('Pin cleared'),
+            variant: 'info',
+        );
+    }
+
     public function toggleSite(string $site): void
     {
         $this->openSite = $this->openSite === $site ? '' : $site;
@@ -134,6 +180,22 @@ new #[Title('Health')] class extends Component {
     }
 
     /**
+     * The sources this reader has pinned, as Suwayomi ids.
+     *
+     * One query for the whole page rather than one per site row, for the same
+     * reason `skipped()` is one query: the read lives on the model, so the
+     * fanout's rule and this badge are reading the same rows, not two queries
+     * that could drift.
+     *
+     * @return array<int, int>
+     */
+    #[Computed]
+    public function pinnedIds(): array
+    {
+        return UserSource::pinnedSourceIdsFor((int) auth()->id());
+    }
+
+    /**
      * @return array<int, int>
      */
     #[Computed]
@@ -184,7 +246,7 @@ new #[Title('Health')] class extends Component {
             return false;
         }
 
-        return $this->variantIds((string) $row->site, intersect: true) !== [];
+        return $this->variantIds((string) $row->site, $this->skipped) !== [];
     }
 
     /**
@@ -287,19 +349,34 @@ new #[Title('Health')] class extends Component {
     }
 
     /**
+     * Whether the pinned list reaches this row at all.
+     *
+     * Any, not every: skip's badge answers whether the reader retired the site, and
+     * pins do not retire anything, so a site whose reader pinned it reads as pinned
+     * whether its reader pinned one variant or the whole site. A reader who pinned
+     * "these sites" is in the pinned state wherever any of their variants is.
+     */
+    public function isPinned(object $row): bool
+    {
+        $pinned = $this->pinnedIds;
+
+        if ($pinned === []) {
+            return false;
+        }
+
+        return $this->variantIds((string) $row->site, $pinned) !== [];
+    }
+
+    /**
      * Source ids behind a site.
      *
      * @return array<int, int>
      */
-    private function variantIds(string $site, bool $intersect = false): array
+    private function variantIds(string $site, ?array $intersect = null): array
     {
-        $ids = Source::query()
-            ->when($site === 'unknown', fn ($q) => $q->where(fn ($w) => $w->whereNull('home_url')->orWhere('home_url', '')))
-            ->when($site !== 'unknown', fn ($q) => $q->where('home_url', $site))
-            ->pluck('suwayomi_source_id')
-            ->all();
+        $ids = Source::query()->ofSite($site)->pluck('suwayomi_source_id')->all();
 
-        return $intersect ? array_values(array_intersect($ids, $this->skipped)) : $ids;
+        return $intersect === null ? $ids : array_values(array_intersect($ids, $intersect));
     }
 }; ?>
 
@@ -436,6 +513,10 @@ new #[Title('Health')] class extends Component {
                                 @if ($skipped)
                                     <flux:badge size="sm" color="zinc" icon="eye-slash">{{ __('skipped by you') }}</flux:badge>
                                 @endif
+
+                                @if ($this->isPinned($row))
+                                    <flux:badge size="sm" color="zinc">{{ __('pinned by you') }}</flux:badge>
+                                @endif
                             </div>
 
                             <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -469,6 +550,16 @@ new #[Title('Health')] class extends Component {
                                 icon="arrow-uturn-left"
                             >
                                 {{ __('Skipped') }}
+                            </flux:button>
+                        @endif
+
+                        @if ($this->isPinned($row))
+                            <flux:button
+                                size="sm"
+                                variant="ghost"
+                                wire:click="toggleSite('{{ $row->site }}')"
+                            >
+                                {{ __('Pinned') }}
                             </flux:button>
                         @endif
                     </div>
@@ -507,6 +598,36 @@ new #[Title('Health')] class extends Component {
                                     >
                                         <flux:button size="sm" icon="eye-slash">
                                             {{ trans_choice('Skip this variant|[2,*] Skip all :count variants', $row->variants, ['count' => Number::format($row->variants)]) }}
+                                        </flux:button>
+                                    </x-confirm>
+                                @endif
+
+                                {{--
+                                    Pin, beside Skip, because the two phrases are one
+                                    conversation: skip says what the app may not ask, pin
+                                    says what it asks first. Its own confirm, because the
+                                    consequence is the same size in the other direction:
+                                    while any pin stands, every site without one waits.
+                                --}}
+                                @if ($this->isPinned($row))
+                                    <flux:button size="sm" wire:click="unpin('{{ $row->site }}')">
+                                        {{ __('Search every site again') }}
+                                    </flux:button>
+                                @else
+                                    @php($pinAction = 'pin('.Illuminate\Support\Js::from($row->site)->toHtml().')')
+
+                                    <x-confirm
+                                        :action="$pinAction"
+                                        :title="__('Search only this site while its pin stands?')"
+                                        :body="trans_choice(
+                                            'Search asks this one variant alone until the pin is cleared, and every other site waits out of the way.|[2,*] Search asks the :count variants of this site alone until the pin is cleared, and every other site waits out of the way.',
+                                            $row->variants,
+                                            ['count' => Number::format($row->variants)],
+                                        )"
+                                        :confirm="__('Pin')"
+                                    >
+                                        <flux:button size="sm">
+                                            {{ __('Pin for search') }}
                                         </flux:button>
                                     </x-confirm>
                                 @endif

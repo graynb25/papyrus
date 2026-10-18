@@ -7,6 +7,7 @@ use App\Models\SearchRun;
 use App\Models\Source;
 use App\Models\SourcePreference;
 use App\Models\User;
+use App\Models\UserSource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -162,17 +163,27 @@ class SearchFanout
      */
     public function targets(User $user, array $options = []): Collection
     {
-        $query = Source::query()
-            ->runnableFor($user->id, (bool) ($options['include_dead'] ?? false))
-            ->when(
-                $options['langs'] ?? null,
-                fn ($q, $langs) => $q->whereIn('lang', (array) $langs),
-            )
-            ->when(
-                $options['content'] ?? null,
-                fn ($q, $content) => $q->whereIn('content_warning', (array) $content),
-            )
-            ->orderBy('name');
+        $universal = $this->universe($user, $options);
+
+        /*
+         * The pins are the reader's chosen search scope: when any is pinned, the pins
+         * become the universe and this cap cuts inside them. A reader with no pins gets
+         * the collection the universe() read produced, untouched: no pin filter runs,
+         * which is the same set the method delivered before the pin column was wired,
+         * and no reader who never pinned sees a silent change of behaviour.
+         *
+         * The cut happens on the collection the pin filter already preserves order in,
+         * which is what keeps interleave() deterministic: same buckets, same name order,
+         * just fewer of them. This is deliberately not inside {@see
+         * Source::scopeRunnableFor()}: that scope is shared with the migration sweep,
+         * whose whole-shelf candidate list would be narrowed to the reader's pins by
+         * it, and pins are a search choice.
+         */
+        $pinned = UserSource::pinnedSourceIdsFor($user);
+
+        $eligible = $pinned === []
+            ? $universal
+            : $universal->filter(fn (Source $source): bool => in_array($source->suwayomi_source_id, $pinned, true))->values();
 
         $limit = (int) ($options['limit'] ?? 60);
 
@@ -181,12 +192,7 @@ class SearchFanout
          * needs every site's first row before it can decide what the first row of the result
          * is. The eligible set is the installed catalogue, measured at 82 rows, so the extra
          * rows cost nothing next to the requests this method exists to schedule.
-         *
-         * The ordering comes from the builder above, which is what makes interleave()
-         * deterministic: it depends on each bucket arriving in name order, which in turn
-         * means two runs over the same catalogue pick the same sources.
          */
-        $eligible = $query->get();
 
         // SQL reads a negative LIMIT as unlimited and 0 as no rows. Keep that meaning rather
         // than letting take() reinterpret a negative as "all but the last".
@@ -198,7 +204,68 @@ class SearchFanout
             return $eligible->take(0);
         }
 
+        /*
+         * The ordering comes from the builder inside universe(), which is what makes
+         * interleave() deterministic: it depends on each bucket arriving in name order,
+         * which in turn means two runs over the same catalogue pick the same sources.
+         */
         return $this->interleave($eligible)->take($limit);
+    }
+
+    /**
+     * The runnable universe this scope would draw answers from, before pins and before
+     * the cap.
+     *
+     * One read, shared by {@see targets()} and {@see scopeFor()}: the reader's status
+     * count, the run it schedules and the skipped list all draw from the same set, which
+     * is why they cannot disagree while this stays the only place the filters apply.
+     *
+     * @param  array<string, mixed>  $options
+     * @return Collection<int, Source>
+     */
+    private function universe(User $user, array $options): Collection
+    {
+        return Source::query()
+            ->runnableFor($user->id, (bool) ($options['include_dead'] ?? false))
+            ->when(
+                $options['langs'] ?? null,
+                fn ($q, $langs) => $q->whereIn('lang', (array) $langs),
+            )
+            ->when(
+                $options['content'] ?? null,
+                fn ($q, $content) => $q->whereIn('content_warning', (array) $content),
+            )
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * What this scope asks, and the runnable set it passes over.
+     *
+     * Phase 4's honest copies ride this: with pins active the page names the sources a
+     * reader's own scope leaves out, so "no results" never reads as "nobody has this".
+     * The skipped list is the runnable universe under the same filters minus what
+     * {@see targets()} answered, so the cap's cut lands there too: a pinned pair beyond
+     * a limit of one is honestly named as not asked rather than quietly dropped.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{searched: Collection<int, Source>, skipped: Collection<int, Source>}
+     */
+    public function scopeFor(User $user, array $options = []): array
+    {
+        $searched = $this->targets($user, $options);
+
+        if (UserSource::pinnedSourceIdsFor($user) === []) {
+            return ['searched' => $searched, 'skipped' => new Collection];
+        }
+
+        $searchedIds = $searched->pluck('suwayomi_source_id')->all();
+
+        $skipped = $this->universe($user, $options)
+            ->reject(fn (Source $source): bool => in_array($source->suwayomi_source_id, $searchedIds, true))
+            ->values();
+
+        return ['searched' => $searched, 'skipped' => $skipped];
     }
 
     /**

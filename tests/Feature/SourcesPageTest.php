@@ -6,6 +6,7 @@ use App\Models\ExtensionStore;
 use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
+use App\Models\UserSource;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1889,5 +1890,75 @@ class SourcesPageTest extends TestCase
          * render the notice (owner, 2026-10-17).
          */
         $this->assertSame(SourceNotices::SCRAMBLE, SourceNotices::kind('Comix (all)'));
+    }
+
+    /**
+     * The card is where the count of variants is already on screen, which is why
+     * the pin control can live there: a button that affects 61 sources is being
+     * shown a reader who can read "61 sources" on the face they pressed.
+     */
+    /**
+     * The card is where the count of variants is already on screen, which is why
+     * the pin control can live there: a button that affects 61 sources is being
+     * shown a reader who can read "61 sources" on the face they pressed.
+     *
+     * The rows are written directly rather than through the mirror helper,
+     * because the card keys on the home_url's bare host and this fixture needs a
+     * URL that parses as one. The press passes what the card's wire:click sends:
+     * that key, not the raw home_url, which is the distinction the first red run
+     * surfaced.
+     */
+    public function test_pinning_a_site_card_marks_the_site_for_this_reader_only(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+        $this->cardSource('Example JA', 8513894820944573934);
+        $bob = User::factory()->create();
+
+        $this->page()->call('pinSite', 'example.test');
+
+        $this->assertSame(2, UserSource::forUser($this->user->id)->whereNotNull('pinned_at')->count());
+        $this->assertSame(0, UserSource::forUser($bob->id)->whereNotNull('pinned_at')->count());
+    }
+
+    public function test_unpinning_a_site_card_returns_the_search_to_every_runnable_source(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+        $this->cardSource('Example JA', 8513894820944573934);
+
+        $this->page()->call('pinSite', 'example.test')->call('unpinSite', 'example.test');
+
+        $this->assertSame(
+            0,
+            UserSource::forUser($this->user->id)->whereNotNull('pinned_at')->count(),
+            'Unpinning the last pinned site must leave no pin behind.',
+        );
+    }
+
+    public function test_a_pinned_site_card_says_so(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        $this->page()->call('pinSite', 'example.test')
+            ->assertSee('pinned by you')
+            ->call('unpinSite', 'example.test')
+            ->assertDontSee('pinned by you');
+    }
+
+    /**
+     * One mirrored source row behind a real-shaped site card.
+     */
+    private function cardSource(string $name, int $id): Source
+    {
+        return Source::create([
+            'suwayomi_source_id' => $id,
+            'name' => $name,
+            'display_name' => $name,
+            'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.example',
+            'lang' => str_contains($name, 'JA') ? 'ja' : 'en',
+            'home_url' => 'https://example.test',
+            'content_warning' => Source::SAFE,
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
     }
 }

@@ -68,6 +68,33 @@ class Source extends Model
     }
 
     /**
+     * Every source of one site, when the site is named the way the health page
+     * names it: by the raw `home_url` string, or the no home_url bucket.
+     *
+     * One rule for the health page's skip, incognito and pin toggles and its
+     * drill-down, all of which key rows by the raw home_url string. The sources
+     * page does not ride this: its cards key on the home_url's bare host, so
+     * that page derives members through its own host rule instead, and a shared
+     * name for two keyings would make one of them quietly wrong.
+     *
+     * The bucket has two spellings because each page built its own before the
+     * rule was shared: the health page keys it `unknown`, the sources page
+     * keys it `local`, and both mean the same rows, a source that publishes
+     * no home_url. Only the health spelling reaches this scope.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeOfSite(Builder $query, string $site): Builder
+    {
+        if ($site === 'unknown' || $site === 'local') {
+            return $query->where(fn ($w) => $w->whereNull('home_url')->orWhere('home_url', ''));
+        }
+
+        return $query->where('home_url', $site);
+    }
+
+    /**
      * @param  Builder<static>  $query
      * @return Builder<static>
      */

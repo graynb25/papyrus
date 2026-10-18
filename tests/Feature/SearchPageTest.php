@@ -8,6 +8,7 @@ use App\Models\SearchSourceResult;
 use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
+use App\Models\UserSource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -560,5 +561,61 @@ class SearchPageTest extends TestCase
             ->assertOk()
             ->assertSee('No sources match these filters.')
             ->assertDontSee('No source is installed to search with.');
+    }
+
+    /**
+     * The pin is the reader's search scope, so the cost line stops being a count of
+     * everything and becomes a count of the pinned run. The same seam writes both, which is
+     * what makes this test meaningful against drift elsewhere: the page reads
+     * `eligibleSources()` and the run reads `targets()`, and one seam means they cannot
+     * disagree here without disagreeing everywhere.
+     */
+    public function test_pins_narrow_the_cost_line(): void
+    {
+        $alpha = $this->source('Alpha Manga');
+        $this->source('Beta Manga', 1);
+        $this->source('Gamma Manga', 2);
+
+        UserSource::setPinnedFor($this->user, [$alpha->suwayomi_source_id], true);
+
+        $component = Livewire::actingAs($this->user)->test('pages::search');
+
+        $this->assertSame(1, $component->instance()->eligibleSources());
+        $component->assertSee('Searching 1 source')
+            ->assertDontSee('Searching 3');
+    }
+
+    /**
+     * "No results" with pins active must never read as "nobody has this": the reader has
+     * chosen to ask fewer places, and the page says which places it passed over.
+     */
+    public function test_pins_put_the_passed_over_sources_on_the_page(): void
+    {
+        $alpha = $this->source('Alpha Manga');
+        $this->source('Beta Manga', 1);
+        $this->source('Gamma Manga', 2);
+
+        UserSource::setPinnedFor($this->user, [$alpha->suwayomi_source_id], true);
+
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->assertOk()
+            ->assertSee('installed but not pinned')
+            ->assertSee('Beta Manga')
+            ->assertSee('Gamma Manga');
+    }
+
+    /**
+     * The frozen half of the rule: a reader with no pins gets the page that existed before
+     * the pin was built, with no pin copy anywhere in it.
+     */
+    public function test_a_reader_without_pins_sees_no_pin_copy_at_all(): void
+    {
+        $this->source('Alpha Manga');
+        $this->source('Beta Manga', 1);
+
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->assertOk()
+            ->assertSee('Searching 2 sources')
+            ->assertDontSee('not pinned');
     }
 }
