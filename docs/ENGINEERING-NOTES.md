@@ -6546,3 +6546,40 @@ exactly that moment and it costs five minutes.
    the press last, and the run's own target rows as the verdict, which is the same shape as
    every other claim this file makes: the click is not the state, the state is what the row
    says.
+
+305. **A write and its badge in one component can read different member sets without either noticing, when the page keys with one rule and the write uses another.**
+
+   Measured 2026-10-18 on the sources page's first pin build. The page's site cards key on the
+   home_url's bare host, lowercased by the page's own `hostOf()` helper, with `local` as the
+   bucket for a source that publishes none; the health page, which had the pin first this sitting,
+   keys its rows by the raw home_url string and shared an `ofSite()` scope built for exactly
+   that. The card controller borrowed the scope: a pin pressed from a card wrote rows for the raw
+   home_url's sources but the badge asked the page's card key, `hostOf(...)` can return null on a
+   URL that parses nothing, and the reader saw the pin land in the toast and the database while
+   the card kept its unpinned face. The first test run caught it from the render side, and the
+   failure's own html is the diagnosis: one `Pin for search`, the else branch, beside a database
+   that held the row, meaning the write and the badge had derived members differently. The fix
+   gives the page one private derivation the write, the clear and the badge all ask through, the
+   `ofSite()` docblock now says it serves the health page's raw keys only, and the rule the
+   sitting buys is the DRY one phrased for keys: when a component shows members through a
+   derived key, every action on that key re-derives with the same helper, or one of the two
+   halves is describing a different group and the page is lying to somebody.
+
+306. **A confirm dialog that opens on a scripted click is invisible to the snapshot machinery, a short label matches its own trigger, and a page visit can itself be a beat that writes a run.**
+
+   Measured 2026-10-18 during the phase 4 live walk, where all three cost a beat each. First,
+   the panel's scoped snapshots cannot descend into a flux modal's subtree: a selector limited to
+   the dialog returns the whole document's text with an empty elements list, so the modal state
+   is read with `inspect` on `dialog[open]` (and on the footer wrapper that said `Never mind Pin`
+   when words were needed), and the confirm is clicked through its `ui-close` wrapper, because
+   flux renders each footer button inside one and the nth wrapper is the only stable address.
+   Second, clicking by visible text is a fuzzy match: the label `Pin` resolved to
+   `Pin for search`, the trigger underneath the dialog, every time. Third, opening a search URL
+   with `?q=` fires a run in that same mount: the unpin beat was followed by a plain visit to the
+   old query, which wrote its own row (8 sources asked, all answered, at the visit's timestamp),
+   and for a while the page's `Searching 8 sources` line next to result cards stamped
+   `+6 sources` looked like a page lie until the rows were read: the line describes the run the
+   visit itself launched in the same beat, and the `+n` list counts the sources the title was
+   found on, which is why an asked-and-empty local source sits in no list. The walk's verdicts
+   stay where they always are: the row of the run, not the geometry, and now also not the
+   assumption that only clicked things write.
