@@ -6459,3 +6459,37 @@ exactly that moment and it costs five minutes.
    any batch that changes queue code must stop and start the workers as part of the batch
    itself, before a live accepted run can claim to have exercised the new code. The restart
    cost nothing and both workers now run the real tree.
+
+299. **A data shape that arrives in two forms needs one naming seam, and a page that tests one surface lets the other surfaces rot.**
+
+   Measured 2026-10-18, live on the checkout, during the multi destination acceptance walk. `BulkMigration`
+   carries its destinations either in the run's single columns or as `bulk_migration_targets` rows, and
+   three render surfaces each made their own call about which name to print. The computed the running
+   heading reads handles both shapes; the card's rows printed a static `on the new source` under a row
+   whose own stamp carried the name that produced it; and the earlier comparisons list read
+   `$one->to_source_name ?? $one->to_source_id`, printed `MangaFire (JA) to , 0 matched` in the browser,
+   read live before the walk's first multi target run settled, and left every list shaped run's entry
+   naming the from side and a blank where the destinations belong. Each surface re-implemented the
+   split by hand, and 2,108 green tests carried the two broken ones because the page tests asserted
+   the surface that happened to be right. The naming moved onto the model as
+   `BulkMigration::destinationNames()`, read once through both shapes: the item's own stamp first,
+   the run's columns filling for the runs stamped before the list, the targets in pick order otherwise,
+   with the same deliberate scope drop the matcher makes. Four page tests went red against the
+   untouched copy: a run whose row names the destination that produced it, a row carrying no name of
+   its own borrowing the run's single destination, the earlier comparisons naming both destinations
+   in place of `to ,`, and the names answering after `Auth::logout()`; removing the scope drop
+   afterwards killed exactly that last one on the restored tree.
+
+300. **A reset is an enumeration, and a re-render can show a reset the model never did.**
+
+   Measured 2026-10-18, live on the checkout, the same sitting. After every Compare press the compose
+   component resets `approved`, `setAside`, `targets` and `pick`, and `limit` was never in the list:
+   the stop value typed for one run rode the property into the next run's job while the Stop after
+   field re-rendered showing 0. Run 11's job then received the value of the press before it, its row
+   carries the polite stop sentence `This compared the first 1 series and stopped there. There are
+   more, so raise the limit to compare them all.`, and the field's face said 0 throughout; the
+   matching press of the walk that rode nothing ticked was refused on empty picks, so the same form
+   carried one cleared field whose display was true and one uncleared field whose display said it
+   had been. Only the property and the row settle it. The stop value joined the reset list under the
+   comment naming the one a shorter list left behind, and a compose state test sets the limit to 1,
+   compares, and asserts the property went to 0; red on the old list, green on the new one.

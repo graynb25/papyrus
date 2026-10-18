@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\OwnedModel;
+use App\Models\Scopes\OwnedByUser;
 use App\Support\Library;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -127,6 +128,35 @@ class BulkMigration extends OwnedModel
     {
         return $this->to_source_id !== null
             && $this->targets()->doesntExist();
+    }
+
+    /**
+     * The destinations a run is walking, stamped at creation, read back in pick order.
+     *
+     * Every surface that names a run's destinations renders through here rather than
+     * its own columns: the runs from the list shape onwards carry their destinations as
+     * rows and leave those columns empty, so a reader who read the columns directly saw
+     * a blank name, and the card, the running heading and the earlier comparisons list
+     * would name their own shapes and drift apart. One seam, every surface.
+     *
+     * The scope is set aside on the rows on purpose: they belong to the run whose
+     * identity is already resolved, keeping the naming true even where no reader is
+     * logged in, which is exactly the read the matcher makes for them.
+     *
+     * @return array<int, string>
+     */
+    public function destinationNames(): array
+    {
+        if ($this->isSingleDestination()) {
+            return [(string) ($this->to_source_name ?? $this->to_source_id)];
+        }
+
+        return $this->targets()
+            ->withoutGlobalScope(OwnedByUser::class)
+            ->orderBy('seq')
+            ->get()
+            ->map(fn (BulkMigrationTarget $target): string => (string) ($target->source_name ?? $target->source_id))
+            ->all();
     }
 
     /**

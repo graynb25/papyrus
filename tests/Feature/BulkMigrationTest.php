@@ -418,6 +418,25 @@ class BulkMigrationTest extends TestCase
         $this->assertSame(0, BulkMigration::query()->count());
     }
 
+    /**
+     * The stop value belongs to the finished run like every other page state, because a
+     * reset that leaves it makes the field lie: in the browser one press rode a typed 1,
+     * the field then showed 0 for the next press, and the next run still stopped at 1.
+     */
+    public function test_the_stop_value_resets_with_the_rest_of_the_page_state(): void
+    {
+        Queue::fake();
+
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+
+        $this->composePage()
+            ->call('togglePick', 76)
+            ->call('toggleTarget', self::TO_SOURCE)
+            ->set('limit', 1)
+            ->call('compare')
+            ->assertSet('limit', 0);
+    }
+
     public function test_a_picked_series_that_left_the_source_since_the_pick_is_not_compared(): void
     {
         /*
@@ -1238,6 +1257,95 @@ class BulkMigrationTest extends TestCase
 
             // The run counted it; the cards are the thing that hid, not the total.
             ->assertSee('One series with nowhere to go.');
+    }
+
+    /**
+     * A multi destination run names the destination that produced each row.
+     *
+     * A row matched on one of several destinations and told "on the new source" answers
+     * no reader's question about which one. The row's own stamp carries the name, and
+     * nothing else on the card emits it, so the name in the render is the assertion. The
+     * second destination staying absent is the per row half: a name borrowed from the
+     * run would stamp both rows.
+     */
+    public function test_a_multi_target_card_names_the_destination_that_produced_each_row(): void
+    {
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->destination(2033, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+        $this->searchHits[self::SECOND_TARGET] = [];
+
+        $this->matcher()->run($this->startTargetedRun(self::TO_SOURCE, self::SECOND_TARGET));
+
+        $this->page()
+            ->assertSee('on MangaFire')
+            ->assertDontSee('on MangaTaro');
+    }
+
+    /**
+     * A row from before destinations carried names borrows the run's own.
+     *
+     * Batch one stamped the destination id on the item and never a name, so for the runs
+     * before the compose screen the run's own columns were the only name anywhere; a
+     * row that ignored them would render "on" with nothing behind it.
+     */
+    public function test_a_row_without_a_name_of_its_own_borrows_the_run_s_single_destination(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->destination(2033, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startRun();
+        $this->matcher()->run($run);
+
+        // What the runs before the compose screen were stamped with: the destination
+        // named once on the run, the item carrying only the id.
+        $run->items()->update(['to_source_name' => null]);
+        $run->update(['to_source_name' => 'MangaFire']);
+
+        $this->page()
+            ->assertSee('on MangaFire');
+    }
+
+    /**
+     * The earlier comparisons list speaks for runs on both shapes.
+     *
+     * A list run leaves its single destination columns empty, and an entry that read
+     * them rendered "MangaFire (JA) to , 0 matched" in the browser: the from side named,
+     * the destinations blank, the count beside them. The list reads the same naming seam
+     * the card reads, so the two cannot drift apart.
+     */
+    public function test_the_earlier_comparisons_list_names_the_destinations_of_a_multi_target_run(): void
+    {
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+        $runA = $this->startTargetedRun(self::TO_SOURCE, self::SECOND_TARGET);
+        $runA->update(['from_source_name' => 'Asura Scans']);
+
+        $this->startRun();
+
+        $this->page()
+            ->assertSee('MangaFire, MangaTaro')
+            ->assertSee('Asura Scans')
+            ->assertSee('0 matched');
+    }
+
+    /**
+     * Naming a run's destinations does not depend on a reader being logged in.
+     *
+     * The scope on the target rows fails closed with no authenticated user, which is
+     * how the matcher compared against zero destinations in the queue worker; the run
+     * itself pins the rows, so the naming read drops the scope the same deliberate way.
+     */
+    public function test_a_run_names_its_destinations_without_a_logged_in_reader(): void
+    {
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+
+        $run = $this->startTargetedRun(self::TO_SOURCE, self::SECOND_TARGET);
+
+        Auth::logout();
+
+        $this->assertSame(['MangaFire', 'MangaTaro'], $run->destinationNames());
     }
 
     /**

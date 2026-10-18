@@ -505,13 +505,16 @@ new #[Title('Move a whole source')] class extends Component
         $this->runId = $run->getKey();
         $this->report = null;
 
-        // A new comparison means every tick, every set aside, every pick and every
-        // composed mark from the previous one is meaningless: all are page state for the
-        // run that was showing.
+        // A new comparison means every tick, every set aside, every pick, every composed
+        // mark and the stop value from the previous one are meaningless: all are page
+        // state for the run that was showing. The stop value is the one a shorter list
+        // left behind once: the field showed 0 and the run behind it still stopped at
+        // the 1 typed on the press before.
         $this->reset('approved');
         $this->reset('setAside');
         $this->reset('targets');
         $this->reset('pick');
+        $this->reset('limit');
 
         Flux::toast(
             text: __('Comparing your library against the destinations you picked. This is one request per destination per series, so it takes a while.'),
@@ -540,33 +543,18 @@ new #[Title('Move a whole source')] class extends Component
     }
 
     /**
-     * The destinations a run is walking, stamped at creation, read back in pick order.
+     * The destinations the run on display is walking.
      *
-     * The card must render through here rather than the run's own columns: new runs
-     * carry a table of destinations and leave those columns empty, older runs carried
-     * exactly one, and a card that read the columns directly would name nothing at all
-     * for every run from the new shape onwards.
+     * The model owns the naming, the two destination shapes and the read-back order,
+     * so the running heading and every surface that names a run's destinations read the
+     * one seam and cannot drift apart.
      *
      * @return array<int, string>
      */
     #[Computed]
     public function targetNames(): array
     {
-        $run = $this->run;
-
-        if ($run === null) {
-            return [];
-        }
-
-        if ($run->isSingleDestination()) {
-            return [(string) ($run->to_source_name ?? $run->to_source_id)];
-        }
-
-        return $run->targets()
-            ->orderBy('seq')
-            ->get()
-            ->map(fn (BulkMigrationTarget $target): string => (string) ($target->source_name ?? $target->source_id))
-            ->all();
+        return $this->run?->destinationNames() ?? [];
     }
 
     /**
@@ -1210,11 +1198,12 @@ new #[Title('Move a whole source')] class extends Component
                             @if ($item->to_title !== null)
                                 @php($toCover = ImageUrl::thumbnail((int) $item->to_manga_id, ImageUrl::defaultFormat()))
                                 @php($renamed = $item->to_title !== $item->title)
+                                @php($destination = $item->to_source_name ?? $run?->to_source_name)
 
                                 {{-- The destination's own picture beside its name, because this
                                      row is the same identity question the wizard asks and the
-                                     wizard's row answers it the same way. When the name did not
-                                     survive the move, the line below says what changed. --}}
+                                     wizard's row answers it the same way. The row names the destination it was matched on:
+                                     several destinations make "the new source" nameless, the run's own columns fill in for the runs that predate the list, and the generic wording stays for a row neither half can name. --}}
                                 <div class="mt-1 flex items-center gap-2">
                                     <div class="w-8 shrink-0">
                                         <x-cover.art :src="$toCover" :alt="$item->to_title ?? $item->title" :blur-up="false" :vt="false" />
@@ -1222,11 +1211,12 @@ new #[Title('Move a whole source')] class extends Component
 
                                     @if ($renamed)
                                         <flux:text size="xs" class="truncate">
-                                            {{ __('on the new source it is called') }} <span class="italic">{{ $item->to_title }}</span>
+                                            {{ $destination !== null ? __('on :source it is called', ['source' => $destination]) : __('on the new source it is called') }}
+                                            <span class="italic">{{ $item->to_title }}</span>
                                         </flux:text>
                                     @else
                                         <flux:text size="xs" class="truncate">
-                                            {{ __('on the new source') }}
+                                            {{ $destination !== null ? __('on :source', ['source' => $destination]) : __('on the new source') }}
                                         </flux:text>
                                     @endif
                                 </div>
@@ -1404,6 +1394,8 @@ new #[Title('Move a whole source')] class extends Component
                     @continue($run !== null && $one->id === $run->id)
 
                     <li>
+                        {{-- Destinations read through the model: a list run's columns are empty
+                             and an entry that read them rendered "MangaFire (JA) to , 0 matched". --}}
                         <button
                             type="button"
                             wire:click="$set('runId', {{ $one->id }})"
@@ -1411,7 +1403,7 @@ new #[Title('Move a whole source')] class extends Component
                         >
                             {{ $one->from_source_name ?? $one->from_source_id }}
                             {{ __('to') }}
-                            {{ $one->to_source_name ?? $one->to_source_id }},
+                            {{ implode(', ', $one->destinationNames()) }},
                             {{ $one->series_matched }} {{ __('matched') }}
                         </button>
                         <span class="text-zinc-500">({{ $this->stateLabel($one) }})</span>
