@@ -6583,3 +6583,64 @@ exactly that moment and it costs five minutes.
    found on, which is why an asked-and-empty local source sits in no list. The walk's verdicts
    stay where they always are: the row of the run, not the geometry, and now also not the
    assumption that only clicked things write.
+
+307. **A directory PHP itself created moments earlier refuses a write into it on Windows, and the same bytes placed by PowerShell land fine.**
+
+   Measured 2026-10-18 while placing tracked licence texts into fresh directories next to the
+   packages they belong to. `mkdir(..., 0777, true)` followed in the same process by
+   `file_put_contents()` into that directory kept answering `No such file or directory`,
+   repeatedly, for a directory whose creation the run had just reported; the same placement
+   always succeeded from a PowerShell script (`New-Item -Force`, then `Copy-Item`), and writes
+   into directories that had existed before the process started never failed either. The
+   mechanism was never isolated and the report claims only what repeated: a fresh directory
+   under a just-written parent was the one case the PHP write kept losing. The lesson is to
+   place bytes beside text with the shell when the directory is new, and to read the file back
+   and hash it afterwards, which is how the nine placed texts were verified rather than assumed.
+
+308. **A PharData archive iterates one level deep: `foreach ($tar as $entry)` yields only the top directory, and `getFilename()` is only the leaf.**
+
+   Measured 2026-10-18 on the registry tarballs, where every package ships a single `package/`
+   directory. The plain `foreach` returned exactly one entry, as silent as an empty archive,
+   and the members are visible through `new RecursiveIteratorIterator($tar,
+   RecursiveIteratorIterator::CHILD_FIRST)`. Inside that iterator `getFilename()` returns only
+   the leaf, so every `LICENSE` looks like the package root's, and the member's real path is
+   read off `getPathname()` with the archive's own name and separator cut off the front. A
+   listing that looks like one file names one file: check the count against expectation before
+   deciding what an archive does not contain.
+
+309. **`gzfile()` is a text-shaped tool: it splits compressed archive bytes at newlines and the re-joined bytes are damaged.**
+
+   Measured 2026-10-18 on the same tarballs: an `implode('', gzfile($tgz))` followed by a
+   checksum readback produced a mismatch exactly as a corrupted archive would, and
+   `file_get_contents('compress.zlib://'.$tgz)` was byte exact against the same file. Gzip
+   wrappers that promise lines are for logs and not for anything that has to survive a hash;
+   read archived bytes through the stream wrapper and prove it by the checksum, the way the
+   nine staged texts were proved before they were placed.
+
+310. **A readback probe that guesses the base of an artifact's relative path reports everything as missing.**
+
+   Measured 2026-10-18 the same sitting, on this house's own oldest finding family. The probe
+   joined each manifest row's `file` value onto the install root and printed 145 promised
+   files missing; corrected against what the consumer actually does, every one existed. The
+   manifest's `file` values are relative to the `licences` directory, and the page's read seam
+   resolves them there (`$this->root().'/licences/'.$file`), so the base a checker uses has to
+   be taken from the consumer's resolution code, not from the directory the checker happens to
+   stand in. One read of the resolution line turned all missing into none missing. What makes
+   this worth its number is what the grade has bought so far: checkers in this ledger have now
+   reported missing files as present, a corrupted file as fine, and here present files as
+   missing, all with confident output, so a checker's belief and the artifact's are compared
+   every time by construction, not by mood.
+
+311. **A must-not-ship list carries the directories development has produced so far, and the next feature produces the next one.**
+
+   Measured 2026-10-18 on the phase's first real build: the strip list cleared
+   `database/backups` by name, and the final scan refused over
+   `database/reader-snapshots/reader-half-20261018-031700.sqlite`, the checkout-side snapshot
+   directory the reader-half work writes into (`SnapshotDatabaseTest` names it as its
+   expectation). It had never shipped because the builds before it caught it, which is the
+   list doing its work, and the remedy was the list growing an entry and the build printing
+   `removed: database/reader-snapshots`, not removing anything from the checkout: the file is
+   the developer's data, already ignored by `database/.gitignore`'s `*.sqlite*` line. The
+   general rule for adding a feature that writes data into the checkout beside the code: a
+   strip-list entry joins that feature in the same commit, because a list of directories known
+   at build time is a list of directories built once before today.
