@@ -344,6 +344,27 @@
         position: relative;
     }
 
+    /*
+        The slot's overlays have to paint above the frame, which carries
+        z-index: 1 for its scrim and progress hairline. Without a stacking
+        owner of its own the badges sit behind the artwork: measured live,
+        the run card's unread chips covered the same box as the artwork and
+        the captures sampled art colours there. The slot spans the root's
+        box and passes pointer events through to the frame unless a child
+        opts back in, so cover clicks, hovers and the view-transition hunt
+        behave as if the slot were not there.
+    */
+    .cover-slot {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+    }
+
+    .cover-slot > * {
+        pointer-events: auto;
+    }
+
     .cover-frame {
         position: relative;
         z-index: 1;

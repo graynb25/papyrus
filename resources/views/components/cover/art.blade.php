@@ -23,10 +23,14 @@
     The frame reserves the 2/3 ratio itself rather than the image, so a cover
     that has not loaded still holds its space and the grid does not jump as
     the page fills. Everything overlaid on the artwork (badges, toggles) goes
-    in the slot and sits outside the frame's clipping context.
+    in the slot and sits outside the frame's clipping context, so the root is
+    always its positioned ancestor: with glow and tilt both off nothing else
+    in the chain is positioned, and measured live the badges then anchored on
+    the nearest card instead, every row's chip stacked on one corner.
 --}}
 <div
     {{ $attributes->class([
+        'relative',
         'cover-wrap' => $glow || $tilt,
         'cover-tilt' => $tilt,
     ]) }}
@@ -63,5 +67,10 @@
         @endif
     </div>
 
-    {{ $slot }}
+    {{-- The slot's overlays sit above the frame rather than under the artwork:
+         the wrapper owns the stacking, and pointer events pass through to the
+         frame unless a child opts back in, so cover clicks still reach it. --}}
+    <div class="cover-slot">
+        {{ $slot }}
+    </div>
 </div>
