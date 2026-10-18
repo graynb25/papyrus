@@ -12,10 +12,13 @@ use Illuminate\Foundation\Queue\Queueable;
  *
  * ## Why a job, and why it writes progress
  *
- * The cost is one search plus one detail fetch per series, measured at 370ms to 1346ms for the
- * fetch, so eighty series is one to two minutes of upstream requests. Too long for a page
- * request and long enough that a reader watching a spinner learns nothing, which is the same
- * shape as every other long job in this app: dispatch, then poll a row.
+ * The cost is one search plus one detail fetch per comparison, on every destination. Measured
+ * live on 2026-10-18: thirteen series at one target took 42 seconds, thirteen series at five
+ * targets took 44 seconds for sixty five comparisons, so the same comparison runs from 0.7
+ * seconds to 3.2 seconds depending on the upstream moment and how many candidates need
+ * fetching. Too long for a page request and long enough that a reader watching a spinner
+ * learns nothing, which is the same shape as every other long job in this app: dispatch, then
+ * poll a row.
  *
  * Progress goes on the run row rather than into logs, because the page has to be able to say
  * "compared 40 of 80" and because a job that dies part way through has to leave something a
@@ -43,15 +46,19 @@ class BuildBulkMigration implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Well above the expected cost.
+     * Set from the measurement, not chosen large.
      *
-     * Eighty series at a measured 1346ms for the slowest fetch is under two minutes, so this
-     * is generous. It is deliberately larger than a worker's default, and an operator running
-     * a tight worker must raise theirs, because the worker kills the job at its own limit
-     * regardless of what the job asks for. {@see BulkMigration::isStalled()} covers the case
-     * where it is not raised.
+     * Measured live on 2026-10-18: sixty five comparisons, thirteen series at the five
+     * destination cap, settled in 44 seconds at 0.68 seconds each; the two destination walk
+     * ran 1.5 seconds each; the one destination flight ran 3.2 seconds a series the same
+     * evening. At the two hundred series cap that arithmetic is 680 seconds at the best
+     * rate and 3,230 at the slowest one, and 1800 covered the middle of that spread but not
+     * its ceiling, which is why this is an hour. It is deliberately larger than a worker's
+     * default, and an operator running a tight worker must raise theirs, because the worker
+     * kills the job at its own limit regardless of what the job asks for. {@see
+     * BulkMigration::isStalled()} covers the case where they did not.
      */
-    public int $timeout = 1800;
+    public int $timeout = 3600;
 
     /**
      * Record a timeout as a failure rather than discarding the job.
