@@ -21,6 +21,7 @@ use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
@@ -649,6 +650,45 @@ class BulkMigrationTest extends TestCase
         $this->assertSame(3007, $item->to_manga_id, '41 of 41 outranks 44 of 41, whichever target it sat on');
         $this->assertSame(self::SECOND_TARGET, $item->to_source_id);
         $this->assertSame('MangaTaro', $item->to_source_name);
+    }
+
+    public function test_a_targeted_run_compared_by_a_worker_sees_its_targets_without_a_logged_in_reader(): void
+    {
+        /*
+         * The queue worker is where these runs are compared, and it holds no authenticated
+         * reader. OwnedByUser's answer to no reader is zero rows, so a read through the
+         * relation inside the job returned every destination row as nothing and the run
+         * searched none of its own picks: live, a list shaped run was refused naming the
+         * leaving side and a replica skipped a series a target did hold, both without a
+         * destination named. The job resolves the run by key through forUser, so every
+         * read past that point is already one reader's row set, and the destinations ride
+         * that same fact.
+         */
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startTargetedRun(self::TO_SOURCE, self::SECOND_TARGET);
+
+        Auth::logout();
+
+        $this->matcher()->run($run);
+
+        $searched = $this->sourcesSearched();
+        $this->assertContains(self::TO_SOURCE, $searched, 'the picked destinations are searched even with no reader logged in');
+        $this->assertContains(self::SECOND_TARGET, $searched);
+
+        $item = BulkMigrationItem::forUser($this->user->id)->firstOrFail();
+
+        $this->assertSame(BulkMigrationItem::PENDING, $item->status, 'a 41 of 41 match does not become a skip because the context went readerless');
+        $this->assertSame(self::TO_SOURCE, $item->to_source_id);
+        $this->assertSame('MangaFire', $item->to_source_name);
+
+        $fresh = $run->fresh();
+        $this->assertSame(BulkMigration::READY, $fresh->state);
+        $this->assertNull($fresh->error);
     }
 
     public function test_a_target_the_catalogue_no_longer_lists_fails_naming_it(): void

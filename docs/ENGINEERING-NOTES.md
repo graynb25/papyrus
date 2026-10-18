@@ -6430,3 +6430,32 @@ exactly that moment and it costs five minutes.
    source stacks, which read the same `sources` table row the fixture had made. A bogus probe
    needle, run once for the failure dump it bought, found the pass's real reason in one round;
    the test was rewritten so its first needle renders nowhere but the one branch the view owns.
+
+297. **A global reader scope fails closed inside jobs, and a run's own rows are not protected by re-filtering them.**
+
+   Measured on 2026-10-17, live on the checkout, during batch 2's acceptance walk. `OwnedByUser`
+   answers an absent reader with `whereNull(user_id)`, which is right for a page and silently
+   wrong for a queue worker: `BulkSourceMatcher::targetsFor()` reads the run's destinations
+   through the `targets()` relation, the worker holds no authenticated reader, so every
+   destination row returned as nothing. A browser-created list shape run (run 8) refused with
+   the leaving side's message before one search went out, and a scripted replica (run 9) that
+   wrote two real destination rows compared against zero of them and skipped a series the
+   target provably held, recording a skip that named no source. The job had resolved the run
+   itself through `forUser`, so its rows were already one reader's: the relation read needed
+   the same fact, `withoutGlobalScope(OwnedByUser::class)` on the one collection every branch
+   of the method reads. The suite had not once executed this read without a logged-in reader,
+   which is why 2,107 green tests carried it. Red-first: a test that calls the matcher after
+   `Auth::logout()`, reading writes back through `forUser` so the assertion sees the rows the
+   context cannot; it failed on zero searches, and removing and restoring the scope drop
+   killed and healed it on the final text.
+
+298. **A queue worker runs the code image it started with, and its refusals look like today's code.**
+
+   Measured 2026-10-17, the same evening: the dev worker had been up since 09:19 and every
+   batch 2 edit landed after 18:00, so the job that consumed run 8 ran the morning's matcher.
+   The acceptance chase at first assumed the refusal message was today's, but the text it
+   recorded belonged to a shape the current code cannot produce for a list-shaped row, and
+   that mismatch is what exposed the stale worker. A worker never reloads classes on its own:
+   any batch that changes queue code must stop and start the workers as part of the batch
+   itself, before a live accepted run can claim to have exercised the new code. The restart
+   cost nothing and both workers now run the real tree.

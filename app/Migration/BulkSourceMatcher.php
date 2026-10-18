@@ -4,7 +4,9 @@ namespace App\Migration;
 
 use App\Models\BulkMigration;
 use App\Models\BulkMigrationItem;
+use App\Models\BulkMigrationTarget;
 use App\Models\MigrationSearch;
+use App\Models\Scopes\OwnedByUser;
 use App\Models\Source;
 use App\Support\Library;
 use App\Suwayomi\SeriesGateway;
@@ -315,15 +317,29 @@ class BulkSourceMatcher
             return collect([$to]);
         }
 
+        /*
+         * The destinations are read once, with the reader scope set aside deliberately,
+         * and the one collection below is what every branch after this reads. The method
+         * runs inside the queue worker, which holds no authenticated reader, and
+         * OwnedByUser answers no reader with zero rows, so the relation read as the page
+         * reads it would hand the run an empty destination list and the run would search
+         * none of its own picks. The job resolved this run to one reader through
+         * forUser, and these rows are that run's rows, keyed on its own id and stamped
+         * by it at creation: the read follows the run rather than re-asking who is
+         * asking.
+         */
+        $targets = $run->targets()
+            ->withoutGlobalScope(OwnedByUser::class)
+            ->orderBy('seq')
+            ->get();
+
         $rows = Source::query()
-            ->whereIn('suwayomi_source_id', $run->targets()->orderBy('seq')->pluck('source_id')->all())
+            ->whereIn('suwayomi_source_id', $targets->pluck('source_id')->all())
             ->get()
             ->keyBy(fn (Source $source): string => (string) $source->suwayomi_source_id);
 
-        $sameAsLeaving = $run->targets()
-            ->orderBy('seq')
-            ->pluck('source_id')
-            ->contains(fn (string $sourceId): bool => (string) $sourceId === (string) $run->from_source_id);
+        $sameAsLeaving = $targets
+            ->contains(fn (BulkMigrationTarget $target): bool => (string) $target->source_id === (string) $run->from_source_id);
 
         if ($sameAsLeaving) {
             $this->refuse($run, __('The source being left is also a destination. Moving a source onto itself does nothing.'));
@@ -331,7 +347,7 @@ class BulkSourceMatcher
             return null;
         }
 
-        foreach ($run->targets()->orderBy('seq')->get() as $target) {
+        foreach ($targets as $target) {
             $source = $rows->get((string) $target->source_id);
             $name = (string) ($target->source_name ?? $target->source_id);
 
@@ -348,10 +364,7 @@ class BulkSourceMatcher
             }
         }
 
-        return $run->targets()
-            ->orderBy('seq')
-            ->get()
-            ->map(fn ($target): Source => $rows->get((string) $target->source_id));
+        return $targets->map(fn (BulkMigrationTarget $target): Source => $rows->get((string) $target->source_id));
     }
 
     /**
