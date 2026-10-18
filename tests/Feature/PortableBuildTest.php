@@ -86,6 +86,7 @@ class PortableBuildTest extends TestCase
         // stamp. One test per fault, so each failure names the fault.
         $install = $this->stageInstall([
             'version.txt' => '1.2.0',
+            'licences/node/manifest.json' => '{"packages": []}',
             '.env' => "APP_KEY=base64:thisIsNotARealKey\n",
         ]);
 
@@ -102,6 +103,7 @@ class PortableBuildTest extends TestCase
     {
         $install = $this->stageInstall([
             'version.txt' => '1.2.0',
+            'licences/node/manifest.json' => '{"packages": []}',
             'database/database.sqlite' => 'not really sqlite, but a file in the wrong place',
         ]);
 
@@ -124,6 +126,7 @@ class PortableBuildTest extends TestCase
         foreach (['database/database.sqlite-wal', 'database/database.sqlite-shm'] as $sidecar) {
             $install = $this->stageInstall([
                 'version.txt' => '1.2.0',
+                'licences/node/manifest.json' => '{"packages": []}',
                 $sidecar => 'x',
             ]);
 
@@ -260,6 +263,31 @@ class PortableBuildTest extends TestCase
     }
 
     /**
+     * An install finished under the rules that predate the licence pass is not finished enough
+     * to package.
+     *
+     * Without the manifest the licences page's npm rows are simply absent: the lock files those
+     * declarations were derived from do not travel in an install, so there is no fallback and
+     * nothing on the page says why. Packaging one used to be a success, which is the same shape
+     * `0.0.0` was for a version: a number reported where an honest refusal belonged. One test per
+     * fault, so this fixture carries a real stamp and is refused for the manifest alone.
+     */
+    public function test_it_refuses_an_install_that_carries_no_licence_manifest(): void
+    {
+        $install = $this->stageInstall([
+            'version.txt' => '1.2.0',
+        ]);
+
+        [$status, $text] = $this->build($install);
+
+        $this->assertSame(1, $status, 'an install with no licence manifest ships a page with a gap in it');
+        $this->assertStringContainsString('licences/node/manifest.json', $text);
+        $this->assertStringContainsString('build-install', $text, 'the message has to say what to run');
+
+        $this->cleanUp($install);
+    }
+
+    /**
      * A complete portable, opened afterwards by an independent reader.
      *
      * The staging tree is a handful of files rather than the real 12,651, because this is about
@@ -271,6 +299,7 @@ class PortableBuildTest extends TestCase
     {
         $install = $this->stageInstall([
             'version.txt' => '1.2.0',
+            'licences/node/manifest.json' => '{"packages": []}',
             'Papyrus.cmd' => "@echo off\r\nrem entry point\r\n",
             'app/Support/Licences.php' => "<?php // a representative file\r\n",
         ]);
@@ -301,6 +330,7 @@ class PortableBuildTest extends TestCase
         $this->assertContains('PAPYRUS-PORTABLE.txt', $names, 'a portable has to explain itself');
         $this->assertContains('Papyrus.cmd', $names);
         $this->assertContains('app/Support/Licences.php', $names);
+        $this->assertContains('licences/node/manifest.json', $names, 'the npm declarations travel with the install');
 
         // The hash sidecar, in the format both `sha256sum -c` and certutil accept.
         $sidecar = $zip.'.sha256';
@@ -328,6 +358,7 @@ class PortableBuildTest extends TestCase
     {
         $install = $this->stageInstall([
             'version.txt' => '1.2.0',
+            'licences/node/manifest.json' => '{"packages": []}',
             'Papyrus.cmd' => "@echo off\r\n",
             'b/second.txt' => 'b',
             'a/first.txt' => 'a',

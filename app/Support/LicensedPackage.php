@@ -51,15 +51,29 @@ final class LicensedPackage
         public readonly string $licence,
         public readonly string $source,
         public readonly bool $isProprietary,
+        public readonly string $textKey = '',
+        public readonly string $kind = '',
+        public readonly string $upstream = '',
     ) {}
 
+    /**
+     * @param  string  $textKey  the identity a data source uses later to read this row's licence
+     *                           text and to find this row again, empty when the reader building this row wants none
+     * @param  string  $kind  `'composer'`, `'npm'`, or `'bundled'`, which is how the text reader
+     *                        knows where a text file for this row lives, empty when there is no text to read
+     * @param  string  $upstream  a link to the project behind this package, empty when none was
+     *                            recorded anywhere the reader looked
+     */
     public static function make(
         string $name,
         string $version,
         string $licence,
         string $source,
+        string $textKey = '',
+        string $kind = '',
+        string $upstream = '',
     ): self {
-        return new self($name, $version, $licence, $source, self::classify($licence) === 'closed');
+        return new self($name, $version, $licence, $source, self::classify($licence) === 'closed', $textKey, $kind, $upstream);
     }
 
     /**

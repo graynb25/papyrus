@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\LicenceAcknowledgement;
 use App\Models\User;
 use App\Support\Licences;
 use App\Support\LicensedPackage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -209,5 +211,241 @@ class LicencesTest extends TestCase
     public function test_the_page_is_behind_auth(): void
     {
         $this->get(route('licences.edit'))->assertRedirect(route('login'));
+    }
+
+    // Phase 5: what an install without lock files reads, the text behind each row, and the ledger.
+
+    /**
+     * The shipped tree carries `vendor/composer/installed.json` and no composer.lock, so the
+     * first version of this page answered empty there: two bundled rows and nothing else,
+     * while the disk beside it held the whole record. The root is a seam, so the same page
+     * reads what the install actually has.
+     */
+    public function test_an_install_without_lock_files_is_read_from_what_the_install_carries(): void
+    {
+        $root = $this->scratchPath('licences-install');
+        mkdir($root.'/vendor/composer', 0777, true);
+
+        file_put_contents(
+            $root.'/vendor/composer/installed.json',
+            (string) json_encode([
+                'dev' => true,
+                'packages' => [
+                    ['name' => 'stub/php-two', 'version' => '2.0.0', 'license' => 'Proprietary'],
+                    ['name' => 'stub/php-one', 'version' => '1.2.3', 'license' => ['MIT', 'LGPL-2.1']],
+                ],
+            ]),
+        );
+
+        $licences = new Licences($root);
+        $rows = $licences->composerPackages();
+
+        $this->assertSame(
+            [
+                ['stub/php-one', '1.2.3', 'MIT or LGPL-2.1'],
+                ['stub/php-two', '2.0.0', 'Proprietary'],
+            ],
+            array_map(static fn (LicensedPackage $p): array => [$p->name, $p->version, $p->licence], $rows),
+            'an install has no composer.lock, so its list comes from the file composer wrote beside the vendor tree',
+        );
+
+        foreach ($rows as $row) {
+            $this->assertSame('PHP, shipped in this install', $row->source, 'the label names the file the list was read from');
+        }
+
+        $this->assertSame(1, $licences->proprietaryCount());
+    }
+
+    public function test_a_composer_row_reveals_its_text_byte_read_from_the_file_beside_it(): void
+    {
+        $row = array_values(array_filter(
+            $this->licences()->composerPackages(),
+            static fn (LicensedPackage $p): bool => $p->name === 'symfony/yaml',
+        ))[0] ?? null;
+
+        $this->assertNotNull($row, 'symfony/yaml is in the lock the checkout reads');
+
+        $this->assertSame(
+            (string) file_get_contents(base_path('vendor/symfony/yaml/LICENSE')),
+            $this->licences()->textFor($row),
+            'the text is the file itself, byte for byte, or the page is a paraphrase',
+        );
+    }
+
+    public function test_flux_says_nothing_about_text_because_it_ships_no_licence_file(): void
+    {
+        $row = array_values(array_filter(
+            $this->licences()->all(),
+            static fn (LicensedPackage $p): bool => $p->isProprietary,
+        ))[0] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame('livewire/flux', $row->name);
+        $this->assertNull($this->licences()->textFor($row), 'no file beside the package means no text, not an invented one');
+    }
+
+    public function test_the_bundled_texts_are_read_from_the_files_this_repository_tracks_for_exactly_this(): void
+    {
+        [$suwayomi, $jre] = $this->licences()->bundled();
+
+        $this->assertSame(
+            (string) file_get_contents(base_path('packaging/licences/suwayomi-server.txt')),
+            $this->licences()->textFor($suwayomi),
+        );
+
+        $this->assertSame(
+            (string) file_get_contents(base_path('packaging/licences/java-runtime.txt')),
+            $this->licences()->textFor($jre),
+        );
+    }
+
+    /**
+     * On an install the npm rows come from what the build staged, not from a lockfile that
+     * does not travel. A row with a staged file reveals its text; a row the publishers
+     * declared but the registry shipped without a file says that much and no more.
+     */
+    public function test_on_an_install_the_npm_rows_are_read_from_the_staged_manifest(): void
+    {
+        $root = $this->scratchPath('licences-manifest');
+        mkdir($root.'/licences/node/node_modules/stub/one', 0777, true);
+
+        file_put_contents($root.'/licences/node/node_modules/stub/one/LICENSE', "STUB TEXT\n");
+        file_put_contents($root.'/licences/node/manifest.json', (string) json_encode([
+            'packages' => [
+                [
+                    'name' => 'stub/one',
+                    'path' => 'node_modules/stub/one',
+                    'version' => '1.0.0',
+                    'licence' => 'MIT',
+                    'upstream' => 'https://www.example.com/stub/one',
+                    'file' => 'node/node_modules/stub/one/LICENSE',
+                ],
+                [
+                    'name' => 'stub/closed',
+                    'path' => 'node_modules/stub/closed',
+                    'version' => '1.1.0',
+                    'licence' => 'not recorded in the lock file',
+                    'upstream' => 'https://www.npmjs.com/package/stub/closed',
+                    'file' => null,
+                ],
+            ],
+        ]));
+
+        $licences = new Licences($root);
+        $rows = $licences->npmPackages();
+
+        $this->assertCount(2, $rows);
+
+        [$gap, $text] = $rows;
+
+        $this->assertSame(['stub/one', '1.0.0', 'MIT'], [$text->name, $text->version, $text->licence]);
+        $this->assertSame('JavaScript, shipped in this install', $text->source);
+        $this->assertSame("STUB TEXT\n", $licences->textFor($text));
+        $this->assertSame('https://www.example.com/stub/one', $text->upstream);
+
+        $this->assertSame(['stub/closed', '1.1.0', 'not recorded in the lock file'], [$gap->name, $gap->version, $gap->licence]);
+        $this->assertNull($licences->textFor($gap), 'no staged file means no text, whatever the row names');
+    }
+
+    // The page wiring: a reveal that reads the shipped file, and an acknowledgement the reader marks.
+
+    public function test_a_row_reveals_the_text_it_promised(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $page = Livewire::test('pages::settings.licences')
+            ->assertSee('Read the licence');
+
+        $page->call('reveal', 'composer:symfony/yaml');
+
+        $this->assertStringContainsString(
+            'Copyright (c) 2004-present Fabien Potencier',
+            $page->html(),
+            'the reveal shows the first line of the file the install ships',
+        );
+    }
+
+    public function test_a_row_with_no_text_behind_it_carries_no_reveal(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $html = Livewire::test('pages::settings.licences')->html();
+
+        $fluxAt = strpos($html, 'livewire/flux');
+        $rowEnd = $fluxAt === false ? false : strpos($html, '</li>', $fluxAt);
+        $fluxRow = $fluxAt !== false && $rowEnd !== false ? substr($html, $fluxAt, $rowEnd - $fluxAt) : '';
+
+        $this->assertNotSame('', $fluxRow, 'flux had a row on the page to begin with');
+
+        $this->assertStringContainsString('not open source', $fluxRow);
+        $this->assertStringNotContainsString('Read the licence', $fluxRow, 'flux ships no licence file so the row offers no text');
+    }
+
+    public function test_a_reader_can_acknowledge_a_package_and_the_page_says_so(): void
+    {
+        $who = User::factory()->create();
+
+        $row = array_values(array_filter(
+            $this->licences()->composerPackages(),
+            static fn (LicensedPackage $p): bool => $p->name === 'symfony/yaml',
+        ))[0] ?? null;
+
+        $this->assertNotNull($row);
+
+        $this->actingAs($who);
+
+        $page = Livewire::test('pages::settings.licences')->call('acknowledge', 'composer:symfony/yaml');
+
+        $this->assertStringContainsString('Acknowledged', $page->html());
+
+        $this->assertDatabaseHas('licence_acknowledgements', [
+            'user_id' => $who->id,
+            'package' => 'composer:symfony/yaml',
+            'version' => $row->version,
+            'licence' => $row->licence,
+        ]);
+    }
+
+    public function test_an_acknowledgement_whose_package_has_moved_is_rearmed_again(): void
+    {
+        $who = User::factory()->create();
+
+        LicenceAcknowledgement::markFor($who, 'composer:symfony/yaml', '0.0.0', 'MIT');
+
+        $this->actingAs($who);
+
+        $page = Livewire::test('pages::settings.licences');
+
+        $this->assertStringContainsString('changed since', $page->html(), 'the row the reader marked does not stand for the package it describes');
+
+        $page->call('acknowledge', 'composer:symfony/yaml');
+
+        $current = array_values(array_filter(
+            $this->licences()->composerPackages(),
+            static fn (LicensedPackage $p): bool => $p->name === 'symfony/yaml',
+        ))[0];
+
+        $this->assertDatabaseHas('licence_acknowledgements', [
+            'user_id' => $who->id,
+            'package' => 'composer:symfony/yaml',
+            'version' => $current->version,
+            'licence' => $current->licence,
+        ]);
+        $this->assertStringContainsString('Acknowledged', $page->html());
+    }
+
+    public function test_a_ledger_is_nobody_elses_rows(): void
+    {
+        $who = User::factory()->create();
+        $other = User::factory()->create();
+
+        LicenceAcknowledgement::markFor($who, 'composer:symfony/yaml', '99.99.99', 'MIT');
+
+        $html = $this->actingAs($other)->get(route('licences.edit'))->getContent();
+
+        // Both pills are refused, deliberately: the stale row belongs to the reader who made
+        // it, so it cannot even report itself as moved on someone else's screen.
+        $this->assertStringNotContainsString('Acknowledged', (string) $html, 'one reader mark is not readable by another');
+        $this->assertStringNotContainsString('changed since', (string) $html, 'neither is a row that only reports its own staleness');
     }
 }

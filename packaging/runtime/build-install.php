@@ -47,6 +47,7 @@ declare(strict_types=1);
 namespace Papyrus\Runtime\Build;
 
 use DateTimeImmutable;
+use Papyrus\Launcher\LicenceStaging;
 use Papyrus\Launcher\Supervisor;
 use Papyrus\Launcher\SuwayomiCompatibility;
 use Throwable;
@@ -113,6 +114,7 @@ const NEVER_SHIPPED = [
     'database/database.sqlite-wal' => 'a write ahead log left beside the library',
     'database/database.sqlite-shm' => 'shared memory state left beside the library',
     'database/backups' => 'copies of the developer library made during development',
+    'database/reader-snapshots' => 'snapshots of the developer reader half taken from its database',
     'storage/design-review' => 'screenshots taken during development',
 ];
 
@@ -186,6 +188,19 @@ const REQUIRED_AFTER_BUILD = [
      * `.env.example` are the same decision, and only one of them is intended.
      */
     '.env.example',
+
+    /*
+     * What the licences page is fed, checked here where an omission is still a build fault.
+     *
+     * The manifest carries the npm tree's own declarations, so npm rows exist in an install that
+     * no longer holds the lock files they were derived from. The two packaged texts are this
+     * project's bundled licences at rest and LICENSE is the project's own text. Miss any of them
+     * and the page ships a section that is simply absent, with nothing on the page saying why.
+     */
+    'LICENSE',
+    'licences/node/manifest.json',
+    'licences/suwayomi-server.txt',
+    'licences/java-runtime.txt',
 ];
 
 /**
@@ -615,6 +630,41 @@ if ($bareLf !== 0) {
 }
 
 say('entry point', 'Papyrus.cmd, '.count($cmdLines).' lines, CRLF');
+
+// --- the licence texts the licences page reads --------------------------------------
+
+/*
+ * The staging pass that lets an install carry the licence text for every composer and npm
+ * package it ships, because the lock files those declarations were read from do not travel in
+ * an install.
+ *
+ * It runs after the launcher copy so the launcher's own class can be used, and before the
+ * completeness check below, so a missing text or manifest is a failed build rather than a page
+ * section that simply never appears. The class is required from the built tree, not the
+ * repository: the loop at $launcherSrc below loads these same files from there, require_once
+ * deduplicates by resolved path, and the repository's copy rides a different path, so loading
+ * both declares the class twice and the build dies with Cannot redeclare class.
+ *
+ * Nothing the pass writes is reworded, trimmed or merged. Licence text ships byte true, which
+ * is why declared text that cannot be found is refused rather than substituted.
+ */
+require_once $into.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'
+    .DIRECTORY_SEPARATOR.'src'.DIRECTORY_SEPARATOR.'LicenceStaging.php';
+
+$stagedLicenceTexts = LicenceStaging::stage($repo, $into);
+
+$absentOnceStaged = LicenceStaging::missingStaged($into);
+
+if ($absentOnceStaged !== []) {
+    fail(
+        'files the licence staging pass just wrote are already missing from the install:'
+        ."\n  - ".implode("\n  - ", $absentOnceStaged)
+        ."\n\n  The manifest naming them was written in the same pass, so this is a fault in the"
+        ."\n  pass itself rather than an install a reader can be handed."
+    );
+}
+
+say('licences', $stagedLicenceTexts.' package texts staged, manifest at licences/node/manifest.json');
 
 // --- strip what must not ship, and put the empty placeholders back --------------------
 
@@ -1212,14 +1262,20 @@ const LEAK_SCAN_LIMIT = 1024 * 1024;
  * directory of ours would be skipped silently, which is the defect trap 239 is about. So every top
  * level entry must be classified, and an unclassified one stops the build rather than being ignored.
  * Both lists are therefore enforced against each other.
+ *
+ * The staged licence texts are in $theirs below, which is not an unexamined skip. Licences are
+ * upstream prose that the shipping rule requires byte true, so a leak scan of them would be a guard
+ * whose only remedy, rewording, is forbidden: the same reason vendor is skipped, whose libraries
+ * legitimately carry RFC1918 addresses. The project's own LICENSE is authored here and stays in
+ * $ours, scanned like every file this project wrote.
  */
 $ours = [
     'app', 'bootstrap', 'config', 'database', 'packaging', 'public', 'resources', 'routes',
     '.env.example', 'artisan', 'composer.json', 'package.json', 'Papyrus.cmd', 'suwayomi.json',
-    'version.txt',
+    'version.txt', 'LICENSE',
 ];
 
-$theirs = ['vendor', 'runtime', 'suwayomi', 'storage'];
+$theirs = ['vendor', 'runtime', 'suwayomi', 'storage', 'licences'];
 
 $unclassified = [];
 

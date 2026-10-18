@@ -147,6 +147,26 @@ if ($repositoryVersion !== '' && $version !== $repositoryVersion) {
     );
 }
 
+/*
+ * The manifest the licences page reads, demanded here because packaging is the last handoff.
+ *
+ * An install built before the licence staging pass existed, or by a build that died inside it,
+ * carries no manifest, and on that install the npm rows of the licences page are simply absent.
+ * The page cannot fall back to the lock files because they do not travel in an install, so a
+ * missing manifest means a page with a section gone and nothing on it saying why, which is the
+ * failure family every guard in this file exists to name before a reader does.
+ */
+$licenceManifestPath = $install.DIRECTORY_SEPARATOR.'licences'
+    .DIRECTORY_SEPARATOR.'node'.DIRECTORY_SEPARATOR.'manifest.json';
+
+if (! is_file($licenceManifestPath)) {
+    fail(
+        "the install carries no licences/node/manifest.json, so the licences page in this zip\n"
+        ."  would hold no npm rows at all.\n\n"
+        .'  The manifest is written by the licence staging pass in build-install.php. Run that build first.'
+    );
+}
+
 say('version', $version);
 say('install', $install);
 

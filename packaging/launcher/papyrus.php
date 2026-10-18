@@ -108,6 +108,15 @@ require __DIR__.'/src/ReaderSnapshotResult.php';
 require __DIR__.'/src/ReaderSnapshot.php';
 require __DIR__.'/src/SnapshotCommand.php';
 
+/*
+ * The licence staging pass, which no launcher command calls and every build script does.
+ *
+ * It rides this list by construction rather than by memory: the build reads this file's require
+ * list instead of keeping its own (a second list is how a build once died on a class not found
+ * mid-assembly), and the dependency-list test refuses any file in src that is not required here.
+ */
+require __DIR__.'/src/LicenceStaging.php';
+
 $root = getenv('PAPYRUS_ROOT') ?: dirname(__DIR__, 2);
 
 /*
