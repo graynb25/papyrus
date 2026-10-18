@@ -6493,3 +6493,41 @@ exactly that moment and it costs five minutes.
    had been. Only the property and the row settle it. The stop value joined the reset list under the
    comment naming the one a shorter list left behind, and a compose state test sets the limit to 1,
    compares, and asserts the property went to 0; red on the old list, green on the new one.
+
+301. **A stylesheet built before its markup ships classes the reader cannot see, and the gates read HTML, so no gate can notice.**
+
+   Measured 2026-10-18 on the checkout. The served asset `app-DAcTgqkC.css` was built 2026-10-10 at
+   10:55, and the unread chip's markup landed on 2026-10-17, so the chip's own classes had never been
+   compiled: the served file carries no `text-[10px]` and no `bg-zinc-900/80` rule, and `top-1` with
+   `left-1` are absent beside present `top-2` and `start-2` because nothing in the older tree used the
+   smaller pair. `position: absolute` without an offset keeps the element's static position, so the
+   chip stayed in flow beneath its cover and, missing its size and background utilities, rendered as a
+   bare white 16px semibold number under every landed row; the mid flight capture shows exactly that
+   shape. One rebuild (`npm run build`, 11.6 seconds) moved every missing class into the served file,
+   and the page then failed in the next way instead, which is trap 303. The rhythm this buys: a sitting
+   that changes a class list in blade also runs the asset build and then looks at the page, because
+   `assertSee` proves only what the server sent, and only a capture proves what the browser drew.
+
+302. **A Suwayomi restart that does not pin rootDir comes up against the server's default root, and the file that tells which root is real is the H2, never the caches.**
+
+   Measured 2026-10-18 when the scratch server restarted after the host reboot. The default root sat
+   in the system's temporary directory with thumbnail caches and no H2 at all; the only real database
+   was the recipe root's `database.mv.db` (9.0 MB). A default-root restart answers healthily against
+   an empty library while the real state sits elsewhere: no crash, no error, a green check over an
+   empty room. The restart pins rootDir exactly as the scratch recipe writes it, and continuity is
+   then proved by the source lens on the answers, not by the process being up.
+
+303. **An absolutely positioned overlay inherits both its anchoring and its paint order from whoever else in the chain is positioned, and a slot that overlays artwork has to own both.**
+
+   Measured 2026-10-18 on the run card's unread chip, in three live states. With the atom's root
+   positioned only when glow or tilt is set, nothing between the chip and the page was positioned, and
+   the first and seventh rows' chips reported identical bounds (301, 912): the results card's padding
+   box origin plus the 4px offsets, so every chip in the run stacked on one corner. With the root made
+   relative the chips moved to their own covers' corners (341, 962 and 341, 1712, six row pitches
+   apart), and the captures still sampled art colours inside the chip's box, because the frame beside
+   it carries `z-index: 1` and a positioned element with auto z order paints beneath it despite coming
+   later in the DOM: computed style knew exactly where the chip was and the pixels had none of it.
+   Adding the wrapper the atom now owns (`absolute inset 0`, `z-index: 10`, pointer events pass
+   through unless a child opts back in) flipped only the paint, and the same corner then read the
+   chip's dark background against the artwork (rgb 104,85,85 over an art average of 157,111,103). A
+   computed style locates an element; only a capture says whether anyone can see it.
