@@ -6531,3 +6531,18 @@ exactly that moment and it costs five minutes.
    through unless a child opts back in) flipped only the paint, and the same corner then read the
    chip's dark background against the artwork (rgb 104,85,85 over an art average of 157,111,103). A
    computed style locates an element; only a capture says whether anyone can see it.
+
+304. **A burst of clicks on a wire checkbox reports success and carries no state, and the beat plus the outcome is the only proof it landed.**
+
+   Measured 2026-10-18 on the migrate compose panel, whose destination checkboxes carry
+   `wire:click="toggleTarget(...)"` with `@checked` derived from state, so the drawn check is
+   native to the input and proves nothing about the server's array. Five toggles fired seconds
+   apart with no settle beat between them, a Compare press then read `targets === []` and refused
+   with the two condition sentence, and a repeated fresh mount with one toggle and a press
+   dispatched on the first try, as did a later five toggle run with three seconds between
+   clicks, whose DB row carried all five destinations in pick order. Every tool click returns
+   clicked, no page error is logged either way, and a refused press creates no row, so the
+   reads left are the toast and the next attempt. The rhythm that holds: one toggle per beat,
+   the press last, and the run's own target rows as the verdict, which is the same shape as
+   every other claim this file makes: the click is not the state, the state is what the row
+   says.
