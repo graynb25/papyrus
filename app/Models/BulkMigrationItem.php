@@ -30,8 +30,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $to_manga_id
  * @property string $title
  * @property string|null $to_title
+ * @property string|null $to_source_id
+ * @property string|null $to_source_name
  * @property int|null $chapters_here
  * @property int|null $chapters_there
+ * @property int|null $unread_here
  * @property float|null $title_similarity
  * @property int|null $chapter_delta
  * @property float|null $author_overlap
@@ -44,8 +47,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'to_manga_id',
     'title',
     'to_title',
+    'to_source_id',
+    'to_source_name',
     'chapters_here',
     'chapters_there',
+    'unread_here',
     'title_similarity',
     'chapter_delta',
     'author_overlap',
@@ -64,6 +70,7 @@ class BulkMigrationItem extends OwnedModel
             'to_manga_id' => 'integer',
             'chapters_here' => 'integer',
             'chapters_there' => 'integer',
+            'unread_here' => 'integer',
             'title_similarity' => 'float',
             'chapter_delta' => 'integer',
             'author_overlap' => 'float',

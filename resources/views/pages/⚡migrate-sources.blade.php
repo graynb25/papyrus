@@ -4,11 +4,13 @@ use App\Jobs\BuildBulkMigration;
 use App\Migration\BulkMover;
 use App\Models\BulkMigration;
 use App\Models\BulkMigrationItem;
+use App\Models\BulkMigrationTarget;
 use App\Support\ImageUrl;
 use App\Support\Library;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new #[Title('Move a whole source')] class extends Component
@@ -22,7 +24,60 @@ new #[Title('Move a whole source')] class extends Component
      */
     public string $from = '';
 
-    public string $to = '';
+    /**
+     * Whether the reader came here to compose a run out of one named source.
+     *
+     * The value is that source's id, and it is honoured only when the mirror still knows
+     * it, because a query string is a reader's control, not a fact: a stale link naming a
+     * source the mirror lost must not leave the page half composed, a picked shelf beside
+     * a leaving picker it quietly disagrees with. Clamped in mount(), the house rule for
+     * anything reachable from the URL.
+     */
+    #[Url]
+    public ?string $compose = null;
+
+    /**
+     * The series ticked on the compose panel, as manga id => bool.
+     *
+     * All of it is page state until the run is created, and the ids stamped at pick time
+     * are the ones the run carries. The page never re-derives a pick from a title, because
+     * a title is what the lens was showing when the reader picked, and one server rename
+     * between the pick and the press would otherwise rewrite the reader's choice.
+     *
+     * @var array<int, bool>
+     */
+    public array $pick = [];
+
+    public function mount(): void
+    {
+        if ($this->compose !== null) {
+            $known = \App\Models\Source::query()
+                ->where('suwayomi_source_id', $this->compose)
+                ->exists();
+
+            if (! $known) {
+                $this->compose = null;
+            }
+
+            if ($this->compose !== null) {
+                $this->from = $this->compose;
+            }
+        }
+    }
+
+    /**
+     * The destinations the reader picked for the next comparison, in pick order.
+     *
+     * A list, not the old single `to`: picking several destinations is the normal case
+     * now, and the single value carried a measured wart the list kills by design. With
+     * one picker, switching the source being left kept the old destination, which is only
+     * a harmless bug until a reader moving from source A to B switches to source C and
+     * runs without noticing the picker still said B. Each pick here is its own value, so
+     * nothing of one leaving side can quietly ride into another.
+     *
+     * @var array<int, string>
+     */
+    public array $targets = [];
 
     /**
      * Stop after this many series.
@@ -77,7 +132,6 @@ new #[Title('Move a whole source')] class extends Component
     public const REFRESH_MS = 3000;
 
     /**
-    /**
      * Sources with at least one of this reader's series on them, biggest first. This
      * collection feeds the picker for the source being left.
      *
@@ -87,46 +141,20 @@ new #[Title('Move a whole source')] class extends Component
      * list of 82 names does not answer that. Putting the number on each entry answers it
      * before the click, and a source with nothing on it is not offered as a place to leave,
      * because a run out of it can only ever produce "nothing in your library is on that
-     * source". The target picker is a different collection ({@see installedSources()}),
-     * because the target is chosen before anything has moved there.
+     * source". The target list is a different collection ({@see installedSources()}),
+     * because the destination is chosen before anything has moved there.
      *
-     * @return \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool}>
+     * The grouping, the mirror join and the name fallbacks moved to
+     * {@see \App\Support\Library::holdingsBySource()}, because the Migrate tab on the sources
+     * page asks the same question and two copies of a tally is how counts started
+     * disagreeing about "installed" once already.
+     *
+     * @return \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool, named: bool, icon: string|null}>
      */
     #[Computed]
     public function sourcesInLibrary(): \Illuminate\Support\Collection
     {
-        $counts = [];
-
-        foreach (app(Library::class)->entries(auth()->id()) as $entry) {
-            if ($entry['source_id'] === null) {
-                continue;
-            }
-
-            $id = (string) $entry['source_id'];
-
-            $counts[$id] = ($counts[$id] ?? 0) + 1;
-        }
-
-        $rows = \App\Models\Source::query()
-            ->whereIn('suwayomi_source_id', array_keys($counts))
-            ->get()
-            ->keyBy(fn ($source): string => (string) $source->suwayomi_source_id);
-
-        $out = collect();
-
-        foreach ($counts as $id => $count) {
-            $source = $rows->get((string) $id);
-
-            $out->push([
-                'source_id' => (string) $id,
-                'display_name' => (string) ($source->display_name ?? $id),
-                'lang' => (string) ($source->lang ?? ''),
-                'count' => $count,
-                'installed' => (bool) ($source->is_installed ?? false),
-            ]);
-        }
-
-        return $out->sortByDesc('count')->values();
+        return app(Library::class)->holdingsBySource(auth()->id());
     }
 
     /**
@@ -304,13 +332,107 @@ new #[Title('Move a whole source')] class extends Component
     }
 
     /**
-     * Start comparing. Two sources, or it refuses before dispatching anything.
+     * The name of the source being composed out of, stamped or the id.
+     *
+     * mount() guarantees the mirror carries a row before the panel ever renders, so this
+     * names what the mirror says rather than guessing: an unsynced name falls back to the
+     * id, which the row then says plainly.
+     */
+    #[Computed]
+    public function composeName(): string
+    {
+        return (string) (\App\Models\Source::query()
+            ->where('suwayomi_source_id', $this->compose)
+            ->value('display_name') ?? $this->compose);
+    }
+
+    /**
+     * How many of the compose panel's series are ticked.
+     */
+    public function pickedCount(): int
+    {
+        return count(array_filter($this->pick));
+    }
+
+    /**
+     * The reader's series on the source being composed out of, alphabetical.
+     *
+     * The lens, filtered to one source, because the compose panel must agree with the
+     * shelf it names: the same batched read the leaving picker counts, so a run's row
+     * numbers and this list cannot tell different stories about how much is here. Rows
+     * carry the unread count only where the chapter list has ever been fetched, which is
+     * the same three state rule the shelf's unread line lives by: never counted, not
+     * counted as zero.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function composeRows(): \Illuminate\Support\Collection
+    {
+        return app(Library::class)->entries(auth()->id())
+            ->filter(fn (array $entry): bool => $entry['source_id'] !== null
+                && (string) $entry['source_id'] === (string) $this->compose)
+            ->sortBy(fn (array $entry): string => mb_strtolower((string) $entry['title']))
+            ->values();
+    }
+
+    /**
+     * Tick or untick one series on the compose panel.
+     *
+     * Same shape as {@see toggleTarget()}: a key present with false is a deliberate
+     * untick and is different from a key that was never there.
+     */
+    public function togglePick(int $mangaId): void
+    {
+        if (array_key_exists($mangaId, $this->pick) && $this->pick[$mangaId]) {
+            $this->pick[$mangaId] = false;
+
+            return;
+        }
+
+        $this->pick[$mangaId] = true;
+    }
+
+    /**
+     * Pick or drop one destination for the next comparison, keeping pick order.
+     *
+     * Five is the cap, and the cap is named at the pick rather than only at the press:
+     * every target is one more full search per series, so five targets on a shelf of
+     * eighty is four hundred searches. A rule that appears only as a slow run is not a
+     * rule a reader knows.
+     */
+    public function toggleTarget(string $sourceId): void
+    {
+        if (in_array($sourceId, $this->targets, true)) {
+            $this->targets = array_values(
+                array_filter($this->targets, fn (string $one): bool => $one !== $sourceId),
+            );
+
+            return;
+        }
+
+        if (count($this->targets) >= 5) {
+            Flux::toast(
+                text: __('Five destinations is the cap: every one is another full search of the whole shelf. Untick one to add another.'),
+                heading: __('Nothing more to add'),
+                variant: 'danger',
+            );
+
+            return;
+        }
+
+        $this->targets[] = $sourceId;
+    }
+
+    /**
+     * Start comparing. The source being left and at least one destination, or it refuses
+     * before dispatching anything.
      */
     public function compare(): void
     {
-        if ($this->from === '' || $this->to === '') {
+        if ($this->from === '' || $this->targets === []) {
             Flux::toast(
-                text: __('Choose the source to move away from and the one to move to.'),
+                text: __('Choose the source to move away from and at least one to move to.'),
                 heading: __('Nothing to compare'),
                 variant: 'danger',
             );
@@ -318,9 +440,30 @@ new #[Title('Move a whole source')] class extends Component
             return;
         }
 
-        if ($this->from === $this->to) {
+        if (in_array($this->from, $this->targets, true)) {
             Flux::toast(
                 text: __('That is the same source twice. Moving a source onto itself does nothing.'),
+                heading: __('Nothing to compare'),
+                variant: 'danger',
+            );
+
+            return;
+        }
+
+        /*
+         * The picks ride the run as ids stamped on the compose panel, never as titles, and
+         * are intersected against the lens when the job starts rather than trusted here:
+         * between this press and the job waking, a series can leave the source, so what
+         * the reader picked is and what they still sit on are measured apart. Empty is a
+         * composition of nothing, which the run cannot survive.
+         */
+        $picks = $this->compose === null
+            ? null
+            : array_values(array_keys(array_filter($this->pick, fn (bool $ticked): bool => $ticked)));
+
+        if ($picks === []) {
+            Flux::toast(
+                text: __('Tick at least one series to compose a run from.'),
                 heading: __('Nothing to compare'),
                 variant: 'danger',
             );
@@ -334,32 +477,44 @@ new #[Title('Move a whole source')] class extends Component
          * this page reads these columns. A source with no row at all stamps its id, which
          * is how the rest of this page renders an unresolvable source.
          */
-        $sourceRows = \App\Models\Source::query()
-            ->whereIn('suwayomi_source_id', [$this->from, $this->to])
+        $rows = \App\Models\Source::query()
+            ->whereIn('suwayomi_source_id', array_unique(array_merge([$this->from], $this->targets)))
             ->get()
             ->keyBy(fn ($source): string => (string) $source->suwayomi_source_id);
 
         $run = BulkMigration::createFor(auth()->id(), [
             'from_source_id' => $this->from,
-            'to_source_id' => $this->to,
-            'from_source_name' => (string) ($sourceRows->get((string) $this->from)->display_name ?? $this->from),
-            'to_source_name' => (string) ($sourceRows->get((string) $this->to)->display_name ?? $this->to),
+            'from_source_name' => (string) ($rows->get((string) $this->from)->display_name ?? $this->from),
+            'picked_manga_ids' => $picks,
             'state' => BulkMigration::RUNNING,
             'started_at' => now(),
         ]);
+
+        foreach (array_values($this->targets) as $seq => $sourceId) {
+            BulkMigrationTarget::createFor(auth()->id(), [
+                'bulk_migration_id' => $run->getKey(),
+                'source_id' => $sourceId,
+                'source_name' => $rows->get((string) $sourceId)?->display_name,
+                'lang' => (string) ($rows->get((string) $sourceId)?->lang ?? ''),
+                'seq' => $seq,
+            ]);
+        }
 
         BuildBulkMigration::dispatch($run->getKey(), (int) auth()->id(), max(0, $this->limit));
 
         $this->runId = $run->getKey();
         $this->report = null;
 
-        // A new comparison means every tick and every set aside from the previous one is
-        // meaningless: both are page state for the run that was showing.
+        // A new comparison means every tick, every set aside, every pick and every
+        // composed mark from the previous one is meaningless: all are page state for the
+        // run that was showing.
         $this->reset('approved');
         $this->reset('setAside');
+        $this->reset('targets');
+        $this->reset('pick');
 
         Flux::toast(
-            text: __('Comparing your library against that source. This is one request per series, so it takes a while.'),
+            text: __('Comparing your library against the destinations you picked. This is one request per destination per series, so it takes a while.'),
             heading: __('Comparing'),
             variant: 'info',
         );
@@ -382,6 +537,36 @@ new #[Title('Move a whole source')] class extends Component
         }
 
         return $out;
+    }
+
+    /**
+     * The destinations a run is walking, stamped at creation, read back in pick order.
+     *
+     * The card must render through here rather than the run's own columns: new runs
+     * carry a table of destinations and leave those columns empty, older runs carried
+     * exactly one, and a card that read the columns directly would name nothing at all
+     * for every run from the new shape onwards.
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function targetNames(): array
+    {
+        $run = $this->run;
+
+        if ($run === null) {
+            return [];
+        }
+
+        if ($run->isSingleDestination()) {
+            return [(string) ($run->to_source_name ?? $run->to_source_id)];
+        }
+
+        return $run->targets()
+            ->orderBy('seq')
+            ->get()
+            ->map(fn (BulkMigrationTarget $target): string => (string) ($target->source_name ?? $target->source_id))
+            ->all();
     }
 
     /**
@@ -592,11 +777,23 @@ new #[Title('Move a whole source')] class extends Component
     @php($run = $this->run)
 
     <x-page.header>
-        <x-slot:eyebrow>{{ __('Move a whole source at once.') }}</x-slot:eyebrow>
+        <x-slot:eyebrow>
+            @if ($compose !== null)
+                {{ __('Move series off :name.', ['name' => $this->composeName]) }}
+            @else
+                {{ __('Move a whole source at once.') }}
+            @endif
+        </x-slot:eyebrow>
         <x-slot:title>{{ __('Move your library to another source') }}</x-slot:title>
 
         <x-slot:meta>
-            {{ __('Pick the source you are leaving and the one you are moving to. Every series you have saved from the first is looked up on the second, and you decide what moves.') }}
+            @if ($compose !== null)
+                {{-- Composed: the leaving side is a fact the reader arrived with, so the
+                     intro names it rather than pointing at a picker that is not there. --}}
+                {{ __('Every series you have saved from :name is listed below. Tick what moves, pick where it goes, and compare.', ['name' => $this->composeName]) }}
+            @else
+                {{ __('Pick the source you are leaving and the one you are moving to. Every series you have saved from the first is looked up on the second, and you decide what moves.') }}
+            @endif
         </x-slot:meta>
     </x-page.header>
 
@@ -624,25 +821,65 @@ new #[Title('Move a whole source')] class extends Component
         @else
             <div class="flex flex-wrap items-end gap-3">
                 {{-- Leaving --}}
-                <div class="min-w-56">
-                    <flux:label>{{ __('Moving away from') }}</flux:label>
+                @if ($compose !== null)
+                    {{-- Composed from the sources page: the leaving side is a fact the reader
+                         arrived with, not a picker. Swapping it for the series list is the
+                         whole point of the mode. --}}
+                    <div class="w-full">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <flux:label class="font-medium">{{ __('Series on :name', ['name' => $this->composeName]) }}</flux:label>
 
-                    <flux:dropdown placement="bottom-start" class="w-full">
-                        <flux:button variant="outline" class="w-full justify-between" icon="chevron-down">
-                            {{ $this->labelFor($this->from, $sources) ?? __('Choose a source') }}
-                        </flux:button>
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ __(':picked of :total picked', ['picked' => $this->pickedCount(), 'total' => $this->composeRows->count()]) }}
+                            </p>
+                        </div>
 
-                        <flux:menu class="max-h-80 overflow-y-auto">
-                            @foreach ($sources as $one)
-                                <flux:menu.item wire:click="$set('from', '{{ $one['source_id'] }}')">
-                                    {{ $one['display_name'] }}
-                                    <span class="text-zinc-500">({{ $one['lang'] }})</span>
-                                    <span class="ms-auto tabular-nums text-zinc-500">{{ $one['count'] }}</span>
-                                </flux:menu.item>
-                            @endforeach
-                        </flux:menu>
-                    </flux:dropdown>
-                </div>
+                        <div class="max-h-72 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 p-2 mt-1">
+                            <div class="flex flex-col gap-1">
+                                @foreach ($this->composeRows as $row)
+                                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-600/60 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            @checked(array_key_exists((int) $row['manga_id'], $pick) && $pick[(int) $row['manga_id']])
+                                            wire:click="togglePick({{ $row['manga_id'] }})"
+                                            class="text-(--primary) rounded-[.25rem] border-zinc-300 dark:border-zinc-500"
+                                        />
+
+                                        <span class="text-sm text-zinc-800 dark:text-white">{{ $row['title'] }}</span>
+
+                                        <span class="ms-auto text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                                            {{ $row['read_chapters'] }} of {{ $row['total_chapters'] ?? '?' }} read
+                                        </span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                            {{ __('Tick the series you are moving. Nothing is written until the comparison finishes and you press again on the offers.') }}
+                        </p>
+                    </div>
+                @else
+                    <div class="min-w-56">
+                        <flux:label>{{ __('Moving away from') }}</flux:label>
+
+                        <flux:dropdown placement="bottom-start" class="w-full">
+                            <flux:button variant="outline" class="w-full justify-between" icon="chevron-down">
+                                {{ $this->labelFor($this->from, $sources) ?? __('Choose a source') }}
+                            </flux:button>
+
+                            <flux:menu class="max-h-80 overflow-y-auto">
+                                @foreach ($sources as $one)
+                                    <flux:menu.item wire:click="$set('from', '{{ $one['source_id'] }}')">
+                                        {{ $one['display_name'] }}
+                                        <span class="text-zinc-500">({{ $one['lang'] }})</span>
+                                        <span class="ms-auto tabular-nums text-zinc-500">{{ $one['count'] }}</span>
+                                    </flux:menu.item>
+                                @endforeach
+                            </flux:menu>
+                        </flux:dropdown>
+                    </div>
+                @endif
 
                 <flux:icon.chevron-right class="mb-3 text-zinc-400" />
 
@@ -650,22 +887,33 @@ new #[Title('Move a whole source')] class extends Component
                 <div class="min-w-56">
                     <flux:label>{{ __('Moving to') }}</flux:label>
 
-                    <flux:dropdown placement="bottom-start" class="w-full">
-                        <flux:button variant="outline" class="w-full justify-between" icon="chevron-down">
-                            {{ $this->labelFor($this->to, $this->installedSources) ?? __('Choose a source') }}
-                        </flux:button>
-
-                        <flux:menu class="max-h-80 overflow-y-auto">
+                    {{-- A checklist rather than a menu. Picking several destinations is the
+                         normal case, and the old single value was where the stale picker came
+                         from: one value shared by every leaving side makes one reader's
+                         previous choice look like this one's. --}}
+                    <div class="max-h-40 w-56 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 p-1.5">
+                        <div class="flex flex-col">
                             @foreach ($this->installedSources as $one)
                                 @continue($one['source_id'] === $this->from)
 
-                                <flux:menu.item wire:click="$set('to', '{{ $one['source_id'] }}')">
+                                <label class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium text-zinc-800 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600/60 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        @checked(in_array($one['source_id'], $this->targets))
+                                        wire:click="toggleTarget('{{ $one['source_id'] }}')"
+                                        class="text-(--primary) rounded-[.25rem] border-zinc-300 dark:border-zinc-500"
+                                    />
+
                                     {{ $one['display_name'] }}
                                     <span class="text-zinc-500">({{ $one['lang'] }})</span>
-                                </flux:menu.item>
+                                </label>
                             @endforeach
-                        </flux:menu>
-                    </flux:dropdown>
+                        </div>
+                    </div>
+
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                        {{ __('Five destinations is the most. Each one is another full search of the shelf per series.') }}
+                    </p>
                 </div>
 
                 <div class="w-40">
@@ -684,7 +932,7 @@ new #[Title('Move a whole source')] class extends Component
             </div>
 
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ __('Stop after 0 means every series on the first source. The numbers in the moving away from list are how many of your series sit on each one.') }}
+                {{ __('Stop after 0 means every series on the first source. The numbers in the moving away from list are how many of your series sit on each one, and every destination ticked is one more full search of those series.') }}
             </p>
         @endif
     </flux:card>
@@ -707,7 +955,7 @@ new #[Title('Move a whole source')] class extends Component
             <flux:card class="space-y-3 p-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <flux:heading size="sm" level="3">
-                        {{ __('Looking up your series on') }} {{ $run->to_source_name ?? $this->to }}
+                        {{ __('Looking up your series on') }} {{ implode(', ', $this->targetNames) }}
                     </flux:heading>
 
                     <flux:button size="xs" variant="ghost" wire:click="cancel" wire:target="cancel">
@@ -927,7 +1175,19 @@ new #[Title('Move a whole source')] class extends Component
                              and the reader knows a shelf by what it looks like; the same atom the
                              wizard's candidate rows use, fed the same way. --}}
                         <div class="w-12 shrink-0">
-                            <x-cover.art :src="$fromCover" :alt="$item->title" :blur-up="false" :vt="false" />
+                            <x-cover.art :src="$fromCover" :alt="$item->title" :blur-up="false" :vt="false">
+                                @if ($item->unread_here !== null)
+                                    {{-- The chip is the number the reader's eye sorts a shelf by, and
+                                         the words live in the accessible title for anyone who wants
+                                         them: the numeric chip is what the reference's own rows use. --}}
+                                    <span
+                                        class="absolute top-1 left-1 rounded bg-zinc-900/80 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-white tabular-nums"
+                                        title="{{ trans_choice(':count unread chapter|:count unread chapters', (int) $item->unread_here, ['count' => number_format($item->unread_here)]) }}"
+                                    >
+                                        {{ number_format($item->unread_here) }}
+                                    </span>
+                                @endif
+                            </x-cover.art>
                         </div>
 
                         {{-- The name is carried by the heading and the accessible name carries
@@ -980,6 +1240,22 @@ new #[Title('Move a whole source')] class extends Component
                                 <span class="text-zinc-500 dark:text-zinc-400">
                                     {{ $this->chapterVerdict($item) }}
                                 </span>
+
+                                @if ($item->unread_here !== null)
+                                    {{-- The leaving side's own unread, exactly as the compare knew it:
+                                          the number the mover is asking about is how far behind this run
+                                          left, not how far behind now. Not stamped for a series whose
+                                          chapter list the server never fetched, which is not zero. --}}
+                                    <span class="text-zinc-500 dark:text-zinc-400">
+                                        {{ trans_choice(':count unread chapter.|:count unread chapters.', (int) $item->unread_here, ['count' => number_format($item->unread_here)]) }}
+                                    </span>
+                                @endif
+
+                                @if ($item->chapters_here !== null)
+                                    <span class="text-zinc-500 dark:text-zinc-400">
+                                        {{ __('Latest: Chapter :count', ['count' => number_format($item->chapters_here)]) }}
+                                    </span>
+                                @endif
 
                                 @if ($author !== null)
                                     <span @class([

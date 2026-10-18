@@ -115,15 +115,17 @@ class CandidateFinder
     }
 
     /**
-     * The same search, against one named source instead of every source.
+     * The same search, against exactly the named sources instead of every source.
      *
      * ## Why the bulk migration needs this
      *
-     * A reader moving a whole shelf off one source onto another has already chosen both ends.
-     * Sweeping all 82 sources per series would be 82 searches to answer a question with one
-     * destination, so at 80 series that is 6,560 requests where 80 would do, and the ones the
-     * reader did not ask about are requests made to sites that have nothing to do with the
-     * decision.
+     * A reader moving a whole shelf off one source has picked which destinations it may be
+     * looked for on. Sweeping all 82 sources per series would be 82 searches to answer a
+     * question the reader narrowed to one, so at 80 series that is 6,560 requests where 80
+     * would do, and the ones the reader did not ask about are requests made to sites that
+     * have nothing to do with the decision. Several destinations change the arithmetic, not
+     * the shape: five targets at 80 series is 400 searches, which is why the page caps the
+     * picks at five and says so.
      *
      * The ranking, the detail fetch and the candidate shape are the same code as
      * {@see find()}, deliberately. A bulk match and a wizard match that disagree would mean the
@@ -131,32 +133,26 @@ class CandidateFinder
      * per series migrator has to accept a bulk match as if the wizard had produced it, because
      * it verifies against `migration_searches` and nothing else.
      *
-     * ## Why an uninstalled destination is refused rather than searched
+     * ## Why there is no from and to guard here any more
      *
-     * Because there is nothing to search. An uninstalled source is a row in the catalogue with
-     * no server behind it, so the search would answer with a transport failure that looks like
-     * "this source does not have your series", which is a very different thing to tell someone
-     * about their library.
+     * The single destination version refused an uninstalled target and a destination equal
+     * to the leaving source at this layer, answering with empty candidates, which is the
+     * shape a no match has. Those are refusals with something to say, and the matcher is
+     * where the run's error column lives, so the guards moved there: a reader who picked a
+     * destination that is now uninstalled reads which pick failed and why, not a card that
+     * says their series are nowhere on a source they picked.
      *
+     * @param  Collection<int, Source>  $targets  validated by the caller, in pick order
      * @param  array<string, mixed>  $current
      * @param  callable(int, int): void|null  $onProgress
      * @return array{candidates: array<int, array<string, mixed>>, meta: array<string, int>}
      */
-    public function findOn(
-        Source $from,
+    public function findOnMany(
+        Collection $targets,
         array $current,
-        Source $to,
         ?callable $onProgress = null,
     ): array {
-        if ((string) $to->suwayomi_source_id === (string) $from->suwayomi_source_id) {
-            return ['candidates' => [], 'meta' => ['sources_searched' => 0, 'sources_total' => 0, 'raw_hits' => 0, 'sites' => 0]];
-        }
-
-        if (! $to->is_installed) {
-            return ['candidates' => [], 'meta' => ['sources_searched' => 0, 'sources_total' => 1, 'raw_hits' => 0, 'sites' => 0]];
-        }
-
-        return $this->sweepAndRank(new Collection([$to]), $current, $onProgress);
+        return $this->sweepAndRank($targets, $current, $onProgress);
     }
 
     /**

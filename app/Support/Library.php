@@ -7,6 +7,7 @@ use App\Library\ContinueReading;
 use App\Models\Category;
 use App\Models\SeriesCover;
 use App\Models\SeriesState;
+use App\Models\Source;
 use App\Models\User;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
@@ -65,6 +66,96 @@ class Library
     private ?string $sourceFailure = null;
 
     // Reading ----------------------------------------------------------
+
+    /**
+     * How many of the reader's series sit on each source, with what is known about it.
+     *
+     * ## Why the tally lives here and not beside its two first clients
+     *
+     * The migrate page's leaving list and the sources page's Migrate tab ask the same
+     * question in the same words ("how many of my series are on this source"), and there was
+     * a session in which the two pages' first differing copy of such a tally was the bug:
+     * chips and counts disagreed about "installed" until one definition won. So the tallies
+     * are one method in the class that owns the reader's library, and a change to how a
+     * count or a name is derived can only land in one place.
+     *
+     * ## Where the name comes from, in order
+     *
+     * 1. The mirror's `display_name`, which is what a synced install usually answers.
+     * 2. The name the live library rows carry, which is what a series on a source the
+     *    mirror never synced can still say for itself. Measured on 2026-10-17 against the
+     *    two numerals in IMG_1179's still: one of them is `Asmodeus Scans (EN)` here because
+     *    its mirror row synced, and the other has no mirror row at all, but its series still
+     *    carry a name.
+     * 3. The raw id, and the caller is expected to say plainly that the source is unnamed
+     *    rather than print a numeral as if it were a name.
+     *
+     * @return Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool, named: bool, icon: string|null}>
+     */
+    public function holdingsBySource(User|int $user): Collection
+    {
+        $userId = $this->userId($user);
+
+        /*
+         * The name and language ride from the first row seen, rather than being unified:
+         * source_name is a fact about each live row and a source id should be one source.
+         * In practice every row from one id answers the same, and `??=` keeps the tally
+         * from caring whether it was asked twice.
+         */
+        $counts = [];
+        $names = [];
+        $langs = [];
+
+        foreach ($this->entries($userId) as $entry) {
+            if ($entry['source_id'] === null) {
+                continue;
+            }
+
+            $id = (string) $entry['source_id'];
+
+            $counts[$id] = ($counts[$id] ?? 0) + 1;
+            $names[$id] ??= $entry['source_name'];
+            $langs[$id] ??= $entry['source_lang'];
+        }
+
+        $rows = Source::query()
+            ->whereIn('suwayomi_source_id', array_keys($counts))
+            ->get()
+            ->keyBy(fn ($source): string => (string) $source->suwayomi_source_id);
+
+        $out = collect();
+
+        foreach ($counts as $id => $count) {
+            $source = $rows->get((string) $id);
+            $name = (string) ($source->display_name ?? $names[$id] ?? $id);
+
+            $out->push([
+                // Recast, because PHP made any id that fits an int into an int key on the way
+                // through $counts. Trap 4's reason in full: a lost string here corrupts the
+                // id everywhere it travels.
+                'source_id' => (string) $id,
+                'display_name' => $name,
+                'lang' => (string) ($source->lang ?? $langs[$id] ?? ''),
+                'count' => $count,
+                'installed' => (bool) ($source->is_installed ?? false),
+                /*
+                 * Whether a name was actually found. The id is never a name: putting a
+                 * numeral in the name's place is how the numeral wart was born, so the
+                 * caller can now tell "named" from "unresolvable" instead of guessing at
+                 * render time.
+                 */
+                'named' => $name !== $id && $name !== '',
+                /*
+                 * The mirror's icon path, or null when there is no mirror row: the icon
+                 * component renders its own placeholder on null, the same as it does for
+                 * an extension that shipped no icon.
+                 */
+                'icon' => $source->icon_url ?? null,
+            ]);
+        }
+
+        return $out->sortByDesc('count')->values();
+    }
 
     /**
      * The reader's series, newest first, with everything a card needs.

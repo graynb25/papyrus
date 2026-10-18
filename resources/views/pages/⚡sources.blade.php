@@ -3,6 +3,7 @@
 use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
+use App\Support\Library;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SourceCatalog;
@@ -737,7 +738,8 @@ new #[Title('Sources')] class extends Component
     }
 
     /**
-     * The four views the catalogue can be sliced by.
+     * The strip's views: the four slices of the extension catalogue, and after
+     * them the Migrate view, which is not a slice but reads at the same width.
      *
      * Built here rather than inline in the template because the template needs a
      * plain PHP string to interpolate into a component tag's attribute. Blade
@@ -755,7 +757,36 @@ new #[Title('Sources')] class extends Component
             'available' => (string) __('Available'),
             'updates' => (string) __('Updates'),
             'all' => (string) __('All'),
+            /*
+             * Last: the four above are one family (slices of the catalogue) and
+             * their order is muscle memory. Migrate is another kind of thing the
+             * strip reaches, and at the end it does not disturb the four.
+             */
+            'migrate' => (string) __('Migrate'),
         ];
+    }
+
+    /**
+     * The Migrate view's rows: what the reader holds, per source.
+     *
+     * ## Why there is no catch here
+     *
+     * The lens deliberately does not throw when the server is unreachable: the
+     * batch call records the failure and returns what it can, which is the same
+     * measured choice that keeps a reader's 867 titles from becoming an error
+     * page, and `sourceFailure()` hands the reason out. The reason and the rows
+     * come back together, and the view draws exactly one of them.
+     *
+     * @return array{rows: \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool, named: bool, icon: string|null}>, error: string|null}
+     */
+    #[Computed]
+    public function holdings(): array
+    {
+        // One instance: the failure is a fact about the read that happened on it.
+        $library = app(Library::class);
+        $rows = $library->holdingsBySource(auth()->id());
+
+        return ['rows' => $rows, 'error' => $library->sourceFailure()];
     }
 
     /**
@@ -1723,7 +1754,7 @@ new #[Title('Sources')] class extends Component
 
     {{-- Extensions ------------------------------------------------------ --}}
     <section class="space-y-4">
-        <flux:heading level="2">{{ __('Extensions') }}</flux:heading>
+        <flux:heading level="2">{{ $view === 'migrate' ? __('Move your series') : __('Extensions') }}</flux:heading>
 
         <div class="flex flex-wrap items-center justify-between gap-4">
             {{--
@@ -1737,6 +1768,7 @@ new #[Title('Sources')] class extends Component
                     'available' => __('Available'),
                     'updates' => __('Updates'),
                     'all' => __('All'),
+                    'migrate' => __('Migrate'),
                 ] as $key => $label)
                     <flux:button
                         :variant="$view === $key ? 'primary' : 'outline'"
@@ -1748,12 +1780,19 @@ new #[Title('Sources')] class extends Component
                 @endforeach
             </flux:button.group>
 
-            <flux:input
-                wire:model.live.debounce.400ms="name"
-                placeholder="{{ __('Filter by name') }}"
-                icon="funnel"
-                class="max-w-xs"
-            />
+            {{--
+                The name filter belongs to the catalogue, so it stands down on the
+                Migrate view: a filter that does nothing to the list under it is
+                a control a reader would distrust.
+            --}}
+            @if ($view !== 'migrate')
+                <flux:input
+                    wire:model.live.debounce.400ms="name"
+                    placeholder="{{ __('Filter by name') }}"
+                    icon="funnel"
+                    class="max-w-xs"
+                />
+            @endif
 
             {{--
                 One press for the whole update set, which is the reason the
@@ -1772,6 +1811,74 @@ new #[Title('Sources')] class extends Component
                 </flux:button>
             @endif
         </div>
+
+        @if ($view === 'migrate')
+            {{--
+                IMG_1179's third strip segment. The rows come from the one tally
+                seam the move page's leaving list already reads, so the two pages
+                cannot disagree about what the reader holds: one method, two
+                renderings.
+            --}}
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                {{ __('Each count is how many series in your library come from that source. Tapping a source opens the move flow with that source already picked.') }}
+            </p>
+
+            @if ($this->holdings['error'] !== null)
+                <flux:callout variant="danger" icon="exclamation-triangle">
+                    <flux:heading level="3" class="mb-2">{{ __('The library could not be read') }}</flux:heading>
+
+                    <p class="text-sm opacity-80">{{ $this->holdings['error'] }}</p>
+                </flux:callout>
+            @elseif ($this->holdings['rows']->isEmpty())
+                <flux:callout variant="secondary" icon="information-circle">
+                    <flux:heading level="3" class="mb-2">{{ __('Nothing to move yet') }}</flux:heading>
+
+                    <p class="text-sm">{{ __('Your library holds no series on this server yet, so there is nothing to move.') }}</p>
+                </flux:callout>
+            @else
+                <ul class="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900">
+                    @foreach ($this->holdings['rows'] as $row)
+                        {{--
+                            Step 0's verdict: the row is labelled rather than presenting a
+                            numeral as a name, and the id rides in the row's detail
+                            attribute, where a reader who wants it can still find it.
+                        --}}
+                        @php($unnamed = $row['named'] === false)
+
+                        <li>
+                            <a
+                                href="{{ route('migrate.sources', ['compose' => $row['source_id']]) }}"
+                                wire:navigate
+                                @if ($unnamed) title="{{ __('Source :id', ['id' => $row['source_id']]) }}" @endif
+                                class="flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50 dark:hover:bg-white/[0.04]"
+                            >
+                                <x-source.icon :path="$row['icon']" size="size-9" />
+
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm font-medium text-zinc-800 dark:text-white">
+                                        {{ $unnamed ? __('An unnamed source') : $row['display_name'] }}
+                                    </span>
+
+                                    @if ($row['lang'] !== '')
+                                        <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ $row['lang'] }}</span>
+                                    @endif
+                                </span>
+
+                                <span
+                                    class="tabular-nums text-sm text-zinc-500 dark:text-zinc-400"
+                                    title="{{ __(':count series', ['count' => number_format($row['count'])]) }}"
+                                >
+                                    {{ number_format($row['count']) }}
+                                </span>
+
+                                <flux:icon name="chevron-right" class="size-4 shrink-0 text-zinc-400" />
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+        @else
+            {{-- The four catalogue slices. Nothing in here may surface on the Migrate view. --}}
 
         @if ($view !== 'installed')
             <div class="flex flex-wrap items-center gap-3">
@@ -2040,6 +2147,7 @@ new #[Title('Sources')] class extends Component
                     {{ __('Next') }}
                 </flux:button>
             </div>
+        @endif
         @endif
     </section>
 

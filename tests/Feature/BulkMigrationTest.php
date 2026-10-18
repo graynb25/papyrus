@@ -9,6 +9,7 @@ use App\Migration\CandidateFinder;
 use App\Migration\SeriesMigrator;
 use App\Models\BulkMigration;
 use App\Models\BulkMigrationItem;
+use App\Models\BulkMigrationTarget;
 use App\Models\MigrationSearch;
 use App\Models\SeriesMigration;
 use App\Models\SeriesState;
@@ -16,6 +17,7 @@ use App\Models\Source;
 use App\Models\User;
 use App\Support\ImageUrl;
 use App\Support\Library;
+use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -54,6 +56,8 @@ class BulkMigrationTest extends TestCase
     private const FROM_SOURCE = '6247824327199706550';
 
     private const TO_SOURCE = '6247824327199706600';
+
+    private const SECOND_TARGET = '6247824327199706700';
 
     /** Chapter count per manga id, on either source. */
     private array $chapterCounts = [];
@@ -146,20 +150,19 @@ class BulkMigrationTest extends TestCase
             ->assertSee(route('migrate.sources'), escape: false);
     }
 
-    public function test_the_target_picker_offers_a_source_the_reader_holds_nothing_on(): void
+    public function test_the_target_list_offers_a_source_the_reader_holds_nothing_on(): void
     {
         /*
          * The destination is picked before anything has moved, so holding nothing on it is
-         * the normal case, not a reason to hide it. When both pickers read the same list of
-         * sources carrying holdings, the first move to a source with none of the reader's
-         * series could not be picked at all.
+         * the normal case, not a reason to hide it. When the list read the same tally as
+         * the leaving list, the first move to a source with none of the reader's series
+         * could not be picked at all.
          */
         $this->seriesOnFrom(76, 'One Piece', 2442);
 
         $this->page()
             ->assertSee('MangaFire')
-            ->set('to', self::TO_SOURCE)
-            ->assertSee('MangaFire (en)');
+            ->assertSee("toggleTarget('".self::TO_SOURCE."')", false);
     }
 
     /*
@@ -168,7 +171,7 @@ class BulkMigrationTest extends TestCase
      * ---------------------------------------------------------------------------
      */
 
-    public function test_it_refuses_to_compare_without_two_sources(): void
+    public function test_it_refuses_to_compare_with_nothing_chosen(): void
     {
         Queue::fake();
 
@@ -178,58 +181,120 @@ class BulkMigrationTest extends TestCase
         $this->assertSame(0, BulkMigration::query()->count());
     }
 
-    public function test_it_refuses_the_same_source_twice(): void
+    public function test_it_refuses_the_source_being_left_as_its_own_target(): void
     {
         Queue::fake();
 
         $this->page()
             ->set('from', self::FROM_SOURCE)
-            ->set('to', self::FROM_SOURCE)
+            ->call('toggleTarget', self::FROM_SOURCE)
             ->call('compare');
 
         Queue::assertNothingPushed();
         $this->assertSame(0, BulkMigration::query()->count());
     }
 
-    public function test_a_new_run_stamps_the_names_of_both_sources(): void
+    public function test_it_refuses_to_compare_without_any_target(): void
     {
-        /*
-         * The running card and the history section name the two ends. They read stamped
-         * columns, not the source table: a source that left the table later must not turn a
-         * finished run into bare numbers. Caught live as "Looking up your series on
-         * 524110931382140732" instead of the source's name.
-         */
         Queue::fake();
 
         $this->page()
             ->set('from', self::FROM_SOURCE)
-            ->set('to', self::TO_SOURCE)
+            ->call('compare');
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, BulkMigration::query()->count());
+    }
+
+    public function test_a_sixth_target_is_refused_with_its_cost(): void
+    {
+        /*
+         * The still's own hint says fewer than five, and the refusal happens at the pick
+         * rather than only at the press: the sixth click is what gets refused, so the
+         * reader learns the cap's reason at the moment they hit it, and a run that does
+         * happen honours exactly what the list allowed.
+         */
+        Queue::fake();
+
+        foreach (['Target One', 'Target Two', 'Target Three', 'Target Four', 'Target Five', 'Target Six'] as $n => $name) {
+            $this->source($name, $n + 200, '100000000000000'.($n + 1));
+        }
+
+        $this->page()
+            ->set('from', self::FROM_SOURCE)
+            ->call('toggleTarget', '1000000000000001')
+            ->call('toggleTarget', '1000000000000002')
+            ->call('toggleTarget', '1000000000000003')
+            ->call('toggleTarget', '1000000000000004')
+            ->call('toggleTarget', '1000000000000005')
+            ->call('toggleTarget', '1000000000000006')
+            ->call('compare');
+
+        $run = BulkMigration::query()->latest('id')->first();
+
+        $this->assertNotNull($run, 'five destinations is a legitimate run; only the sixth is refused');
+
+        $targets = $run->targets()->orderBy('seq')->get();
+
+        $this->assertCount(5, $targets, 'the cap is honoured in the run, not just in the toast');
+        $this->assertSame('1000000000000005', $targets[4]->source_id, 'the sixth pick never entered the list');
+    }
+
+    public function test_a_run_of_two_targets_stamps_what_each_target_is(): void
+    {
+        /*
+         * The run card names destinations from stamped rows, not the mirror table: a source
+         * that leaves the mirror later must never turn a finished run into bare numbers.
+         * Same reasoning as the leaving side of the same card, caught live as "Looking up
+         * your series on 524110931382140732" instead of the source's name.
+         */
+        Queue::fake();
+
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+
+        $this->page()
+            ->set('from', self::FROM_SOURCE)
+            ->call('toggleTarget', self::TO_SOURCE)
+            ->call('toggleTarget', self::SECOND_TARGET)
             ->call('compare');
 
         $run = BulkMigration::query()->latest('id')->first();
 
         $this->assertSame('Asura Scans', $run->from_source_name);
-        $this->assertSame('MangaFire', $run->to_source_name);
+
+        $targets = $run->targets()->orderBy('seq')->get();
+
+        $this->assertCount(2, $targets);
+        $this->assertSame(self::TO_SOURCE, $targets[0]->source_id);
+        $this->assertSame('MangaFire', $targets[0]->source_name);
+        $this->assertSame(self::SECOND_TARGET, $targets[1]->source_id);
+        $this->assertSame('MangaTaro', $targets[1]->source_name);
     }
 
-    public function test_a_run_of_unresolvable_sources_stamps_their_ids_instead(): void
+    public function test_a_target_with_no_mirror_row_stamps_the_id_instead(): void
     {
         /*
          * A leaving source can hold series with no source row at all (the numeric wart in
-         * the leaving list). The id it stamps is legible on its own, and the fallback in the
-         * run card then agrees with the row rather than inventing a name.
+         * the leaving list) and a target can share it. The id it stamps is legible on its
+         * own, and the run card then agrees with the row rather than inventing a name.
          */
         Queue::fake();
 
         $this->page()
             ->set('from', '7777777777777777')
-            ->set('to', self::TO_SOURCE)
+            ->call('toggleTarget', self::TO_SOURCE)
+            ->call('toggleTarget', '9876543210987654')
             ->call('compare');
 
         $run = BulkMigration::query()->latest('id')->first();
 
         $this->assertSame('7777777777777777', $run->from_source_name);
-        $this->assertSame('MangaFire', $run->to_source_name);
+
+        $targets = $run->targets()->orderBy('seq')->get();
+
+        $this->assertSame('MangaFire', $targets[0]->source_name);
+        $this->assertSame('9876543210987654', $targets[1]->source_id, 'the id is the stamp when the mirror never carried a row for it');
+        $this->assertNull($targets[1]->source_name);
     }
 
     public function test_comparing_dispatches_the_job_for_the_signed_in_reader(): void
@@ -238,7 +303,7 @@ class BulkMigrationTest extends TestCase
 
         $this->page()
             ->set('from', self::FROM_SOURCE)
-            ->set('to', self::TO_SOURCE)
+            ->call('toggleTarget', self::TO_SOURCE)
             ->call('compare');
 
         $this->assertSame(1, BulkMigration::query()->forUser($this->user->id)->count());
@@ -248,6 +313,238 @@ class BulkMigrationTest extends TestCase
                 && $job->runId === (int) BulkMigration::query()->value('id');
         });
     }
+
+    /**
+     * The page as a reader arriving from the sources page sees it: composed from one source.
+     */
+    private function composePage(string $sourceId = self::FROM_SOURCE): Testable
+    {
+        return Livewire::withQueryParams(['compose' => $sourceId])
+            ->test('pages::migrate-sources');
+    }
+
+    /*
+     * -------------------------------------------------------------------------
+     * Composing.
+     * -------------------------------------------------------------------------
+     */
+
+    public function test_the_compose_param_that_the_mirror_never_carried_goes_unread(): void
+    {
+        /*
+         * A query string is a reader's control, not a fact. An id the mirror never
+         * carried cannot be honoured, and the page must not sit in a half composed
+         * state: a picked shelf named "Series on" above a leaving picker it quietly
+         * disagrees with is how a run ends up moving what nobody looked at.
+         */
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+
+        $this->composePage('9876543210987654')
+            ->assertDontSee('Tick the series you are moving', false);
+    }
+
+    public function test_a_compose_source_the_mirror_knows_takes_the_page_over(): void
+    {
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+
+        $this->composePage()
+            ->assertSee('Move series off Asura Scans.')
+            ->assertSee('Every series you have saved from Asura Scans is listed below.')
+            ->assertSee('Tick the series you are moving', false);
+    }
+
+    public function test_compose_lists_the_reader_s_series_on_that_source(): void
+    {
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+        $this->seriesOnFrom(77, 'Beta Hill', 12);
+        $this->seriesElsewhere(3000, 'Not Listed', 8, self::TO_SOURCE);
+
+        $this->composePage()
+            ->assertSee('Alpha Road')
+            ->assertSee('Beta Hill')
+            ->assertSee('togglePick(76)', false)
+            ->assertDontSee('togglePick(3000)', false);
+    }
+
+    public function test_picking_counts_on_the_compose_panel(): void
+    {
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+        $this->seriesOnFrom(77, 'Beta Hill', 12);
+
+        $this->composePage()
+            ->assertSee('0 of 2 picked')
+            ->call('togglePick', 76)
+            ->assertSee('1 of 2 picked')
+            ->call('togglePick', 77)
+            ->assertSee('2 of 2 picked')
+            ->call('togglePick', 77)
+            ->assertSee('1 of 2 picked');
+    }
+
+    public function test_a_composed_run_carries_the_picked_series_and_its_targets(): void
+    {
+        Queue::fake();
+
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+        $this->seriesOnFrom(77, 'Beta Hill', 12);
+
+        $this->composePage()
+            ->call('togglePick', 76)
+            ->call('toggleTarget', self::TO_SOURCE)
+            ->call('compare');
+
+        $run = BulkMigration::query()->latest('id')->first();
+
+        $this->assertNotNull($run);
+        $this->assertTrue($run->isPicked(), 'the run knows it owns a picked subset, not the shelf');
+        $this->assertSame([76], $run->picked_manga_ids, 'ids stamped at pick time, not titles');
+        $this->assertSame(self::TO_SOURCE, $run->targets()->first()?->source_id);
+        $this->assertSame(0, BulkMigrationTarget::query()->where('bulk_migration_id', $run->id)->count() - 1);
+    }
+
+    public function test_a_composed_start_refuses_to_run_with_nothing_picked(): void
+    {
+        Queue::fake();
+
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+
+        $this->composePage()
+            ->call('toggleTarget', self::TO_SOURCE)
+            ->call('compare');
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, BulkMigration::query()->count());
+    }
+
+    public function test_a_picked_series_that_left_the_source_since_the_pick_is_not_compared(): void
+    {
+        /*
+         * The pick happened at one moment; the run happens later. A series that left the
+         * source between the two is simply not compared, and the run says what it owns
+         * plainly rather than reporting the shelf's counts against a pick's name.
+         */
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Alpha Road'];
+
+        $run = BulkMigration::createFor($this->user->id, [
+            'from_source_id' => self::FROM_SOURCE,
+            'picked_manga_ids' => [777],
+            'state' => BulkMigration::RUNNING,
+            'started_at' => now(),
+        ]);
+
+        BulkMigrationTarget::createFor($this->user->id, [
+            'bulk_migration_id' => $run->getKey(),
+            'source_id' => self::TO_SOURCE,
+            'source_name' => 'MangaFire',
+            'lang' => 'en',
+            'seq' => 0,
+        ]);
+
+        $this->matcher()->run($run);
+
+        $fresh = $run->fresh();
+
+        $this->assertSame(BulkMigration::READY, $fresh->state);
+        $this->assertSame('None of the picked series is on that source any more.', $fresh->error);
+        $this->assertSame([], $this->sourcesSearched(), 'nothing to compare, so no search leaves');
+    }
+
+    /*
+     * -------------------------------------------------------------------------
+     * The numbers a row carries.
+     * -------------------------------------------------------------------------
+     */
+
+    public function test_a_comparison_row_stamps_the_read_progress_it_left_behind(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 44, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        /*
+         * Ten of the 41 read, which is the number deciding per candidate would be: the
+         * read rows are counted once the compare is about to write, not looked up again
+         * for every row, and the stamp is what a later render reads so the number a
+         * reader sees is the number the compare knew.
+         */
+        $state = app(ReadingState::class);
+
+        for ($n = 1; $n <= 10; $n++) {
+            $state->markRead($this->user->id, 76, 76 * 1000 + $n, true);
+        }
+
+        $this->matcher()->run($this->startRun());
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertSame(31, $item->unread_here);
+    }
+
+    public function test_a_series_the_server_never_counted_stamps_no_number(): void
+    {
+        /*
+         * Three states, not two: a chapter list the server never fetched is not zero
+         * unread. Stamping 0 there would tell a reader their 400 chapter backlog is
+         * caught up on a technicality.
+         */
+        $this->meta[78] = ['title' => 'Never Counted', 'author' => null, 'source_id' => self::FROM_SOURCE, 'source_name' => 'Asura Scans'];
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => 78,
+            'in_library' => true,
+            'title' => 'Never Counted',
+        ]);
+
+        $this->destination(2088, 'Never Counted', 41, null);
+        $this->searchHits[self::TO_SOURCE] = [2088 => 'Never Counted'];
+
+        $this->matcher()->run($this->startRun());
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertNull($item->unread_here);
+    }
+
+    public function test_an_offer_row_says_what_the_reader_leaves_behind(): void
+    {
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 44, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $state = app(ReadingState::class);
+
+        for ($n = 1; $n <= 10; $n++) {
+            $state->markRead($this->user->id, 76, 76 * 1000 + $n, true);
+        }
+
+        $this->matcher()->run($this->startRun());
+
+        $this->page()
+            ->assertSee('31 unread chapters.')
+            ->assertSee('Latest: Chapter 41');
+    }
+
+    public function test_the_compose_rows_say_how_much_is_read(): void
+    {
+        $state = app(ReadingState::class);
+
+        $this->seriesOnFrom(76, 'Alpha Road', 30);
+
+        for ($n = 1; $n <= 12; $n++) {
+            $state->markRead($this->user->id, 76, 76 * 1000 + $n, true);
+        }
+
+        $this->composePage()
+            ->assertSee('12 of 30 read');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Matching.
+     * ---------------------------------------------------------------------------
+     */
 
     public function test_it_finds_the_readers_series_on_the_source_they_are_leaving(): void
     {
@@ -294,6 +591,141 @@ class BulkMigrationTest extends TestCase
         $this->assertSame(0, $item->chapter_delta);
         $this->assertSame(1.0, $item->author_overlap);
         $this->assertSame(BulkMigrationItem::PENDING, $item->status);
+    }
+
+    public function test_a_targeted_run_searches_every_target_and_only_the_targets(): void
+    {
+        /*
+         * The search fans out per target per series, which is exactly the cost the still's
+         * own hint warns about. The boundary the run owes the reader is that exactly the
+         * picked list is searched: no other installed source, and no mirror row that
+         * merely exists.
+         */
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+        $this->source('Never Picked', 800, '1000000000000009');
+
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+        $this->searchHits[self::SECOND_TARGET] = [3007 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startTargetedRun(self::TO_SOURCE, self::SECOND_TARGET));
+
+        $searched = $this->sourcesSearched();
+
+        $this->assertContains(self::TO_SOURCE, $searched);
+        $this->assertContains(self::SECOND_TARGET, $searched);
+        $this->assertNotContains('1000000000000009', $searched, 'an installed source nobody picked is not fan out noise');
+    }
+
+    public function test_a_targeted_run_ranks_candidates_across_targets_by_the_measured_ordering(): void
+    {
+        /*
+         * Which target produced the offer decides which card the reader presses, so the
+         * winner is not the order the boxes were ticked in. Both targets landed the same
+         * title: one exact on chapters, one three ahead, sitting on the target that was
+         * picked second. The item row stamps which source won, so a round through the
+         * mover never depends on the mirror still carrying that row.
+         */
+        $this->source('MangaTaro', 700, self::SECOND_TARGET);
+
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+
+        $this->destination(2033, 'Hiding a Logistics Center', 44, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->meta[3007] = [
+            'title' => 'Hiding a Logistics Center',
+            'author' => 'Life Ruined',
+            'source_id' => self::SECOND_TARGET,
+            'source_name' => 'MangaTaro',
+        ];
+        $this->chapterCounts[3007] = 41;
+        $this->searchHits[self::SECOND_TARGET] = [3007 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startTargetedRun(self::SECOND_TARGET, self::TO_SOURCE));
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertSame(3007, $item->to_manga_id, '41 of 41 outranks 44 of 41, whichever target it sat on');
+        $this->assertSame(self::SECOND_TARGET, $item->to_source_id);
+        $this->assertSame('MangaTaro', $item->to_source_name);
+    }
+
+    public function test_a_target_the_catalogue_no_longer_lists_fails_naming_it(): void
+    {
+        /*
+         * A pick can be gone from the mirror by the time the job reaches it: the reader
+         * picked it on the box list, the server no longer serves it. The run refuses
+         * naming that pick as itself rather than dying on a row that reads as the leaving
+         * side's fault.
+         */
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+
+        $run = $this->startTargetedRun('9876543210987654');
+        $this->matcher()->run($run);
+
+        $fresh = $run->fresh();
+
+        $this->assertSame(BulkMigration::FAILED, $fresh->state);
+        $this->assertStringContainsString('9876543210987654', (string) $fresh->error, 'the vanished pick is named, rather than being read as the leaving side');
+        $this->assertSame([], $this->sourcesSearched(), 'a vanished target is refused before any search leaves');
+    }
+
+    public function test_a_target_that_is_not_installed_fails_naming_it(): void
+    {
+        $ghost = $this->source('Ghost Scans', 750, '1000000000000008');
+        $ghost->update(['is_installed' => false]);
+
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+
+        $run = $this->startTargetedRun('1000000000000008');
+        $this->matcher()->run($run);
+
+        $fresh = $run->fresh();
+
+        $this->assertSame(BulkMigration::FAILED, $fresh->state);
+        $this->assertStringContainsString('Ghost Scans', (string) $fresh->error, 'the stamp the target row carries is what the error names');
+        $this->assertSame([], $this->sourcesSearched());
+    }
+
+    public function test_a_mixed_target_list_is_refused_before_any_series_is_searched(): void
+    {
+        /*
+         * One vanished pick among five is not four searches' worth of a run: every series
+         * would come back missing destinations the reader asked for by name. The run
+         * fails outright, before any request leaves for any series.
+         */
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41);
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $run = $this->startTargetedRun(self::TO_SOURCE, '9876543210987654');
+        $this->matcher()->run($run);
+
+        $this->assertSame(BulkMigration::FAILED, $run->fresh()->state);
+        $this->assertSame(0, BulkMigrationItem::query()->where('bulk_migration_id', $run->id)->count());
+        $this->assertSame([], $this->sourcesSearched());
+    }
+
+    public function test_an_older_run_compared_before_the_target_list_still_matches(): void
+    {
+        /*
+         * Runs 1 to 7 carry one destination in two columns and no target rows at all. The
+         * matcher reads the list when it exists and the columns when it does not, so an
+         * old run reopened in this app still walks what the reader of its day picked.
+         */
+        $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
+        $this->destination(2033, 'Hiding a Logistics Center', 44, 'Life Ruined');
+        $this->searchHits[self::TO_SOURCE] = [2033 => 'Hiding a Logistics Center'];
+
+        $this->matcher()->run($this->startRun());
+
+        $this->assertSame([self::TO_SOURCE], $this->sourcesSearched(), 'the legacy columns are the target list when no rows exist');
+
+        $item = BulkMigrationItem::query()->firstOrFail();
+
+        $this->assertSame(2033, $item->to_manga_id);
+        $this->assertSame(self::TO_SOURCE, $item->to_source_id, 'the legacy column is what the fallback path stamps');
+        $this->assertSame('MangaFire', $item->to_source_name);
     }
 
     public function test_a_series_the_destination_does_not_have_is_not_offered(): void
@@ -640,9 +1072,14 @@ class BulkMigrationTest extends TestCase
 
         $this->page()
             ->assertSee('Asura Scans')
-            // The numeric wart: a series sits on an id with no source row left, so the
-            // leaving list renders the raw id rather than an empty name.
-            ->assertSee('7777777777777777');
+            /*
+             * The mirror has no row for this id, but the problem is not nameless: the lens
+             * carries the name the live rows gave it, so the reader sees "Somewhere Else"
+             * rather than a number that means nothing. Measured against the stills' two
+             * numeric rows, Papyrus prints a numeral only when neither the mirror nor the
+             * server had a name, which the page then says plainly.
+             */
+            ->assertSee('Somewhere Else');
 
         /*
          * A source with nothing of the reader's on it is not a place to leave: a run out of
@@ -651,6 +1088,59 @@ class BulkMigrationTest extends TestCase
          * the refusal is scoped to the leaving menu rather than to the whole page.
          */
         $this->page()->assertDontSee('$set(\'from\', \''.self::TO_SOURCE.'\')');
+    }
+
+    public function test_the_holdings_tally_counts_per_source_and_joins_the_mirror(): void
+    {
+        $this->seriesOnFrom(76, 'One', 10);
+        $this->seriesOnFrom(77, 'Two', 10);
+        $this->seriesElsewhere(3000, 'Three', 10, self::TO_SOURCE);
+
+        $rows = app(Library::class)->holdingsBySource($this->user->id)->values();
+
+        $this->assertCount(2, $rows);
+
+        $this->assertSame(self::FROM_SOURCE, $rows[0]['source_id']);
+        $this->assertSame(2, $rows[0]['count']);
+        $this->assertSame('Asura Scans', $rows[0]['display_name']);
+        $this->assertSame('en', $rows[0]['lang']);
+        $this->assertTrue($rows[0]['installed']);
+
+        $this->assertSame(1, $rows[1]['count']);
+        $this->assertTrue($rows[1]['installed']);
+    }
+
+    public function test_a_source_without_a_mirror_row_takes_its_name_from_the_live_rows(): void
+    {
+        /*
+         * Measured shape from IMG_1179 on 2026-10-17: one of its two numeral rows belongs to
+         * a mirror row Papyrus synced (there rendered by name), the other has no mirror row
+         * at all. The reader's own series do not lose their place because the mirror missed
+         * a row, and the lens carries the name the server gave it, so that is where the name
+         * comes from rather than a numeral.
+         */
+        $this->seriesElsewhere(4000, 'The Series Itself', 30, '9876543210987654');
+
+        $row = app(Library::class)->holdingsBySource($this->user->id)
+            ->firstWhere('source_id', '9876543210987654');
+
+        $this->assertIsArray($row);
+        $this->assertSame('Somewhere Else', $row['display_name']);
+        $this->assertTrue($row['named']);
+        $this->assertFalse($row['installed']);
+        $this->assertSame(1, $row['count']);
+    }
+
+    public function test_the_holdings_tally_orders_by_count_descending(): void
+    {
+        $this->seriesOnFrom(76, 'One', 10);
+        $this->seriesElsewhere(3000, 'Three', 10, self::TO_SOURCE);
+        $this->seriesOnFrom(77, 'Two', 10);
+
+        $rows = app(Library::class)->holdingsBySource($this->user->id)->values();
+
+        $this->assertSame(self::FROM_SOURCE, $rows[0]['source_id'], '2 holdings outrank 1, whichever the lens ordered them in first.');
+        $this->assertSame(self::TO_SOURCE, $rows[1]['source_id']);
     }
 
     public function test_the_page_says_so_when_nothing_in_the_library_has_a_source(): void
@@ -1015,6 +1505,34 @@ class BulkMigrationTest extends TestCase
         ]);
     }
 
+    /**
+     * A run the newer page writes: the destinations the reader picked as a list, the
+     * single destination columns left alone. Each target is stamped with what the mirror
+     * knew at creation time, exactly as the page does.
+     */
+    private function startTargetedRun(string ...$targets): BulkMigration
+    {
+        $run = BulkMigration::createFor($this->user->id, [
+            'from_source_id' => self::FROM_SOURCE,
+            'state' => BulkMigration::RUNNING,
+            'started_at' => now(),
+        ]);
+
+        foreach (array_values($targets) as $seq => $sourceId) {
+            BulkMigrationTarget::createFor($this->user->id, [
+                'bulk_migration_id' => $run->getKey(),
+                'source_id' => $sourceId,
+                'source_name' => Source::query()
+                    ->where('suwayomi_source_id', $sourceId)
+                    ->value('display_name'),
+                'lang' => 'en',
+                'seq' => $seq,
+            ]);
+        }
+
+        return $run;
+    }
+
     private function readyRunWithNoOffers(): BulkMigration
     {
         return BulkMigration::createFor($this->user->id, [
@@ -1376,23 +1894,24 @@ class BulkMigrationTest extends TestCase
     /**
      * The same source twice offers nothing, and asks the server nothing.
      *
-     * Moving a source onto itself is the one pair the page refuses to build, and the guard
-     * here is the second half of that. Without it the run searches the source it is leaving
-     * and reports its own catalogue back as a destination, which does nothing.
+     * Moving a source onto itself is the one pair the page refuses to create, and the
+     * refusal here is the second half of that: a run row can be written by hand or by an
+     * older client, so the matcher says why rather than handing back the leaving side's
+     * own catalogue as a destination.
      */
     public function test_a_source_moved_onto_itself_offers_nothing(): void
     {
         $this->seriesOnFrom(76, 'Hiding a Logistics Center', 41, 'Life Ruined');
         $this->searchHits[self::FROM_SOURCE] = [76 => 'Hiding a Logistics Center'];
 
-        $found = app(CandidateFinder::class)->findOn(
-            $this->from,
-            ['title' => 'Hiding a Logistics Center', 'chapters' => ['totalCount' => 41], 'author' => 'Life Ruined'],
-            $this->from,
-        );
+        $run = $this->startTargetedRun(self::FROM_SOURCE);
+        $this->matcher()->run($run);
 
-        $this->assertSame([], $found['candidates']);
-        $this->assertSame(0, $found['meta']['sources_total'], 'and it did not go looking');
+        $fresh = $run->fresh();
+
+        $this->assertSame(BulkMigration::FAILED, $fresh->state);
+        $this->assertSame([], $this->sourcesSearched(), 'and it did not go looking');
+        $this->assertNull(BulkMigrationItem::query()->where('bulk_migration_id', $run->id)->first());
     }
 
     private function destination(int $mangaId, string $title, int $chapters, ?string $author = null): void

@@ -29,12 +29,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $id
  * @property int $user_id
  * @property string $from_source_id
- * @property string $to_source_id
+ * @property string|null $to_source_id
  * @property string|null $from_source_name
  * @property string|null $to_source_name
  * @property string $state running|ready|failed
  * @property string|null $error
  * @property string|null $current_title
+ * @property array<int, int>|null $picked_manga_ids
  * @property int $series_total
  * @property int $series_checked
  * @property int $series_matched
@@ -46,6 +47,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'to_source_id',
     'from_source_name',
     'to_source_name',
+    'picked_manga_ids',
     'state',
     'error',
     'current_title',
@@ -69,6 +71,7 @@ class BulkMigration extends OwnedModel
             'series_total' => 'integer',
             'series_checked' => 'integer',
             'series_matched' => 'integer',
+            'picked_manga_ids' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
@@ -104,6 +107,39 @@ class BulkMigration extends OwnedModel
     public function items(): HasMany
     {
         return $this->hasMany(BulkMigrationItem::class);
+    }
+
+    /** @return HasMany<BulkMigrationTarget, $this> */
+    public function targets(): HasMany
+    {
+        return $this->hasMany(BulkMigrationTarget::class);
+    }
+
+    /**
+     * Whether the run's destinations are one value in two columns rather than the list.
+     *
+     * The shape every run before the compose screen carried. The matcher trusts
+     * `to_source_id` only when the list is absent, because a row that answered both ways
+     * would make neither answer checked, and the page renders the run card through this
+     * method for the same reason: two shapes, one seam, no card left guessing.
+     */
+    public function isSingleDestination(): bool
+    {
+        return $this->to_source_id !== null
+            && $this->targets()->doesntExist();
+    }
+
+    /**
+     * Whether the run compares a picked subset rather than the whole shelf.
+     *
+     * Null is the whole shelf, which is every run that predates the compose screen. A list
+     * present means the compose screen made this run, whatever it holds, so the two shapes
+     * are told apart by the column rather than inferred from counters, and the matcher
+     * intersects it with the lens once when it starts.
+     */
+    public function isPicked(): bool
+    {
+        return $this->picked_manga_ids !== null;
     }
 
     /**

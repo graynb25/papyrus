@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ExtensionStore;
+use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
 use App\Support\SourceNotices;
@@ -62,6 +63,23 @@ class SourcesPageTest extends TestCase
      * with the failure named rather than answering 500 or drawing an empty list.
      */
     private bool $extensionListShouldFail = false;
+
+    /**
+     * The manga nodes the fake answers a library read with, keyed by manga id.
+     *
+     * The Migrate tab is the first part of this page that reads the reader's
+     * library, so before it nothing here needed a `query Many` branch: the
+     * generic `ok` answer below was all a library read ever came back to.
+     *
+     * @var array<int, array{source_id: string, source_name: string, title: string}>
+     */
+    private array $libraryNodes = [];
+
+    /**
+     * Whether the library read should answer with a server error, so the
+     * Migrate view's survivability is exercised rather than assumed.
+     */
+    private bool $libraryShouldFail = false;
 
     /**
      * How many times the server was asked to fetch its own catalogue.
@@ -247,6 +265,45 @@ class SourcesPageTest extends TestCase
                 ]);
             }
 
+            /*
+             * The batched library read, which is how the Migrate tab learns what
+             * the reader's holdings are. Keyed on its own property rather than the
+             * catalogue's, because a library read and an extension read are two
+             * different facts about the same server, and no test before the tab
+             * needed either.
+             */
+            if (str_contains($query, 'query Many')) {
+                if ($this->libraryShouldFail) {
+                    return Http::response('The server is not answering.', 500);
+                }
+
+                $nodes = [];
+
+                foreach ((array) ($this->requestVariables($request)['ids'] ?? []) as $id) {
+                    $node = $this->libraryNodes[(int) $id] ?? null;
+
+                    if ($node === null) {
+                        continue;
+                    }
+
+                    $nodes[] = [
+                        'id' => (string) (int) $id,
+                        'title' => $node['title'],
+                        'thumbnailUrl' => null,
+                        'status' => 'ONGOING',
+                        'initialized' => true,
+                        'source' => [
+                            'id' => $node['source_id'],
+                            'name' => $node['source_name'],
+                            'lang' => 'en',
+                        ],
+                        'chapters' => ['totalCount' => 30, 'nodes' => []],
+                    ];
+                }
+
+                return Http::response(['data' => ['mangas' => ['nodes' => $nodes]]]);
+            }
+
             if (str_contains($query, 'extensionStores')) {
                 return Http::response(['data' => ['extensionStores' => ['nodes' => [[
                     'indexUrl' => 'https://example.test/index.pb',
@@ -357,6 +414,46 @@ class SourcesPageTest extends TestCase
 
             return Http::response(['data' => ['ok' => true]]);
         });
+    }
+
+    /**
+     * A mirror row, the way a synced install answers.
+     *
+     * Distinct from {@see Source()}, which builds a node for the catalogue fake:
+     * this is the `sources` table row the holdings tally joins against.
+     */
+    private function mirrorSource(string $name, string $sourceId): Source
+    {
+        return Source::create([
+            'suwayomi_source_id' => $sourceId,
+            'name' => $name,
+            'display_name' => $name,
+            'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.'.strtolower(str_replace(' ', '', $name)),
+            'lang' => 'en',
+            'home_url' => "https://{$name}.test",
+            'content_warning' => Source::SAFE,
+            'is_installed' => true,
+            'supports_latest' => true,
+        ]);
+    }
+
+    /**
+     * One series on the server, as a library read answers it, with the reader's
+     * own row beside it so the lens counts it.
+     */
+    private function libraryNode(int $mangaId, string $sourceId, string $title, string $sourceName): void
+    {
+        $this->libraryNodes[$mangaId] = [
+            'source_id' => $sourceId,
+            'source_name' => $sourceName,
+            'title' => $title,
+        ];
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => $mangaId,
+            'in_library' => true,
+            'title' => $title,
+        ]);
     }
 
     /**
@@ -1614,6 +1711,119 @@ class SourcesPageTest extends TestCase
         Http::assertNotSent(
             fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
         );
+    }
+
+    /*
+     * The Migrate view: the sources page's third strip segment (IMG_1179), from
+     * the one tally seam the move page's leaving list already reads, so the two
+     * pages cannot disagree about what the reader holds.
+     */
+
+    public function test_the_migrate_view_lists_the_sources_holding_series_with_their_counts(): void
+    {
+        $this->mirrorSource('Harbor Comics', '1000000000000001');
+        $this->mirrorSource('Beach House', '2000000000000002');
+        $this->libraryNode(501, '1000000000000001', 'Alpha Road', 'Harbor Comics');
+        $this->libraryNode(502, '1000000000000001', 'Beta Hill', 'Harbor Comics');
+        $this->libraryNode(503, '2000000000000002', 'Gamma Cove', 'Beach House');
+
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('Harbor Comics')
+            ->assertSee('Beach House')
+            ->assertSee('2 series')
+            ->assertSee('1 series')
+            ->assertSee('Each count is how many series in your library come from that source.');
+    }
+
+    public function test_a_migrate_row_opens_the_compose_flow_for_its_source(): void
+    {
+        $this->mirrorSource('Harbor Comics', '1000000000000001');
+        $this->libraryNode(501, '1000000000000001', 'Alpha Road', 'Harbor Comics');
+
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('/migrate/sources?compose=1000000000000001');
+    }
+
+    public function test_a_source_without_a_mirror_row_takes_the_name_its_series_carry(): void
+    {
+        $this->libraryNode(501, '9876543210987654', 'The Series Itself', 'Somewhere Else');
+
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('Somewhere Else');
+    }
+
+    public function test_a_source_the_lens_cannot_name_is_called_an_unnamed_source(): void
+    {
+        /*
+         * Step 0's verdict. The row is labelled rather than presenting a numeral
+         * as a name, and the id stays in the row's detail, where a reader who
+         * wants it can still find it.
+         */
+        $this->libraryNode(501, '9876543210987654', 'The Series Itself', '');
+
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('An unnamed source')
+            ->assertSee('9876543210987654');
+    }
+
+    /**
+     * The plan's own named test: the catalogue's filters, count and empty state
+     * belong to the extensions views, and none of them may surface inside the
+     * Migrate view's rendering.
+     */
+    public function test_the_catalogue_view_s_state_does_not_leak_into_the_migrate_view(): void
+    {
+        /*
+         * The first needle renders nowhere but the Migrate view's own branch, so
+         * a catalogue that leaks across a view boundary dies here, and the two
+         * don't-see needles that follow are the catalogue's failure state, which
+         * visibly renders on the catalogue view this test leaves behind.
+         */
+        $this->extensionListShouldFail = true;
+        $this->mirrorSource('Harbor Comics', '1000000000000001');
+        $this->libraryNode(501, '1000000000000001', 'Alpha Road', 'Harbor Comics');
+
+        $this->page()
+            ->set('name', 'Bogus Nonexistent')
+            ->set('content', [Source::NSFW])
+            ->call('setView', 'migrate')
+            ->assertSee('Each count is how many series in your library come from that source.')
+            ->assertDontSee('The extension list did not load')
+            ->assertDontSee('Nothing installed yet');
+    }
+
+    public function test_the_migrate_view_says_what_it_is_when_nothing_is_held(): void
+    {
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('Nothing to move yet')
+            ->assertSee('Your library holds no series on this server yet, so there is nothing to move.');
+    }
+
+    /**
+     * The F26 shape, one view over: a server that will not answer is a state on
+     * the page, never a 500 and never an empty list over an unreadable library.
+     *
+     * The reader has to hold something for the failure to be reachable: with no
+     * holding rows at all, the lens returns before any network call, so a fake
+     * failure would never be met and the test would pass against a page that
+     * truthfully rendered its empty state instead (the shape trap 267 names).
+     */
+    public function test_the_migrate_view_renders_when_the_library_cannot_be_read(): void
+    {
+        $this->libraryNode(501, '9876543210987654', 'The Series Itself', '');
+
+        $this->libraryShouldFail = true;
+
+        $this->page()
+            ->call('setView', 'migrate')
+            ->assertSee('The library could not be read')
+            ->assertSee('Suwayomi returned HTTP 500.')
+            ->assertDontSee('Nothing to move yet');
     }
 
     public function test_the_conduct_sentence_has_no_home_on_the_card(): void

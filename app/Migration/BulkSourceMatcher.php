@@ -9,6 +9,7 @@ use App\Models\Source;
 use App\Support\Library;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
+use Illuminate\Support\Collection;
 
 /**
  * Compares every series a reader has on one source against a chosen destination, and
@@ -70,36 +71,16 @@ class BulkSourceMatcher
     {
         $userId = (int) $run->user_id;
 
-        $to = Source::query()->where('suwayomi_source_id', $run->to_source_id)->first();
+        $targets = $this->targetsFor($run);
 
-        if ($to === null) {
-            $run->update([
-                'state' => BulkMigration::FAILED,
-                'error' => __('That source is not in the catalogue on this server any more.'),
-                'finished_at' => now(),
-            ]);
-
-            return ['checked' => 0, 'matched' => 0, 'total' => 0];
-        }
-
-        if (! $to->is_installed) {
-            $run->update([
-                'state' => BulkMigration::FAILED,
-                'error' => __('That source is not installed on this server, so there is nothing to search. Install it and try again.'),
-                'finished_at' => now(),
-            ]);
-
+        if ($targets === null) {
             return ['checked' => 0, 'matched' => 0, 'total' => 0];
         }
 
         $from = Source::query()->where('suwayomi_source_id', $run->from_source_id)->first();
 
         if ($from === null) {
-            $run->update([
-                'state' => BulkMigration::FAILED,
-                'error' => __('The source you are moving away from is not in the catalogue on this server any more.'),
-                'finished_at' => now(),
-            ]);
+            $this->refuse($run, __('The source you are moving away from is not in the catalogue on this server any more.'));
 
             return ['checked' => 0, 'matched' => 0, 'total' => 0];
         }
@@ -117,18 +98,50 @@ class BulkSourceMatcher
                 && (string) $entry['source_id'] === $run->from_source_id)
             ->values();
 
+        /*
+         * The picked subset rides the run as ids, not as titles, and is intersected here
+         * rather than trusted to still be true: between the tick on the compose panel and
+         * the job waking, a series can leave the source it was picked off. What the reader
+         * chose is what the ids record; what they still sit on is what this measures. One
+         * intersect of one list is cheaper than a wrong offer.
+         */
+        if ($run->isPicked()) {
+            $picks = array_map('intval', (array) $run->picked_manga_ids);
+
+            $onSource = $onSource
+                ->filter(fn (array $entry): bool => in_array((int) $entry['manga_id'], $picks, true))
+                ->values();
+        }
+
+        /*
+         * Read state is read once for the whole run, not per series: one grouped count
+         * upstream of here builds every entry's number, and the per item stamp below is
+         * what a later render reads, so two rows never disagree about the same series'
+         * progress for the life of the run.
+         */
+        $unreadHere = $onSource
+            ->mapWithKeys(fn (array $entry): array => [(int) $entry['manga_id'] => $entry['unread_chapters']])
+            ->all();
+
         $total = $onSource->count();
 
+        /*
+         * `series_total` and the leaving name are re-stamped here because the job owns the
+         * run's progress; the destination names are not, because they were stamped once at
+         * creation into their own rows and a run whose reader picked five targets must read
+         * exactly those names after the mirror forgets one.
+         */
         $run->update([
             'series_total' => $total,
             'from_source_name' => $from->display_name,
-            'to_source_name' => $to->display_name,
         ]);
 
         if ($total === 0) {
             $run->update([
                 'state' => BulkMigration::READY,
-                'error' => __('Nothing in your library is on that source.'),
+                'error' => $run->isPicked()
+                    ? __('None of the picked series is on that source any more.')
+                    : __('Nothing in your library is on that source.'),
                 'finished_at' => now(),
             ]);
 
@@ -212,7 +225,13 @@ class BulkSourceMatcher
 
             $checked++;
 
-            $outcome = $this->compareOne($run, $from, $to, (int) $entry['manga_id']);
+            $outcome = $this->compareOne(
+                $run,
+                $from,
+                $targets,
+                (int) $entry['manga_id'],
+                $unreadHere[(int) $entry['manga_id']] ?? null,
+            );
 
             if ($outcome['matched']) {
                 $matched++;
@@ -249,6 +268,105 @@ class BulkSourceMatcher
     }
 
     /**
+     * The destinations this run may search, validated against the server, or null when
+     * the run has been recorded as refused.
+     *
+     * ## Two shapes, and why the older one is still trusted
+     *
+     * Runs before the compose screen carried exactly one destination in two columns, with
+     * no `bulk_migration_targets` rows. Reading those columns means an old run reopened in
+     * this app still walks exactly what the reader of its day picked. {@see
+     * \App\Models\BulkMigration::isSingleDestination()} is the seam that keeps the two
+     * shapes apart, because a row answering both ways would make neither answer checked.
+     *
+     * ## Why one refused destination refuses the run
+     *
+     * A pick that cannot be honoured is not four searches' worth of a run with one
+     * destination quietly missing: every series would come back without something the
+     * reader asked for by name, and the card would offer moves that do not account for
+     * the whole pick. The refusal names what was asked for and could not be honoured by
+     * the name its row was stamped with, or its id where there is no name.
+     *
+     * @return Collection<int, Source>|null
+     */
+    private function targetsFor(BulkMigration $run): ?Collection
+    {
+        if ($run->isSingleDestination()) {
+            $to = Source::query()->where('suwayomi_source_id', (string) $run->to_source_id)->first();
+
+            if ($to === null) {
+                $this->refuse($run, __('That source is not in the catalogue on this server any more.'));
+
+                return null;
+            }
+
+            if (! $to->is_installed) {
+                $this->refuse($run, __('That source is not installed on this server, so there is nothing to search. Install it and try again.'));
+
+                return null;
+            }
+
+            if ((string) $to->suwayomi_source_id === (string) $run->from_source_id) {
+                $this->refuse($run, __('The source being left is also a destination. Moving a source onto itself does nothing.'));
+
+                return null;
+            }
+
+            return collect([$to]);
+        }
+
+        $rows = Source::query()
+            ->whereIn('suwayomi_source_id', $run->targets()->orderBy('seq')->pluck('source_id')->all())
+            ->get()
+            ->keyBy(fn (Source $source): string => (string) $source->suwayomi_source_id);
+
+        $sameAsLeaving = $run->targets()
+            ->orderBy('seq')
+            ->pluck('source_id')
+            ->contains(fn (string $sourceId): bool => (string) $sourceId === (string) $run->from_source_id);
+
+        if ($sameAsLeaving) {
+            $this->refuse($run, __('The source being left is also a destination. Moving a source onto itself does nothing.'));
+
+            return null;
+        }
+
+        foreach ($run->targets()->orderBy('seq')->get() as $target) {
+            $source = $rows->get((string) $target->source_id);
+            $name = (string) ($target->source_name ?? $target->source_id);
+
+            if ($source === null) {
+                $this->refuse($run, __('One destination is not in the catalogue on this server any more: :name', ['name' => $name]));
+
+                return null;
+            }
+
+            if (! $source->is_installed) {
+                $this->refuse($run, __(':name is not installed on this server, so there is nothing to search there. Install it and try again.', ['name' => $name]));
+
+                return null;
+            }
+        }
+
+        return $run->targets()
+            ->orderBy('seq')
+            ->get()
+            ->map(fn ($target): Source => $rows->get((string) $target->source_id));
+    }
+
+    /**
+     * Record a run that could not be honoured at all, before anything is searched.
+     */
+    private function refuse(BulkMigration $run, string $error): void
+    {
+        $run->update([
+            'state' => BulkMigration::FAILED,
+            'error' => $error,
+            'finished_at' => now(),
+        ]);
+    }
+
+    /**
      * Whether the reader has said stop since the loop last looked.
      *
      * A method rather than an inline compare, because the loop top and the final exit make
@@ -264,11 +382,29 @@ class BulkSourceMatcher
     }
 
     /**
-     * Compare one series, recording whatever happened rather than throwing.
+     * Compare one series against every destination the run carries, recording whatever
+     * happened rather than throwing.
      *
+     * ## Why the winner names its source on the item row
+     *
+     * With several destinations in one run, two rows can compare equal on chapters and
+     * only disagree on where the better one lives, so which source won is part of the
+     * answer. Stamping it per item means the mover, the cards and the report all read it
+     * from the row rather than asking the mirror, which may not still carry that source
+     * by the time any of them render.
+     *
+     * ## Why the read progress is stamped the same way
+     *
+     * The number comes from this run's lens read, not from a fresh lookup at render
+     * time: what a row shows is what the compare knew when it decided, and a render
+     * that re-counts chapters later can disagree with the row it sits under without
+     * either being wrong at its own moment.
+     *
+     * @param  Collection<int, Source>  $targets  validated, in pick order
+     * @param  int|null  $unreadHere  null when the server never fetched the chapter list
      * @return array{matched: bool}
      */
-    private function compareOne(BulkMigration $run, Source $from, Source $to, int $mangaId): array
+    private function compareOne(BulkMigration $run, Source $from, Collection $targets, int $mangaId, ?int $unreadHere): array
     {
         $userId = (int) $run->user_id;
 
@@ -294,7 +430,7 @@ class BulkSourceMatcher
         $title = (string) $current['title'];
 
         try {
-            $found = $this->finder->findOn($from, $current, $to);
+            $found = $this->finder->findOnMany($targets, $current);
         } catch (SuwayomiException $e) {
             $this->recordFailed($run, $mangaId, $title, $e->getMessage());
 
@@ -308,6 +444,7 @@ class BulkSourceMatcher
                 'bulk_migration_id' => $run->id,
                 'from_manga_id' => $mangaId,
                 'title' => $title,
+                'unread_here' => $unreadHere,
                 'status' => BulkMigrationItem::SKIPPED,
                 'reason' => __('That source does not list this series.'),
             ]);
@@ -330,6 +467,9 @@ class BulkSourceMatcher
                 'title' => $title,
                 'to_manga_id' => (int) $best['manga_id'],
                 'to_title' => (string) $best['title'],
+                'to_source_id' => (string) $best['source_id'],
+                'to_source_name' => (string) $best['source_name'],
+                'unread_here' => $unreadHere,
                 'status' => BulkMigrationItem::SKIPPED,
                 'reason' => (string) ($best['note'] ?? __('That source could not be read for this series.')),
             ]);
@@ -343,6 +483,9 @@ class BulkSourceMatcher
             'title' => $title,
             'to_manga_id' => (int) $best['manga_id'],
             'to_title' => (string) $best['title'],
+            'to_source_id' => (string) $best['source_id'],
+            'to_source_name' => (string) $best['source_name'],
+            'unread_here' => $unreadHere,
             'chapters_here' => (int) ($current['chapters']['totalCount'] ?? 0),
             'chapters_there' => (int) ($best['chapters'] ?? 0),
             'title_similarity' => (float) ($best['title_similarity'] ?? 0),

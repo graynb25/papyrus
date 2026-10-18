@@ -6413,3 +6413,20 @@ exactly that moment and it costs five minutes.
    left unmade rather than code that registered anything. And the risky count deserved reading
    before the names were needed: it had been sitting in every suite summary the tool layer
    prints, and nobody had looked at it.
+
+296. **A failure message that carries the whole rendered page cannot be read from a console capture. Redirect the run into a file and grep the file.**
+
+   Measured on 2026-10-17, judging the Migrate tab's failing-first run. `assertSee` puts the
+   entire render into its failure message, one miss carried 73,600 characters of HTML, and the
+   tool layer's console capture wraps long lines mid-token: a hunt for the failing tests' names
+   over the capture returned `test_a_migrate_row_opens_the_compos` and stopped inside the name,
+   and a context probe over the capture matched a needle's own echo at the end of the message
+   instead of a page render. Redirected to a file under the temporary directory, the same run
+   answered straight: a JSON line reading `"tests":66,"passed":60,"failed":6` on line one, and
+   every failing test name whole. The capture is a line-wrap lottery; the file is not.
+
+   Companion lesson, the same evening, in the same run: one of the seven new tests passed before
+   its fix existed, because its discriminating needle ("Harbor Comics") also renders in the
+   source stacks, which read the same `sources` table row the fixture had made. A bogus probe
+   needle, run once for the failure dump it bought, found the pass's real reason in one round;
+   the test was rewritten so its first needle renders nowhere but the one branch the view owns.
