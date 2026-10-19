@@ -6729,3 +6729,59 @@ exactly that moment and it costs five minutes.
     that `Source` row that answers (MangaFire (EN) mirrored at row `157`). The Suwayomi id is
     the probe's Api key; the ledger row is the web address, and the two are never the same
     number anywhere in this app.
+
+317. **An access audit lists every element it read, and a fix list built from its rows alone repairs what is not broken while the real holes ride beneath it.**
+
+    Measured 2026-10-19 on the library and browse sweeps. The panel's audit reported thirteen
+    cover links with no accessible name; reading the markup first showed both grids' cover
+    anchors carrying `aria-hidden="true"` and `tabindex="-1"` on purpose, the name sitting one
+    link further down at the title, so most of the reported rows were anchors the tree already
+    excludes and the genuine gaps were hiding among them: the continue rail's card link, whose
+    name really was missing, three placeholder-only inputs, and a Check button whose aria
+    label interpolated an empty title into "Check  for new chapters now" with a double space.
+    The whole repair was six lines. The lesson both ways: an audit row is a starting place for
+    reading the markup, not a defect list, because a batch ordered by audit count spends its
+    budget on anchors whose tree membership is already empty; and the audit's own rows were the
+    only reason the real holes were found at all, since they sat inside the same list of
+    suspects.
+
+318. **A drawn line is not a rule: ask the computed style and the glyph before filing a paint defect.**
+
+    Measured 2026-10-19 chasing an underline that showed under the new FAQ page title in every
+    capture. The stylesheet's `.display-page` sets no decoration, and a probe through headless
+    Chromium returned `textDecorationLine: none` while placing the H1 itself at the stroke's
+    coordinates. It is the typeface: Bricolage Grotesque's capital Q ends in a flat horizontal
+    tail, which under a three letter word reads exactly like an underline. The same glyph has
+    drawn that tail on every display heading this app ever shipped, so it is the app's own
+    typography and not a defect any sitting introduced. The same capture pass suggested a
+    second ghost, a footer not sitting at the bottom of its shell: measured, the body's paint
+    ends at the footer plus the shell's own padding, and the document then scrolls 192px
+    further for the auth ambient glow's `-bottom-48`, on every auth shell since it was
+    written. Two non defects, one principle: pixel complaints get measured at the element and
+    the font before they become work orders, because an eyeball read of a capture is how a
+    sitting burns its budget repainting the app's own letterforms.
+
+319. **A face this seat cannot reach is not a face nobody can reach: headless Chromium prefers light.**
+
+    Measured 2026-10-19. The Appearance picker renders zero interactive elements from the
+    browser panel, so the light theme sat numerically verified and not pixel drivable for a
+    sitting's worth of contrast findings. A Playwright probe against the same scratch server
+    told a different story on the first run: the headless default is
+    `prefers-color-scheme: light`, so the FAQ page's light face rendered complete, wash, cards,
+    amber callout and footer included, with no setting touched. The seat limitation stays true
+    and was recorded honestly when found; the boundary of that limitation was wider than the
+    tool that named it, which is the general shape: every not-drivable verdict about a scheme
+    or a viewport carries the exact one script cost of probing an independent browser before
+    the word boundary is written down as an arrival.
+
+320. **A scratch `php -S` without its docroot serves a working app that eats its own assets.**
+
+    Measured 2026-10-19 restarting the scratch server. `php -S 127.0.0.1:8017 <router>` without
+    `-t public` points the built-in server's document root at the repository root, so every
+    asset path like `/build/assets/app-*.css` reaches the router as an application route, the
+    app answers rather than refusing, and the page then renders unstyled with every asset a
+    404: an app that works on every route and shows the reader nothing, which is the F26
+    family of green checks over a blank room. The restart command belongs in full in the one
+    place a next sitting will look for it, and its first probe is an asset path, not a route:
+    `php -S 127.0.0.1:8017 -t public "<Temp opencode>\papyrus-router.php"`, where `<Temp opencode>`
+    is this machine's own on-disk scratch root, which is deliberately not named here.
