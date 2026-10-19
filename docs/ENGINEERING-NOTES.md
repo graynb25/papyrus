@@ -6703,3 +6703,29 @@ exactly that moment and it costs five minutes.
    older trap and does not exist for an untracked file. The file tools have never added a byte
    they did not mean to, and every Perl-and-regex-shaped shortcut of this sitting (the probe
    suites included) cost more than the edit it was avoiding.
+
+316. **A click whose subject is below the fold reports ok and changes nothing, and a snapshot
+     handed a stale tab reports a page nobody asked about.**
+
+    Measured 2026-10-19 through the whole insights walk on `papyrus.test`. Buttons out of the
+    viewport's bottom edge repaid every press with `ok: true` and no state change: the Available
+    tab's link on `/sources`, an extension's Install, and probably every silent press of the
+    sitting that came before. The same button pressed for real once it was in the viewport,
+    which is the geometry under trap 304's burst clicks: the click tool does not scroll its
+    subject into view, so a press past the fold lands nowhere. The rhythm that holds is one
+    press per beat with a scroll (or a list filter) whenever the element is not already visible,
+    because a call that reports ok is never evidence it did the thing.
+
+    The second mechanics is the panel's own tab memory. After the scratch server died mid
+    reader and was booted again, every snapshot answered with the outage's error page against
+    tabs the panel believed current, while the tab the `browser.open` call had actually made
+    held a healthy reader. A snapshot says what it saw and not which tab it saw; passing the
+    `tabId` from the open call into every following action is the one habit that removes the
+    whole class, and not trusting any page read that arrives without its own tab.
+
+    Third, the source pages: `/browse/{source}` binds the ledger's row id, not Suwayomi's source
+    id. A freshly installed extension's Suwayomi id (`6084907896154116083`) 404s until
+    `sources:sync` mirrors the server's installed sources, and then it is the ledger row id for
+    that `Source` row that answers (MangaFire (EN) mirrored at row `157`). The Suwayomi id is
+    the probe's Api key; the ledger row is the web address, and the two are never the same
+    number anywhere in this app.
