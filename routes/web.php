@@ -86,6 +86,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('library', 'pages::library')->name('library');
 
     /*
+     * Reading time, seen by series.
+     *
+     * Reads only rows its own reader wrote while a chapter was open and moving:
+     * there is nothing to fetch here and nothing to send anywhere, which is said
+     * plainly on the page rather than left to be discovered. Route order beside
+     * the library because the two pages answer different questions about the
+     * same collection and a reader moves between them both ways.
+     */
+    Route::livewire('insights', 'pages::insights')->name('insights');
+
+    /*
      * The download centre.
      *
      * Reads this reader's ledger, which a background job keeps reconciled against

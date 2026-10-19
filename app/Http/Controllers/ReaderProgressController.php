@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\AniList\Tracking;
+use App\Support\ReadingSessions;
 use App\Support\ReadingState;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,6 +31,7 @@ class ReaderProgressController extends Controller
         int $manga,
         int $chapter,
         ReadingState $reading,
+        ReadingSessions $sessions,
     ): JsonResponse {
         $page = $this->pageFrom($request);
         $total = $this->totalFrom($request);
@@ -57,6 +59,14 @@ class ReaderProgressController extends Controller
         if (! $wasRead && $chapterState->is_read && ! $reading->suppresses($request->user(), $manga)) {
             app(Tracking::class)->scheduleSync($request->user(), $manga);
         }
+
+        /*
+         * The session ledger rides the ping it was built for. The page here is the same
+         * furthest-page value the progress write consumed, so no second read of the
+         * request is needed, and an accrual is one indexed UPDATE by id, which is what
+         * keeps a debounced ping exactly as cheap as this endpoint's contract asks.
+         */
+        $sessions->pingFor($request->user(), $manga, $chapter, $page);
 
         return response()->json(['ok' => true, 'page' => $page]);
     }

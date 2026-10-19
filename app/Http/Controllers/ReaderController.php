@@ -6,6 +6,7 @@ use App\Library\ChapterNavigator;
 use App\Support\ChapterNotes;
 use App\Support\ImageUrl;
 use App\Support\ReaderSettings;
+use App\Support\ReadingSessions;
 use App\Support\ReadingState;
 use App\Support\SessionOverride;
 use App\Suwayomi\Gateway;
@@ -49,6 +50,7 @@ class ReaderController extends Controller
         SeriesGateway $series,
         Gateway $gateway,
         ReadingState $reading,
+        ReadingSessions $sessions,
     ): View|Response {
         /*
          * Incognito, resolved once here and decided once, rather than asked again by each write
@@ -70,6 +72,15 @@ class ReaderController extends Controller
             // Opening a chapter moves the series pointer, so "continue reading" is
             // right even if the reader only glanced at the page and left.
             $reading->openChapter($request->user(), $manga, $chapter);
+
+            /*
+             * The sitting begins here, under the same decision: without the incognito
+             * guard above it there is no reader half at all, because nothing was
+             * recorded. `openFor()` asks incognito for itself anyway, because a guard
+             * that only works when its future callers remember it is the guard this
+             * repository has seen fail twice already.
+             */
+            $sessions->openFor($request->user(), $manga, $chapter);
         }
 
         $chapterState = $reading->findChapter($request->user(), $chapter);
