@@ -6663,3 +6663,43 @@ exactly that moment and it costs five minutes.
    which were killed by reverting the walk and by removing the survivor check, each to the
    right failure. Two Windows specifics worth their ink: a read-only attribute does not
    stop unlink(), which deleted it without complaint, and an open file handle does.
+
+313. **A date built from a date-only format is not midnight: it carries the clock's own time of day, with the microseconds, and a refusal built on it refuses nearly every day of the year.**
+
+   Measured 2026-10-19 on the insights page's clamp. The bound came in as a URL parameter, the
+   URL wiring worked from the beginning (the attribute hook had already delivered the value when
+   mount ran, verified by instrumenting mount itself), and the value still wiped to the whole
+   ledger every time. The wipe was the page's own future check: `createFromFormat('Y-m-d', ...)`
+   fills the fields the format does not name with the current clock time, so parsing at 07:41
+   produced a moment well after `today()` at midnight, `isAfter()` was true, and every valid day
+   was refused as future. The clamp to start the parsed moment at its own midnight is the whole
+   repair: a day is compared against a day. The lesson deeper than Carbon is the one the page's
+   first tests were wearing: two clamp inputs (a malformed string and a future date) passed both
+   before and after the fix, because refusal and wipe render the same whole ledger, so an
+   arrange where both branches produce the same answer proves nothing. The numbers that mattered
+   were the ones a bound window genuinely counts, and the accidental passes were rewritten to
+   those before any of this was believed.
+
+314. **A checker's verdict has two families, failure and error, and a reporter that reads one reads half the truth.**
+
+   Measured 2026-10-19 through the mutation run of this phase. Killing a test silently is not
+   the only red a mutant can produce: removing the controller's `openFor()` call produced no
+   row, and the test died with `No query results for model`, which the runner reports as an
+   error, not a failure. The session's own reporter read the failures key alone, got an empty
+   count twice, and reported two mutants as survived, one of which was then worked around by
+   tests that did not need to exist. The contradiction (an instance dump of a property that
+   still held the default, against a suite that swore the row was there) forced the re-read,
+   and the queries settle it in one line: no INSERT exists, the count is zero, so sole() on an
+   empty query throws. Before concluding a mutant survives, read the whole verdict shape it can
+   produce, which is the same family as trap 266 turned up here as a reporter, not a gate.
+
+315. **Reaching for a line-surgery shell when the edit tool is one tab away buys a BOM.**
+
+   Measured 2026-10-19, same sitting as trap 313's hunt. A regex replace across a PHP file via
+   `Set-Content -Encoding utf8` both missed the pattern and prepended three bytes; the next
+   `php -l` refused the file with `Namespace declaration statement has to be the very first
+   statement`, and the byte readback read `239 187 191`. The file was not tracked yet this
+   time, so the fix was a byte slice and not `git checkout --`, which is the recovery of the
+   older trap and does not exist for an untracked file. The file tools have never added a byte
+   they did not mean to, and every Perl-and-regex-shaped shortcut of this sitting (the probe
+   suites included) cost more than the edit it was avoiding.
