@@ -6644,3 +6644,22 @@ exactly that moment and it costs five minutes.
    general rule for adding a feature that writes data into the checkout beside the code: a
    strip-list entry joins that feature in the same commit, because a list of directories known
    at build time is a list of directories built once before today.
+
+312. **A teardown cleanup that cannot fail is a leak: unlink() refuses a populated directory, and the suppression turned that refusal into silence.**
+
+   Measured 2026-10-18 while sweeping the temp directory at close out. `TestCase`'s scratch
+   seam registered every path it created and removed them in `tearDown()` with
+   `@unlink($path)`, which reads as a sweep and is not one: unlink() cannot remove a
+   directory that still holds files, every fixture directory here ends the test holding
+   files by design, and the `@` suppressed exactly the refusal that mattered. Ten fixture
+   directories per full suite run survived; fifty measured on one day at five pids, after
+   three suites and a pair of focused runs, in the reader's own temp directory, which is
+   the family that grew to 82,457 files before it was first found in 2026-10. The seam now
+   walks the tree with `RecursiveIteratorIterator` and `CHILD_FIRST`, unsets the iterator
+   before asking the base directory to leave (measured the same day: an un-closed walker
+   holds a directory handle and `rmdir()` refuses a handled directory on Windows, so the
+   base was being blamed for a cleanup that had actually finished), and then checks what it
+   did: anything still on disk is named in the exception, verified by the two seam tests
+   which were killed by reverting the walk and by removing the survivor check, each to the
+   right failure. Two Windows specifics worth their ink: a read-only attribute does not
+   stop unlink(), which deleted it without complaint, and an open file handle does.
