@@ -2,8 +2,12 @@
 
 namespace Tests;
 
+use FilesystemIterator;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Laravel\Fortify\Features;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -50,15 +54,61 @@ abstract class TestCase extends BaseTestCase
 
     protected function tearDown(): void
     {
+        $this->removeTemporaryFiles();
+
+        parent::tearDown();
+    }
+
+    /**
+     * Remove everything this test registered, and name anything that would not go.
+     *
+     * The previous body called unlink() on every registered path and suppressed the error.
+     * unlink() cannot remove a directory that still holds files, and the suppression hid
+     * exactly the refusal that mattered: the staging fixtures keep their contents by design,
+     * so every full suite run left its fixture directories in the system temp directory,
+     * fifty of them measured across one day of runs, the family that grew to 82,457 files
+     * before it was first found. The removal walks the tree first, children before their
+     * parents, and then checks what it did: anything still on disk is named in the exception
+     * instead of being swept under a silence. One Windows specific measured detail sits in
+     * the middle: the tree walker holds an open directory handle on the base, and rmdir()
+     * refuses a directory with an open handle, so the walker is unset before the base is
+     * asked to leave, otherwise the base is named a survivor in a clean removal.
+     */
+    protected function removeTemporaryFiles(): void
+    {
+        $survivors = [];
+
         foreach ($this->temporaryFiles as $path) {
+            if (is_dir($path) && ! is_link($path)) {
+                $members = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST,
+                );
+
+                foreach ($members as $member) {
+                    if ($member->isDir()) {
+                        @rmdir($member->getPathname());
+                    } else {
+                        @unlink($member->getPathname());
+                    }
+                }
+
+                unset($members);
+            }
+
+            @unlink($path);
+            @rmdir($path);
+
             if (is_file($path) || is_dir($path)) {
-                @unlink($path);
+                $survivors[] = $path;
             }
         }
 
         $this->temporaryFiles = [];
 
-        parent::tearDown();
+        if ($survivors !== []) {
+            throw new RuntimeException('the temporary files this test registered could not be removed: '.implode(', ', $survivors));
+        }
     }
 
     /**
