@@ -43,8 +43,8 @@ class RegistrationTest extends TestCase
         $response = $this->post(route('register.store'), [
             'name' => 'John Doe',
             'email' => 'test@example.com',
-            'password' => 'password',
-            'password_confirmation' => 'password',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ]);
 
         $response->assertSessionHasNoErrors()

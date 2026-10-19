@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Covers\CoverStore;
+use App\Support\Etag;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
@@ -36,7 +37,7 @@ class CoverController extends Controller
         $cover = $covers->find($request->user(), $manga);
 
         if ($cover === null) {
-            return response('', SymfonyResponse::HTTP_NOT_FOUND);
+            return self::absent();
         }
 
         $file = $covers->read($cover);
@@ -45,22 +46,42 @@ class CoverController extends Controller
             // The row outlived its file, which a database restore without the storage
             // directory produces. The page falls back to the source's cover, so a 404 is
             // the correct and quiet answer.
-            return response('', SymfonyResponse::HTTP_NOT_FOUND);
+            return self::absent();
+        }
+
+        /*
+         * The validator is the bytes themselves. A file mtime was the first idea here
+         * and lost on the seam it would have to be minted across: read() already holds
+         * the contents in memory, so a digest costs no extra read, and replacing a
+         * cover overwrites the same path with new bytes at nearly the same size, which
+         * is exactly the change an mtime can miss at its granularity. A digest of what
+         * the cover is cannot.
+         */
+        $etag = Etag::for($file['contents']);
+        $cacheControl = 'private, max-age=300';
+
+        if (Etag::matched($request->header('If-None-Match'), $etag)) {
+            // The window comes back with the 304, so a validated cover also renews the
+            // time the browser may keep using it without asking again.
+            return response('', SymfonyResponse::HTTP_NOT_MODIFIED, [
+                'ETag' => $etag,
+                'Cache-Control' => $cacheControl,
+            ]);
         }
 
         return response($file['contents'], SymfonyResponse::HTTP_OK, [
             'Content-Type' => $file['mime'],
+            'ETag' => $etag,
 
             /*
-             * Private, and long.
-             *
-             * Private because the bytes belong to one reader, so a shared cache must not
-             * keep them. Long because the URL is stable: replacing a cover overwrites the
-             * same path, so a browser that already has it would show the old art for as
-             * long as it cached it. That is why the name has no content hash in it and
-             * why the cache window is short enough to be a nuisance rather than a lie.
+             * Private because the bytes belong to one reader, so a shared cache must
+             * not keep them. Short because the URL is stable: replacing a cover
+             * overwrites the same path, so the window bounds how long a browser may
+             * show old art without asking, and the ETag above is what makes every ask
+             * after the window a validation of exactly those bytes rather than a
+             * second copy of them.
              */
-            'Cache-Control' => 'private, max-age=300',
+            'Cache-Control' => $cacheControl,
 
             /*
              * The cover is bytes this reader chose and nothing else, so nothing in it
@@ -69,6 +90,22 @@ class CoverController extends Controller
              */
             'X-Content-Type-Options' => 'nosniff',
             'Content-Length' => (string) strlen($file['contents']),
+        ]);
+    }
+
+    /**
+     * A missing cover is a real answer a browser must not keep.
+     *
+     * Both 404 shapes (no row, and the row outlived its file, which a database restore
+     * without the storage directory produces) carry it: with no directive at all,
+     * whether a browser kept the 404 was left to heuristics, and holding a missing
+     * answer hides the fallback the very page beside it is relying on.
+     */
+    private static function absent(): SymfonyResponse
+    {
+        return response('', SymfonyResponse::HTTP_NOT_FOUND, [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

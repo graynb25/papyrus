@@ -520,7 +520,13 @@ class CustomCoverTest extends TestCase
 
     public function test_a_reader_with_no_cover_gets_a_404(): void
     {
-        $this->get('/covers/76')->assertNotFound();
+        $response = $this->get('/covers/76');
+
+        $response->assertNotFound();
+
+        // A missing answer must not be a keepsake: the page beside it is relying
+        // on a fresh 404 to fall back to the source's cover.
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }
 
     public function test_the_route_needs_a_signed_in_reader(): void
@@ -540,7 +546,80 @@ class CustomCoverTest extends TestCase
         // A database restore without the storage directory produces exactly this.
         Storage::disk('local')->delete($cover->path);
 
-        $this->get('/covers/76')->assertNotFound();
+        $response = $this->get('/covers/76');
+
+        $response->assertNotFound();
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+    }
+
+    /**
+     * The route mints the validator upstream sends none of for source covers, and this
+     * one has even less excuse: the bytes are already in memory when the answer is
+     * built.
+     */
+    public function test_the_route_serves_a_validator_of_the_bytes_it_serves(): void
+    {
+        $this->store()->store($this->user, 76, $this->jpeg(400, 600));
+
+        $bytes = Storage::disk('local')->get($this->store()->find($this->user, 76)->path);
+        $etag = '"'.hash('sha256', $bytes).'"';
+
+        $response = $this->get('/covers/76');
+
+        $response->assertOk();
+        $this->assertSame($etag, $response->headers->get('ETag'));
+    }
+
+    /**
+     * A validator the page never asks with is decoration. This is the ask: after the
+     * five minute window a reload sends the minted value back, and the answer is a
+     * 304 whose window renews, so a revisited series does not re-download its own
+     * cover to paint the same pixels.
+     */
+    public function test_a_validating_reader_waits_for_no_bytes(): void
+    {
+        $this->store()->store($this->user, 76, $this->jpeg(400, 600));
+
+        $bytes = Storage::disk('local')->get($this->store()->find($this->user, 76)->path);
+        $etag = '"'.hash('sha256', $bytes).'"';
+
+        $response = $this->withHeaders(['If-None-Match' => $etag])->get('/covers/76');
+
+        $response->assertStatus(304);
+        $this->assertSame('', $response->getContent());
+        $this->assertSame($etag, $response->headers->get('ETag'));
+
+        $cache = (string) $response->headers->get('Cache-Control');
+        $this->assertStringContainsString('max-age=300', $cache, 'The validation renews the window.');
+        $this->assertStringContainsString('private', $cache);
+    }
+
+    /**
+     * The case a file mtime validator could miss: replacing a cover overwrites the
+     * same path with new bytes at nearly the same size. The digest is of what the
+     * cover is, so the stale echo names bytes that no longer exist and the answer is
+     * the new art.
+     */
+    public function test_a_replaced_cover_refuses_the_previous_validator(): void
+    {
+        $this->store()->store($this->user, 76, $this->jpeg(400, 600));
+
+        $stale = '"'.hash('sha256', (string) Storage::disk('local')->get(
+            $this->store()->find($this->user, 76)->path
+        )).'"';
+
+        $this->store()->store($this->user, 76, $this->jpeg(400, 601));
+
+        $bytes = (string) Storage::disk('local')->get($this->store()->find($this->user, 76)->path);
+        $fresh = '"'.hash('sha256', $bytes).'"';
+
+        $this->assertNotSame($stale, $fresh, 'The two covers must be different bytes or the test proves nothing.');
+
+        $response = $this->withHeaders(['If-None-Match' => $stale])->get('/covers/76');
+
+        $response->assertOk();
+        $this->assertSame($bytes, $response->getContent());
+        $this->assertSame($fresh, $response->headers->get('ETag'));
     }
 
     // The series page ----------------------------------------------------

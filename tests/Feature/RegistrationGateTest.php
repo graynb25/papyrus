@@ -62,8 +62,8 @@ class RegistrationGateTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('users', ['email' => 'first@example.test']);
@@ -95,8 +95,8 @@ class RegistrationGateTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'Intruder',
             'email' => 'intruder@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertNotFound();
 
         $this->assertDatabaseMissing('users', ['email' => 'intruder@example.test']);
@@ -118,8 +118,8 @@ class RegistrationGateTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->post(route('logout'));
@@ -127,8 +127,8 @@ class RegistrationGateTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'Second Reader',
             'email' => 'second@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertNotFound();
 
         $this->assertDatabaseMissing('users', ['email' => 'second@example.test']);
@@ -150,8 +150,8 @@ class RegistrationGateTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'Second Reader',
             'email' => 'second@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('users', ['email' => 'second@example.test']);

@@ -7,7 +7,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /*
- * The auth layout, chosen explicitly, and not by accident.
+ * The auth content layout, chosen explicitly, and not by accident.
  *
  * Livewire's default page layout is the application shell, whose sidebar reads
  * `auth()->user()->name` in four places. This page is public, so on the very first request from a
@@ -24,11 +24,12 @@ use Livewire\Component;
  * above `new` lands on that `return` instead of the class, and the compiled file fails to parse with
  * an error naming neither the view nor the attribute.
  *
- * The layout is named `layouts::auth`, which is the anonymous component namespace rather than a view
- * path. `components.layouts.auth` is a view path, and Livewire raises MissingLayoutException on it
- * even though the file exists, because page layouts are resolved as components.
+ * The layout is named `layouts::auth.content`, which is the anonymous component namespace rather
+ * than a view path. `components.layouts.auth` is a view path, and Livewire raises
+ * MissingLayoutException on it even though the file exists, because page layouts are resolved as
+ * components.
  */
-new #[Layout('layouts::auth')] #[Title('Questions')] class extends Component {
+new #[Layout('layouts::auth.content')] #[Title('FAQ')] class extends Component {
     /*
      * Read only, and public on purpose.
      *
@@ -61,58 +62,80 @@ new #[Layout('layouts::auth')] #[Title('Questions')] class extends Component {
         <p class="serif-italic text-base text-zinc-500 dark:text-zinc-400">
             {{ __('Everything here stays on this computer.') }}
         </p>
-        <h1 class="display-page mt-1 text-zinc-900 dark:text-zinc-50">{{ __('Questions') }}</h1>
+        <h1 class="display-page mt-1 text-zinc-900 dark:text-zinc-50">{{ __('FAQ') }}</h1>
     </div>
 
-    <div class="max-w-2xl space-y-8">
-        @foreach ($this->faq()->entries() as $entry)
-            <section>
-                <h2 class="font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                    {{ $entry->question }}
-                </h2>
+    <div class="max-w-2xl">
+        {{--
+            Each question opens its own answer in place, as a disclosure.
 
-                @foreach ($entry->answer as $paragraph)
-                    <p class="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
-                        {{ $paragraph }}
-                    </p>
-                @endforeach
+            A wall of every answer at once is what this looked like when the owner called it
+            amateurish, and the fix is the pattern the rest of the app already carries: the native
+            details element with a summary, exactly as the series page's folded description does it,
+            keyboard and screen reader support coming free with the element. The privacy question is
+            the one the page exists for, so it starts open and every other one starts shut.
+        --}}
+        <div class="space-y-3">
+            @foreach ($this->faq()->entries() as $entry)
+                <details
+                    class="group rounded-lg border border-zinc-200 dark:border-white/10"
+                    {{ $entry->isPrivacy ? 'open' : '' }}
+                >
+                    <summary
+                        class="flex cursor-pointer list-none items-center justify-between gap-4 rounded-lg px-5 py-4 transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03]"
+                    >
+                        <h2 class="font-display text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                            {{ $entry->question }}
+                        </h2>
 
-                {{--
-                    The exceptions, as a list rather than a sentence buried in a paragraph.
+                        <flux:icon name="chevron-down" class="size-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-180 dark:text-zinc-500" />
+                    </summary>
 
-                    This is the part of a privacy answer that gets skimmed, so it is given its own
-                    block with its own heading. It appears only for the entry that has exceptions, so
-                    the other seven questions are not padded with an apology they do not need.
-                --}}
-                @if ($entry->exceptions !== [])
-                    <div class="mt-4 rounded-lg border border-amber-300/60 bg-amber-50/40 p-4 dark:border-amber-500/30 dark:bg-amber-500/5">
-                        <p class="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                            {{ __('What does reach the internet') }}
-                        </p>
+                    <div class="flex flex-col gap-3 px-5 pb-5">
+                        @foreach ($entry->answer as $paragraph)
+                            <p class="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+                                {{ $paragraph }}
+                            </p>
+                        @endforeach
 
-                        <ul class="mt-2 space-y-2">
-                            @foreach ($this->faq()->outbound() as $route)
-                                <li class="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                                    <span class="font-medium text-zinc-900 dark:text-zinc-100">
-                                        {{ $route['what'] }}
-                                    </span>
-                                    <span class="block text-zinc-600 dark:text-zinc-400">
-                                        {{ $route['who'] }}
-                                    </span>
-                                </li>
-                            @endforeach
-                        </ul>
+                        {{--
+                            The exceptions, as a list rather than a sentence buried in a paragraph.
+
+                            This is the part of a privacy answer that gets skimmed, so it is given its own
+                            block with its own heading. It appears only for the entry that has exceptions, so
+                            the other seven questions are not padded with an apology they do not need.
+                        --}}
+                        @if ($entry->exceptions !== [])
+                            <div class="rounded-lg border border-amber-300/60 bg-amber-50/40 p-4 dark:border-amber-500/30 dark:bg-amber-500/5">
+                                <p class="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                                    {{ __('What does reach the internet') }}
+                                </p>
+
+                                <ul class="mt-2 space-y-2">
+                                    @foreach ($this->faq()->outbound() as $route)
+                                        <li class="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                                            <span class="font-medium text-zinc-900 dark:text-zinc-100">
+                                                {{ $route['what'] }}
+                                            </span>
+                                            <span class="block text-zinc-600 dark:text-zinc-400">
+                                                {{ $route['who'] }}
+                                            </span>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
                     </div>
-                @endif
-            </section>
-        @endforeach
+                </details>
+            @endforeach
+        </div>
 
         {{--
             The licences page, offered rather than mentioned, because "open source" is worth nothing
             to a reader who cannot see the list. And the list is honest: it names the one dependency
             that is not open source rather than leaving that to be discovered.
         --}}
-        <div class="border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <div class="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
             <p class="text-sm text-zinc-600 dark:text-zinc-300">
                 @if (auth()->check())
                     <a

@@ -37,12 +37,8 @@
                     </p>
                 </div>
 
-                {{-- The promise is a link, so a reader can check it rather than take it. --}}
-                <p class="text-xs text-zinc-400 dark:text-zinc-600">
-                    <a href="{{ route('faq') }}" class="underline underline-offset-4 hover:text-zinc-600 dark:hover:text-zinc-400">
-                        {{ __('Self-hosted. No tracking, no telemetry, no third party between you and your sources.') }}
-                    </a>
-                </p>
+                {{-- The shell's footer, rather than the promise buried as a link inside a sentence. --}}
+                <x-auth-footer />
             </div>
 
             {{-- Form panel --}}

@@ -167,14 +167,41 @@ class AppServiceProvider extends ServiceProvider
             app()->isProduction(),
         );
 
-        Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)
+        /*
+         * The margins, stated once as data and consumed from that one place. `Password::defaults()`
+         * builds the validating rule from them, and the register page's margin meter lists them from
+         * them, so the browser can never know a different password law than the server enforces.
+         *
+         * One posture in every environment, because a meter that shows the reader what the app
+         * enforced "depending on APP_ENV" gave the checkout a floor the installs do not have; the
+         * meter has to show what the server asks, whatever environment it renders in.
+         *
+         * The breach check is the one margin a browser cannot run: it phones the compromise
+         * database over the network, so it stays a server-only step. `breach_on_submit` carries
+         * that fact to the meter, which renders it as a pending line rather than faking a tick,
+         * and stays off here so neither the suite nor a dev machine owes the call.
+         */
+        config(['papyrus.password_margins' => [
+            'min' => 12,
+            'mixedCase' => true,
+            'letters' => true,
+            'numbers' => true,
+            'symbols' => true,
+            'breach_on_submit' => app()->isProduction(),
+        ]]);
+
+        Password::defaults(function (): Password {
+            $rule = Password::min((int) config('papyrus.password_margins.min'))
                 ->mixedCase()
                 ->letters()
                 ->numbers()
-                ->symbols()
-                ->uncompromised()
-            : null,
-        );
+                ->symbols();
+
+            if ((bool) config('papyrus.password_margins.breach_on_submit')) {
+                $rule->uncompromised();
+            }
+
+            return $rule;
+        });
     }
 }

@@ -199,22 +199,33 @@ new #[Title('Security settings')] class extends Component {
             />
             <flux:input
                 wire:model="password"
+                id="password"
                 :label="__('New password')"
                 type="password"
                 required
                 autocomplete="new-password"
                 passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
+                aria-describedby="password-margins"
                 viewable
             />
+
+            {{-- The margins the server enforces, ticked live as each is met. --}}
+            <x-password.margins for="password" />
+
             <flux:input
                 wire:model="password_confirmation"
+                id="password_confirmation"
                 :label="__('Confirm password')"
                 type="password"
                 required
                 autocomplete="new-password"
                 passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
+                aria-describedby="password_confirmation-margins"
                 viewable
             />
+
+            {{-- And whether the two agree. --}}
+            <x-password.margins for="password" match-for="password_confirmation" />
 
             <div class="flex items-center gap-4">
                 <flux:button variant="primary" type="submit" data-test="update-password-button">

@@ -1351,6 +1351,7 @@ new #[Title('Library')] class extends Component
                         <a
                             href="{{ route('reader.show', ['manga' => $entry['manga_id'], 'chapter' => $where['chapter_id']]) }}"
                             wire:navigate
+                            aria-label="{{ __('Open :title', ['title' => $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']])]) }}"
                             class="group flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermilion-500"
                         >
                             <x-cover.art
@@ -1417,6 +1418,7 @@ new #[Title('Library')] class extends Component
             <flux:input
                 wire:model.live.debounce.300ms='search'
                 placeholder="{{ __('Search your library') }}"
+                aria-label="{{ __('Search your library') }}"
                 icon="magnifying-glass"
                 class="w-full max-w-64 sm:order-3 sm:w-56"
             />
@@ -1463,6 +1465,7 @@ new #[Title('Library')] class extends Component
                         wire:model="newShelfName"
                         size="sm"
                         placeholder="{{ __('New shelf') }}"
+                        aria-label="{{ __('New shelf name') }}"
                         class="w-36"
                     />
                     <flux:button type="submit" variant="ghost" size="sm" icon="plus" aria-label="{{ __('Create shelf') }}" class="rounded-full!"></flux:button>
@@ -1512,7 +1515,7 @@ new #[Title('Library')] class extends Component
             <div class="flex w-full flex-wrap items-end gap-2 border-t border-zinc-200 pt-3 dark:border-white/[0.06]">
                 @foreach ($this->renaming as $shelfId => $draft)
                     <flux:input.group class="w-64">
-                        <flux:input wire:model="renaming.{{ $shelfId }}" size="sm" />
+                        <flux:input wire:model="renaming.{{ $shelfId }}" size="sm" aria-label="{{ __('Rename shelf') }}" />
                         <flux:button type="button" size="sm" variant="primary" icon="check"
                             wire:click="renameShelf({{ $shelfId }})"
                             aria-label="{{ __('Save shelf name') }}"></flux:button>
@@ -1806,7 +1809,7 @@ new #[Title('Library')] class extends Component
                                 wire:loading.attr="disabled"
                                 wire:target="tryCheckSeries({{ $entry['manga_id'] }})"
                                 title="{{ __('Check this series for new chapters now') }}"
-                                aria-label="{{ __('Check :title for new chapters now', ['title' => $entry['title']]) }}"
+                                aria-label="{{ __('Check :title for new chapters now', ['title' => $entry['title'] !== '' ? $entry['title'] : __('Series :id', ['id' => $entry['manga_id']])]) }}"
                                 class="rounded-full!"
                             >
                                 {{ __('Check') }}

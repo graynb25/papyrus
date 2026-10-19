@@ -18,14 +18,17 @@ class SuwayomiProxyTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * The status the fake Suwayomi answers page requests with.
+     * The status the fake Suwayomi answers page requests with, and the Cache-Control
+     * window it attaches to a healthy answer (empty string attaches none).
      *
-     * Read at request time rather than baked into the fake, because `Http::fake()` appends a
+     * Both read at request time rather than baked into the fake, because `Http::fake()` appends a
      * stub and the first one registered wins: a test that re-fakes the same pattern after
      * `setUp` silently keeps getting the `setUp` answer, which is a test that reports 200 for a
      * 502 and passes a fix that did nothing.
      */
     private int $upstreamStatus = 200;
+
+    private string $upstreamWindow = 'max-age=86400';
 
     protected function setUp(): void
     {
@@ -40,11 +43,24 @@ class SuwayomiProxyTest extends TestCase
 
             $upstream = $this->upstreamStatus;
 
-            return Http::response(
-                $upstream === 200 ? 'image-bytes' : 'upstream is down',
-                $upstream,
-                $upstream === 200 ? ['Content-Type' => 'image/webp', 'Cache-Control' => 'max-age=86400'] : [],
-            );
+            if ($upstream !== 200) {
+                return Http::response('upstream is down', $upstream);
+            }
+
+            /*
+             * A `?format=` answer is its own representation: the bytes carry the
+             * transcode, because that is the shape the proxy's validator has to follow
+             * to keep two formats from validating each other.
+             */
+            $body = str_contains($request->url(), '?format=') ? 'webp-bytes' : 'image-bytes';
+
+            $headers = ['Content-Type' => 'image/webp'];
+
+            if ($this->upstreamWindow !== '') {
+                $headers['Cache-Control'] = $this->upstreamWindow;
+            }
+
+            return Http::response($body, 200, $headers);
         });
     }
 
@@ -98,7 +114,9 @@ class SuwayomiProxyTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'image/webp');
-        $this->assertSame('image-bytes', $response->streamedContent());
+        // An icon is now a whole buffered file with a validator (it is not a
+        // chapter page, so it does not stream), and the body is read as bytes.
+        $this->assertSame('image-bytes', $response->getContent());
     }
 
     public function test_an_extension_icon_carries_the_suwayomi_token_server_side(): void
@@ -234,5 +252,151 @@ class SuwayomiProxyTest extends TestCase
 
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $this->assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
+    }
+
+    // The app owned caching ------------------------------------------------
+
+    /**
+     * Covers and icons are the buffered branch: the body is small and whole, so the
+     * app mints the validator upstream sends none of.
+     */
+    public function test_a_cover_serves_a_validator_of_its_own_bytes(): void
+    {
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $response->assertOk();
+        $this->assertSame('"'.hash('sha256', 'image-bytes').'"', $response->headers->get('ETag'));
+        $this->assertSame((string) strlen('image-bytes'), $response->headers->get('Content-Length'));
+        $this->assertSame('image-bytes', $response->getContent());
+        $this->assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
+    }
+
+    /**
+     * A lapsed window asks with the minted validator and waits for no bytes: that is
+     * the whole point of minting one, and the window riding on the 304 is what keeps
+     * the validated cover from lapsing straight into a refetch.
+     */
+    public function test_a_validating_cover_is_answered_without_the_bytes(): void
+    {
+        $etag = '"'.hash('sha256', 'image-bytes').'"';
+
+        $response = $this->actingAs(User::factory()->create())
+            ->withHeaders(['If-None-Match' => $etag])
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $response->assertStatus(304);
+        $this->assertSame('', $response->getContent());
+        $this->assertSame($etag, $response->headers->get('ETag'));
+
+        $cache = (string) $response->headers->get('Cache-Control');
+        $this->assertStringContainsString('max-age=86400', $cache, 'The validation renews the window.');
+        $this->assertStringContainsString('private', $cache);
+    }
+
+    /**
+     * The validator is derived from the representation's own bytes, which is the seam
+     * that keeps two formats apart: a webp copy that validated a baseline copy would
+     * hand a reader's `<img>` an image in a form it did not ask for.
+     *
+     * The fake answers `?format=` with different bytes for exactly this reason.
+     */
+    public function test_a_webp_copy_cannot_validate_a_baseline_cover(): void
+    {
+        $user = User::factory()->create();
+
+        $baseline = $this->actingAs($user)->get('/suwayomi/api/v1/manga/12/thumbnail');
+        $transcode = $this->actingAs($user)->get('/suwayomi/api/v1/manga/12/thumbnail?format=webp');
+
+        $baseline->assertOk();
+        $transcode->assertOk();
+        $this->assertSame('webp-bytes', $transcode->getContent());
+
+        $this->assertNotSame(
+            $baseline->headers->get('ETag'),
+            $transcode->headers->get('ETag'),
+            'Two representations that differ in bytes differ in the minted validator.',
+        );
+
+        // A browser holding the transcode asks with the validator minted for it. The
+        // URL it lands on without the query names the baseline representation, so the
+        // answer is bytes, not a validated 304.
+        $cross = $this->actingAs($user)
+            ->withHeaders(['If-None-Match' => $transcode->headers->get('ETag')])
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $cross->assertStatus(200);
+        $this->assertSame('image-bytes', $cross->getContent());
+    }
+
+    public function test_a_chapter_page_window_is_private_and_immutable(): void
+    {
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/chapter/0/page/3');
+
+        $cache = (string) $response->headers->get('Cache-Control');
+
+        $this->assertStringContainsString('private', $cache);
+        $this->assertStringContainsString('max-age=86400', $cache);
+        $this->assertStringContainsString('immutable', $cache, 'The URL carries chapter and page indexes that re-read the same image.');
+    }
+
+    /**
+     * The private mark is the app's own statement: the measured upstream sends a bare
+     * shared-cache window, and wherever it answered at all, the answer the reader gets
+     * is still private.
+     */
+    public function test_a_cover_window_is_private_and_renewable_over_upstreams(): void
+    {
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $cache = (string) $response->headers->get('Cache-Control');
+
+        $this->assertStringContainsString('private', $cache);
+        $this->assertStringContainsString('max-age=86400', $cache);
+        $this->assertStringContainsString(
+            'stale-while-revalidate=604800',
+            $cache,
+            'A lapsed cover renews in the background rather than blanking its card.',
+        );
+    }
+
+    /**
+     * The fallback window is the same length, so the day upstream stops sending a
+     * window changes nothing a reader can see.
+     */
+    public function test_the_app_own_window_stands_in_when_upstream_sends_none(): void
+    {
+        $this->upstreamWindow = '';
+
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $response->assertOk();
+
+        $cache = (string) $response->headers->get('Cache-Control');
+        $this->assertStringContainsString('private', $cache);
+        $this->assertStringContainsString('max-age=86400', $cache);
+        $this->assertStringContainsString('stale-while-revalidate=604800', $cache);
+    }
+
+    /**
+     * The one visibility case the header bag alone cannot own: upstream declaring its
+     * answer for every cache in the world. The bytes are one reader's, so the
+     * allegiance is replaced, never left contradicting.
+     */
+    public function test_an_upstream_that_claims_public_is_served_private(): void
+    {
+        $this->upstreamWindow = 'public, max-age=86400';
+
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/suwayomi/api/v1/manga/12/thumbnail');
+
+        $cache = (string) $response->headers->get('Cache-Control');
+
+        $this->assertStringNotContainsString('public', $cache);
+        $this->assertStringContainsString('private', $cache);
+        $this->assertStringContainsString('max-age=86400', $cache);
     }
 }

@@ -101,7 +101,8 @@ new #[Title('Insights')] class extends Component {
     }
 
     /**
-     * The rows to render, already joined to the names the library can give them.
+     * The rows to render, already joined to what the library's lens can give
+     * them: the name, the cover and the unread figure from one entry.
      *
      * Titles and unread counts come from the same lens the library page pays for,
      * so the two pages cannot hold different ideas about the same series. A server
@@ -125,15 +126,28 @@ new #[Title('Insights')] class extends Component {
             $named = collect();
         }
 
-        return $raw->map(fn (array $row): array => [
-            'manga_id' => $row['manga_id'],
-            'title' => $named[$row['manga_id']]['title'] ?? null,
-            'unread_chapters' => $named[$row['manga_id']]['unread_chapters'] ?? null,
-            'seconds' => $row['seconds'],
-            'pages' => $row['pages'],
-            'sessions' => $row['sessions'],
-            'last_active_at' => $row['last_active_at'],
-        ]);
+        return $raw->map(function (array $row) use ($named): array {
+            $entry = $named[$row['manga_id']] ?? null;
+            $title = $entry['title'] ?? null;
+
+            return [
+                'manga_id' => $row['manga_id'],
+                /*
+                 * A blank string is not a name either: a filed row whose own state
+                 * carries no title renders the same honest "Series :id" as one the
+                 * whole lens could not see, because an empty link is not a name.
+                 */
+                'title' => filled($title) ? $title : null,
+                // The same entry answers for the picture, so a named row and its
+                // cover cannot disagree about what the server knows.
+                'cover' => $entry['cover'] ?? null,
+                'unread_chapters' => $entry['unread_chapters'] ?? null,
+                'seconds' => $row['seconds'],
+                'pages' => $row['pages'],
+                'sessions' => $row['sessions'],
+                'last_active_at' => $row['last_active_at'],
+            ];
+        });
     }
 
     #[Computed]
@@ -279,43 +293,60 @@ new #[Title('Insights')] class extends Component {
                 @php($largest = $this->rows->first()['seconds'])
 
                 @foreach ($this->rows as $row)
-                    <li class="flex flex-col gap-2 p-4">
-                        <div class="flex flex-wrap items-baseline justify-between gap-2">
-                            @if ($row['title'] !== null)
-                                <a href="{{ route('series', ['manga' => $row['manga_id']]) }}" class="font-medium hover:underline">
-                                    {{ $row['title'] }}
-                                </a>
-                            @else
-                                <span class="font-medium text-zinc-500 dark:text-zinc-400">
-                                    {{ __('Series :id', ['id' => Number::format($row['manga_id'])]) }}
-                                </span>
-                            @endif
-
-                            <flux:badge size="sm">
-                                {{ $this->formatSeconds($row['seconds']) }}
-                            </flux:badge>
+                    <li class="flex gap-3 p-4">
+                        {{-- The reader recognises a series by its cover before its title, so the
+                             row opens with the same atom the migrate rows carry: row scale, no
+                             tilt, the frame holding its own space. A cover the lens' entry does
+                             not have is a null, and the atom's own placeholder answers: no cover
+                             link is invented for a manga the server does not know. --}}
+                        <div class="w-12 shrink-0">
+                            <x-cover.art
+                                :src="$row['cover']"
+                                :alt="$row['title'] ?? ''"
+                                :vt="false"
+                            ></x-cover.art>
                         </div>
 
-                        {{-- The bar. Width says the number, the fill says it again: one glance, no
-                             axis. Full width for the largest, a share for the rest. --}}
-                        <div class="h-2.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10">
-                            <div
-                                class="h-full rounded-full bg-vermilion-500"
-                                style="width: {{ Number::format($largest > 0 ? 100 * $row['seconds'] / $largest : 0, precision: 1) }}%"
-                                role="img"
-                                aria-label="{{ __(':title: :time of reading', ['title' => $row['title'] ?? __('Series :id', ['id' => Number::format($row['manga_id'])]), 'time' => $this->formatSeconds($row['seconds'])]) }}"
-                            ></div>
-                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                @if ($row['title'] !== null)
+                                    <a href="{{ route('series', ['manga' => $row['manga_id']]) }}" class="font-medium hover:underline">
+                                        {{ $row['title'] }}
+                                    </a>
+                                @else
+                                    <span class="font-medium text-zinc-500 dark:text-zinc-400">
+                                        {{ __('Series :id', ['id' => Number::format($row['manga_id'])]) }}
+                                    </span>
+                                @endif
 
-                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                            {{ trans_choice('{1} :count page|[2,*] :count pages', $row['pages'], ['count' => Number::format($row['pages'])]) }}
-                            &middot;
-                            {{ trans_choice('{1} :count sitting|[2,*] :count sittings', $row['sessions'], ['count' => Number::format($row['sessions'])]) }}
-                            @if ($row['unread_chapters'] !== null)
+                                {{-- The minutes are the row's carrying number, in figures the eye
+                                     can line up across every row. --}}
+                                <flux:badge size="sm" class="tabular-nums">
+                                    {{ $this->formatSeconds($row['seconds']) }}
+                                </flux:badge>
+                            </div>
+
+                            {{-- The bar. Width says the number the badge says in words, so the bar
+                                 announces nothing rather than speaking the same value a second
+                                 time: one glance, no axis, one spoken copy. Full width for the
+                                 largest, a share for the rest. --}}
+                            <div class="h-2 mt-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10" aria-hidden="true">
+                                <div
+                                    class="h-full rounded-full bg-vermilion-500"
+                                    style="width: {{ Number::format($largest > 0 ? 100 * $row['seconds'] / $largest : 0, precision: 1) }}%"
+                                ></div>
+                            </div>
+
+                            <p class="text-xs mt-2 text-zinc-500 dark:text-zinc-400">
+                                {{ trans_choice('{1} :count page|[2,*] :count pages', $row['pages'], ['count' => Number::format($row['pages'])]) }}
                                 &middot;
-                                {{ trans_choice('{1} still :count chapter unread|[2,*] still :count chapters unread', $row['unread_chapters'], ['count' => Number::format($row['unread_chapters'])]) }}
-                            @endif
-                        </p>
+                                {{ trans_choice('{1} :count sitting|[2,*] :count sittings', $row['sessions'], ['count' => Number::format($row['sessions'])]) }}
+                                @if ($row['unread_chapters'] !== null)
+                                    &middot;
+                                    {{ trans_choice('{1} still :count chapter unread|[2,*] still :count chapters unread', $row['unread_chapters'], ['count' => Number::format($row['unread_chapters'])]) }}
+                                @endif
+                            </p>
+                        </div>
                     </li>
                 @endforeach
             </ul>

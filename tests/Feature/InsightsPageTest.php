@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Models\ReadingSession;
 use App\Models\SeriesState;
 use App\Models\User;
+use App\Support\ImageUrl;
+use App\Support\Library;
+use App\Suwayomi\SuwayomiException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -24,6 +27,13 @@ class InsightsPageTest extends TestCase
     use RefreshDatabase;
 
     private User $alice;
+
+    /**
+     * A second lens node a test can press in when the claim needs a series
+     * whose shape the first node cannot carry. Null by default: the fake then
+     * answers one series, as most tests took it.
+     */
+    private ?array $extraNode = null;
 
     protected function setUp(): void
     {
@@ -47,7 +57,7 @@ class InsightsPageTest extends TestCase
             }
 
             if (str_contains($query, 'query Many')) {
-                return Http::response(['data' => ['mangas' => ['nodes' => [
+                $nodes = [
                     [
                         'id' => '76',
                         'title' => 'Chainsaw Man',
@@ -56,7 +66,13 @@ class InsightsPageTest extends TestCase
                         'source' => ['id' => '1', 'name' => 'MangaFire', 'lang' => 'EN'],
                         'chapters' => ['totalCount' => 210, 'nodes' => []],
                     ],
-                ]]]]);
+                ];
+
+                if ($this->extraNode !== null) {
+                    $nodes[] = $this->extraNode;
+                }
+
+                return Http::response(['data' => ['mangas' => ['nodes' => $nodes]]]);
             }
 
             return Http::response(['data' => []]);
@@ -147,6 +163,57 @@ class InsightsPageTest extends TestCase
         $response->assertDontSee('1 hour 30 minutes'); // Bob's sitting is invisible from her page.
     }
 
+    public function test_a_named_row_pictures_the_series_the_lens_already_carries(): void
+    {
+        SeriesState::factory()->create([
+            'user_id' => $this->alice->id,
+            'suwayomi_manga_id' => 76,
+            'in_library' => true,
+        ]);
+
+        $this->sitting($this->alice, 76, 60);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('Chainsaw Man')
+            /*
+             * The cover rides the same entry that named the row, so a named row
+             * and its picture cannot disagree about what the server knows.
+             */
+            ->assertSee(ImageUrl::thumbnail(76));
+    }
+
+    public function test_a_series_the_lens_knows_without_a_name_still_earns_its_true_cover(): void
+    {
+        /*
+         * Library can know a manga and have no name for it: nodes arrive
+         * without a title, and the row fallback is a blank string, which is
+         * that same no-name. The page answers with the honest "Series :id"
+         * rather than rendering an empty link, and the cover the server knows
+         * is still the true one, so the row carries it.
+         */
+        $this->extraNode = [
+            'id' => '63',
+            'status' => 'ONGOING',
+            'initialized' => true,
+            'source' => ['id' => '1', 'name' => 'MangaFire', 'lang' => 'EN'],
+            'chapters' => ['totalCount' => 97, 'nodes' => []],
+        ];
+
+        SeriesState::factory()->create([
+            'user_id' => $this->alice->id,
+            'suwayomi_manga_id' => 63,
+            'in_library' => true,
+        ]);
+
+        $this->sitting($this->alice, 63, 60);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('Series 63', false)
+            ->assertSee(ImageUrl::thumbnail(63));
+    }
+
     public function test_a_series_the_lens_cannot_name_renders_by_id_rather_than_lying(): void
     {
         SeriesState::factory()->create([
@@ -163,6 +230,62 @@ class InsightsPageTest extends TestCase
         $response->assertOk();
         $response->assertSee('Chainsaw Man'); // An id in the lens keeps its name.
         $response->assertSee('Series 999', false); // A bare id with no invented title.
+
+        /*
+         * The row the lens cannot name pictures nothing rather than lending a
+         * cover from nothing: the atom's own placeholder answers, and no cover
+         * link is invented for a manga the server does not know.
+         */
+        $response->assertSee('cover-placeholder', false);
+        $response->assertDontSee(ImageUrl::thumbnail(999));
+    }
+
+    public function test_a_lens_that_throws_leaves_the_rows_without_names_without_losing_a_beat(): void
+    {
+        /*
+         * The lens is the one piece of this page that can fail out, so its
+         * throw is pushed straight here: the Library catch that swallows a
+         * stalled server is that class's own record, and what this page owns
+         * is the shape it answers with. The ledger's numbers stay, the names
+         * and covers go, and the honest id rows hold with no 500 anywhere.
+         */
+        $this->swap(Library::class, new class
+        {
+            public function entries(): Collection
+            {
+                throw new SuwayomiException('The lens is down for this walk.');
+            }
+        });
+
+        $this->sitting($this->alice, 76, 60);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('Series 76', false)
+            ->assertSee('cover-placeholder', false);
+    }
+
+    public function test_the_share_bar_says_nothing_the_minutes_have_not_already_said(): void
+    {
+        SeriesState::factory()->create([
+            'user_id' => $this->alice->id,
+            'suwayomi_manga_id' => 76,
+            'in_library' => true,
+        ]);
+
+        $this->sitting($this->alice, 76, 60);
+
+        $response = $this->get('/insights');
+        $response->assertOk();
+        $response->assertSee('1 minute');
+
+        /*
+         * The bar's width is a picture the badge's words already carry, so it
+         * announces nothing: no second role for the ear and no second phrasing
+         * of the same number to keep in step.
+         */
+        $response->assertDontSee('of reading', false);
+        $response->assertSee('bg-zinc-200 dark:bg-white/10" aria-hidden="true">', false);
     }
 
     public function test_the_unread_figure_rides_the_lens_the_library_uses(): void

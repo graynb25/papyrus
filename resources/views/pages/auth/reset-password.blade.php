@@ -23,26 +23,36 @@
             <!-- Password -->
             <flux:input
                 name="password"
+                id="password"
                 :label="__('Password')"
                 type="password"
                 required
                 autocomplete="new-password"
                 :placeholder="__('Password')"
                 passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
+                aria-describedby="password-margins"
                 viewable
             />
+
+            {{-- The margins the server enforces, ticked live as each is met. --}}
+            <x-password.margins for="password" />
 
             <!-- Confirm Password -->
             <flux:input
                 name="password_confirmation"
+                id="password_confirmation"
                 :label="__('Confirm password')"
                 type="password"
                 required
                 autocomplete="new-password"
                 :placeholder="__('Confirm password')"
                 passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
+                aria-describedby="password_confirmation-margins"
                 viewable
             />
+
+            {{-- And whether the two agree. --}}
+            <x-password.margins for="password" match-for="password_confirmation" />
 
             <div class="flex items-center justify-end">
                 <flux:button type="submit" variant="primary" class="w-full" data-test="reset-password-button">

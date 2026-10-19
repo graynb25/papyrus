@@ -84,8 +84,8 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertStringContainsString(
@@ -106,13 +106,13 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $text = $this->envText();
 
-        $this->assertStringNotContainsString('correct-horse-battery', $text);
+        $this->assertStringNotContainsString('Correct-Horse-Battery-42', $text);
 
         /*
          * And neither is the hash. A hash is not a login credential on its own, but writing it would
@@ -127,8 +127,8 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $text = $this->envText();
@@ -195,8 +195,8 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertAuthenticated();
@@ -210,8 +210,8 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'First Reader',
             'email' => 'first@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertNotNull(
@@ -235,8 +235,8 @@ class LocalReaderAccountTest extends TestCase
         $this->post(route('register.store'), [
             'name' => 'Second Reader',
             'email' => 'second@example.test',
-            'password' => 'correct-horse-battery',
-            'password_confirmation' => 'correct-horse-battery',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
         ])->assertSessionHasNoErrors();
 
         $this->assertNull(

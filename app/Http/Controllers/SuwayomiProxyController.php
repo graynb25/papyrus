@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Etag;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Http\Client\ConnectionException;
@@ -115,15 +116,41 @@ class SuwayomiProxyController extends Controller
             );
         }
 
-        $body = $response->toPsrResponse()->getBody();
+        $isPage = str_contains($path, '/chapter/');
 
         $headers = [
             'Content-Type' => $response->header('Content-Type') ?: 'application/octet-stream',
-            // Suwayomi already sets a day-long max-age. Reuse it so the browser
-            // does not refetch pages it has already read.
-            'Cache-Control' => $response->header('Cache-Control') ?: 'private, max-age=86400',
+            'Cache-Control' => self::cacheControl($response->header('Cache-Control'), $isPage),
             'X-Content-Type-Options' => 'nosniff',
         ];
+
+        if (! $isPage) {
+            /*
+             * Covers and icons are the small whole files (measured covers: at most 800px
+             * and 77KB to 193KB), so the body is buffered whole, which is the branch the
+             * streaming below exists to prevent for pages. The app mints the validator
+             * upstream sends none of, content derived, so a `?format=webp` copy can
+             * never validate a baseline one, and a lapsed window revalidates to a 304
+             * instead of a second download. Upstream is still asked and the answer is
+             * hashed; what a validated request saves is the second copy of the bytes
+             * to the browser.
+             */
+            $bytes = (string) $response->body();
+            $etag = Etag::for($bytes);
+
+            if (Etag::matched($request->header('If-None-Match'), $etag)) {
+                // The window comes back with the 304, so a validated cover also renews
+                // the time the browser may keep using it without asking again.
+                return response('', 304, ['ETag' => $etag, 'Cache-Control' => $headers['Cache-Control']]);
+            }
+
+            $headers['ETag'] = $etag;
+            $headers['Content-Length'] = (string) strlen($bytes);
+
+            return response($bytes, 200, $headers);
+        }
+
+        $body = $response->toPsrResponse()->getBody();
 
         if (($length = $response->header('Content-Length')) !== '') {
             $headers['Content-Length'] = $length;
@@ -136,6 +163,55 @@ class SuwayomiProxyController extends Controller
                 flush();
             }
         }, 200, $headers);
+    }
+
+    /**
+     * The window a proxied image rides out on.
+     *
+     * Upstream's own window comes first when it sends one, and the fallback below is
+     * the same length for the day upstream stops sending any. Two app owned additions
+     * ride on top of whichever window answered:
+     *
+     *  - a `public` allegiance is replaced with `private`, because these bytes are one
+     *    reader's answer; a window that names no visibility at all is left alone, the
+     *    header bag marks it private on the way out (verbatim, `max-age=86400` left the
+     *    controller and `max-age=86400, private` went on the wire), so the app does not
+     *    restate what is already owned once.
+     *  - chapter pages get `immutable`, because the URL carries chapter and page
+     *    indexes that re-fetch the same image every time; covers and icons get
+     *    `stale-while-revalidate`, so a lapsed window renews in the background of the
+     *    next use rather than blanking a card until the revalidation lands.
+     */
+    private static function cacheControl(string $upstream, bool $isPage): string
+    {
+        $window = $upstream !== '' ? $upstream : 'max-age=86400';
+
+        if (preg_match('#\bpublic\b#i', $window) === 1) {
+            /*
+             * Replaced rather than contradicted by prepending `private` beside it: one
+             * visibility statement per header is parseable, two contradict. Upstream
+             * sends no token at all today, so on every real answer this branch decides
+             * nothing, and it exists for the day a server version claims its art is
+             * for everyone.
+             */
+            $window = trim((string) preg_replace('#\bpublic\b#i', '', $window), ", \t");
+
+            if ($window === '') {
+                $window = 'max-age=86400';
+            }
+
+            $window = 'private, '.$window;
+        }
+
+        if ($isPage) {
+            if (preg_match('#\bimmutable\b#i', $window) !== 1) {
+                $window .= ', immutable';
+            }
+        } elseif (preg_match('#\bstale-while-revalidate\b#i', $window) !== 1) {
+            $window .= ', stale-while-revalidate=604800';
+        }
+
+        return $window;
     }
 
     /**

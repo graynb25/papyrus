@@ -151,7 +151,7 @@ class FaqTest extends TestCase
     }
 
     /**
-     * Guard against the headline entry being reworded or reordered into somewhere it does not belong.
+     * A guard on the headline entry being reworded or reordered into somewhere it does not belong.
      */
     public function test_the_privacy_question_is_the_first_one(): void
     {
@@ -159,6 +159,47 @@ class FaqTest extends TestCase
             $this->faq()->entries()[0]->isPrivacy,
             'the privacy answer is why the page exists, so it must not sink below questions about importing',
         );
+    }
+
+    /**
+     * Each question opens its own answer in place, as a disclosure. A page that renders every
+     * answer at once is a wall, and one were the only link to the FAQ is a dim sentence inside
+     * another sentence is what the owner described as amateurish. The count ties the markup to
+     * the content, so a ninth question with no disclosure fails here rather than silently.
+     */
+    public function test_every_question_renders_as_a_disclosure(): void
+    {
+        $response = $this->get(route('faq'));
+        $response->assertOk();
+
+        $this->assertSame(
+            $this->faq()->totalCount(),
+            substr_count((string) $response->getContent(), '<details'),
+            'every question renders as its own disclosure, or the wall of prose is back',
+        );
+    }
+
+    /**
+     * The bundled manga server re-reads the index of every registered store when it starts up,
+     * on its own, which the server's own log carries. A future wording that narrows the third
+     * exception back to "only when you install one" would state something the server falsifies,
+     * so the sentence that says it is held by a test like any other claim.
+     */
+    public function test_the_store_exception_names_the_start_up_re_read(): void
+    {
+        foreach ($this->faq()->outbound() as $route) {
+            if (str_contains($route['what'], 'repository')) {
+                $this->assertStringContainsStringIgnoringCase(
+                    'starts up',
+                    $route['who'],
+                    "the server re-reads store indexes at start up, so the store exception has to say so: {$route['what']}",
+                );
+
+                return;
+            }
+        }
+
+        $this->fail('the extension repository is one of the three outbound routes');
     }
 
     // The rest of the content -------------------------------------------

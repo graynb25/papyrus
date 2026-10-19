@@ -14,7 +14,7 @@
               {{-- Points out of Settings rather than into it, because /faq is public and a reader
                    should be able to reach it from either side. Listed with the read-only pages
                    because it changes nothing about the reader's account or their library. --}}
-              <flux:navlist.item :href="route('faq')" wire:navigate>{{ __('Questions') }}</flux:navlist.item>
+              <flux:navlist.item :href="route('faq')" wire:navigate>{{ __('FAQ') }}</flux:navlist.item>
               <flux:navlist.item :href="route('licences.edit')" wire:navigate>{{ __('Licences') }}</flux:navlist.item>
         </flux:navlist>
     </div>

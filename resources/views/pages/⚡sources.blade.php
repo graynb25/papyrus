@@ -2187,18 +2187,18 @@ new #[Title('Sources')] class extends Component
                                 </div>
 
                                 {{--
-                                    Under the name rather than beside it. A card is narrow,
-                                    so both truncate where a full-width row never had to,
-                                    and the package name is the least interesting thing on
-                                    the card by a distance. The version leads because it is
-                                    the part a reader comparing two updates actually reads.
+                                    The version leads because it is the part a reader actually
+                                    compares, and the package name wraps rather than ellipses: it is
+                                    the card's identity, and cutting an identity short says nothing
+                                    instead. break-all because the id is a dot lattice with no
+                                    word boundaries to break on.
                                 --}}
-                                <p class="mt-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                <p class="mt-1 font-mono text-xs text-zinc-500 dark:text-zinc-400">
                                     @if (($extension['versionName'] ?? null) !== null)
                                         <span class="font-sans">{{ $extension['versionName'] }}</span>
                                     @endif
 
-                                    {{ $extension['pkgName'] }}
+                                    <span class="break-all">{{ $extension['pkgName'] }}</span>
                                 </p>
 
                             </div>

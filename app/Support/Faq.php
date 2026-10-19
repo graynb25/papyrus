@@ -21,6 +21,12 @@ namespace App\Support;
  * `sqs.us-east-1.amazonaws.com`, an unused default in the queue config. There is no analytics, no
  * telemetry, no crash reporting and no error reporting service anywhere in the application.
  *
+ * The store side needed the server's own account of itself. The extension repositories live here
+ * as rows a reader adds rather than in `config`, and the bundled manga server re-reads the index
+ * of every registered store when it starts up on its own, which was measured from the server's own
+ * log on 2026-10-19. The third exception names that re-read rather than claiming the repository
+ * only moves when an install does.
+ *
  * That check is why the exceptions list has three entries rather than one. The first draft of this
  * file said AniList and moved on, and the test below failed, because a claim with an unlisted
  * exception is the exact failure this page is for.
@@ -48,8 +54,8 @@ final class Faq
                 'who' => __('This one is not something you can avoid, because it is how manga is fetched. When you download a chapter, the source is a third-party site and it sees your request. Papyrus cannot fetch a comic without contacting whoever hosts it.'),
             ],
             [
-                'what' => __('The extension repository, when you install a source'),
-                'who' => __('Only when you install one. A source is a small program someone else wrote, and installing it downloads it from the repository it came from. Papyrus ships with none installed, so an install you have not touched makes no requests to fetch anything.'),
+                'what' => __('The extension repository, when you install a source or a store'),
+                'who' => __('Only once you have installed one. A source is a small program someone else wrote, and installing it downloads it from the repository it came from. A store works the same way one index fetch further: the bundled manga server re-reads the index of every store you have installed when it starts up. Papyrus ships with neither installed, so an install you have not touched makes no requests to fetch anything.'),
             ],
         ];
     }
@@ -67,7 +73,7 @@ final class Faq
                 answer: [
                     __('Nothing is reported anywhere. There is no telemetry, no analytics, no crash reporting and no error reporting service in this application, because there is no company behind it to receive any of it. No usage data, no page views, no device identifiers, no phone-home check.'),
                     __('Everything Papyrus knows about you is in a database file on this machine, and you can open it, copy it, back it up or delete it yourself.'),
-                    __('Three things do contact the internet, and all three are things you asked for. If you use none of them, nothing is sent anywhere.'),
+                    __('Three things do contact the internet, and all three are things you set up yourself. If you use none of them, nothing is sent anywhere.'),
                 ],
                 exceptions: array_column($this->outbound(), 'who'),
                 isPrivacy: true,

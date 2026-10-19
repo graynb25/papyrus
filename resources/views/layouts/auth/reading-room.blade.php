@@ -45,14 +45,10 @@
                 </div>
             </div>
 
-            {{-- The promise is a link, so a reader can check it rather than take it. A claim on a
-                 sign-in screen that cannot be verified is worth exactly as much as the reader's
-                 suspicion of it, which is usually less. --}}
-            <p class="text-xs text-zinc-300 [text-shadow:0_1px_10px_rgb(0_0_0/0.9)]">
-                <a href="{{ route('faq') }}" class="underline underline-offset-4 hover:text-white">
-                    {{ __('Self-hosted. No tracking, no telemetry, no third party between you and your sources.') }}
-                </a>
-            </p>
+            {{-- The shell's footer. A claim on a sign-in screen that cannot be verified is worth
+                 exactly as much as the reader's suspicion of it, which is usually less; the shared
+                 footer keeps that promise standing next to the links that serve it. --}}
+            <x-auth-footer />
         </div>
 
         <script>
