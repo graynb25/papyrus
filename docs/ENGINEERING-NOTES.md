@@ -6785,3 +6785,60 @@ exactly that moment and it costs five minutes.
     place a next sitting will look for it, and its first probe is an asset path, not a route:
     `php -S 127.0.0.1:8017 -t public "<Temp opencode>\papyrus-router.php"`, where `<Temp opencode>`
     is this machine's own on-disk scratch root, which is deliberately not named here.
+
+321. **A row whose shape is a race is a row the reader reads three different ways, and the capture is what retires the theoretically tidy fix.**
+
+    Measured 2026-10-19 reshaping the licences ledger. The rows were `flex flex-wrap
+    justify-between` under the name span, so the duty cluster shared the name's line only while
+    one lock file word happened to be short enough: the ledger column is the settings slot's
+    fixed 512 pixels at every window width (`max-w-lg` on `pages/settings/layout.blade.php`), the
+    duty cluster needs roughly 360 to 400 of them, and 102 of the 139 PHP rows plus 152 of the
+    307 row section lost the race and pushed their buttons onto a third line. Widening the
+    window changes nothing, because the column does not move; the flip is decided by the package
+    name alone. The first repair forced `sm:flex-nowrap` with `shrink-0` kept on the cluster,
+    and the before/after capture killed it before the owner saw it: the name cell collapsed to
+    about 110 pixels, every mid-length identifier broke over two lines, and the two nette rows
+    whose licence names three clauses turned their names into a 606 pixel letter column. The
+    landed shape gives each ingredient its own seat on every row, with no responsive branch: the
+    name line carries the licence at the far right, the provenance line is the second, the duty
+    line is the third, and `break-all` on the name means no lock file word can ever outgrow its
+    cell again. Two lessons, both bought here: a layout repair is not verified from the class
+    list, it is verified from the pixels and the element boxes on both sides; and when two
+    children of a wrap line fight over a fixed width, the durable fix is to give the contested
+    thing its own line for every row, not to make the loser lose more gracefully.
+
+322. **A press that looks unchanged is read through three lenses, and only the fresh page load answers.**
+
+    Measured 2026-10-19 walking the reshaped licences page. A wire press on `I have read this
+    licence` was followed by an element reference read straight after the morph, which answered
+    with the pre press text: the locator chain re-resolved through a node Livewire had replaced,
+    so the read described a page nobody could see. A fresh page load showed `Acknowledged` in the
+    same row. The second lens failed the other way: a scratch read through the model answered
+    zero acknowledgement rows while the row on screen claimed a state, and the reason is the same
+    fail closed scope trap 298 died over: without an authenticated reader, `OwnedModel`'s lens
+    hides the rows instead of throwing, so a CLI read through Eloquent is the wrong tool for
+    "does the row exist" and a silent zero is the shape it returns. The raw table read gave the
+    row, its user id, its package key and its stamp. Both halves are the one lesson: after a
+    state press the verdict is a fresh load of the page, and when the page and a probe disagree,
+    the probe's lens is suspect before the feature is.
+
+323. **A version bump is a grep that finds literals and a test suite that finds gates, and the grep alone is never done.**
+
+    Measured 2026-10-19 on 1.2.0 becoming 1.3.0, the first bump of this file since the installer
+    landed. The greps found every shipping doc that names a version: the changelog's release
+    section, the install doc's download line, the parked gate's installer premise, and the
+    builder's own manifest, and the edit fixed each. The suite still went red six deep, all in
+    `PortableBuildTest`: the fixtures stamp their installs `1.2.0` in the very interest of the
+    build's own deliberate cross check, the tree now says `1.3.0`, and `build-portable.php`
+    refused all six with the version sentence instead of naming the `.env`, the database or the
+    manifest each test stages. Two lessons, both paid for. First, a bump's blast radius is not
+    greppable, because part of it lives behind a constant a test reads at runtime; these fixtures
+    were written with their own `version.txt` so that the stamp check would pass, and the check's
+    premise is exactly what one changed number beat. The fixture now stamps `stampVersion()`, read
+    from the same `VERSION` file the build checks, and the mismatch test keeps its own `0.9.0`
+    because it tests the mismatch on purpose. Second, a refusal fired early masks the refusal that
+    is being tested, so six red lines quoted a version disagreement that no failing test meant:
+    read a red suite for what the message is, not only what it says. Also worth keeping from the
+    red run: its summary counted 5,889 assertions against a green baseline of 5,905, because a
+    failing test stops counting its own asserts, so a red run's counts do not compare to a green
+    baseline at all.
