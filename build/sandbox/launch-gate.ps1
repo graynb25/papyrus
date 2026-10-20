@@ -92,14 +92,14 @@ if (-not (Test-Path $results)) {
 Get-ChildItem $results -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
 # --- 3. the configuration and the runner must be there ----------------------------------------
-foreach ($needed in @($wsb, (Join-Path $repo 'build\sandbox\run-in-sandbox.ps1'), (Join-Path $repo 'build\dist\Papyrus-1.2.0-setup.exe'))) {
+foreach ($needed in @($wsb, (Join-Path $repo 'build\sandbox\run-in-sandbox.ps1'), (Join-Path $repo 'build\dist\Papyrus-1.3.0-setup.exe'))) {
     if (-not (Test-Path $needed)) {
         Say "REFUSING TO LAUNCH: $needed is missing."
         exit 1
     }
 }
 
-Say "ok   the installer under test is $((Get-Item (Join-Path $repo 'build\dist\Papyrus-1.2.0-setup.exe')).LastWriteTime)"
+Say "ok   the installer under test is $((Get-Item (Join-Path $repo 'build\dist\Papyrus-1.3.0-setup.exe')).LastWriteTime)"
 
 # --- launch -----------------------------------------------------------------------------------
 Say ''

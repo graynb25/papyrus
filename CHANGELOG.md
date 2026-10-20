@@ -23,6 +23,53 @@ for what the portable shape will do when it ships.
 
 ---
 
+## 1.3.0 - 2026-10-19
+
+The first release since 1.2.0: the sources and shelf work of five feature phases, the licences
+ledger, the reading insights page, and the reading room's craft pass. 2026-10-16 to 2026-10-19,
+accepted in the browser as each phase landed.
+
+### Added
+
+**Move a shelf between sources as one guided run.** A Migrate tab on the sources page picks up to
+five destinations for one source, compares series by series, asks before it carries anything, and
+its card reports what it moved and where a run stopped. Each landed row shows its progress on its
+own cover. `27aea65` `2c22df5` `2142d43` `f7de17a` `446e32f`
+
+**Pinned sources decide what search asks.** A pin on a source scopes the search fanout to the
+pinned set, and every count on the page says what it covers. `3cac973`
+
+**The licences page.** Every package the install carries states its licence and links the text it
+reads from, an absent text is refused or marked as measured rather than invented, and the ledger
+holds a reader's acknowledgements, re-arming them when the version or the licence moves.
+`36d2ecb`
+
+**Reading insights.** The reading session ledger writes one row per chapter open at the seams the
+reader already has, and `/insights` sums it into time per series, pages turned and readings, behind
+the reader's own scope. `b05f624`
+
+**Safer sources.** Flagged sources carry their conduct copy at the install press rather than on
+every card, a store's catalogue loads itself after it is added, and a reader with no installed
+source is sent to Sources instead of an empty search. `4f9e7cf` `c096d4c` `0d3c586`
+
+### Changed
+
+**The reading room had its craft pass.** The FAQ is rebuilt on the app's own disclosure pattern with
+a real footer on every public shell, insights bars carry their covers, and the login passwords met
+the audit's margins. `59fb26e`
+
+### Fixed
+
+**The bulk move's time window covers the measured walk.** The job window moved from 1800 to 3600
+seconds from six measured runs, so a large move does not die at the middle of the shelf.
+`4460a01`
+
+**The mid flight rows read ready only.** A comparison table now appears while a run is still
+flying, exactly one row per landed compare, so the report builds in front of the reader rather than
+afterwards. `5bc4cb8`
+
+---
+
 ## 1.2.0 - 2026-10-12
 
 The release where Papyrus became something a reader installs and runs, rather than something a
