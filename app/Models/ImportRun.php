@@ -45,6 +45,9 @@ use Illuminate\Support\Collection;
  * @property int $not_found
  * @property int $ambiguous
  * @property int $series_on_missing_sources
+ * @property int|null $categories_in_file Shelves named in the file, or null when the run never got that far.
+ * @property int|null $category_members_placed
+ * @property int|null $category_members_skipped
  * @property int $applied
  * @property int $filed_without_source
  * @property int $unchanged
@@ -72,6 +75,9 @@ use Illuminate\Support\Collection;
     'not_found',
     'ambiguous',
     'series_on_missing_sources',
+    'categories_in_file',
+    'category_members_placed',
+    'category_members_skipped',
     'applied',
     'filed_without_source',
     'unchanged',
@@ -103,6 +109,9 @@ class ImportRun extends OwnedModel
             'not_found' => 'integer',
             'ambiguous' => 'integer',
             'series_on_missing_sources' => 'integer',
+            'categories_in_file' => 'integer',
+            'category_members_placed' => 'integer',
+            'category_members_skipped' => 'integer',
             'applied' => 'integer',
             'filed_without_source' => 'integer',
             'unchanged' => 'integer',

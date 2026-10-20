@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Import\BackupImporter;
+use App\Import\BackupReader;
 use App\Import\BackupReaders;
 use App\Import\ExtensionInstaller;
 use App\Import\ImportRefused;
 use App\Import\SeriesResolver;
 use App\Import\SeriesWriter;
+use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
 use App\Models\ChapterState;
 use App\Models\ImportedSeries as Ledger;
@@ -24,6 +26,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\BuildsTachibkBackups;
 use Tests\Support\BuildsTachimangaBackups;
 use Tests\TestCase;
 
@@ -54,6 +57,7 @@ use Tests\TestCase;
  */
 class BackupImporterTest extends TestCase
 {
+    use BuildsTachibkBackups;
     use BuildsTachimangaBackups;
     use RefreshDatabase;
 
@@ -136,8 +140,9 @@ class BackupImporterTest extends TestCase
 
     /**
      * @param  array<string, int>  $catalogue  Url to manga id.
+     * @param  array<int, BackupReader>|null  $readers  Null means the tachimanga reader alone.
      */
-    private function importer(array $catalogue = []): BackupImporter
+    private function importer(array $catalogue = [], ?array $readers = null): BackupImporter
     {
         $this->catalogue = $catalogue;
 
@@ -255,7 +260,7 @@ class BackupImporterTest extends TestCase
         $locator = new SeriesLocator($this->app->make(Gateway::class));
 
         $importer = new BackupImporter(
-            readers: new BackupReaders([$this->app->make(TachimangaReader::class)]),
+            readers: new BackupReaders($readers ?? [$this->app->make(TachimangaReader::class)]),
             installer: new ExtensionInstaller($this->app->make(ExtensionManager::class), $locator),
             resolver: new SeriesResolver($locator),
             writer: new SeriesWriter($this->app->make(ReadingState::class), $this->app->make(SeriesGateway::class)),
@@ -783,6 +788,193 @@ class BackupImporterTest extends TestCase
         );
         $this->assertSame(1, $second->count('unchanged'));
         $this->assertSame(2, Ledger::query()->count());
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * The shelves the file carries.
+     * ---------------------------------------------------------------------------
+     *
+     * The file links its shelf members through CategoryManga, and the measured real file
+     * carries counts the user can name: Youtube and Snowflakes. A member lands either on
+     * the shelf the import created or, when the file carried it without a source, on the
+     * local row the filing pass made. Both halves go through the library's own filing
+     * operation, {@see \App\Support\Library::attach()} and
+     * {@see \App\Support\Library::attachState()}, so the shelves the import builds are
+     * shelves the library page can also drive.
+     */
+
+    public function test_the_shelves_the_file_carries_are_recreated_and_the_members_landed(): void
+    {
+        $this->importer([self::FIRST => 1768])->import($this->user, $this->backup());
+
+        /*
+         * The file carries the name with a trailing space, and nothing trims a
+         * shelf a reader cannot type into their own sheet. The landing trims it
+         * before creating, so what arrives here is what a rename field would have
+         * produced.
+         */
+        $this->assertSame(
+            ['Youtube', 'Snowflakes'],
+            DB::table('categories')->where('user_id', $this->user->id)->orderBy('id')->pluck('name')->all(),
+        );
+
+        $this->assertSame(
+            1,
+            DB::table('category_series')->where('user_id', $this->user->id)->count(),
+            'Youtube carries one member and Snowflakes carries none, which is the file saying so',
+        );
+
+        $state = SeriesState::forUser($this->user)->where('suwayomi_manga_id', 1768)->sole();
+
+        $this->assertSame(
+            [$state->default_category_id],
+            DB::table('category_series')->where('user_id', $this->user->id)->pluck('category_id')->all(),
+            'the landed member carries the shelf it landed in as its default, the first shelf wins shape',
+        );
+
+        $run = ImportRun::sole();
+
+        $this->assertSame(2, $run->categories_in_file);
+        $this->assertSame(1, $run->category_members_placed);
+        $this->assertSame(0, $run->category_members_skipped);
+
+        $this->assertSame(
+            ['Youtube'],
+            Ledger::forUser($this->user)->where('suwayomi_manga_id', 1768)->sole()->categories,
+            'the ledger row keeps the claim the file made, and not the shelf state as it later stands',
+        );
+
+        $this->assertContains('categories: Youtube: 1 of 1 members landed', $this->lines);
+        $this->assertContains('categories: Snowflakes: 0 of 0 members landed', $this->lines);
+    }
+
+    public function test_a_series_filed_without_a_source_is_filed_onto_its_shelf(): void
+    {
+        $this->installed = []; // the source is not installed here, so both series get filed by title alone
+
+        $this->importer()->import($this->user, $this->backup());
+
+        $hiding = SeriesState::forUser($this->user)
+            ->whereNull('suwayomi_manga_id')
+            ->where('title', 'Hiding a Logistics Center')
+            ->sole();
+
+        $shelf = DB::table('categories')->where('user_id', $this->user->id)->where('name', 'Youtube')->first();
+        $this->assertNotNull($shelf, 'the shelf outlived its members failing to resolve');
+
+        $this->assertSame(
+            [$hiding->id],
+            DB::table('category_series')
+                ->where('user_id', $this->user->id)
+                ->where('category_id', $shelf->id)
+                ->pluck('series_state_id')->all(),
+            'the shelf carries the member through the local row the filing pass made',
+        );
+
+        $run = ImportRun::sole();
+
+        $this->assertSame(1, $run->category_members_placed);
+        $this->assertSame(0, $run->category_members_skipped);
+
+        $this->assertSame(
+            ['Youtube'],
+            Ledger::forUser($this->user)->where('source_url', self::FIRST)->sole()->categories,
+        );
+    }
+
+    public function test_a_member_the_run_never_reached_is_skipped_with_its_reason_said(): void
+    {
+        $this->withSecondCategoryMembership = true;
+
+        $this->importer([self::FIRST => 1768])->import($this->user, $this->backup(), limit: 1);
+
+        $this->assertContains(
+            'categories: Snowflakes: 0 of 1 members landed, skipped: 1 this run never reached its series',
+            $this->lines,
+        );
+
+        $run = ImportRun::sole();
+
+        $this->assertSame(1, $run->category_members_placed, 'the first member landed, since the first series the run walks is the first shelf member');
+        $this->assertSame(1, $run->category_members_skipped);
+
+        $this->assertSame(1, Ledger::query()->count(), 'only the series the limit allowed has a row, so the skipped member has none to stamp');
+    }
+
+    public function test_a_series_that_threw_is_stamped_and_skipped_with_its_reason_said(): void
+    {
+        /*
+         * Backup stamping happens before the landing, so a row that raised still
+         * carries what the file says about where it belongs. What it does not
+         * carry is a place to land: it has no resolution behind it, so there is no
+         * server row to go looking for one on.
+         */
+        $this->catalogue = [self::FIRST => 1768, self::SECOND => 1769];
+        $this->seriesThatThrow = [1768];
+
+        $this->importer($this->catalogue)->import($this->user, $this->backup());
+
+        $threw = Ledger::query()->where('state', Ledger::THREW)->sole();
+
+        $this->assertSame(['Youtube'], $threw->categories, 'the claim the file made survives even on a row that raised');
+
+        $run = ImportRun::sole();
+
+        $this->assertSame(0, $run->category_members_placed);
+        $this->assertSame(1, $run->category_members_skipped);
+
+        $this->assertContains(
+            'categories: Youtube: 0 of 1 members landed, skipped: 1 its local row is gone',
+            $this->lines,
+        );
+    }
+
+    public function test_a_second_run_does_not_grow_a_shelf(): void
+    {
+        $catalogue = [self::FIRST => 1768];
+
+        $this->importer($catalogue)->import($this->user, $this->backup());
+
+        $firstCount = DB::table('category_series')->where('user_id', $this->user->id)->count();
+
+        $this->importer($catalogue)->import($this->user, $this->backup());
+
+        $this->assertSame(
+            $firstCount,
+            DB::table('category_series')->where('user_id', $this->user->id)->count(),
+            'a landed member is landed once, however many runs name it',
+        );
+
+        $this->assertSame(1, count(Ledger::forUser($this->user)->where('suwayomi_manga_id', 1768)->sole()->categories), 'and the stamp does not accumulate a name per run');
+    }
+
+    public function test_a_file_format_that_carries_no_shelves_leaves_the_run_counters_at_null(): void
+    {
+        /*
+         * `.tachibk` answers "0 categories", and the run row has to say the same
+         * thing in SQL a report can read. Not zero: a zero would claim that every
+         * member found a shelf, and the truth is that this format has no shelves to
+         * ask about.
+         */
+        $this->importer([], [$this->app->make(TachimangaReader::class), $this->app->make(TachibkReader::class)])
+            ->import($this->user, $this->buildTachibkBackup());
+
+        $run = ImportRun::sole();
+
+        $this->assertNull($run->categories_in_file);
+        $this->assertNull($run->category_members_placed);
+        $this->assertNull($run->category_members_skipped);
+
+        $this->assertSame(
+            0,
+            DB::table('categories')->where('user_id', $this->user->id)->count(),
+            'a format without shelves invents none',
+        );
+
+        $this->assertSame(0, Ledger::query()->whereNotNull('categories')->count(), 'and no row is stamped with a name its file never said');
+
+        $this->assertFalse((bool) array_filter($this->lines, fn (string $line): bool => str_starts_with($line, 'categories: ')), 'and the progress says nothing about shelves it never had');
     }
 
     /*

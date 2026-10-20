@@ -57,6 +57,16 @@ trait BuildsTachimangaBackups
     protected bool $withUnreachableSources = false;
 
     /**
+     * Give the empty shelf a member the default fixture cannot reach a skip for.
+     *
+     * Snowflakes carries no members as the default fixture models the real file, so every
+     * member any test asserts on is the very first series the run walks and a limited run can
+     * never be shown skipping one. This puts the second shelf series on it instead, so a run
+     * asked to stop after the first series must skip a member it has never looked at.
+     */
+    protected bool $withSecondCategoryMembership = false;
+
+    /**
      * Mark one manga's chapters as never read, whatever the rows say.
      *
      * This is the knob the delta tests need, and the earlier `chapter_last_read_at` clock was
@@ -396,6 +406,10 @@ trait BuildsTachimangaBackups
         $category->execute([2, 'Snowflakes', $this->timestamps['category_create_at']]);
 
         $pdo->prepare('insert into CategoryManga (category, manga) values (?, ?)')->execute([1, 217]);
+
+        if ($this->withSecondCategoryMembership) {
+            $pdo->prepare('insert into CategoryManga (category, manga) values (?, ?)')->execute([2, 9265]);
+        }
 
         $this->seedSources($pdo);
     }

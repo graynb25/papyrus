@@ -102,10 +102,14 @@ class RestoreOrchestrationTest extends TestCase
      * what a restore reports afterwards, and the test asserts against them so a restore that reports
      * "done" while having restored nothing is visible.
      */
-    private function writePair(string $token = '20261013-031701', int $seriesStates = 867, int $chapterStates = 21447): BackupPair
-    {
+    private function writePair(
+        string $token = '20261013-031701',
+        int $seriesStates = 867,
+        int $chapterStates = 21447,
+        string $mangaExtension = 'mv.db',
+    ): BackupPair {
         $papyrus = $this->backupDir().DIRECTORY_SEPARATOR.'papyrus-'.$token.'.sqlite';
-        $suwayomi = $this->backupDir().DIRECTORY_SEPARATOR.'suwayomi-'.$token.'.mv.db';
+        $suwayomi = $this->backupDir().DIRECTORY_SEPARATOR.'suwayomi-'.$token.'.'.$mangaExtension;
 
         file_put_contents($papyrus, 'PAPYRUS-SIDECAR-'.$seriesStates.'-'.$chapterStates);
         file_put_contents($suwayomi, 'SUWAYOMI-H2-'.$token);
@@ -446,6 +450,39 @@ class RestoreOrchestrationTest extends TestCase
             $this->backupDir().DIRECTORY_SEPARATOR.'rollback-'.$pair->token,
             'a bad backup must be refused before anything is moved aside, so no rollback directory '
             .'is created and no live file is ever out of place',
+        );
+    }
+
+    /**
+     * A manga half that is a Suwayomi export is refused, and nothing was even moved aside.
+     *
+     * The in-app backup takes `.tachibk` exports while Suwayomi keeps running, and it files them in
+     * the same backups folder this command reads. The launcher can only put back an H2 file, so the
+     * refusal has to name the shape, not print a digest mismatch against a file that was never
+     * pretending to be one.
+     */
+    public function test_restore_refuses_a_tachibk_manga_half(): void
+    {
+        $live = $this->writeLive();
+        $pair = $this->writePair(mangaExtension: 'tachibk');
+
+        $refused = null;
+
+        try {
+            $this->restorer()->restore($pair, $live);
+        } catch (RestoreRefused $e) {
+            $refused = $e;
+        }
+
+        $this->assertNotNull($refused, 'a .tachibk manga half must be refused');
+        $this->assertStringContainsString('a Suwayomi export', (string) $refused->getMessage());
+
+        $this->assertSame('LIVE-PAPYRUS', (string) file_get_contents($live['papyrus']['target']));
+        $this->assertSame('LIVE-SUWAYOMI', (string) file_get_contents($live['suwayomi']['target']));
+
+        $this->assertDirectoryDoesNotExist(
+            $this->backupDir().DIRECTORY_SEPARATOR.'rollback-'.$pair->token,
+            'the refusal is a pre-flight, so nothing was ever moved aside for it to undo',
         );
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Downloads;
 
+use App\Support\Suwayomi\FileUrl;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
@@ -333,30 +334,10 @@ class CbzExporter
             return $this->auth->attachToken(
                 Http::withOptions(['stream' => true])
                     ->timeout((int) config('papyrus.suwayomi.timeout', 28))
-            )->send('GET', $this->absolute($pageUrl));
+            )->send('GET', FileUrl::absolute($pageUrl));
         } catch (ConnectionException $e) {
             throw SuwayomiException::unavailable($e->getMessage(), $e);
         }
-    }
-
-    /**
-     * A page URL as Suwayomi returns it, which is a rooted path rather than an address.
-     *
-     * Exactly one slash has to survive the join. The first version used `':'` here, on the
-     * assumption that the returned path omitted a separator the way this app's own proxy
-     * builds one; it does not, and the result was
-     * `http://127.0.0.1:4567:/api/v1/...`. Correcting that to a bare concatenation then gave
-     * `http://127.0.0.1:4567api/v1/...`, because trimming the trailing slash off the host and
-     * the leading slash off the path removes the separator along with them. Both attempts were
-     * found by running the exporter; neither was visible by reading it.
-     */
-    private function absolute(string $pageUrl): string
-    {
-        if (str_starts_with($pageUrl, 'http://') || str_starts_with($pageUrl, 'https://')) {
-            return $pageUrl;
-        }
-
-        return rtrim((string) config('papyrus.suwayomi.url'), '/').'/'.ltrim($pageUrl, '/');
     }
 
     /**

@@ -17,15 +17,19 @@ use Illuminate\Support\Collection;
  * 1,277 are `in_library = 1`; the rest is what the app cached from browsing, and
  * importing the whole table is a mistake that looks like success.
  *
- * ## Categories are reported, not matched
+ * ## Categories are carried as the file links them, not matched to anything
  *
  * Tachimanga lets a reader invent category names, and the two in the measured backup,
  * `Youtube ` and `Snowflakes`, are labels somebody typed rather than any reserved
- * vocabulary. Nothing in the file distinguishes a reader's own label from a system's, so
- * there is nothing to match a Papyrus shelf against. Matching free text across two apps
- * both misses shelves that were meant to match and invents matches where a reader once
- * used the same word for something else, so the counts are carried and the caller
- * decides. See open item 2 in docs/IMPORT-ANALYSIS.md.
+ * vocabulary, the trailing space part of the typing. The value under each name is the
+ * members the file links to that shelf: `CategoryManga.manga` joins the backup's own
+ * `Manga.id`, measured on the real file with no orphaned link among 146 memberships,
+ * and only members that are on the shelf, because those are the ones that can land.
+ *
+ * What happens to them is the import's job, not this shape's: the reader's own shelves
+ * are where they land, named as they landed, and the placement report says which
+ * members did and which were skipped with their reasons. This class carries the file's
+ * links so that decision stays with the code that can see the reader's side.
  *
  * No rating or tag is carried because Tachimanga stores neither, so a reader who rated
  * 300 series on their phone has lost them and the importer cannot recover them.
@@ -48,7 +52,7 @@ final class ImportedBackup
 {
     /**
      * @param  Collection<int, ImportedSeries>  $series  The reader's library, and only their library.
-     * @param  Collection<string, int>  $categories  Category name to member count, as free-text labels.
+     * @param  Collection<string, Collection<int, int>>  $categories  Category name to the shelf members the file links, as the backup's own manga ids.
      * @param  int  $totalInFile  How many series the file holds in total, library and browse cache together.
      * @param  int|null  $schemaVersion  The format's own version number, or null when the format states none.
      * @param  Collection<int, BackupSource>  $sources  The sources the shelf sits on, largest first.

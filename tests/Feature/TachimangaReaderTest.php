@@ -254,14 +254,28 @@ class TachimangaReaderTest extends TestCase
         $this->assertNull($unmatchable, 'no chapter carries that id, so the remap will have to report it');
     }
 
-    public function test_categories_are_reported_as_free_text_labels(): void
+    public function test_categories_are_carried_with_the_members_the_file_links(): void
     {
         $this->built = $this->buildTachimangaBackup();
         $categories = $this->reader()->read($this->built)->categories;
 
         $this->assertCount(2, $categories);
-        $this->assertSame(1, $categories->get('Youtube '), 'the trailing space is part of what was typed');
-        $this->assertSame(0, $categories->get('Snowflakes'), 'an empty category still counts as a category');
+        $this->assertSame([217], $categories->get('Youtube ')?->values()->all(), 'the trailing space is part of what was typed');
+        $this->assertSame([], $categories->get('Snowflakes')?->values()->all(), 'an empty category still carries its name');
+    }
+
+    public function test_a_browse_cache_member_is_not_a_shelf_member(): void
+    {
+        $this->built = $this->buildTachimangaBackup();
+        $backup = $this->reader()->read($this->built);
+
+        /*
+         * The measured real file carries memberships on browse-cache series too
+         * (Youtube 16 and Snowflakes 20 of its 146 rows), and those have no place to
+         * land: the reader app's own pills count shelf members only (Youtube 20 on
+         * IMG_1172). The membership read asks for exactly that set.
+         */
+        $this->assertSame([217], $backup->categories->flatten()->all(), '9263 and 9264 are browse cache, not shelf members');
     }
 
     public function test_the_source_list_names_the_package_not_the_foreign_key(): void

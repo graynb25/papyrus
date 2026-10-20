@@ -590,34 +590,73 @@ final class TachimangaReader implements BackupReader
     }
 
     /**
-     * Category names with their member counts, reported rather than matched.
+     * Category names with their shelf members, as the file links them.
      *
-     * Free-text labels a reader typed. See {@see ImportedBackup} for why there is nothing
-     * to match a shelf against.
+     * `CategoryManga.manga` joins `Manga.id`, the backup's own local id, measured on the
+     * real file: 146 rows, every one resolving to a Manga row, none of them orphaned. Only
+     * members whose series are on the shelf come back, which is what the reader app's own
+     * category pills count: the file also carries members on browse-cached series
+     * (Youtube 16, Snowflakes 20 of the 146 measured) and those have no place to land.
      *
-     * @return Collection<string, int>
+     * The name is carried as the reader typed it, trailing space included; landing trims
+     * it, because a shelf whose name ends in a space is a shelf the reader cannot type.
+     *
+     * ## If a shelf ends up with fewer members than it held
+     *
+     * That is the per-item report's job, not this read's: the import says which members
+     * landed and which were skipped with their reasons. This method only carries what the
+     * file links.
+     *
+     * @return Collection<string, Collection<int, int>> Category name to the backup's own manga ids on it.
      */
     private function categories(PDO $pdo): Collection
     {
-        $statement = $pdo->prepare(
-            'select c.'.$this->t(TachimangaSchema::CATEGORY_NAME_COLUMN).' as name,
-                    count(cm.'.$this->t('manga').') as members
-             from '.$this->t(TachimangaSchema::CATEGORY_TABLE).' c
-             left join '.$this->t(TachimangaSchema::CATEGORY_MANGA_TABLE).' cm
-               on cm.'.$this->t('category').' = c.'.$this->t('id').'
-             group by c.'.$this->t('id').'
-             order by members desc'
-        );
+        /*
+         * Plain arrays first. A Collection grown by `put` hides its key and value
+         * types from static analysis (the keys it cannot name end up inferred as
+         * *NEVER*), while the finished shape is documented on this method.
+         */
+        /** @var array<string, list<int>> $shelfMembers the shelf by name to the members it carries, the same shape the reader carries to the landing pass */
+        $shelfMembers = [];
 
-        $statement->execute();
+        $nameById = [];
 
-        $categories = new Collection;
-
-        foreach ($statement as $row) {
-            $categories->put((string) $row['name'], (int) $row['members']);
+        foreach ($this->statement($pdo, 'select '.$this->t('id').', '.$this->t(TachimangaSchema::CATEGORY_NAME_COLUMN).' from '.$this->t(TachimangaSchema::CATEGORY_TABLE).' order by '.$this->t('id')) as $category) {
+            $name = (string) $category[TachimangaSchema::CATEGORY_NAME_COLUMN];
+            $shelfMembers[$name] = [];
+            $nameById[(int) $category['id']] = $name;
         }
 
-        return $categories;
+        $m = TachimangaSchema::MANGA_TABLE;
+
+        $members = $pdo->prepare(
+            'select cm.'.$this->t('category').' as category, cm.'.$this->t('manga').' as manga
+             from '.$this->t(TachimangaSchema::CATEGORY_MANGA_TABLE).' cm
+             join '.$this->t($m).' m on m.'.$this->t(TachimangaSchema::MANGA_ID_COLUMN).' = cm.'.$this->t('manga').'
+             where m.'.$this->t(TachimangaSchema::IN_LIBRARY_COLUMN).' = :on_the_shelf'
+        );
+
+        $members->execute(['on_the_shelf' => 1]);
+
+        foreach ($members as $row) {
+            $name = $nameById[(int) $row['category']] ?? null;
+
+            if ($name !== null) {
+                $shelfMembers[$name][] = (int) $row['manga'];
+            }
+        }
+
+        /*
+         * The finished shape is what the import reads, so the plain arrays are
+         * mapped over rather than built into a Collection one `put` at a time.
+         * The `Deduplicator` builds its groups the same way, and the file's own
+         * order rides the arrays into the collections.
+         */
+
+        return (new Collection($shelfMembers))->map(
+            /** @param list<int> $members */
+            fn (array $members): Collection => new Collection($members),
+        );
     }
 
     /**

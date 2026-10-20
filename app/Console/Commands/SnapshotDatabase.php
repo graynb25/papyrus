@@ -2,8 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Backup\ReaderHalfCapture;
+use App\Backup\ReaderHalfRefused;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Throwable;
 
@@ -61,18 +62,16 @@ class SnapshotDatabase extends Command
 
     public function handle(): int
     {
-        // Checked before anything is written, because the refusal is the useful part.
-        //
-        // VACUUM cannot run inside a transaction, and SQLite reports that as a generic SQL
-        // error with no mention of transactions. A caller that wraps this in one, which is a
-        // normal thing to do to a queued job, would get an opaque failure rather than being told
-        // what is wrong. It also makes the command untestable under `RefreshDatabase`, which
-        // begins a transaction, so the guard is load bearing in two directions.
-        if (DB::transactionLevel() > 0) {
-            $this->components->error(
-                'A snapshot cannot be taken inside a transaction. Run this outside one, which is '
-                .'what a plain command invocation does.'
-            );
+        // Checked before anything is written, because the refusal is the useful part there
+        // too: `sayWhatThisIsAndIsNot` and retention both touch the folder, and none of that
+        // should happen for a call that is going to be refused. The guard's own reason is
+        // written once, in the seam it shares with the in app backup.
+        $capture = new ReaderHalfCapture;
+
+        try {
+            $capture->guard();
+        } catch (ReaderHalfRefused $e) {
+            $this->components->error($e->getMessage());
 
             return self::FAILURE;
         }
@@ -98,7 +97,7 @@ class SnapshotDatabase extends Command
         $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.gmdate('Ymd-His').'.sqlite';
 
         try {
-            $this->vacuumInto($target);
+            $capture->capture($target);
         } catch (Throwable $e) {
             // Refuse rather than leave a partial file that looks like a backup. An incomplete
             // snapshot discovered during a restore is worse than no snapshot, because it is
@@ -170,23 +169,6 @@ class SnapshotDatabase extends Command
         $this->line('    papyrus snapshot');
         $this->line('  Papyrus has to be stopped for that, which is why this command cannot do it.');
         $this->newLine();
-    }
-
-    /**
-     * The one statement this command exists for.
-     *
-     * The target has to not exist. SQLite refuses to overwrite, which is convenient: it means a
-     * same-second second run cannot quietly replace a good snapshot with a worse one.
-     *
-     * @throws Throwable
-     */
-    private function vacuumInto(string $target): void
-    {
-        // The path goes in as a bound parameter rather than interpolated, even though it is
-        // ours. A path containing an apostrophe is legal on every platform this ships to, and
-        // interpolating one is a syntax error in a backup command, which is the worst place to
-        // have one.
-        DB::select('VACUUM INTO ?', [$target]);
     }
 
     /**

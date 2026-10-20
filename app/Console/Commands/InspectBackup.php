@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Import\BackupReaders;
 use App\Import\ImportRefused;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 /**
  * Read another reader app's backup and print what is in it, changing nothing.
@@ -28,8 +29,8 @@ use Illuminate\Console\Command;
  * The counts are the deliverable, not a progress bar. A backup holding 132,185 manga of
  * which 1,277 are the library has to show both, because "found 1,277" alone does not tell
  * a reader that 131,908 rows were browse cache rather than their shelf. Categories are
- * printed as the free-text labels they are, with member counts, and are not matched to
- * shelves: nothing in the file distinguishes a label a reader typed from a system's.
+ * the free-text labels they are, printed with the members a shelf would gain, and nothing
+ * here decides how they land: that is the import's answer named beside the button.
  */
 class InspectBackup extends Command
 {
@@ -105,13 +106,13 @@ class InspectBackup extends Command
             $this->components->info('Categories in that file, as the labels they are:');
             $this->table(
                 ['Label', 'Series'],
-                $backup->categories->map(fn (int $count, string $label): array => [$label, number_format($count)])
+                $backup->categories->map(fn (Collection $members, string $label): array => [$label, number_format($members->count())])
                     ->values()
                     ->all(),
             );
-            $this->components->warn(
-                'These are names a reader typed, so nothing here is matched to a shelf. '
-                .'You will be asked which ones to map.'
+            $this->line(
+                'These are names a reader typed. The import creates a shelf of the same '
+                .'name for each one and files the members that resolve onto it.'
             );
         }
 

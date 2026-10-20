@@ -40,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $suwayomi_manga_id
  * @property int|null $series_state_id The local row, when the series was filed without a source.
  * @property int|null $backup_manga_id
+ * @property list<string>|null $categories The shelf names the backup itself filed this series into, when the file links any.
  * @property string|null $title
  * @property string $state
  * @property string|null $reason
@@ -59,6 +60,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'suwayomi_manga_id',
     'series_state_id',
     'backup_manga_id',
+    'categories',
     'title',
     'state',
     'reason',
@@ -84,6 +86,7 @@ class ImportedSeries extends OwnedModel
             'source_id' => 'integer',
             'suwayomi_manga_id' => 'integer',
             'backup_manga_id' => 'integer',
+            'categories' => 'array',
             'attempts' => 'integer',
             'chapters_seen' => 'integer',
             'chapters_applied' => 'integer',

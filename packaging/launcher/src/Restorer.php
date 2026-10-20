@@ -116,10 +116,15 @@ final class Restorer
     }
 
     /**
-     * Both halves present, and both are what the manifest says they are.
+     * Both halves present, both are what the manifest says they are, and the manga half is a shape
+     * this launcher can actually put back.
      *
      * Touches nothing, and the ordering matters: this runs before the first move so a bad backup
      * costs the reader nothing but the time to read the message.
+     *
+     * A `.tachibk` manga half is Suwayomi's own export, which Papyrus's in-app backup takes while
+     * the server keeps running. The launcher can only restore an H2 file, so it refuses here
+     * rather than replace a working database with a file Suwayomi cannot read.
      *
      * @throws RestoreRefused
      */
@@ -127,6 +132,16 @@ final class Restorer
     {
         foreach (['papyrus', 'suwayomi'] as $half) {
             $path = $pair->pathOf($half);
+
+            if ($half === 'suwayomi' && str_ends_with($pair->suwayomiFile, '.tachibk')) {
+                throw (new RestoreRefused(sprintf(
+                    'The manga half of this backup is a Suwayomi export (%s), the shape Papyrus\'s '
+                    .'own in-app backup takes while Suwayomi keeps running. This command can only '
+                    .'put back an H2 database, so it refuses rather than replace one with a file '
+                    .'Suwayomi cannot read. Nothing has been changed.',
+                    $pair->suwayomiFile,
+                )))->attempted($path);
+            }
 
             if (! $this->mover->exists($path)) {
                 throw (new RestoreRefused(sprintf(

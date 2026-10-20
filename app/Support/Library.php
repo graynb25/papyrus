@@ -579,6 +579,35 @@ class Library
         $state = app(ReadingState::class)->loadOrCreate($userId, $mangaId);
         $state->save();
 
+        return $this->attachState($user, $state, $categoryId);
+    }
+
+    /**
+     * File an existing series row into a shelf.
+     *
+     * The membership is keyed on the row, not on a manga id: the import needs
+     * this for a series the file carried without a source, whose ledger row says
+     * nothing about where the server can load one from.
+     *
+     * @param  SeriesState|int  $seriesState  the row to key on, or its id
+     * @return array<int, int> every shelf this series is now in
+     */
+    public function attachState(User|int $user, SeriesState|int $seriesState, int $categoryId): array
+    {
+        $userId = $this->userId($user);
+
+        if ($this->ownedCategory($userId, $categoryId) === null) {
+            return [];
+        }
+
+        $state = $seriesState instanceof SeriesState
+            ? $seriesState
+            : SeriesState::forUser($userId)->find($seriesState);
+
+        if ($state === null) {
+            return [];
+        }
+
         if (! $this->isFiled($userId, (int) $state->id, $categoryId)) {
             DB::connection()->table('category_series')->insert([
                 'user_id' => $userId,

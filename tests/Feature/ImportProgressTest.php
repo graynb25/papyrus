@@ -82,7 +82,17 @@ class ImportProgressTest extends TestCase
         $this->assertSame(2, $run->library_series);
         $this->assertSame(2, $run->series_processed, 'every series in the file was looked at');
         $this->assertNotNull($run->progress_note);
-        $this->assertStringContainsString('of 2 series', $run->progress_note);
+
+        /*
+         * The shelf receipt is the last word an import says, because it is the pass that runs
+         * after the series loop and needs the final ledger row. The series phase's own
+         * completion is what already makes that line exist, and it is asserted above from the
+         * column that keeps it permanently, where the old `of 2 series` note could only ever
+         * be the last thing said rather than a state.
+         */
+        $this->assertStringContainsString('categories:', $run->progress_note);
+
+        $this->assertStringContainsString('landed', $run->progress_note, 'and the shelf receipt, like the series note before it, says what was done and not that the run had begun');
     }
 
     public function test_progress_never_exceeds_the_library(): void

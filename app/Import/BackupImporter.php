@@ -7,6 +7,7 @@ use App\Models\ImportedSource as SourceRow;
 use App\Models\ImportRun;
 use App\Models\SeriesState;
 use App\Models\User;
+use App\Support\Library;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -389,6 +390,14 @@ final class BackupImporter
             }
         }
 
+        /*
+         * The shelves go on after every series has been through the loop, because a
+         * membership is a claim about a ledger row (`resolved`, or filed with a local
+         * row) and the last row is written inside the loop. A member scored before its
+         * own row exists would land on no shelf at all.
+         */
+        $placement = $this->applyShelves($user, $backup);
+
         $run->update([
             'state' => ImportRun::COMPLETE,
             'resolved' => $counts['resolved'],
@@ -397,6 +406,9 @@ final class BackupImporter
             'not_found' => $counts['unresolved'],
             'ambiguous' => $counts['ambiguous'],
             'series_on_missing_sources' => $counts['missing_source'],
+            'categories_in_file' => $placement['in_file'],
+            'category_members_placed' => $placement['placed'],
+            'category_members_skipped' => $placement['skipped'],
             'applied' => $counts['applied'],
             'unchanged' => $counts['unchanged'],
             'filed_without_source' => $counts['filed'],
@@ -424,6 +436,149 @@ final class BackupImporter
             'read_chapters' => $counts['read_chapters'],
             'threw' => $counts['threw'],
         ];
+    }
+
+    /**
+     * Recover the reader's arrangement: file each linked member onto a shelf of its name.
+     *
+     * This is the owner's two-sentence complaint closed at the second half: the categories
+     * the file carries used to be reported as counts and died there. The landing goes onto
+     * the shelves this server already carries (`categories` and `category_series`), through
+     * the same filing operation the library page performs ({@see Library::attach()} for a
+     * resolved series and {@see Library::attachState()} for one the file carried without a
+     * source, filling the same four columns `ReadingState::mergeShelves()` matches for the
+     * same reason).
+     *
+     * The per-item placement report is the ledger rows themselves: this pass stamps each
+     * member's row with the names its file linked, and that row's `state` and `reason`
+     * already say what did or did not resolve. Nothing here invents a second per-item
+     * vocabulary to keep in step with.
+     *
+     * Skips are counted and named at the run level, because a member that did not land has
+     * a why that is one of a handful: its series did not resolve (the row's own reason says
+     * which), this run stopped before its series, or the file links a series it does not
+     * carry.
+     *
+     * @return array{in_file: int|null, placed: int|null, skipped: int|null} Null when the file carries no categories at all, the same honesty a `.tachibk` answers with.
+     */
+    private function applyShelves(User|int $user, ImportedBackup $backup): array
+    {
+        if ($backup->categories->isEmpty()) {
+            return ['in_file' => null, 'placed' => null, 'skipped' => null];
+        }
+
+        $library = app(Library::class);
+        $userId = $user instanceof User ? $user->id : $user;
+        $seasons = $backup->series->keyBy(fn (ImportedSeries $s): int => $s->backupId);
+
+        $placed = 0;
+        $skipped = 0;
+
+        foreach ($backup->categories as $name => $members) {
+            $landed = 0;
+
+            /** @var array<string, int> $whys one member's skip why to the members it stopped, string keyed because the report names them */
+            $whys = [];
+
+            $shelf = $library->createCategory($user, (string) $name);
+
+            if ($shelf === null) {
+                $whys['the name carries nothing to file under'] = 1;
+            } else {
+                foreach ($members as $member) {
+                    $why = $this->placeMember(
+                        $library,
+                        $userId,
+                        $seasons->get($member),
+                        $name,
+                        $shelf->id,
+                    );
+
+                    if ($why === null) {
+                        $landed++;
+                        $placed++;
+
+                        continue;
+                    }
+
+                    $skipped++;
+                    $whys[$why] = ($whys[$why] ?? 0) + 1;
+                }
+            }
+
+            $skipNote = $whys === []
+                ? ''
+                : ', skipped: '.implode(', ', array_map(
+                    fn (string $why, int $n): string => "$n $why",
+                    array_keys($whys),
+                    array_values($whys),
+                ));
+
+            $this->say(sprintf(
+                'categories: %s: %d of %d members landed%s',
+                trim((string) $name),
+                $landed,
+                $members->count(),
+                $skipNote,
+            ));
+        }
+
+        return ['in_file' => $backup->categories->count(), 'placed' => $placed, 'skipped' => $skipped];
+    }
+
+    /**
+     * One member of one shelf: stamp its ledger row, then land it if the reader has it.
+     *
+     * @return string|null Null when it landed, or the why when it was skipped.
+     */
+    private function placeMember(
+        Library $library,
+        int $userId,
+        ?ImportedSeries $fromFile,
+        string $name,
+        int $shelfId,
+    ): ?string {
+        if ($fromFile === null) {
+            return 'the file links a series it does not carry';
+        }
+
+        $ledger = Ledger::query()
+            ->forUser($userId)
+            ->where('source_id', $fromFile->sourceId)
+            ->where('source_url', $fromFile->url)
+            ->first();
+
+        if ($ledger === null) {
+            return 'this run never reached its series';
+        }
+
+        /*
+         * The file's own record of the shelf, on the row that reports the series. Two
+         * categories in the file naming the same series merge into one row, and the
+         * stamping skips when the names are already exactly what this file said.
+         */
+        $names = $ledger->categories ?? [];
+        $label = trim($name);
+
+        if (! in_array($label, $names, true)) {
+            $ledger->update(['categories' => [...$names, $label]]);
+        }
+
+        if ($ledger->suwayomi_manga_id !== null) {
+            $library->attach($userId, (int) $ledger->suwayomi_manga_id, $shelfId);
+
+            return null;
+        }
+
+        $state = SeriesState::query()->forUser($userId)->find($ledger->series_state_id);
+
+        if ($state === null) {
+            return 'its local row is gone';
+        }
+
+        $library->attachState($userId, $state, $shelfId);
+
+        return null;
     }
 
     /**
