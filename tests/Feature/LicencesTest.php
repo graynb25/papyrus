@@ -213,6 +213,31 @@ class LicencesTest extends TestCase
         $this->get(route('licences.edit'))->assertRedirect(route('login'));
     }
 
+    /**
+     * One anatomy for every row: the name line carries the licence at the far right, the
+     * provenance line is its own line under the name, and the duty line closes the row. The
+     * order is the fix, so the order is pinned: a licence that drifts back into the buttons
+     * cluster is the wrap race that reshaped this page coming back.
+     */
+    public function test_a_row_reads_name_then_licence_then_provenance_then_the_buttons(): void
+    {
+        $html = (string) $this->actingAs(User::factory()->create())
+            ->get(route('licences.edit'))
+            ->getContent();
+
+        $name = mb_strpos($html, 'Suwayomi Server');
+        $licence = mb_strpos($html, 'Mozilla Public License 2.0');
+        $source = mb_strpos($html, 'The manga server.');
+
+        $this->assertNotFalse($name, 'the bundled section names its server');
+        $this->assertNotFalse($licence, 'a row names its licence');
+        $this->assertNotFalse($source, 'a row states where the package came from');
+
+        $this->assertGreaterThan($name, $licence, 'the licence sits on the first line beside the name');
+        $this->assertGreaterThan($licence, $source, 'the provenance is its own line between the licence and the buttons');
+        $this->assertNotFalse(mb_strpos($html, 'Read the licence', $source), 'the duty line closes the row');
+    }
+
     // Phase 5: what an install without lock files reads, the text behind each row, and the ledger.
 
     /**

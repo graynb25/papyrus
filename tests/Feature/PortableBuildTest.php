@@ -37,6 +37,29 @@ class PortableBuildTest extends TestCase
     }
 
     /**
+     * The version these fixtures stamp into their installs.
+     *
+     * `build-portable.php` refuses an install whose version disagrees with the repository's own
+     * `VERSION`, deliberately, so a stale tree cannot package itself under today's number. A
+     * literal here disagreed at the 1.3.0 bump of 2026-10-19 and six tests were refused for the
+     * version mismatch instead of the fault each of their names describes: the fixture and the
+     * tree agreed yesterday and the fixture alone fell behind today. The stamp is read from the
+     * same file the build checks, so the agreement holds on every future bump.
+     */
+    private function stampVersion(): string
+    {
+        $stamp = trim((string) file_get_contents(base_path('VERSION')));
+
+        $this->assertNotSame(
+            '',
+            $stamp,
+            'the repository VERSION file must hold a version for these installs to agree with'
+        );
+
+        return $stamp;
+    }
+
+    /**
      * Run the script against a staged install and return [exitCode, output].
      *
      * @return array{0: int, 1: string}
@@ -85,7 +108,7 @@ class PortableBuildTest extends TestCase
         // asserted that a forbidden file is refused, and were in fact being refused for a missing
         // stamp. One test per fault, so each failure names the fault.
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
             'licences/node/manifest.json' => '{"packages": []}',
             '.env' => "APP_KEY=base64:thisIsNotARealKey\n",
         ]);
@@ -102,7 +125,7 @@ class PortableBuildTest extends TestCase
     public function test_it_refuses_an_install_containing_a_live_reader_database(): void
     {
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
             'licences/node/manifest.json' => '{"packages": []}',
             'database/database.sqlite' => 'not really sqlite, but a file in the wrong place',
         ]);
@@ -125,7 +148,7 @@ class PortableBuildTest extends TestCase
     {
         foreach (['database/database.sqlite-wal', 'database/database.sqlite-shm'] as $sidecar) {
             $install = $this->stageInstall([
-                'version.txt' => '1.2.0',
+                'version.txt' => $this->stampVersion(),
                 'licences/node/manifest.json' => '{"packages": []}',
                 $sidecar => 'x',
             ]);
@@ -166,7 +189,7 @@ class PortableBuildTest extends TestCase
     public function test_it_refuses_to_write_inside_the_install(): void
     {
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
             'Papyrus.cmd' => "@echo off\r\n",
         ]);
 
@@ -275,7 +298,7 @@ class PortableBuildTest extends TestCase
     public function test_it_refuses_an_install_that_carries_no_licence_manifest(): void
     {
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
         ]);
 
         [$status, $text] = $this->build($install);
@@ -298,7 +321,7 @@ class PortableBuildTest extends TestCase
     public function test_it_produces_a_readable_archive_with_the_readme_inside(): void
     {
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
             'licences/node/manifest.json' => '{"packages": []}',
             'Papyrus.cmd' => "@echo off\r\nrem entry point\r\n",
             'app/Support/Licences.php' => "<?php // a representative file\r\n",
@@ -310,7 +333,7 @@ class PortableBuildTest extends TestCase
 
         $this->assertSame(0, $status, 'a clean install must build: '.$text);
 
-        $zip = $out.'/Papyrus-1.2.0-portable.zip';
+        $zip = $out.'/Papyrus-'.$this->stampVersion().'-portable.zip';
 
         $this->assertFileExists($zip);
 
@@ -357,7 +380,7 @@ class PortableBuildTest extends TestCase
     public function test_two_builds_of_the_same_content_produce_the_same_hash(): void
     {
         $install = $this->stageInstall([
-            'version.txt' => '1.2.0',
+            'version.txt' => $this->stampVersion(),
             'licences/node/manifest.json' => '{"packages": []}',
             'Papyrus.cmd' => "@echo off\r\n",
             'b/second.txt' => 'b',
@@ -373,7 +396,7 @@ class PortableBuildTest extends TestCase
 
             $this->assertSame(0, $status, $text);
 
-            $archives[] = $out.'/Papyrus-1.2.0-portable.zip';
+            $archives[] = $out.'/Papyrus-'.$this->stampVersion().'-portable.zip';
         }
 
         $first = $this->describeEntries($archives[0]);

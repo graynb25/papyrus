@@ -190,58 +190,69 @@ new #[Title('Licences')] class extends Component {
                                 @php($ack = $this->ackStates[$package->textKey] ?? LicenceAcknowledgement::NONE)
 
                                 <li class="py-2">
-                                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                                        <span class="min-w-0">
-                                            <span class="font-medium text-zinc-900 dark:text-zinc-100">
-                                                {{ $package->label() }}
-                                            </span>
+                                    {{--
+                                        One silhouette for every row, not one per package name. Measured
+                                        before the reshape: the ledger column is the settings slot's 512
+                                        pixels at every window width, and the buttons cluster is about
+                                        360, so a single line under the name was a race the row could
+                                        only lose out on a short lock file word, and 102 of the 139 PHP
+                                        rows raced and lost. So the provenance line and the buttons line
+                                        belong to every row: the name carries the licence at the far
+                                        right, the source gets the second line, the buttons get the
+                                        third. The name gives way inside its own cell (break-all) so no
+                                        lock file word can push anything around, and the anatomy is the
+                                        same at every width, with no responsive branch to read again.
+                                    --}}
+                                    <div class="flex flex-wrap items-baseline justify-between gap-x-4">
+                                        <span class="min-w-0 break-all font-medium text-zinc-900 dark:text-zinc-100">
+                                            {{ $package->label() }}
 
                                             @if ($package->isProprietary)
-                                                <span class="ms-2 text-xs text-amber-700 dark:text-amber-400">
+                                                <span class="ms-2 text-xs font-normal text-amber-700 dark:text-amber-400">
                                                     {{ __('not open source') }}
                                                 </span>
                                             @endif
-
-                                            <span class="block text-xs text-zinc-500 dark:text-zinc-400">
-                                                {{ $package->source }}
-                                            </span>
                                         </span>
 
-                                        <span class="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-                                            @if ($this->licences()->hasText($package))
-                                                <flux:button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    wire:click="reveal('{{ $package->textKey }}')"
-                                                >
-                                                    {{ __('Read the licence') }}
-                                                </flux:button>
-                                            @endif
+                                        <span class="text-sm text-zinc-500 dark:text-zinc-400">
+                                            {{ $package->licence }}
+                                        </span>
+                                    </div>
 
-                                            @if ($ack === LicenceAcknowledgement::ACKNOWLEDGED)
-                                                <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                                                    {{ __('Acknowledged') }}
+                                    <p class="text-xs break-all text-zinc-500 dark:text-zinc-400">
+                                        {{ $package->source }}
+                                    </p>
+
+                                    <div class="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                        @if ($this->licences()->hasText($package))
+                                            <flux:button
+                                                size="sm"
+                                                variant="ghost"
+                                                wire:click="reveal('{{ $package->textKey }}')"
+                                            >
+                                                {{ __('Read the licence') }}
+                                            </flux:button>
+                                        @endif
+
+                                        @if ($ack === LicenceAcknowledgement::ACKNOWLEDGED)
+                                            <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                                {{ __('Acknowledged') }}
+                                            </span>
+                                        @else
+                                            @if ($ack === LicenceAcknowledgement::REARMED)
+                                                <span class="text-xs text-amber-700 dark:text-amber-400">
+                                                    {{ __('changed since') }}
                                                 </span>
-                                            @else
-                                                @if ($ack === LicenceAcknowledgement::REARMED)
-                                                    <span class="text-xs text-amber-700 dark:text-amber-400">
-                                                        {{ __('changed since') }}
-                                                    </span>
-                                                @endif
-
-                                                <flux:button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    wire:click="acknowledge('{{ $package->textKey }}')"
-                                                >
-                                                    {{ __('I have read this licence') }}
-                                                </flux:button>
                                             @endif
 
-                                            <span class="text-zinc-500 dark:text-zinc-400">
-                                                {{ $package->licence }}
-                                            </span>
-                                        </span>
+                                            <flux:button
+                                                size="sm"
+                                                variant="ghost"
+                                                wire:click="acknowledge('{{ $package->textKey }}')"
+                                            >
+                                                {{ __('I have read this licence') }}
+                                            </flux:button>
+                                        @endif
                                     </div>
 
                                     @if ($this->open === $package->textKey)
