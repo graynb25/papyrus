@@ -2111,6 +2111,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Fan-out concurrency | **Closed, after four hang paths.** `search.fanout_concurrency` bounds the window: pending source ids sit in the cache and each finishing job hands the next one to the batch. Verified in production conditions: five consecutive complete 40-of-40 runs returning 378 results each. |
 | 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. **The cover's bookmark was then taken off these cards entirely.** It used to sit on every card filing the primary, which put two bookmarks on one picture answering two different questions: one silently picked a source the reader had not chosen and never named, and the one in the chooser filed whichever source it sat beside. A reader who wanted Asura Scans and pressed the bookmark on the cover got Manga Demon, and nothing on screen said so. A card that needs a decision has no shortcut past the decision. Single-source cards keep theirs, because a button that files the only candidate is not a guess. The card's "+N sources" line is now the only thing telling the reader a choice exists, so it has to stay: a check that reads it off the button rather than the card passes on a card that has lost every name it had. The choice is not remembered between searches, since a stored preference needs a per-group key and group identity shifts as sources answer, so the key would have to be the manga id picked rather than anything about the group. |
 | 7 | Design overhaul | **Complete.** "Second Pressing": the cover atom as one `x-cover.art` component with blur-up, glow, tilt and sheen; `x-page-header` on every page; glass material on panels and all Flux modals; a shared-element view transition from grid cover to series hero; `x-confirm` modals replacing the native `confirm()` dialogs whose buttons no test parses; the reader re-tokenised onto the app's oklch values with no architectural change; bento stat tiles on downloads and health; skeleton loading states; the Reading Room login built from the collection itself behind the public, single-mode gated `/showcase` endpoints, with a seeded ink garden on a fresh install; custom 404 and 500 pages. All pins held: 1,076 tests green, the October browser pass green, PHPStan level 7 clean, zero em dashes. Traps 147 to 149. |
+| 7 (master plan) | In-app backup and restore | **Complete, and the page is true.** The reader half is captured through SQLite's own `VACUUM INTO` and the manga half through the server's own fresh export, both verified before the manifest is named and the pair renamed into place with nothing stopped; the reader half is swapped back under one `BEGIN IMMEDIATE` that refuses rather than forces, and the manga half rides the server's own import route with the server's own progress on the bar; the arrangement travels out as a `.tachibk` with the read marks and the shelf memberships merged in, adding only. **Measured:** the backup taken while the standing 10 s churn ran, the restore's four tables round-tripping on a scratch copy of the reader half, the export imported into the throwaway with the receiving pills read back (Snowflakes 13, Youtube 17), and the owner's real `.tmb` landing its two named shelves for the first time. **What it does not claim:** the export's basis is the server's library, and this box's servers hold one extension, so 80 of that file's 110 shelf members are on sources no server here can name. Section 15 carries the run notes. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at
@@ -6953,4 +6954,170 @@ exactly that moment and it costs five minutes.
     repository's own backup**, because the file's own history is overwritten by the very
     thing the restore is undoing. And a cascading foreign key is a delete that takes
     more than it names: `on delete CASCADE` on a run row takes the ledger with it.
+
+---
+
+## 15. Phase 7 run notes: the backup that never stops anything, and the round trip
+
+**Which Phase 7 this is.** Three numbering systems are live in this repository and they do not
+agree, so the first thing this section has to say is which one it is. This is the **master
+plan's Phase 7**, the in-app backup and restore, which is Phase 7 of the umbrella plan
+("Migration parity, source pinning, licences, insights, truthful backup, install alerts"). It is
+**not** the UI/UX pass whose commit was labelled "Phase 7: the UI/UX pass" (`59fb26e`), which was
+its own separately numbered sitting and closed on 2026-10-19. And it is **not** the feature phase
+7 in section 11's table, which is this app's own phase numbering and whose last row is the design
+overhaul. The work sat under a plan of its own, "Master plan Phase 7: in-app backup/restore that
+never stops the services, and the Mihon-format round trip", with eight steps. Steps 0 to 6 are
+built, ticked and committed locally; step 7 is the paperwork this section belongs to, and its
+three pieces are this run notes, the findings register's own line for F5, and the release notes
+line that sits beside Phase 8's.
+
+**What the phase was for.** The owner's hard requirement, quoted in the umbrella plan: backup and
+restore in-app, **without stopping Papyrus or Suwayomi**. The app said the opposite. The backups
+page carried an amber banner that told the reader to open a terminal, and the page's own comment
+gave the reason: the manga half has to be copied with nothing writing it, and proving that means
+Suwayomi has to be stopped, which means the application has to be stopped, which means the request
+that asked for the backup is gone. The route file repeated the refusal, and the page's own empty
+state, rendered through `RunOutcome::read("")`, answered "Papyrus has to be stopped to be backed up",
+which is true of the launcher's own snapshot and was the app's answer for both. So the app had a
+page that could only list backups another tool had made, and no way to make one.
+
+**What it built.** Five pieces, in the order they landed.
+
+- **The import lands the reader's arrangement** (commit `58919fe`). A `.tmb` file's own shelves now
+  land in Papyrus, named, with a per item report: the run row carries `categories_in_file`,
+  `category_members_placed` and `category_members_skipped`, and every skipped member carries its
+  reason. The shelves are the app's own (`categories` and `category_series`), not a second table
+  holding the same placement, because the owner chose to reuse what the library page already
+  drives.
+- **The app takes its own pair** (`58919fe`). The reader half is captured through SQLite's own
+  `VACUUM INTO`, which is the one way to get a consistent copy of a database that is being written.
+  The manga half is the server's own fresh export. Both halves are verified before the manifest is
+  named: the reader half's `PRAGMA integrity_check`, the manifest's two digests against the files on
+  disk, and the row counts against the live database's. Then the two files and the manifest are
+  renamed into place together. The page lists the pair with its size, and the run row carries the
+  progress.
+- **The app puts its own pair back** (`f9ce674`). The reader half is swapped under one
+  `BEGIN IMMEDIATE`, which is refused rather than forced when a write transaction holds the
+  database, and the manga half rides Suwayomi's own import route with the server's own progress
+  read by the modal's bar. The confirm modal reads nothing but the pair's own manifest and files,
+  so the numbers in it are the numbers in the pair.
+- **The app sends its own arrangement out** (`3c9a4c5`). One `.tachibk` carrying the server's fresh
+  library with Papyrus's read marks and shelf memberships merged in, in the format Mihon and its
+  forks read. The merge only ever adds: a chapter the reader has read and the file does not carry
+  gains a read flag, a series filed on a shelf gains that shelf's order, and nothing is ever
+  un-read or un-filed. The page names the per item counts and offers the download.
+- **The page stopped telling the reader to open a terminal** (`41f34f1`). The amber banner is dead,
+  the route comment leads with what the page does instead of a refusal, and the launcher's own last
+  run and the three live run tables now read in one place, so a reader sees one "last time" rather
+  than two surfaces that disagree. The populated page was rendered in a browser, four captures on
+  disk, which is what closed the F5 finding.
+
+**The acceptance runs, and what they measured.** Four beats, and the seat each was measured on is
+named, because the seat is part of the claim.
+
+1. **The backup, taken while the queue churns.** The churn is the standing one:
+   `routes/console.php` runs `SyncDownloads` on `everyTenSeconds` and the scheduler's own log
+   carries it every ten seconds. The backup was taken through the app's own job, so the run row is
+   the job's own: `live_backup_runs` id 1, `complete`, **884 series states** and **21,456 chapter
+   states**, against Suwayomi v2.4.2366. The pair verified every way the plan names: the
+   manifest's two digests matched the files on disk, the reader half's `PRAGMA integrity_check` read
+   `ok`, and the staged file's row counts equalled the live database's.
+2. **The restore, round-tripping the row counts.** Measured on a **scratch copy** of the checkout's
+   own database, never on the checkout's own file, with the manga half going to the throwaway. The
+   copy was put into a different state from the pair on purpose, because a round trip that starts
+   and ends on the same numbers proves nothing. After the swap **four tables moved and came back**
+   (`series_states` 883 to 884, `chapter_states` 21,454 to 21,456, `imported_series` 945 to 1,277,
+   `reading_sessions` 0 to 7) and the other forty of the forty-four were unmoved. The throwaway's
+   own log reads `restore(legacy): finished with state SUCCESS`.
+3. **The export, imported into the throwaway.** The product was POSTed raw as `application/x-gzip`
+   to the throwaway's own `/api/v1/backup/import` and answered **HTTP 200 in 497 ms** with
+   `{"missingSources":[],"missingTrackers":[],"mangasMissingSources":[]}`. The file carried **35
+   series records, 10 shelf records and 5,753 chapters of which 370 read**, and the library the
+   throwaway ended up with was read back through its own GraphQL: the pills read **Snowflakes 13**
+   and **Youtube 17**, and the read flags came back per series.
+4. **The `.tmb` round trip, from the owner's own screenshot.** The real 41,272,047 byte file was
+   imported for the first time, and the two named shelves landed: the receipt reads
+   `categories_in_file` **2**, `category_members_placed` **102**, `category_members_skipped` **8**
+   with their reasons, and the copy's own tables read `Youtube` with 18 members and `Snowflakes`
+   with 84. **22,967 read chapters applied.** The export that followed carried the arrangement, and
+   the receiving reader was read back **after its library was emptied first**, so the only thing
+   that could have put the members on the shelves is the file.
+
+**Two real defects the acceptance found.** Both were found by measuring against the live servers
+rather than by reading the code, and both would have made the acceptance measure the breakage
+instead of the feature.
+
+- The `createBackup` mutation's empty flags travelled as a JSON list, which **every real server
+  refuses before the resolver runs**: `Variable 'input' has an invalid value: Expected type 'Map'
+  but was 'ArrayList'.` So the in-app backup's manga half and the outward export could not ask a
+  real server for anything at all, ever. The unit suites had not seen it because the fake answered
+  the mutation without ever reading the variables. Trap 324.
+- A server whose library holds nothing writes a real backup with no series record in it (352 bytes,
+  one category record, zero series records), and the app was calling that a server outage when the
+  server was answering fine. It is now refused in words that name the cause, which is the F26
+  shape: a refusal that is true of the bytes and wrong about the cause teaches the reader the
+  wrong thing. Trap 325.
+
+**The honest limits.** Three, all measured, none hidden.
+
+- **The export's basis is the server's library.** A `.tachibk` carries the server's library and
+  nothing else, and Papyrus owns library membership in its own table and never writes the server's
+  library flag, so the arrangement travels only over the series the server's library holds. On the
+  throwaway this phase measured, the server held 2,834 manga rows of which 5 were in library (the
+  other 2,829 were the source's browse cache), and the file carried exactly those 5. Trap 326.
+- **This box cannot name the owner's shelves.** The `.tmb`'s two shelves sit on **18 distinct
+  sources**, both servers here hold exactly **one** extension (MangaFire), and the two shelves hold
+  **zero** MangaFire members, so **30 of the file's 110 shelf members** are the ones a server on
+  this box can name and **80** are on sources no server here holds a source for. The import
+  installed the **14** non-obsolete packages the shelves need with **0 refused** and the
+  throwaway's package count went from 8 to 82, and the members still did not resolve, because the
+  file's 49 MangaFire rows carry a url form (`/manga/...`) that the server's extension does not
+  write (`/title/...`). **That is a fact about this box's extensions and not about the format.**
+  The format's own half was proved separately and directly: a hand built file with a shelf record
+  and a series carrying its order under field 17 was imported into a live reader, and the series
+  came back on that shelf and no other, with the read flags round tripping beside it. Trap 327.
+- **The public FAQ still contradicts the page.** The marketing FAQ's backup answer (in
+  `app/Support/Faq.php`, the "How do I make a backup?" entry) still says "Copy the folder ... Copy it
+  while Papyrus is closed", which the app stopped needing on the day this page became true, and it
+  also says there is "nothing to export", which the outward `.tachibk` has now made false. The
+  umbrella plan gives that copy to Phase 8 ("Remove the contradiction: the marketing backup answer
+  is rewritten to match Phase 7's truth"), and Phase 8 is the FAQ substance phase, so it is Phase 8's
+  line to rewrite. This section names it rather than quietly editing another phase's prose.
+
+**The mishap, owned.** The acceptance sitting broke this checkout's own database and put it back. A
+probe pointed the app at a scratch copy of `database/database.sqlite` with `config()` and
+`DB::purge()` and ran the real `.tmb` import against it. The import's own bookkeeping went to the
+copy, correctly. The reader half's rows went to the **checkout's own file**, because the import's
+`SeriesWriter` writes through Laravel's own connection and the pool still held an open handle on
+it: 521 extra series states, 12,718 extra chapter states, and an import run left `running` at 900
+of 1,277.
+
+The repair used the repository's own tool and the repository's own earlier backup, and the two
+intermediate attempts are worth naming because the first nearly cost the ledger. The first deleted
+the import run, and the ledger's `imported_series.import_run_id` carries `on delete CASCADE`, so
+the **920** ledger rows that pointed at it went with it and the ledger fell from 1,277 rows to
+357. The second put those rows back and then could not tell which of the restored server ids the
+import had added and which the standing ledger had earned, **because the import had overwritten
+the ledger's own record of what those rows carried before it ran**. What worked was a witness that
+predated the damage: the pair this phase's own backup had taken twenty minutes earlier, whose
+reader half was measured to carry all fifteen standing numbers. The lesson is trap 328, and the
+general shape is worth carrying past this phase: **a destructive flow against a live database needs
+the database's prior state kept, and the way to keep it is the repository's own backup**, because
+the file's own history is overwritten by the very thing the restore is undoing.
+
+**The lessons are numbered, 324 to 328.** Trap 324, an empty PHP array is a JSON list and a
+GraphQL input object is not. Trap 325, a server whose library holds nothing writes a real backup
+and the reader must be told that rather than told their server is broken. Trap 326, a `.tachibk`
+carries the server's library and nothing else. Trap 327, a series' shelf order is field 17 and a
+duplicate order discards a shelf rather than merging two. Trap 328, a pointer at a scratch copy is
+not a pointer at the live database and the ledger's own history is the only witness to what it
+held.
+
+**The standing numbers at the close.** 884 series states with 882 in library, 21,456 chapter
+states, the import ledger at 1,277 rows with 614 server ids, 14 import runs, `reading_sessions`
+rows 1 to 7 all on manga 10, bulk runs 1 to 19 with run 7's seven pending offers standing at ids
+25 to 31 and 78 pending items across all runs, `categories` and `category_series` at 0, and the
+three live run tables with `live_backup_runs` at 1 and the other two at 0. All six gates green on
+the final tree at **2,344 of 2,344 tests with 6,388 assertions**.
 

@@ -21,6 +21,14 @@ The portable zip is not built yet, so the two shapes a reader can get are still 
 "checkout". See [the roadmap](ROADMAP.md) for what is coming and [docs/PORTABLE.md](docs/PORTABLE.md)
 for what the portable shape will do when it ships.
 
+### Added
+
+**Your library can back itself up without stopping anything.** The Backups page now takes its own
+pair of backups while the app and the manga server keep running, puts one back the same way, and
+sends your shelves and your read marks out as a `.tachibk` file another reader app can open, with a
+report of what was matched, what was skipped and why. The page no longer tells you to open a
+terminal. `58919fe` `f9ce674` `3c9a4c5` `41f34f1` `f50de31`
+
 ---
 
 ## 1.3.0 - 2026-10-19
