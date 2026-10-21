@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\LicenceAcknowledgement;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -19,7 +20,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * A package appears on the page by one key at a time and the reader has either read it or not, so a
  * history of acknowledgements would only ever be read for the newest row. The unique key holds that
- * shape at the database level, and {@see \App\Models\LicenceAcknowledgement::markFor()} re-stamps
+ * shape at the database level, and {@see LicenceAcknowledgement::markFor()} re-stamps
  * identity instead of appending.
  */
 return new class extends Migration

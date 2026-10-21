@@ -4,8 +4,10 @@ namespace Tests\Feature\Settings;
 
 use App\Backup\BackupLibrary;
 use App\Jobs\RunLiveBackup;
+use App\Jobs\RunLiveExport;
 use App\Jobs\RunLiveRestore;
 use App\Models\LiveBackupRun;
+use App\Models\LiveExportRun;
 use App\Models\LiveRestoreRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -639,6 +641,118 @@ class BackupsPageTest extends TestCase
 
     // -------------------------------------------------------------------------------------------
 
+    /*
+     * The export side's own tests, beside the restore's rather than over them: the press and
+     * its refusal, the poll gate, the run rows in their states, and the receipt a finished row
+     * carries out to the reader with its download under it.
+     */
+
+    /** The press dispatches the export for whoever pressed it, with no options to ask about. */
+    public function test_an_export_press_dispatches_the_export_for_the_pressed_reader(): void
+    {
+        $user = auth()->user();
+        Bus::fake([RunLiveExport::class]);
+
+        Livewire::test('pages::settings.backups')->call('startExport');
+
+        Bus::assertDispatched(function (RunLiveExport $job) use ($user): bool {
+            return $job->userId === $user->id;
+        });
+    }
+
+    /** A second press is refused while a run says it is running, the two other cards' own guard. */
+    public function test_a_second_export_press_is_refused_while_a_run_says_it_is_running(): void
+    {
+        $this->writeExportRun();
+        Bus::fake([RunLiveExport::class]);
+
+        Livewire::test('pages::settings.backups')->call('startExport');
+
+        Bus::assertNotDispatched(RunLiveExport::class);
+    }
+
+    /**
+     * The export card's poll gate mirrors the restore card's.
+     *
+     * With nothing pressed and nothing running the page is quiet and says so in its own
+     * sentence; from the press until a run row exists the gap is polled and named as queued;
+     * a running run keeps being watched; a settled one does not.
+     */
+    public function test_the_export_card_polls_only_while_a_run_is_owed(): void
+    {
+        Bus::fake([RunLiveExport::class]);
+
+        $page = Livewire::test('pages::settings.backups');
+
+        $this->assertStringNotContainsString('wire:poll.3s', (string) $page->html(), 'with nothing pressed and nothing running the page is quiet');
+        $this->assertStringContainsString('Nothing has been sent out from here yet', (string) $page->html());
+
+        $page = Livewire::test('pages::settings.backups')->set('exportPolling', true);
+
+        $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'the gap between the press and the row is watched');
+        $this->assertStringContainsString('Queued. The file will appear in a moment.', (string) $page->html());
+
+        $this->writeExportRun();
+
+        $page = Livewire::test('pages::settings.backups')->set('exportPolling', true);
+
+        $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'a running export is being watched');
+
+        LiveExportRun::query()->first()->update(['state' => LiveExportRun::REFUSED]);
+
+        $page = Livewire::test('pages::settings.backups')->set('exportPolling', true);
+
+        $this->assertStringNotContainsString('wire:poll.3s', (string) $page->html(), 'a settled export is not still watched');
+    }
+
+    /**
+     * The row a finished run wrote is the receipt the page names: the file's own name, the
+     * counts the run's comparison produced, the byte size, the download under the run's key,
+     * and the skipped sentences the run refused with.
+     */
+    public function test_a_finished_export_names_its_receipt_and_offers_the_download(): void
+    {
+        $this->writeExportRun(state: LiveExportRun::COMPLETE);
+
+        $this->get('/settings/backups')
+            ->assertSee('tachibk-20261021-120000.tachibk')
+            ->assertSee('2 of 3 series merged, 2 shelves written and 4 read marks added (105 B).')
+            ->assertSee('One series its plan could not carry: the server could not name its source.')
+            ->assertSee('Download the file')
+            ->assertSee('settings/backups/export/')
+            ->assertSee('Finished');
+    }
+
+    /** The states a reader most needs told apart are complete and refused, and the page words them apart. */
+    public function test_a_refused_export_names_why_and_a_running_one_reads_as_running(): void
+    {
+        $this->writeExportRun(state: LiveExportRun::REFUSED);
+
+        $this->get('/settings/backups')
+            ->assertSee('Suwayomi did not answer what version it is')
+            ->assertSee('Refused')
+            ->assertDontSee('Download the file');
+
+        LiveExportRun::query()->first()->update(['state' => LiveExportRun::RUNNING]);
+
+        $this->get('/settings/backups')
+            ->assertSee('An export is running')
+            ->assertSee('being written now')
+            ->assertDontSee('Download the file');
+    }
+
+    /** An export run whose worker died reads as stopped, neither card's shape lost on the third. */
+    public function test_an_export_run_that_went_silent_reads_as_stopped(): void
+    {
+        $this->writeExportRun(stale: true);
+
+        $this->get('/settings/backups')
+            ->assertSee('This run stopped without finishing')
+            ->assertDontSee('An export is running');
+    }
+
+    // -------------------------------------------------------------------------------------------
+
     /**
      * A live backup run row, as the job writes one.
      *
@@ -734,6 +848,47 @@ class BackupsPageTest extends TestCase
             },
             'series_states' => $state === LiveRestoreRun::COMPLETE ? 7 : null,
             'chapter_states' => $state === LiveRestoreRun::COMPLETE ? 21447 : null,
+            'started_at' => now(),
+        ], static fn (mixed $value): bool => $value !== null));
+
+        if ($stale) {
+            $run->forceFill(['updated_at' => now()->subSeconds(320)])->save();
+        }
+    }
+
+    /**
+     * A live export run row, as the job writes one, beside the other two helpers.
+     *
+     * The default is a running row carrying the job's own first stage note. `stale` ages the
+     * row past the page's silence threshold the same way the other two do. A complete row
+     * carries the receipt numbers a real deliver() stamps: the product name from the clock,
+     * its byte count, in file against planned and matched, the shelves and read marks the
+     * merger added, and the one skipped sentence the run's report carries for the series its
+     * plan could not take.
+     */
+    private function writeExportRun(string $state = LiveExportRun::RUNNING, bool $stale = false): void
+    {
+        $run = LiveExportRun::create(array_filter([
+            'state' => $state,
+            'file_name' => $state === LiveExportRun::COMPLETE ? 'tachibk-20261021-120000.tachibk' : null,
+            'progress_note' => match ($state) {
+                LiveExportRun::RUNNING => 'Starting the export',
+                LiveExportRun::COMPLETE => '3 series merged of 3 planned, 2 shelves and 4 read marks onto the file',
+                default => null,
+            },
+            'refusal_reason' => match ($state) {
+                LiveExportRun::REFUSED => 'Suwayomi did not answer what version it is, so the export was refused with nothing merged.',
+                default => null,
+            },
+            'file_bytes' => $state === LiveExportRun::COMPLETE ? 105 : null,
+            'series_in_file' => $state === LiveExportRun::COMPLETE ? 5 : null,
+            'series_planned' => $state === LiveExportRun::COMPLETE ? 3 : null,
+            'series_matched' => $state === LiveExportRun::COMPLETE ? 2 : null,
+            'shelves_appended' => $state === LiveExportRun::COMPLETE ? 2 : null,
+            'read_marks' => $state === LiveExportRun::COMPLETE ? 4 : null,
+            'skipped' => $state === LiveExportRun::COMPLETE
+                ? ['One series its plan could not carry: the server could not name its source.']
+                : null,
             'started_at' => now(),
         ], static fn (mixed $value): bool => $value !== null));
 

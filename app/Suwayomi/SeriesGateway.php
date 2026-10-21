@@ -303,6 +303,74 @@ class SeriesGateway
     }
 
     /**
+     * The pair a series record is matched by: its source id and its source url.
+     *
+     * This is the export's J1 bridge: a `BackupManga` record in the file names a series by
+     * `{source id, url}`, and the ledger names it by `{user, suwayomi manga id}`. Neither
+     * half can find the other without this: `fetchMany()` measured at carrying
+     * `source.id` but not manga `url`, and `find()` is one call per series, which a whole
+     * library cannot afford repeated.
+     *
+     * The url asked for is `url`, not `realUrl`: the wire record carries the source's own
+     * url, which is what Suwayomi writes into the backup, and `realUrl` is the site's
+     * web page, a different fact.
+     *
+     * The same three constraints {@see fetchMany()} measured hold here and came free with
+     * the same query shape: `[Int!]!` because the filter is an `IntFilterInput`, `first`
+     * exceeding the id count because it pages the result set, and an id the server does
+     * not know dropped silently, so a short result is normal.
+     *
+     * @param  array<int, int>  $mangaIds
+     * @return array<int, array{source: string, url: string}> keyed by manga id, the source
+     *                                                        id as its decimal string because it can sit past 2^53
+     *
+     * @throws SuwayomiException
+     */
+    public function identities(array $mangaIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $mangaIds)));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        // No comments inside the document: the server's ANTLR parser rejects them,
+        // for the same measured reason {@see fetchMany()} carries.
+        $data = $this->gateway->execute(<<<'GQL'
+            query Identities($ids: [Int!]!, $first: Int!) {
+                mangas(filter: { id: { in: $ids } }, first: $first) {
+                    nodes {
+                        id
+                        url
+                        source { id }
+                    }
+                }
+            }
+            GQL, ['ids' => $ids, 'first' => count($ids) + 10]);
+
+        $rows = [];
+
+        foreach ($data['mangas']['nodes'] ?? [] as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+
+            $url = $node['url'] ?? null;
+            $source = $node['source']['id'] ?? null;
+
+            if (! is_string($url) || $url === '' || $source === null) {
+                // Nothing to match a file record by. The exporter reports the series as
+                // unmatched rather than inventing a weaker key out of what remains.
+                continue;
+            }
+
+            $rows[(int) ($node['id'] ?? 0)] = ['source' => (string) $source, 'url' => $url];
+        }
+
+        return $rows;
+    }
+
+    /**
      * The same batch, plus the two chapter fields a navigator needs.
      *
      * `pageCount` and `lastPageRead`, and nothing else is different. A separate method

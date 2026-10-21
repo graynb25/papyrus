@@ -24,7 +24,7 @@ use App\Import\SeriesWriter;
  * gzip     one member, header 1f 8b 08 00, no FNAME, no FCOMMENT
  * payload  259,960 bytes once decompressed, a ratio of 3.4x
  * top      field 1 x4      series
- *          field 2 x1      one extension record, carrying no package name
+ *          field 2 x1      one category record, name "Default", no inner order or id
  *          field 101 x1    one source, name "Atsumaru", id 2327480808438768017
  *          field 9000 x1   key "webUI_migration", value "9"
  *          field 9001 x1   application preferences
@@ -92,10 +92,18 @@ final class TachibkSchema
     public const BACKUP_SERIES = 1;
 
     /**
-     * An extension record. Present once in the sample with the name "Default" and no package
-     * anywhere in it, so there is nothing here that could identify an extension to install.
+     * One shelf, as `{name: 1, order: 2, id: 3, flags: 100}`. Repeated.
+     *
+     * First read as an "extension record" carrying a name "Default" with nothing to identify
+     * an extension by, which was a mislabel made when only the bytes had been read. Re
+     * measured two ways and settled: the record walks as `name: 1 = "Default"` with no inner
+     * order, id or flags (Suwayomi's writer omits defaults the way protobuf writers do), a
+     * nested 9000 blob beneath it is Suwayomi's own extension namespace and nothing Mihon's
+     * schema knows, and Mihon's own exporter shape declares field 2 as `backupCategories` on
+     * `Backup` itself. So it is a Category record, the server's default shelf, and it was
+     * never an extension at all.
      */
-    public const BACKUP_EXTENSION = 2;
+    public const BACKUP_CATEGORIES = 2;
 
     /**
      * One source, as `{name: 1, id: 2}`.
@@ -220,4 +228,49 @@ final class TachibkSchema
 
     /** When, in milliseconds. The exporter's clock, not the reader's. */
     public const HISTORY_AT = 2;
+
+    // ------------------------------------------------------------ a category record
+
+    /** The shelf's name, which is the identity the receiving reader matches by. */
+    public const CATEGORY_NAME = 1;
+
+    /**
+     * The number the file's own series records reference.
+     *
+     * Not a database id and not a list position on the receiving side: measured in Mihon's
+     * own writer and restorer, the writer puts `mangaObject.categories = ...map { it.order }`
+     * on a manga, and the restorer maps a manga's entries through
+     * `backupCategoriesByOrder[order]` and then the shelf name to the reader's own id. So
+     * these values must be unique across the file, one shelf each, or two shelves merge
+     * on the receiving side without saying so.
+     */
+    public const CATEGORY_ORDER = 2;
+
+    /** The writer's own shelf id. Declared, and never written: the reader renumbers. */
+    public const CATEGORY_ID = 3;
+
+    /** Display flags. The default is zero and the exporter has none to offer, so it stays absent. */
+    public const CATEGORY_FLAGS = 100;
+
+    // ------------------------------------------------------------ the writer's additions to a series
+
+    /**
+     * One shelf order value, repeated, a series filed under those shelves.
+     *
+     * The number that goes here is the `order` field of one `Category` record in the same
+     * file, per {@see CATEGORY_ORDER}. Suwayomi's own export already carries these when its
+     * own library has shelves, so the writer appends its own rather than replacing, which
+     * keeps the only forward rule: nothing is ever unfiled.
+     */
+    public const SERIES_CATEGORY_ORDER = 17;
+
+    /**
+     * Whether the reader had the chapter as a bookmark. Declared, deliberately not written.
+     *
+     * The import landed bookmarks in the ledger only, and this file cannot be the place to
+     * write the first ones: the sample could not distinguish an inner field 12 flag from a
+     * bookmark flag, so what Suwayomi's own writer puts where is not measured yet, and a
+     * bookmark written to the wrong field looks exactly like nothing.
+     */
+    public const CHAPTER_BOOKMARK = 5;
 }

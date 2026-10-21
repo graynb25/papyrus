@@ -76,10 +76,35 @@ final class ProtoBuffer
      */
     public static function fields(string $bytes): Generator
     {
+        foreach (self::spans($bytes) as [$number, $wire, $value]) {
+            yield $number => [$wire, $value];
+        }
+    }
+
+    /**
+     * The same walk as {@see fields()}, carrying the bytes each field occupies.
+     *
+     * Splices need this: rewriting one field's value in place means knowing where that
+     * field's bytes begin and end inside the original buffer, and a reader that only hands
+     * back values would force every rewrite to re-encode a whole record, normalizing
+     * encodings it had no reason to touch. Unkeyed on purpose, because a keyed yield
+     * overwrites repeated fields rather than listing them, and the file order is part of
+     * what a splice must preserve.
+     *
+     * @return Generator<int, array{int, int, int|string, int, int}> each `[number, wire,
+     *                                                               value, start, length]`, where `[start, length)` is the whole field on the
+     *                                                               wire, tag, length prefix and all
+     *
+     * @throws MalformedProto
+     */
+    public static function spans(string $bytes): Generator
+    {
         $offset = 0;
         $length = strlen($bytes);
 
         while ($offset < $length) {
+            $start = $offset;
+
             $tag = self::varint($bytes, $offset, $length);
             $number = $tag >> 3;
             $wire = $tag & 7;
@@ -87,6 +112,9 @@ final class ProtoBuffer
             if ($number === 0) {
                 throw MalformedProto::fieldZero();
             }
+
+            $valueStart = $offset;
+            $value = null;
 
             /*
              * A switch rather than a match, because the length delimited case has to read its
@@ -121,7 +149,7 @@ final class ProtoBuffer
                     throw MalformedProto::wireType($wire, $number);
             }
 
-            yield $number => [$wire, $value];
+            yield [$number, $wire, $value, $start, $offset - $start];
         }
     }
 

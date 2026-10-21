@@ -477,6 +477,68 @@ class Library
     }
 
     /**
+     * The shelf membership, per series, in one query.
+     *
+     * The export's other half of the collection map: a shelf that holds series is the
+     * arrangement the receiving reader gets back, and this is the read side of the rows
+     * {@see attach()} writes. Keyed by the series id the server knows, so the export's
+     * ledger reads and this read share one key.
+     *
+     * Filed-only rows (a shelf member the server does not know, whose series state has no
+     * `suwayomi_manga_id`) have no server name to file on any reader app and so do not
+     * appear here; the export reports what it actually can carry.
+     *
+     * @return array<int, list<string>> shelf names, file order, keyed by manga id
+     */
+    public function shelfMembers(User|int $user): array
+    {
+        $userId = $this->userId($user);
+
+        $rows = DB::connection()->table('category_series')
+            ->join('series_states', 'series_states.id', '=', 'category_series.series_state_id')
+            ->join('categories', 'categories.id', '=', 'category_series.category_id')
+            ->where('category_series.user_id', $userId)
+            ->where('series_states.user_id', $userId)
+            ->where('series_states.in_library', true)
+            ->whereNotNull('series_states.suwayomi_manga_id')
+            ->get(['categories.name', 'series_states.suwayomi_manga_id']);
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $out[(int) $row->suwayomi_manga_id][] = (string) $row->name;
+        }
+
+        return $out;
+    }
+
+    /**
+     * The server ids this reader actually holds in the library.
+     *
+     * Distinct on purpose: the same server series can carry at most one state row, but
+     * distinct guards against a duplicate sliding in through a migration, and the export
+     * is only honest about a series once.
+     *
+     * @return list<int>
+     */
+    public function inLibraryIds(User|int $user): array
+    {
+        $userId = $this->userId($user);
+
+        /*
+         * `all()` is typed as keyed even after `values()`, so the honest list comes from
+         * re-indexing once at the seam rather than from a wider return type.
+         */
+        return array_values(SeriesState::forUser($userId)
+            ->where('in_library', true)
+            ->whereNotNull('suwayomi_manga_id')
+            ->pluck('suwayomi_manga_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->all());
+    }
+
+    /**
      * Create a shelf, or return the existing one with that name.
      *
      * Returning the existing shelf rather than failing is deliberate. The unique

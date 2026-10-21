@@ -2,12 +2,14 @@
 
 use App\Backup\BackupLibrary;
 use App\Backup\BackupSummary;
+use App\Jobs\RunLiveExport;
 use Papyrus\Launcher\BackupPair;
 use App\Import\ImportRefused;
 use App\Import\Tachibk\TachibkReader;
 use App\Jobs\RunLiveBackup;
 use App\Jobs\RunLiveRestore;
 use App\Models\LiveBackupRun;
+use App\Models\LiveExportRun;
 use App\Models\LiveRestoreRun;
 use App\Suwayomi\BackupGateway;
 use App\Suwayomi\SuwayomiException;
@@ -207,7 +209,7 @@ new #[Title('Backups')] class extends Component {
      * behind it, and there is no longer a process whose word anyone could ask. The page treats
      * silence as the end of the run rather than repeating a claim that is no longer true.
      */
-    public function runIsAbandoned(LiveBackupRun|LiveRestoreRun $run): bool
+    public function runIsAbandoned(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): bool
     {
         return $run->isRunning()
             && $run->updated_at->diffInSeconds(now()) > self::STUCK_SECONDS;
@@ -543,6 +545,121 @@ new #[Title('Backups')] class extends Component {
             $run->state === LiveRestoreRun::RUNNING => __('Running'),
             $run->state === LiveRestoreRun::FAILED => __('Stopped'),
             $run->state === LiveRestoreRun::REFUSED => __('Refused'),
+            default => (string) $run->state,
+        };
+    }
+
+    /*
+     * ## The export side
+     *
+     * The outbound half of the round trip: Suwayomi is asked for its own fresh export while
+     * it runs, and this reader's read marks and shelf memberships are merged onto the records
+     * in that file, so a reader in Mihon's format receives the arrangement and not one pile
+     * of unmarked series. {@see \App\Export\TachibkExport} does the reading and the
+     * {@see \App\Export\TachibkMerger} keeps the merge's only forward rule at the byte level:
+     * read stays read, a shelf never leaves, nothing already in the file is rewritten.
+     *
+     * ## Why there is no dialog before this press
+     *
+     * Because the backup dialog asks the one question this side has no answer to the reader's
+     * taste in: the export takes no options. What is merged, and that records are appended to
+     * and never rewritten, is the format's whole decision, made once in the merger and tested
+     * there rather than offered as toggles that are not choices.
+     */
+
+    /** Whether to keep watching after an export press, the restore press's own shape. */
+    public bool $exportPolling = false;
+
+    public function startExport(): void
+    {
+        $pressing = $this->activeExportRun();
+
+        if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
+            Flux::toast(
+                text: __('An export is already running. Wait for it to finish: two runs sweep the same staging folder, and a file staged under one is a product the other cannot verify.'),
+                heading: __('Already running'),
+                variant: 'danger',
+            );
+
+            return;
+        }
+
+        RunLiveExport::dispatch(userId: (int) auth()->id());
+
+        Flux::toast(
+            text: __('Export started. The file is a fresh export of the library with your read marks and shelves merged in, and the download link appears here when it is done.'),
+            heading: __('Started'),
+            variant: 'success',
+        );
+
+        $this->exportPolling = true;
+    }
+
+    /** Whether the export side should be asked what is happening, the restore's own shape. */
+    public function shouldPollExport(): bool
+    {
+        if (! $this->exportPolling) {
+            return false;
+        }
+
+        $run = $this->activeExportRun();
+
+        if ($run === null) {
+            return true;
+        }
+
+        return $run->isRunning() && ! $this->runIsAbandoned($run);
+    }
+
+    /** The latest export run, the shape {@see activeRun()} reads for the backup side. */
+    #[Computed]
+    public function activeExportRun(): ?LiveExportRun
+    {
+        return LiveExportRun::query()->latest('id')->first();
+    }
+
+    /** @return \Illuminate\Support\Collection<int, LiveExportRun> */
+    #[Computed]
+    public function exportRuns(): \Illuminate\Support\Collection
+    {
+        return LiveExportRun::query()->latest('id')->limit(20)->get();
+    }
+
+    /** What an export run is saying, in its own sentences. */
+    public function exportRunSummary(LiveExportRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => __('This run stopped without finishing. Its staging was swept, and nothing half written was left where a reader looks for a product.'),
+            $run->state === LiveExportRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
+            $run->state === LiveExportRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
+            $run->state === LiveExportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
+            $run->state === LiveExportRun::COMPLETE => (string) ($run->progress_note ?? __('The file is in the exports folder.')),
+            default => (string) $run->state,
+        };
+    }
+
+    /** The badge colours, the backup side's own mapping in the export's words. */
+    public function exportBadgeColour(LiveExportRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => 'orange',
+            $run->state === LiveExportRun::COMPLETE => 'green',
+            $run->state === LiveExportRun::RUNNING => 'blue',
+            $run->state === LiveExportRun::FAILED => 'red',
+            $run->state === LiveExportRun::REFUSED => 'orange',
+            default => 'zinc',
+        };
+    }
+
+    /** What an export run's state says to a reader, one word, the backup listing's words. */
+    public function exportStateLabel(LiveExportRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => __('Stopped'),
+            $run->state === LiveExportRun::COMPLETE => __('Finished'),
+            $run->state === LiveExportRun::RUNNING => __('Running'),
+            $run->state === LiveExportRun::FAILED => __('Stopped'),
+            $run->state === LiveExportRun::REFUSED => __('Refused'),
             default => (string) $run->state,
         };
     }
@@ -934,6 +1051,120 @@ new #[Title('Backups')] class extends Component {
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                                     {{ $this->restoreRunSummary($run) }}
                                 </p>
+
+                                <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                                    {{ __('Started :when.', ['when' => $run->started_at->diffForHumans()]) }}
+                                </p>
+                            </div>
+                        @endforeach
+                    @endif
+                </div>
+            </div>
+        </flux:card>
+
+        {{--
+            The export card.
+
+            The outbound half of the round trip: Suwayomi is asked for its own fresh export
+            while it runs, and this reader's read marks and shelf memberships are merged onto
+            the records in that file, so a reader in Mihon's format receives the arrangement,
+            the shelves and the read state, not one pile of unmarked series. No dialog asks
+            anything before the press, because the export takes no options: what is merged,
+            and that records are appended to and never rewritten, is the format's whole
+            decision, made once in the merger and tested there rather than offered as
+            toggles that are not choices.
+        --}}
+        <flux:card class="mb-6 space-y-4 p-4">
+            <div @if ($this->shouldPollExport()) wire:poll.3s @endif>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <flux:heading level="3" class="text-base">{{ __('Sending one out, without stopping anything') }}</flux:heading>
+
+                    @php($exporting = $this->activeExportRun())
+
+                    @if ($exporting !== null && $exporting->isRunning() && ! $this->runIsAbandoned($exporting))
+                        <flux:badge size="sm" color="blue" icon="loading">
+                            {{ __('An export is running') }}
+                        </flux:badge>
+                    @endif
+                </div>
+
+                <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ __('The file is a .tachibk, the format Mihon and its forks read: the library fresh from Suwayomi with your read marks and shelf memberships merged in. The merge only ever adds, so a chapter read anywhere stays read, and a series filed on a shelf stays filed.') }}
+                </p>
+
+                <div class="mt-4">
+                    <flux:button
+                        variant="primary"
+                        icon="arrow-down-tray"
+                        wire:click="startExport"
+                        wire:target="startExport"
+                    >
+                        {{ __('Export for another reader app') }}
+                    </flux:button>
+                </div>
+
+                {{-- The runs, newest first, the backup card's rows carrying the run's receipt. --}}
+                <div class="mt-4 space-y-3">
+                    @if ($this->exportRuns()->isEmpty())
+                        <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                            @if ($this->exportPolling)
+                                {{ __('Queued. The file will appear in a moment.') }}
+                            @else
+                                {{ __('Nothing has been sent out from here yet.') }}
+                            @endif
+                        </p>
+                    @else
+                        @foreach ($this->exportRuns() as $run)
+                            <div class="border-t border-zinc-200 pt-3 first:border-0 first:pt-0 dark:border-white/10">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="truncate text-sm font-medium">
+                                        {{ $run->file_name !== null ? $run->file_name : __('being written now') }}
+                                    </span>
+
+                                    <flux:badge size="sm" :color="$this->exportBadgeColour($run)">
+                                        {{ $this->exportStateLabel($run) }}
+                                    </flux:badge>
+                                </div>
+
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ $this->exportRunSummary($run) }}
+                                </p>
+
+                                @if ($run->state === LiveExportRun::COMPLETE && $run->file_name !== null)
+                                    {{--
+                                        The receipt, read from the row the job wrote: the size named
+                                        from the bytes it recorded, the counts from the run's own
+                                        comparison, the skipped reasons from the run itself. The
+                                        download is the route keyed on the run, which serves only
+                                        the file that row's receipt still answers for.
+                                    --}}
+                                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        {{ __(':matched of :planned series merged, :shelves shelves written and :marks read marks added (:bytes).', [
+                                            'matched' => $run->series_matched ?? 0,
+                                            'planned' => $run->series_planned ?? 0,
+                                            'shelves' => $run->shelves_appended ?? 0,
+                                            'marks' => $run->read_marks ?? 0,
+                                            'bytes' => $this->humanBytes((int) $run->file_bytes),
+                                        ]) }}
+                                    </p>
+
+                                    @if (($run->skipped ?? []) !== [])
+                                        <ul class="mt-1 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                                            @foreach ($run->skipped as $skipped)
+                                                <li>{{ $skipped }}</li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+
+                                    <p class="mt-2">
+                                        <a
+                                            href="{{ route('backups.export', ['run' => $run]) }}"
+                                            class="inline-flex items-center gap-1 text-sm font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+                                        >
+                                            {{ __('Download the file') }}
+                                        </a>
+                                    </p>
+                                @endif
 
                                 <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
                                     {{ __('Started :when.', ['when' => $run->started_at->diffForHumans()]) }}

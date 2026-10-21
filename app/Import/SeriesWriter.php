@@ -178,9 +178,14 @@ final class SeriesWriter
      * time: the alternative is an import that reports success and loses the only thing the
      * reader had.
      *
+     * This seam serves both directions: the importer reads the destination's chapters to
+     * pair a backup's marks onto, and the export reads the destination's chapters to pair
+     * the ledger's marks onto a backup being written, so the join is one measured body,
+     * not two copies of it.
+     *
      * @return array{by_order: array<int, int>, by_number: array<int, int>, position: array<int, int>}
      */
-    private function theirChapters(int $mangaId): array
+    public function theirChapters(int $mangaId): array
     {
         $found = $this->series->find($mangaId);
 

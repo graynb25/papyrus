@@ -625,6 +625,40 @@ class ReadingState
     }
 
     /**
+     * The chapters a reader has marked read, per series, in one grouped query.
+     *
+     * This is the export's ledger half: a fresh Suwayomi export marks what the server
+     * learned, and this method is what the chapter the server never opened looks like from
+     * the reader half. One query per call, grouped by series, because an export walks a
+     * whole library and one query per series is a library's worth of round trips.
+     *
+     * @param  array<int, int>  $mangaIds
+     * @return array<int, list<int>> chapter ids carrying `is_read = true`, keyed by series id
+     */
+    public function readChapterIdsByManga(User|int $user, array $mangaIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $mangaIds)));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $rows = DB::connection()->table('chapter_states')
+            ->where('user_id', $user instanceof User ? (int) $user->getKey() : $user)
+            ->where('is_read', true)
+            ->whereIn('suwayomi_manga_id', $ids)
+            ->get(['suwayomi_manga_id', 'suwayomi_chapter_id']);
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $out[(int) $row->suwayomi_manga_id][] = (int) $row->suwayomi_chapter_id;
+        }
+
+        return $out;
+    }
+
+    /**
      * Read state for a whole chapter list, keyed by chapter id.
      *
      * One query for the list rather than one per chapter: a 1000 chapter series

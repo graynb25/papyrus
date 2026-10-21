@@ -1,1 +1,4 @@
 *.sqlite*
+
+; exports are products for another reader app, not developer data, and never enter the tree
+/exports/

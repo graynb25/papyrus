@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AniListCallbackController;
+use App\Http\Controllers\ExportDownloadController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -46,6 +47,26 @@ Route::middleware(['auth'])->group(function () {
      * the command, which is the honest shape of a thing that cannot be done from in here.
      */
     Route::livewire('settings/backups', 'pages::settings.backups')->name('backups.edit');
+
+    /*
+     * The download one finished export run offers.
+     *
+     * A GET beside the backups page whose button presses it, in that page's own group rather
+     * than the verified one below: the reader standing at `settings/backups` pressing the
+     * export is already past this seam, and the page's own reason for sitting under plain
+     * `auth` is this one's too. Nothing the request changes is state on this server, the
+     * file having been written by a finished run before the request arrived, so a GET is
+     * the whole shape and a reader can bookmark a completion or open it in a new tab the
+     * way the cbz export's route comment argues in `routes/web.php`.
+     *
+     * Keyed on the run and never on a file name, which is the decision the controller's
+     * own docblock carries in full: the exports folder is a product folder, and only a
+     * finished row's receipt makes one of its products reachable at all.
+     */
+    Route::get('settings/backups/export/{run}', ExportDownloadController::class)
+        ->whereNumber('run')
+        ->name('backups.export');
+
     Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');
     Route::livewire('settings/licences', 'pages::settings.licences')->name('licences.edit');
 });

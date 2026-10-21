@@ -93,6 +93,16 @@ trait BuildsTachibkBackups
     protected bool $withoutSourceNames = false;
 
     /**
+     * Add one of the file's own shelves, named but carrying no order.
+     *
+     * The real sample carries exactly this shape, a `Default` record with no order
+     * field, because protobuf omits the writer's defaults. Absence reads as order
+     * zero on the receiving side, which is why the exporter's own walk reproduces
+     * that reading for shelves it plans to reference.
+     */
+    protected bool $withCategories = false;
+
+    /**
      * Write a source id too wide for a 64 bit integer.
      *
      * Hand assembled rather than encoded, because an encoder given such a number wraps around
@@ -186,6 +196,13 @@ trait BuildsTachibkBackups
             foreach ($this->seriesMessages() as $series) {
                 $payload .= $this->bytes(TachibkSchema::BACKUP_SERIES, $series);
             }
+        }
+
+        if ($this->withCategories) {
+            $payload .= $this->bytes(
+                TachibkSchema::BACKUP_CATEGORIES,
+                $this->bytes(TachibkSchema::CATEGORY_NAME, 'Default'),
+            );
         }
 
         if (! $this->withoutSourceNames) {
