@@ -23,6 +23,14 @@ for what the portable shape will do when it ships.
 
 ### Added
 
+**The questions the app can now answer.** The FAQ gained six answers written from the code that
+does the work: what a search asks once you pin a site, what a block does and how long the wait is,
+what happens when a series exists with no chapters, how to move one series or a whole shelf, what a
+backup covers and what it never promises, and where the licences are acknowledged. The backup
+answer now says what the Backups page actually does instead of telling you to copy a folder with
+the app closed, and Settings has its own copy of the questions, so answering one no longer throws
+you out of the app. `7ee558f` `3aa8d74`
+
 **Your library can back itself up without stopping anything.** The Backups page now takes its own
 pair of backups while the app and the manga server keep running, puts one back the same way, and
 sends your shelves and your read marks out as a `.tachibk` file another reader app can open, with a

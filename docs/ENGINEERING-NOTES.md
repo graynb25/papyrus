@@ -6955,6 +6955,27 @@ exactly that moment and it costs five minutes.
     thing the restore is undoing. And a cascading foreign key is a delete that takes
     more than it names: `on delete CASCADE` on a run row takes the ledger with it.
 
+329. **A path fragment is not an element, and a new route that contains the old one
+    turns the old check into a check that cannot fail.**
+
+    Measured 2026-10-21, while giving the FAQ an in-shell seat. The Settings navlist's
+    FAQ item pointed at the public route, and the fix pointed it at the in-shell one
+    instead. **The string `/faq` is a substring of `/settings/faq`**, measured with
+    PHP's own `str_contains` on the two paths, so a test that asserted the page
+    carried the old path as a fragment would have gone on passing against the new href
+    without ever checking that the navlist had moved at all. The general form: **a
+    path is not an element, and a check on a fragment is a check on a string rather
+    than on a thing.** The assertion that holds it is on the whole `href`, and the one
+    that catches a nav item still pointing out of the app is the negative one, the
+    public route's href absent from the page.
+
+    The neighbouring truth is worth saying, because it is what the old check did
+    rather than what a fragment check would have done: `route()` returns an absolute
+    URL, and `http://papyrus.test/faq` is **not** a substring of
+    `http://papyrus.test/settings/faq`, both measured. So the old assertion would
+    have failed loudly rather than quietly. **A check that fails loudly is a check; a
+    check that passes for the wrong reason is a comment.**
+
 ---
 
 ## 15. Phase 7 run notes: the backup that never stops anything, and the round trip
