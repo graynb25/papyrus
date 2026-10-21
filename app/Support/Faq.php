@@ -30,6 +30,20 @@ namespace App\Support;
  * That check is why the exceptions list has three entries rather than one. The first draft of this
  * file said AniList and moved on, and the test below failed, because a claim with an unlisted
  * exception is the exact failure this page is for.
+ *
+ * ## Where the mechanism answers were checked
+ *
+ * The later entries answer what the app does rather than what leaves the machine, and the rule is
+ * the same for them: every sentence was read out of the code that does the thing. The search scope
+ * and the pin come from `App\Search\SearchFanout` and `App\Search\HealthDashboard`, the ban and the
+ * wait from `config/source-notices.php`, the sources page's install press and
+ * `App\Search\HealthRecorder`, the empty listing from the series page's own `emptyReason()` and
+ * `App\Migration\SeriesMigrator`, the migration from the wizard and the bulk page's own copy, the
+ * backup from `App\Backup\LiveBackup` and the Backups page, and the licences from
+ * `App\Support\Licences` and the Licences page.
+ *
+ * Four of these answers end in "it depends on the source", and they say so rather than rounding it
+ * off. A page that hid the dependence would be wrong in the exact way this one exists to prevent.
  */
 final class Faq
 {
@@ -120,6 +134,47 @@ final class Faq
             ),
 
             new FaqEntry(
+                question: __('Can I limit what a search asks?'),
+                answer: [
+                    __('Yes. Pin the sites you trust on the Sources page or on the Health page, and searches stop asking anyone else. With nothing pinned, a search asks every source that can run, which is what it has always done.'),
+                    __('A pin is for a site, not for one language of it. The extension repository ships one extension per language and they all point at the same site, so pinning MangaDex pins all 61 of its language variants at once. That is deliberate, and the measurement is why: on a measured run all 61 variants returned the same 51 titles in different scripts, and asking one variant per site kept 64% of the results and threw away every non-Latin one.'),
+                    __('The search page says what it left out. While a pin stands, it tells you how many installed sources are not pinned and lists them by name, so no results never reads as nobody having the series.'),
+                    __('Pins are about searching and about nothing else. Your shelves, your library and your read progress are not touched by them.'),
+                ],
+            ),
+
+            new FaqEntry(
+                question: __('What happens when a site blocks me?'),
+                answer: [
+                    __('Four sites are known to block readers who search hard, and the app says so before you install one: Kayn Scans, Asmotoon, Magustoon and Genztoons. Pressing install on one of them opens a warning first, and the warning says this: "This site is known to block readers that search aggressively. Space searches out or pin it; expect long bans, not errors you can retry away."'),
+                    __('A block is a wait, not an error, and nothing Papyrus does brings a site back sooner. Spacing your searches out or pinning the site is the whole of the advice, because both mean asking it less.'),
+                    __('One more site is a different problem rather than a ban. Comix scrambles what comes back: searches through its extension return titles unrelated to the query and pages arrive broken, and it pushes readers back to its own site. The app warns about that one at the install press as well.'),
+                    __('With a site that is merely failing, the app is plain about it. Each source gets its own budget inside a search, 20 seconds by default, so one slow site cannot use up the whole run, and a source that fails five times in a row is marked dead and left out of later searches, because asking a dead one costs the full wait every single time. The Health page shows what each site is doing, and a dead one can still be asked for by name.'),
+                ],
+            ),
+
+            new FaqEntry(
+                question: __('What if a series has no chapters?'),
+                answer: [
+                    __('Sometimes a source lists a series and then lists no chapters for it. The series page says exactly that, in these words: "The source returned no chapters", and that this is an upstream condition, that the source answered and its chapter listing was empty, and that the series may have moved or the source may have changed its layout.'),
+                    __('Papyrus cannot tell you which of those it is. A publisher may have taken a series down, a series may have moved somewhere else, and a source may have changed the shape of its pages. The app does not guess, and it does not present a broken fetch as a missing series: when the call itself failed, the page shows the server\'s own message instead.'),
+                    __('The library check treats it as a fact about the source rather than a fault to fix, so a series with no chapters does not show up as something broken.'),
+                    __('Moving such a series is refused rather than half done. A destination that lists no chapters is refused with "That source lists no chapters for it, so there is nothing to move to." A source you are leaving that lists none is refused because your read progress there could not be carried over. And when none of your chapters can be matched to the new source, the move is refused too, because a move that carried nothing is not a move. Those rows offer you the source\'s own page to look at instead.'),
+                ],
+            ),
+
+            new FaqEntry(
+                question: __('How do I move a series to another source?'),
+                answer: [
+                    __('One series at a time, from its own page. "Move source" searches every source that can run, which takes about 22 seconds across 82 sources, and then lists what it found, best first. Each candidate carries what was measured rather than a guess: how alike the titles are, how many chapters it lists and how many more or fewer than where the series is now, and whether the author matches.'),
+                    __('A candidate you cannot move to says why on its own row: "This source lists no chapters for it.", "This source could not be read." or "Not looked at yet." Those rows offer to take you to that source\'s own page to look for yourself, or to step the row aside.'),
+                    __('Before the move you are asked four things: carry your read progress, carry your shelves, tell AniList, and remove the pages you already downloaded. The first two are on by default and the last is off, because moving a series should not delete a copy you downloaded to read on a train.'),
+                    __('What the move does: the series points at the new source and stays in your library and on its shelves, your read progress moves across chapter by chapter matched on chapter number, anything that cannot be matched is reported afterwards rather than dropped quietly, and the pages you downloaded stay on disk.'),
+                    __('A whole shelf at once is on the Sources page, under Migrate. You pick the source to leave and up to five destinations, because each destination is another full search of the whole shelf. It compares series by series, writes its progress on its own row so a long run can be watched, and can be stopped: the rows that finished keep their places and the rest are untouched. The timing is worth knowing, because a comparison takes between 0.7 and 3.2 seconds depending on the site, so a shelf of 200 series at five destinations takes between 11 and 54 minutes. The run reports what moved, how many chapters kept their place, how many were refused and why, and it names the series it never looked at.'),
+                ],
+            ),
+
+            new FaqEntry(
                 question: __('Is this open source?'),
                 answer: [
                     __('Yes. Papyrus itself is MIT licensed, and the Licences page in Settings lists every package in the install, where it came from, and under what terms.'),
@@ -128,10 +183,30 @@ final class Faq
             ),
 
             new FaqEntry(
+                question: __('Where do I acknowledge the licences?'),
+                answer: [
+                    __('On the Licences page in Settings. It lists every package in this install, read from the lock files the build installed from, and it adds the two large pieces no lock file mentions: the manga server and the Java runtime it runs on.'),
+                    __('Each row names the package, its licence and where it came from, and opens the licence text itself, read byte for byte from the file that ships beside it. A package that names itself proprietary is marked as not open source rather than left for you to find, and a package that records no licence at all is listed as not recorded rather than guessed at.'),
+                    __('Acknowledging is a button on each row, and it means you have read that licence as the page shows it now. The row then reads Acknowledged. If the package moves to another version or another licence, the acknowledgement re-arms and the row says it changed since, because a version bump is exactly the moment a read wants looking at again.'),
+                    __('The record is yours and stays on this machine: one row per package, per reader, in the same local database as everything else.'),
+                ],
+            ),
+
+            new FaqEntry(
                 question: __('How do I make a backup?'),
                 answer: [
-                    __('Copy the folder. There is no cloud copy, no sync service and nothing to export, because there is nowhere else for it to be.'),
-                    __('Copy it while Papyrus is closed, and copy the whole folder rather than picking files. The library database keeps recent changes in a small sidecar file beside it, and copying only the main file is the quiet way to lose the last few chapters you read.'),
+                    __('The app takes its own. On the Backups page, "Back up now" writes a pair of files while the app and the manga server keep running, checks both halves, and puts them in the backups folder with the token naming the moment. "Restore" puts a pair back the same way, and "Export for another reader app" writes a .tachibk file another reader can open.'),
+                    __('There is no cloud copy and no sync service, so that folder is the copy. If you want a second one, copy the folder to another disk yourself.'),
+                    __('If you would rather copy the folder by hand, copy the whole folder rather than picking files, and do it while Papyrus is closed. The library database keeps recent changes in a small sidecar file beside it, and copying only the main file is the quiet way to lose the last few chapters you read.'),
+                ],
+            ),
+
+            new FaqEntry(
+                question: __('What does a backup cover, and what does it not?'),
+                answer: [
+                    __('A backup is a pair, and the two halves are the two things Papyrus does not keep in one place. The reader half is your library database, copied with a database operation that is safe while the app is running, and it holds your read progress per series and per chapter, your shelves, your settings, your tracking link and your import ledger. The manga half is the manga server\'s own fresh export of its library. Both are staged and checked before they are put away, and the manifest beside them carries their digests and their row counts, so a pair that does not match what it claims is refused rather than restored.'),
+                    __('What it does not promise is worth as much. There is no second copy off this machine: the pair is a file in the folder the Backups page names, and if the machine is lost the backup goes with it. The manga half carries the server\'s library and nothing else, so a series the app has state for but the server does not hold is not in the file, and the export names every series it could not carry and says why. The pages you downloaded are not in the pair unless you ask for them, and the page tells you how big that folder is before you press.'),
+                    __('One thing does happen on its own, and it is half a backup rather than a whole one. The reader half is snapshotted every night at 03:17 and kept for a fortnight, and the manga server backs up its own library daily. That file is named reader-half on purpose, because it is not a pair and cannot be restored as one.'),
                 ],
             ),
         ];

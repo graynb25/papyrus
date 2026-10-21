@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Support\Faq;
 use App\Support\FaqEntry;
+use App\Support\SourceNotices;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -30,6 +31,24 @@ class FaqTest extends TestCase
     private function faq(): Faq
     {
         return app(Faq::class);
+    }
+
+    /**
+     * The answer to one question, as one string.
+     *
+     * By the question's own wording rather than by its position, because a position moves
+     * whenever a question is added in the middle and a test that reads the third entry is a test
+     * about the order rather than about the answer.
+     */
+    private function answerTo(string $question): string
+    {
+        foreach ($this->faq()->entries() as $entry) {
+            if ($entry->question === $question) {
+                return implode(' ', $entry->answer);
+            }
+        }
+
+        $this->fail("the FAQ has no question reading \"{$question}\"");
     }
 
     // The page itself ----------------------------------------------------
@@ -256,4 +275,154 @@ class FaqTest extends TestCase
 
         $this->assertGreaterThanOrEqual(6, $this->faq()->totalCount());
     }
+
+    // The questions this phase added -----------------------------------
+
+    /**
+     * The six questions the phase added, by their own wording.
+     *
+     * Named rather than counted, because a count is a number a later edit satisfies by adding a
+     * different question. These are the six the plan names: what a search asks, what a block
+     * does, the empty listing, moving a series, what a backup covers, and where the licences are
+     * acknowledged.
+     */
+    public function test_it_answers_the_six_mechanisms_the_phase_added(): void
+    {
+        $questions = array_map(
+            static fn (FaqEntry $e): string => $e->question,
+            $this->faq()->entries(),
+        );
+
+        foreach ([
+            'Can I limit what a search asks?',
+            'What happens when a site blocks me?',
+            'What if a series has no chapters?',
+            'How do I move a series to another source?',
+            'Where do I acknowledge the licences?',
+            'What does a backup cover, and what does it not?',
+        ] as $question) {
+            $this->assertContains(
+                $question,
+                $questions,
+                "the page answers this question: {$question}",
+            );
+        }
+    }
+
+    /**
+     * The subjects a reader arrives with, checked against the question and the answer together.
+     *
+     * The privacy answer's own test above checks the questions only, because every subject it
+     * lists is the subject of a question. These are subjects a reader would look for in the
+     * answer as well: "pin" and "ban" are in the wording of the answers and not of the questions,
+     * and a page that a reader cannot find the word on is a page that does not answer them.
+     */
+    public function test_the_later_subjects_are_on_the_page(): void
+    {
+        $text = implode(' ', array_map(
+            static fn (FaqEntry $e): string => $e->question.' '.implode(' ', $e->answer),
+            $this->faq()->entries(),
+        ));
+
+        foreach (['pin', 'ban', 'chapter', 'move', 'licence', 'backup'] as $subject) {
+            $this->assertStringContainsStringIgnoringCase(
+                $subject,
+                $text,
+                "a reader asks about {$subject} and the page should have an answer",
+            );
+        }
+    }
+
+    /**
+     * The backup answer, held against what the app does now.
+     *
+     * The old answer said "There is no cloud copy, no sync service and nothing to export" and
+     * "Copy it while Papyrus is closed". The first was made false by the outward export and the
+     * second by the in-app backup, and this is the copy a reader reads before deciding to trust
+     * the app with their library, so it has to match the Backups page.
+     */
+    public function test_the_backup_answer_says_what_the_app_now_does(): void
+    {
+        $answer = $this->answerTo('How do I make a backup?');
+
+        $this->assertStringNotContainsString(
+            'nothing to export',
+            $answer,
+            'the app exports a .tachibk for another reader app now, so this sentence is false',
+        );
+
+        $this->assertStringNotContainsString(
+            'Copy it while Papyrus is closed',
+            $answer,
+            'the app takes a pair while it keeps running, so this is no longer the rule',
+        );
+
+        foreach ([
+            'Back up now',
+            'Restore',
+            'Export for another reader app',
+            'no cloud copy',
+            'no sync service',
+        ] as $claim) {
+            $this->assertStringContainsString(
+                $claim,
+                $answer,
+                "the answer has to name what the Backups page offers: {$claim}",
+            );
+        }
+    }
+
+    /**
+     * The ban sites the page names are the sites the app warns about at the install press.
+     *
+     * Read out of the config rather than out of a copy of it, so a fifth ban site added there
+     * fails this test and the page has to be updated with it. A page that names a site the app
+     * no longer warns about, or that omits one it does, is a page that has drifted from the
+     * behaviour it describes.
+     */
+    public function test_the_ban_sites_it_names_are_the_ones_the_app_warns_about(): void
+    {
+        $sites = config('source-notices.sites');
+
+        $this->assertIsArray($sites);
+
+        $warned = array_keys(array_filter(
+            $sites,
+            static fn (mixed $kind): bool => $kind === SourceNotices::BAN,
+        ));
+
+        $this->assertNotEmpty($warned, 'the app warns about some sites, so the page has to name them');
+
+        $answer = $this->answerTo('What happens when a site blocks me?');
+
+        foreach ($warned as $site) {
+            $this->assertStringContainsString(
+                (string) $site,
+                $answer,
+                "the app warns about {$site} at the install press, so the page has to name it",
+            );
+        }
+    }
+
+    /**
+     * The public copy carries no em or en dash.
+     *
+     * The rule the repository already enforces everywhere, held here for the copy that ships to
+     * readers. A dash in a comment is a dash in a sentence somebody reads, and this file is the
+     * one that carries the sentences.
+     */
+    public function test_the_public_copy_carries_no_em_or_en_dash(): void
+    {
+        foreach ($this->faq()->entries() as $entry) {
+            foreach ([$entry->question, ...$entry->answer] as $text) {
+                $this->assertDoesNotMatchRegularExpression(
+                    '/[\x{2014}\x{2013}\x{2015}\x{2012}]/u',
+                    $text,
+                    "the page ships this to readers: {$text}",
+                );
+            }
+        }
+    }
+
+    // The same questions, inside the app --------------------------------
 }
