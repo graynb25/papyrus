@@ -13,6 +13,7 @@ use App\Models\LiveExportRun;
 use App\Models\LiveRestoreRun;
 use App\Suwayomi\BackupGateway;
 use App\Suwayomi\SuwayomiException;
+use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -21,23 +22,23 @@ use Livewire\Component;
 
 new #[Title('Backups')] class extends Component {
     /*
-     * A list of what is on disk, and a truthful account of the last run.
+     * A list of what is on disk, and a truthful account of the last run, from every door.
      *
-     * ## Why there is no button on this page that says "Back up now"
+     * ## Two doors take a pair from here now
      *
-     * Because a backup cannot be taken from inside the application. The manga half has to be copied
-     * with nothing writing it, and proving that means Suwayomi has to be stopped, which means the
-     * application has to be stopped, which means the request that asked for the backup is gone.
+     * The button below it and the launcher differ in one thing: what is stopped while it happens.
+     * A launcher snapshot stops Papyrus, which is the proof that the manga half was copied with
+     * nothing writing it, and it restarts everything afterwards. The live backup asks Suwayomi
+     * to hand over its own export while it runs and takes the reader half with `VACUUM INTO`,
+     * which is a different bargain, honestly named on its own card, and the reason the old
+     * refusal banner is gone rather than merely worded around: a sentence at the door saying
+     * backups cannot be taken here stopped being true.
      *
-     * A button here would have to either lie about being able to do that, or work and surprise the
-     * reader by taking their app down. Both are worse than a sentence saying what to type, and the
-     * sentence is one line long.
-     *
-     * ## Why there is no progress bar either
+     * ## Why the launcher's runs still have no progress bar on this page
      *
      * Because Papyrus is the thing that would be serving it. `wire:poll` and `EventSource` both run
-     * inside this process, so a bar climbing through a backup dies at the exact moment the reader
-     * most wants to see it, and a bar that stopped climbing is indistinguishable from one that
+     * inside this process, so a bar climbing through a launcher backup dies at the exact moment the
+     * reader most wants to see it, and a bar that stopped climbing is indistinguishable from one that
      * finished. That is the whole of "what a user does not know, they will think worked".
      *
      * So the launcher prints each stage to the terminal as it happens, and writes each one down as it
@@ -48,13 +49,6 @@ new #[Title('Backups')] class extends Component {
      *
      * `RunRecord` and `BackupPair` are autoloadable from here, so there is one implementation of each
      * format rather than a second one to drift. See `RunOutcome`.
-     *
-     * ## Added later, and where its story is
-     *
-     * Phase 7's live backup takes both halves without stopping anything, and the card carrying it
-     * comments its own story. This block stays written above until the page rework retires the
-     * launcher-only age, because the banner beside it is read by tests that step then rewrites to
-     * the new behavior rather than deleted.
      */
 
     #[Computed]
@@ -80,6 +74,120 @@ new #[Title('Backups')] class extends Component {
     public function directory(): string
     {
         return $this->backups()->directory();
+    }
+
+    /*
+     * ## The last time, in one place
+     *
+     * The launcher door and the three live doors each keep their own record, and the page's
+     * "The last time" block reads the newest of the four rather than a surface per door. These
+     * methods are that reading: one computed merge, the tone the block paints with, and the
+     * per-row sentences and colours reused from each door's own card so the two readings of a
+     * run can never drift.
+     */
+
+    /**
+     * The newest event on record, from every door that writes one down.
+     *
+     * The launcher's record is parsed through {@see \Papyrus\Launcher\RunOutcome::startedAt()},
+     * and a record whose time cannot be read back is left out rather than shown unsorted: its
+     * own place carries it complete, and "sometime" in a block sorted by time would be
+     * replaceable by any other entry on the next render, which is a lie by omission this block
+     * does not need.
+     */
+    #[Computed]
+    public function latestEvent(): ?array
+    {
+        /** @var list<array{at: CarbonImmutable, tone: string, label: string, summary: string, outcome: \Papyrus\Launcher\RunOutcome|null, row: LiveBackupRun|LiveExportRun|LiveRestoreRun|null}> $events */
+        $events = [];
+
+        $launcher = $this->backups()->lastRun();
+
+        if ($launcher !== null) {
+            try {
+                $at = CarbonImmutable::parse($launcher->startedAt());
+            } catch (\Throwable) {
+                $at = null;
+            }
+
+            if ($at !== null) {
+                $events[] = [
+                    'at' => $at,
+                    'tone' => $launcher->failed() || $launcher->stalled() ? 'red' : 'green',
+                    'label' => $launcher->verdict(),
+                    'summary' => '',
+                    'outcome' => $launcher,
+                    'row' => null,
+                ];
+            }
+        }
+
+        $liveNewest = [$this->liveRuns()->first(), $this->restoreRuns()->first(), $this->exportRuns()->first()];
+
+        foreach ($liveNewest as $row) {
+            if ($row === null) {
+                continue;
+            }
+
+            $events[] = [
+                'at' => $row->started_at,
+                'tone' => $this->runToneOfAny($row),
+                'label' => $this->runLabelOfAny($row),
+                'summary' => $this->runSummaryOfAny($row),
+                'outcome' => null,
+                'row' => $row,
+            ];
+        }
+
+        usort($events, fn (array $left, array $right): int => $right['at'] <=> $left['at']);
+
+        return $events[0] ?? null;
+    }
+
+    /**
+     * The border, background and text classes a verdict is read in, the palette the block has
+     * always carried: a run that did not go through cannot be styled like one that did,
+     * however it stopped.
+     */
+    public function verdictTone(string $tone): string
+    {
+        return match ($tone) {
+            'red' => 'border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200',
+            'green' => 'border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-200',
+            'amber' => 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
+            'blue' => 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200',
+            default => 'border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100',
+        };
+    }
+
+    /** The badge colour a row of any of the three live doors reads in, its own card's mapping. */
+    public function runToneOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $run instanceof LiveBackupRun => $this->badgeColour($run),
+            $run instanceof LiveRestoreRun => $this->restoreBadgeColour($run),
+            default => $this->exportBadgeColour($run),
+        };
+    }
+
+    /** The one word a row of any of the three live doors is read as, its own card's words. */
+    public function runLabelOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $run instanceof LiveBackupRun => $this->stateLabel($run),
+            $run instanceof LiveRestoreRun => $this->restoreStateLabel($run),
+            default => $this->exportStateLabel($run),
+        };
+    }
+
+    /** What a row of any of the three live doors is saying, in its own card's sentences. */
+    public function runSummaryOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $run instanceof LiveBackupRun => $this->runSummary($run),
+            $run instanceof LiveRestoreRun => $this->restoreRunSummary($run),
+            default => $this->exportRunSummary($run),
+        };
     }
 
     /*
@@ -678,107 +786,102 @@ new #[Title('Backups')] class extends Component {
 
     <x-pages::settings.layout :heading="__('Backups')" :subheading="__('What you can restore, and what the last one did')">
         {{--
-            Why this page cannot start a backup.
+            The last time, read in one place.
 
-            Said once, at the top, in the place a button would otherwise be. A reader who came here to
-            make one and finds only an explanation has been told the truth and given the thing that
-            works. A reader who finds a button that takes their app down without saying so has been
-            treated as someone who will not notice.
+            Four doors write records now: the launcher's own run files, and the three run tables
+            the cards below keep. This block asks each for its newest event and shows the one
+            that happened last, rather than the page growing a second "last time" surface whose
+            answer can drift from this one's. A launcher run keeps its whole stage walk beneath
+            its verdict; a live run keeps its rows on its own card, where its polling lives,
+            rather than a second stage table this block has no way to feed.
         --}}
-        <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            <p class="font-medium">{{ __('Taking a backup stops Papyrus, so it cannot be done from inside Papyrus.') }}</p>
-            <p class="mt-2">
-                {{ __('Both databases have to be copied at the same moment, and the manga one cannot be copied safely while Suwayomi is running. To take one, open a terminal and run:') }}
-            </p>
-            <p class="mt-2 font-mono text-sm">papyrus snapshot</p>
-            <p class="mt-2">
-                {{ __('It prints each step as it happens, and starts Papyrus again afterwards even if something went wrong.') }}
-            </p>
-        </div>
-
-        @php($run = $this->backups()->lastRun())
-
         <flux:heading level="3" class="mb-3 text-base">{{ __('The last time') }}</flux:heading>
 
-        @if ($run)
+        @if (($latest = $this->latestEvent()) === null)
+            <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
+                {{ __('Nothing has been recorded yet, which is the whole of what has happened: no pair taken or put back with the launcher, and no backup, restore or export run from the cards on this page.') }}
+            </p>
+        @else
             <div @class([
                 'mb-6 rounded-lg border p-4 text-sm',
-                'border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200' => $run->failed() || $run->stalled(),
-                'border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-200' => ! $run->failed() && ! $run->stalled(),
+                $this->verdictTone($latest['tone']),
             ])>
-                <p class="font-medium">{{ $run->verdict() }}</p>
+                <p class="font-medium">{{ $latest['label'] }}</p>
 
-                @if ($run->retries() !== [])
+                @if ($latest['summary'] !== '')
+                    <p class="mt-1">{{ $latest['summary'] }}</p>
+                @endif
+
+                @if ($latest['outcome'] !== null && $latest['outcome']->retries() !== [])
                     <p class="mt-1">
                         {{ trans_choice(
                             'One step was tried more than once: :stages.|:count steps were tried more than once: :stages.',
-                            count($run->retries()),
-                            ['stages' => implode(', ', array_map($run->readable(...), $run->retries()))],
+                            count($latest['outcome']->retries()),
+                            ['stages' => implode(', ', array_map($latest['outcome']->readable(...), $latest['outcome']->retries()))],
                         ) }}
                     </p>
                 @endif
 
-                <p class="mt-1 opacity-80">{{ __('Started :when.', ['when' => $run->ageForHumans()]) }}</p>
+                <p class="mt-1 opacity-80">{{ __('Started :when.', ['when' => $latest['at']->diffForHumans()]) }}</p>
             </div>
 
-            {{--
-                Every stage, in the order it happened.
+            @if ($latest['outcome'] !== null)
+                {{--
+                    Every stage, in the order it happened.
 
-                Not a bar. A bar for something that either finished or did not tells a reader nothing
-                they can act on, and a bar frozen at 40% is exactly the picture this whole arrangement
-                exists to avoid. What a reader can act on is which step failed and why, and that is
-                what is written out.
-            --}}
-            <div class="mb-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-                <table class="w-full text-left text-sm">
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
-                        @foreach ($run->stages() as $stage)
-                            @php($state = $stage['state'] ?? 'pending')
-                            <tr>
-                                <td class="w-8 px-3 py-2 text-center" aria-hidden="true">
-                                    <span @class([
-                                        'inline-block size-2 rounded-full',
-                                        'bg-green-500' => $state === 'done',
-                                        'bg-amber-500' => $state === 'running',
-                                        'bg-red-500' => $state === 'failed',
-                                        'bg-gray-300 dark:bg-gray-700' => ! in_array($state, ['done', 'running', 'failed'], true),
-                                    ])></span>
-                                </td>
-                                <td class="px-3 py-2 font-medium">
-                                    {{ $run->readable((string) ($stage['stage'] ?? '')) }}
-                                    @if (($stage['attempts'] ?? 1) > 1)
-                                        <span class="ml-1 text-xs font-normal text-amber-700 dark:text-amber-400">
-                                            {{ __('tried :count times', ['count' => $stage['attempts']]) }}
-                                        </span>
-                                    @endif
-                                </td>
-                                <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
-                                    @if ($state === 'failed')
-                                        <span class="text-red-700 dark:text-red-300">{{ $stage['message'] }}</span>
-                                    @elseif ($state === 'skipped')
-                                        {{ __('Not needed for this run.') }}
-                                    @elseif (is_string($stage['message'] ?? null) && $stage['message'] !== '')
-                                        {{ $stage['message'] }}
-                                    @else
-                                        {{ $run->readable($state) }}
-                                    @endif
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @else
-            <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('Nothing has been recorded yet, which is the whole of what has happened: no backup has been taken since Papyrus was installed.') }}
-            </p>
+                    Not a bar. A bar for something that either finished or did not tells a reader nothing
+                    they can act on, and a bar frozen at 40% is exactly the picture this whole arrangement
+                    exists to avoid. What a reader can act on is which step failed and why, and that is
+                    what is written out. A live run's stages live on its own card instead, where the
+                    polling that fills them is too.
+                --}}
+                <div class="mb-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                    <table class="w-full text-left text-sm">
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+                            @foreach ($latest['outcome']->stages() as $stage)
+                                @php($state = $stage['state'] ?? 'pending')
+                                <tr>
+                                    <td class="w-8 px-3 py-2 text-center" aria-hidden="true">
+                                        <span @class([
+                                            'inline-block size-2 rounded-full',
+                                            'bg-green-500' => $state === 'done',
+                                            'bg-amber-500' => $state === 'running',
+                                            'bg-red-500' => $state === 'failed',
+                                            'bg-gray-300 dark:bg-gray-700' => ! in_array($state, ['done', 'running', 'failed'], true),
+                                        ])></span>
+                                    </td>
+                                    <td class="px-3 py-2 font-medium">
+                                        {{ $latest['outcome']->readable((string) ($stage['stage'] ?? '')) }}
+                                        @if (($stage['attempts'] ?? 1) > 1)
+                                            <span class="ml-1 text-xs font-normal text-amber-700 dark:text-amber-400">
+                                                {{ __('tried :count times', ['count' => $stage['attempts']]) }}
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
+                                        @if ($state === 'failed')
+                                            <span class="text-red-700 dark:text-red-300">{{ $stage['message'] }}</span>
+                                        @elseif ($state === 'skipped')
+                                            {{ __('Not needed for this run.') }}
+                                        @elseif (is_string($stage['message'] ?? null) && $stage['message'] !== '')
+                                            {{ $stage['message'] }}
+                                        @else
+                                            {{ $latest['outcome']->readable($state) }}
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
         @endif
 
         <flux:heading level="3" class="mb-3 text-base">{{ __('What you can restore') }}</flux:heading>
 
         @if ($this->pairs() === [])
             <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('No backups yet. Run papyrus snapshot and one will appear here.') }}
+                {{ __('No backups yet. Two doors take a pair from here: Back up now below, which stages and verifies it while everything keeps running, and papyrus snapshot in a terminal, which stops Papyrus to make the same pair.') }}
             </p>
         @else
             <div class="mb-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
@@ -851,7 +954,7 @@ new #[Title('Backups')] class extends Component {
         <p class="mb-2 font-mono text-sm break-all text-gray-700 dark:text-gray-300">{{ $this->directory() }}</p>
 
         <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-            {{ __('To put one back, stop Papyrus and run papyrus restore with the path to its backup file. Both halves are put back together, and whatever was there before is kept rather than deleted.') }}
+            {{ __('To put one back, press the Restore button on its row above: the pair goes back while the app keeps running, and the confirm names what it replaces. The terminal way still exists: stop Papyrus and run papyrus restore with the path to its backup file, and both halves are put back together with whatever was there before kept rather than deleted.') }}
         </p>
 
         @if ($this->leftovers() !== [])
@@ -873,11 +976,11 @@ new #[Title('Backups')] class extends Component {
         @endif
 
         {{--
-            The live backup, and why a button finally exists.
+            The live backup, the app's own door.
 
-            The banner above is the story of the launcher's own snapshot, which stops the install
-            to prove the manga half is copied with nothing writing it. The live backup does not
-            make that proof; it replaces the question with a different one: Suwayomi is asked to
+            The launcher's snapshot stops the install to prove the manga half is copied with nothing
+            writing it, and that proof is worth having: it is the reason `papyrus snapshot` works the
+            way it does. The live backup makes a different proof instead: Suwayomi is asked to
             export its own fresh backup while it runs, the reader half is a `VACUUM INTO` against
             the live database, and each half is verified in staging before the pair gets a manifest.
             Nothing is stopped for any of it, which is what the run rows below carry stage by

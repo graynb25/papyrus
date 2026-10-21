@@ -21,27 +21,27 @@ use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
 /**
- * The Backups settings page: what can be restored, and what the last backup did.
+ * The Backups settings page: what can be restored, and what the last run from any door did.
  *
  * ## What is asserted here
  *
- * That the page tells a reader the truth in the three states that matter, and that it never says a
+ * That the page tells a reader the truth in the states that matter, and that it never says a
  * backup is fine when it is not. Those are:
  *
  *   - a run that finished, with every stage accounted for
  *   - a run that failed, naming the step and quoting the reason
  *   - a run whose launcher was killed, which must not read as one still going
  *
- * ## What is deliberately not asserted
+ * and, since phase 7, that the launcher's record and the live runs read through ONE "last time"
+ * block: the newest event wins whatever door wrote it, so the page never says two different
+ * things happened last from two different places.
  *
- * That the page can start a backup. It cannot, and the page says so in the place a button would
- * otherwise be. The manga half has to be copied with nothing writing it, which means Suwayomi has to
- * be stopped, which means this process is stopped. A test asserting a button exists would be asserting
- * something false about the architecture.
+ * ## What the page does now, and what carried over
  *
- * What it does assert is that the sentence saying so is on the page, because a reader who came here
- * to make a backup and found nothing but an empty table would conclude the feature is missing rather
- * than that it cannot run from in here.
+ * A backup can be taken from a button on this page, so the old sentence explaining why it could
+ * not is gone with the banner that held it. The plain empty states stayed: same door-naming copy
+ * about what exists now instead of what could not be done, and the same refusal to let an empty
+ * table mean silence.
  */
 class BackupsPageTest extends TestCase
 {
@@ -91,15 +91,17 @@ class BackupsPageTest extends TestCase
     }
 
     /**
-     * The sentence that explains why there is no button, on a page with no backups.
+     * A page with nothing on it names both doors a pair can be taken from.
      *
-     * An empty table with no explanation is indistinguishable from a feature that does not exist, and
-     * this is a feature that cannot run from inside the application for a reason worth one sentence.
+     * The old refusal copy is gone because a button exists now, but the honest work it did
+     * stays: an empty page says what can be taken and what each door stops to do it, rather
+     * than leaving a reader to conclude the feature is missing.
      */
-    public function test_it_explains_that_a_backup_cannot_be_taken_from_here(): void
+    public function test_a_page_with_nothing_yet_names_both_doors_a_pair_can_be_taken_from(): void
     {
         $this->get('/settings/backups')
-            ->assertSee('cannot be done from inside Papyrus')
+            ->assertSee('No backups yet')
+            ->assertSee('Back up now below')
             ->assertSee('papyrus snapshot');
     }
 
@@ -165,6 +167,38 @@ class BackupsPageTest extends TestCase
             ->assertSee('was tried more than once');
     }
 
+    // -------------------------------------------------------------------------------------------
+
+    /*
+     * "The last time", read in one place.
+     *
+     * Four doors write records and the block shows the newest of them. A launcher record on
+     * its own reads in the block's old shape, the launcher's own verdict, and a newer live
+     * run takes the block without the launcher's words still standing there, because two
+     * truths about what happened last is exactly what one block exists to refuse.
+     */
+
+    public function test_the_last_run_block_reads_the_launcher_record_when_it_is_the_newest_of_the_doors(): void
+    {
+        $this->writeRun();
+
+        $this->get('/settings/backups')
+            ->assertSee('This backup finished.');
+    }
+
+    public function test_a_newer_live_run_owns_the_last_run_block_and_the_launcher_verdict_goes_quiet(): void
+    {
+        $this->writeRun();
+
+        LiveBackupRun::query()->create(
+            ['state' => LiveBackupRun::COMPLETE, 'include_downloads' => false, 'started_at' => now(), 'finished_at' => now()],
+        );
+
+        $this->get('/settings/backups')
+            ->assertSee('The pair is in the backups folder.')
+            ->assertDontSee('This backup finished.');
+    }
+
     /**
      * A backup with a half missing is called incomplete, not listed as if it were whole.
      */
@@ -222,11 +256,10 @@ class BackupsPageTest extends TestCase
     /*
      * The live backup.
      *
-     * These are the new shape's tests, written beside the old ones rather than over them: the
-     * banner tests above carry the launcher-only age until the page rework rewrites them to the
-     * new behavior, and the tests here carry the button, the press, the poll gate and the run
-     * rows. A test asserting a button used to be asserting something false about the
-     * architecture; since phase 7's live backup it is the true thing, and these say so.
+     * Phase 7 turned what the launcher alone did into doors this page owns, and the launcher-era
+     * tests above moved with it instead of going silent: the refusal copy became the door-naming
+     * copy, and "The last time" is one block from one door to another. The tests here carry the
+     * button, the press, the poll gate and the run rows.
      */
 
     public function test_the_button_is_on_the_page_because_the_live_backup_exists(): void

@@ -35,16 +35,17 @@ Route::middleware(['auth'])->group(function () {
      * likely to be filing a first-run report.
      */
     /*
-     * What can be restored, and what the last backup actually did.
+     * What can be restored, and what the last run from any door did.
      *
      * Behind `auth` and not `verified`, beside `about` and for the same reason: it reads the
      * filesystem and nothing about the reader. There is no reader data on the page, so there is
      * nothing to escalate for, and a reader who has just signed up and cannot yet receive a mail is
      * exactly the one most likely to be wondering whether their first backup happened.
      *
-     * Nothing here can start a backup. It cannot: the manga half has to be copied with Suwayomi
-     * stopped, and Suwayomi being stopped means this process is stopped. The page says so and gives
-     * the command, which is the honest shape of a thing that cannot be done from in here.
+     * The page takes pairs itself now, through the live backup and the live restore, and keeps
+     * the launcher's commands named beside them as the doors that stop Papyrus to run. Nothing
+     * here stops anything: a backup is taken while everything keeps running, and the refusals
+     * it can meet are named on the page in the run rows, not in this comment.
      */
     Route::livewire('settings/backups', 'pages::settings.backups')->name('backups.edit');
 

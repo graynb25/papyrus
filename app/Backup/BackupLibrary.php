@@ -17,9 +17,10 @@ use Papyrus\Launcher\Restorer;
  * | `backup-<token>.json` and the two files beside it | `papyrus snapshot` | a **pair**: both databases, and a manifest binding them |
  * | `run-<token>.json` | `papyrus snapshot` | what that run was doing, stage by stage, as it happened |
  *
- * The run record exists because Papyrus has to be stopped to be backed up, so anything streaming
- * progress would be served by the thing being stopped. The launcher is still running, so the launcher
- * writes each stage down, and this is where it is read back.
+ * The run record exists because the launcher's snapshot stops Papyrus to take the pair, so anything
+ * streaming progress would be served by the thing being stopped. The launcher is still running, so
+ * the launcher writes each stage down, and this is where it is read back; the app's own live runs
+ * keep their rows in the database, which is where they need no such work-around.
  *
  * ## Why nothing here decides whether a backup is good
  *
