@@ -173,6 +173,164 @@ class BackupGatewayTest extends TestCase
         }
     }
 
+    /**
+     * The restore's manga half, on the REST route, measured working against v2.4.2366:
+     * the whole file as the raw body under `application/x-gzip`, the bearer attached, and
+     * the answer's three lists carried flat even when the server leaves them out.
+     *
+     * The measured wire answer for a restore with nothing missing is
+     * `{"missingSources":[],"missingTrackers":[],"mangasMissingSources":[]}` at HTTP 200,
+     * and the flight is synchronous, so what answers here already happened server side.
+     */
+    public function test_the_import_carries_the_whole_file_raw_on_its_rest_route(): void
+    {
+        $file = $this->scratchPath('import-carry').DIRECTORY_SEPARATOR.'pair.tachibk';
+
+        file_put_contents($file, self::BACKUP_BODY);
+
+        $sentBytes = '';
+
+        Http::fake(function (Request $request) use (&$sentBytes) {
+            if (str_contains($request->url(), '/api/v1/backup/import')) {
+                /*
+                 * The gateway streams the file straight off the disk and closes its handle
+                 * when the flight is over, so the wire bytes are read here, while the
+                 * stream still lives. A read of the recorded request after the flight is
+                 * a read of a closed resource, measured in the first red run of this test.
+                 */
+                $sentBytes = (string) $request->body();
+            }
+
+            return ($this->fake())($request);
+        });
+
+        $summary = $this->gateway()->importBackup($file);
+
+        $this->assertSame([], $summary['missingSources'], 'a restore that misses nothing restores the sources');
+        $this->assertSame([], $summary['missingTrackers']);
+        $this->assertSame([], $summary['mangasMissingSources']);
+
+        Http::assertSent(function (Request $request) use ($sentBytes): bool {
+            return $request->url() === 'http://127.0.0.1:4567/api/v1/backup/import'
+                && $sentBytes === self::BACKUP_BODY
+                && $request->hasHeader('Content-Type', 'application/x-gzip')
+                && $request->hasHeader('Authorization');
+        });
+    }
+
+    /**
+     * The three lists are read even when the import has something to say: each element is
+     * carried as the string it landed as, in the shape the run row stores.
+     */
+    public function test_the_import_report_carries_its_lists_named(): void
+    {
+        $file = $this->scratchPath('import-named').DIRECTORY_SEPARATOR.'pair.tachibk';
+
+        file_put_contents($file, self::BACKUP_BODY);
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/api/v1/backup/import')) {
+                return Http::response([
+                    'missingSources' => ['A source (2)'],
+                    'mangasMissingSources' => ['One Piece'],
+                ], 200);
+            }
+
+            return ($this->fake())($request);
+        });
+
+        $summary = $this->gateway()->importBackup($file);
+        $this->assertSame(['A source (2)'], $summary['missingSources']);
+        $this->assertSame([], $summary['missingTrackers'], 'a list the server left out is empty, not unknown');
+        $this->assertSame(['One Piece'], $summary['mangasMissingSources']);
+    }
+
+    /** A status other than 200 is a refusal with the status named, the download's own shape. */
+    public function test_a_non_200_import_refuses_with_the_status(): void
+    {
+        $file = $this->scratchPath('import-refused').DIRECTORY_SEPARATOR.'pair.tachibk';
+
+        file_put_contents($file, self::BACKUP_BODY);
+
+        Http::fake(fn (Request $request) => $request->url() === 'http://127.0.0.1:4567/api/v1/backup/import'
+            ? Http::response([], 503)
+            : ($this->fake())($request));
+
+        try {
+            $this->gateway()->importBackup($file);
+            $this->fail('The gateway treated a 503 import answer as a restore.');
+        } catch (SuwayomiException $e) {
+            $this->assertStringContainsString('HTTP 503', $e->getMessage());
+            $this->assertSame(FailureKind::Unavailable, $e->kind);
+        }
+    }
+
+    /**
+     * The status query, against the measured shapes: an in flight restore answers its own
+     * vocabulary, a server where none ever ran answers null, and an answer without the
+     * field is refused rather than shown as either of those.
+     */
+    public function test_the_status_query_reads_the_measured_vocabulary(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains((string) $request->body(), 'restoreStatus')) {
+                return Http::response(['data' => ['restoreStatus' => [
+                    'state' => 'RESTORING_MANGA',
+                    'mangaProgress' => 4,
+                    'totalManga' => 8,
+                ]]]);
+            }
+
+            return ($this->fake())($request);
+        });
+
+        $this->assertSame(
+            ['state' => 'RESTORING_MANGA', 'mangaProgress' => 4, 'totalManga' => 8],
+            $this->gateway()->restoreStatus(),
+            'the bar reads from the server\'s own vocabulary, not a translation of it',
+        );
+
+        Http::assertSent(function (Request $request): bool {
+            // The transport posts JSON, so the quotes the query itself carries are escaped
+            // on the wire; the matcher reads the escaped shape, which is what flies.
+            return str_contains((string) $request->body(), 'restoreStatus(id: \"legacy\")');
+        });
+    }
+
+    /** Null is the honest answer of a server process no restore ever ran in. */
+    public function test_a_server_where_no_restore_ever_ran_answers_null(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains((string) $request->body(), 'restoreStatus')) {
+                return Http::response(['data' => ['restoreStatus' => null]]);
+            }
+
+            return ($this->fake())($request);
+        });
+
+        $this->assertNull($this->gateway()->restoreStatus());
+    }
+
+    /** An answer without the field cannot be read, and that is a refusal, not a state. */
+    public function test_a_status_without_the_field_refuses(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains((string) $request->body(), 'restoreStatus')) {
+                return Http::response(['data' => []]);
+            }
+
+            return ($this->fake())($request);
+        });
+
+        try {
+            $this->gateway()->restoreStatus();
+            $this->fail('The gateway read a restore status from an answer that carried none.');
+        } catch (SuwayomiException $e) {
+            $this->assertStringContainsString('without the field', $e->getMessage());
+            $this->assertSame(FailureKind::Unknown, $e->kind);
+        }
+    }
+
     public function test_a_stream_that_paints_nothing_without_ending_refuses_as_stalled(): void
     {
         // eof() stays false and every read comes back empty: the shape a real Guzzle
@@ -203,7 +361,7 @@ class BackupGatewayTest extends TestCase
     }
 
     /**
-     * One fake that answers the two measured shapes. A second Http::fake() in a test does not
+     * One fake that answers the three measured shapes. A second Http::fake() in a test does not
      * replace the first registration: the setUp fake keeps answering, which is trap 116.
      */
     private function fake(): \Closure
@@ -220,6 +378,11 @@ class BackupGatewayTest extends TestCase
 
             if (str_contains($body, 'mutation CreateBackup')) {
                 return Http::response(['data' => ['createBackup' => ['url' => self::BACKUP_PATH]]]);
+            }
+
+            if (str_contains($request->url(), '/api/v1/backup/import')) {
+                // The measured wire answer of a restore whose file missed nothing.
+                return Http::response(['missingSources' => [], 'missingTrackers' => [], 'mangasMissingSources' => []]);
             }
 
             if (str_contains($request->url(), '/files/backup/')) {

@@ -4,7 +4,9 @@ namespace Tests\Feature\Settings;
 
 use App\Backup\BackupLibrary;
 use App\Jobs\RunLiveBackup;
+use App\Jobs\RunLiveRestore;
 use App\Models\LiveBackupRun;
+use App\Models\LiveRestoreRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -410,6 +412,233 @@ class BackupsPageTest extends TestCase
 
     // -------------------------------------------------------------------------------------------
 
+    /*
+     * The restore side's own tests, beside the live backup's rather than over them: the row
+     * action, the destructive confirm and the two words it must never say, the press, the
+     * refusals, the run rows, and the bar that maps the server's own restore vocabulary.
+     */
+
+    /** The Restore action is offered only on a pair both of whose halves are whole. */
+    public function test_a_whole_pair_row_carries_the_restore_action_and_a_broken_one_does_not(): void
+    {
+        $this->writePair();
+
+        $this->assertTrue(
+            str_contains((string) $this->get('/settings/backups')->getContent(), "openRestoreDialog('20261014-203857'"),
+            'the whole pair names the moment a restore can be opened on',
+        );
+
+        unlink($this->folder.DIRECTORY_SEPARATOR.'papyrus-20261014-203857.sqlite');
+
+        $this->assertFalse(
+            str_contains((string) $this->get('/settings/backups')->getContent(), "openRestoreDialog('20261014-203857'"),
+            'an incomplete pair is not offered a restore',
+        );
+    }
+
+    /**
+     * The confirm names what the pair holds against what the app holds now, and names the
+     * manga half's unreadable state when its file cannot be read, rather than inventing it.
+     */
+    public function test_the_confirm_names_both_sides_of_the_exchange(): void
+    {
+        $this->writePair();
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRestoreDialog', '20261014-203857')
+            ->assertSee('What goes over what is there now')
+            ->assertSee('The pair holds')
+            ->assertSee('867 series and 21447 chapters')
+            ->assertSee('The app holds now')
+            ->assertSee('0 series and 0 chapters')
+            ->assertSee('The manga half could not be read');
+    }
+
+    /**
+     * Every confirm number is read from the pair's own manifest and its own files, so the
+     * confirm can be opened with Suwayomi unreachable and still read whole: no count in it
+     * is ever the server's, and the vocabulary caution the feature was built under says the
+     * server's own totalManga counts a wider set the pair does not name.
+     */
+    public function test_the_confirm_reads_nothing_from_the_servers_counters(): void
+    {
+        $this->writePair();
+
+        Http::fake(function (): never {
+            throw new RuntimeException('A confirm must not ask the server for any number in it.');
+        });
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRestoreDialog', '20261014-203857')
+            ->assertSee('867 series and 21447 chapters');
+    }
+
+    /**
+     * The two claims the confirm must never carry: that it restarts anything, and that the
+     * app's own pre restore state survives. The first is a word for processes and nothing
+     * here stops; the second is contradicted in the confirm's first sentence, which is why
+     * that sentence is asserted too.
+     */
+    public function test_the_confirm_never_promises_a_restart_and_says_what_it_replaces(): void
+    {
+        $this->writePair();
+
+        $html = (string) Livewire::test('pages::settings.backups')
+            ->call('openRestoreDialog', '20261014-203857')
+            ->html();
+
+        $this->assertTrue(stripos($html, 'restart') === false, 'no word of restarting anything');
+        $this->assertTrue(stripos($html, 'reboot') === false, 'no word of rebooting anything');
+        $this->assertStringContainsString('whatever the app holds that this pair does not carry is gone from the reader side', $html);
+    }
+
+    /** The press dispatches the restore for the pair the confirm was opened on. */
+    public function test_a_restore_press_dispatches_the_job_for_the_open_pair(): void
+    {
+        $user = auth()->user();
+        Bus::fake([RunLiveRestore::class]);
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRestoreDialog', '20261014-203857')
+            ->call('restore');
+
+        Bus::assertDispatched(function (RunLiveRestore $job) use ($user): bool {
+            return $job->userId === $user->id && $job->token === '20261014-203857';
+        });
+    }
+
+    /**
+     * Two restores swapping the same live database is the one thing this feature must never
+     * do, so a second press waits behind the running row and dispatches nothing.
+     */
+    public function test_a_second_restore_press_is_refused_while_a_run_says_it_is_running(): void
+    {
+        $this->writePair();
+        $this->writeRestoreRun();
+        Bus::fake([RunLiveRestore::class]);
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRestoreDialog', '20261014-203857')
+            ->call('restore');
+
+        Bus::assertNotDispatched(RunLiveRestore::class);
+    }
+
+    /**
+     * The bar reads the server's own restore vocabulary: its state name in its own words,
+     * its own counts, and the percent a reader acts on out of those counts.
+     */
+    public function test_the_bar_maps_the_servers_actual_restore(): void
+    {
+        $this->writeRestoreRun();
+        $this->fakeSuwayomiWithStatus('RESTORING_MANGA', 4, 8);
+
+        $this->get('/settings/backups')
+            ->assertSee('The server says: restoring series')
+            ->assertSee('4 of 8')
+            ->assertSee('aria-valuenow="50"', false);
+    }
+
+    /** A state name this app does not know is carried as the name it is, not a meaning invented for it. */
+    public function test_a_server_state_this_app_does_not_know_keeps_its_own_name(): void
+    {
+        $this->writeRestoreRun();
+        $this->fakeSuwayomiWithStatus('RESTORING_SOMETHING_NEW', 1, 8);
+
+        $this->get('/settings/backups')->assertSee('The server says: RESTORING_SOMETHING_NEW');
+    }
+
+    /**
+     * A run row going without the server's word is waiting, not failure.
+     *
+     * The measured answer of a server process whose restore has not named itself yet is
+     * `restoreStatus` answered null, and the page's sentence for it names the waiting rather
+     * than borrowing a failure word for it.
+     */
+    public function test_a_run_going_without_the_servers_word_says_so(): void
+    {
+        $this->writeRestoreRun();
+        $this->fakeSuwayomiWithStatus(null);
+
+        $this->get('/settings/backups')
+            ->assertSee('The server has not said anything yet')
+            ->assertSee('A restore is running')
+            ->assertDontSee('The server says:');
+    }
+
+    /** The run rows read in the restore's own words, finished and refused alike. */
+    public function test_the_restore_run_rows_carried_their_own_sentences(): void
+    {
+        $this->writeRestoreRun();
+
+        $this->get('/settings/backups')->assertSee('A restore is running');
+
+        LiveRestoreRun::query()->first()->update([
+            'state' => LiveRestoreRun::COMPLETE,
+            'token' => '20261014-203857',
+            'progress_note' => '7 series states and 21,447 chapter states put back from the pair, and the server restored its manga half',
+        ]);
+
+        $this->get('/settings/backups')
+            ->assertSee('7 series states and 21,447 chapter states put back from the pair')
+            ->assertDontSee('A restore is running');
+
+        LiveRestoreRun::query()->first()->update([
+            'state' => LiveRestoreRun::REFUSED,
+            'refusal_reason' => 'The pair\'s reader half does not hold what its manifest says.',
+        ]);
+
+        $this->get('/settings/backups')
+            ->assertSee('does not hold what its manifest says')
+            ->assertSee('Refused');
+    }
+
+    /** A restore run whose worker died reads as stopped, the backup card's own standing shape. */
+    public function test_a_restore_run_that_went_silent_reads_as_stopped(): void
+    {
+        $this->writeRestoreRun(stale: true);
+
+        $this->get('/settings/backups')
+            ->assertSee('This restore stopped without finishing')
+            ->assertDontSee('A restore is running');
+    }
+
+    /**
+     * The restore card's poll gate mirrors the backup card's.
+     *
+     * With nothing pressed and nothing running the page is quiet and says so in its own
+     * sentence; from the press until a run row exists the gap is polled and named as queued;
+     * a running run keeps being watched; a settled one does not.
+     */
+    public function test_the_restore_card_polls_only_while_a_run_is_owed(): void
+    {
+        Bus::fake([RunLiveRestore::class]);
+
+        $page = Livewire::test('pages::settings.backups');
+
+        $this->assertStringNotContainsString('wire:poll.3s', (string) $page->html(), 'with nothing pressed and nothing running the page is quiet');
+        $this->assertStringContainsString('Nothing has been put back from here yet', (string) $page->html());
+
+        $page = Livewire::test('pages::settings.backups')->set('restorePolling', true);
+
+        $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'the gap between the press and the row is watched');
+        $this->assertStringContainsString('Queued. The run below will appear in a moment.', (string) $page->html());
+
+        $this->writeRestoreRun();
+
+        $page = Livewire::test('pages::settings.backups')->set('restorePolling', true);
+
+        $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'a running restore is being watched');
+
+        LiveRestoreRun::query()->first()->update(['state' => LiveRestoreRun::REFUSED, 'refusal_reason' => 'refused for the shape of a return']);
+
+        $page = Livewire::test('pages::settings.backups')->set('restorePolling', true);
+
+        $this->assertStringNotContainsString('wire:poll.3s', (string) $page->html(), 'a settled restore is not still watched');
+    }
+
+    // -------------------------------------------------------------------------------------------
+
     /**
      * A live backup run row, as the job writes one.
      *
@@ -477,6 +706,68 @@ class BackupsPageTest extends TestCase
             return $unreachable
                 ? Http::response([], 503)
                 : Http::response(['data' => []]);
+        });
+    }
+
+    /**
+     * A live restore run row, as the job writes one, beside `writeLiveRun()`.
+     *
+     * The default is a running row carrying the job's own first stage note, because that is
+     * what a restore pressed a moment ago looks like on this page the moment a test needs it.
+     * `stale` ages the row past the page's silence threshold, `writeLiveRun()`'s own shape:
+     * `updated_at` is not fillable on the model, so the row is aged after it is written,
+     * straight onto the column the abandonment check reads.
+     */
+    private function writeRestoreRun(string $state = LiveRestoreRun::RUNNING, bool $stale = false): void
+    {
+        $run = LiveRestoreRun::create(array_filter([
+            'token' => $state === LiveRestoreRun::COMPLETE ? '20261014-203857' : null,
+            'state' => $state,
+            'progress_note' => match ($state) {
+                LiveRestoreRun::RUNNING => 'Starting the restore',
+                LiveRestoreRun::COMPLETE => '7 series states and 21,447 chapter states put back from the pair, and the server restored its manga half',
+                default => null,
+            },
+            'refusal_reason' => match ($state) {
+                LiveRestoreRun::REFUSED => 'The pair\'s reader half does not hold what its manifest says.',
+                default => null,
+            },
+            'series_states' => $state === LiveRestoreRun::COMPLETE ? 7 : null,
+            'chapter_states' => $state === LiveRestoreRun::COMPLETE ? 21447 : null,
+            'started_at' => now(),
+        ], static fn (mixed $value): bool => $value !== null));
+
+        if ($stale) {
+            $run->forceFill(['updated_at' => now()->subSeconds(320)])->save();
+        }
+    }
+
+    /**
+     * What Suwayomi answers about its own restore while a page test is open.
+     *
+     * The login first, `fakeSuwayomi()`'s own shape, because the page asks for its token before
+     * it asks what the server says. A null state stands for the measured answer of a server
+     * process whose restore has never named itself: `restoreStatus` answered null.
+     */
+    private function fakeSuwayomiWithStatus(?string $state, int $progress = 0, int $total = 0): void
+    {
+        Http::fake(function (Request $request) use ($state, $progress, $total) {
+            if (str_contains((string) $request->body(), 'mutation Login')) {
+                return Http::response(['data' => ['login' => [
+                    'accessToken' => $this->accessToken(),
+                    'refreshToken' => $this->refreshToken(),
+                ]]]);
+            }
+
+            if (str_contains((string) $request->body(), 'restoreStatus')) {
+                return Http::response(['data' => ['restoreStatus' => $state === null ? null : [
+                    'state' => $state,
+                    'mangaProgress' => $progress,
+                    'totalManga' => $total,
+                ]]]);
+            }
+
+            return Http::response(['data' => []]);
         });
     }
 

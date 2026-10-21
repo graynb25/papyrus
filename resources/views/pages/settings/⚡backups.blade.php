@@ -1,9 +1,18 @@
 <?php
 
 use App\Backup\BackupLibrary;
+use App\Backup\BackupSummary;
+use Papyrus\Launcher\BackupPair;
+use App\Import\ImportRefused;
+use App\Import\Tachibk\TachibkReader;
 use App\Jobs\RunLiveBackup;
+use App\Jobs\RunLiveRestore;
 use App\Models\LiveBackupRun;
+use App\Models\LiveRestoreRun;
+use App\Suwayomi\BackupGateway;
+use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -198,7 +207,7 @@ new #[Title('Backups')] class extends Component {
      * behind it, and there is no longer a process whose word anyone could ask. The page treats
      * silence as the end of the run rather than repeating a claim that is no longer true.
      */
-    public function runIsAbandoned(LiveBackupRun $run): bool
+    public function runIsAbandoned(LiveBackupRun|LiveRestoreRun $run): bool
     {
         return $run->isRunning()
             && $run->updated_at->diffInSeconds(now()) > self::STUCK_SECONDS;
@@ -277,12 +286,274 @@ new #[Title('Backups')] class extends Component {
             default => (string) $run->state,
         };
     }
+
+    /*
+     * ## The restore side
+     *
+     * A pair row gains a Restore action once both halves are there and match their
+     * manifest, and a press runs the way a live backup does: a queued job writing the row
+     * a reader polls, both halves through their own doors, nothing stopped. The confirm
+     * quotes the pair's own manifest and its own files, and never the server's own
+     * counters: those count what the server's library cache carries, which is a different
+     * number from what the pair holds, and the difference is the lie the confirm exists
+     * not to tell.
+     */
+
+    /** The pair token a restore confirm is open on, null until one is. */
+    public ?string $restoreToken = null;
+
+    public bool $restoreDialogOpen = false;
+
+    /**
+     * Whether to keep watching after a Restore press, the live backup press's own shape.
+     */
+    public bool $restorePolling = false;
+
+    public function openRestoreDialog(string $token): void
+    {
+        $this->restoreToken = $token;
+
+        $this->restoreDialogOpen = true;
+
+        $this->dispatch('open-put-back-now');
+    }
+
+    public function restoreDialogClosed(): void
+    {
+        $this->restoreDialogOpen = false;
+    }
+
+    /** The pair a confirm is open on, its manifest read through the one reader of that format. */
+    #[Computed]
+    public function restorePair(): ?BackupPair
+    {
+        if ($this->restoreToken === null) {
+            return null;
+        }
+
+        $library = $this->backups();
+        $manifest = $library->directory().DIRECTORY_SEPARATOR.'backup-'.$this->restoreToken.'.json';
+
+        try {
+            return BackupPair::read($manifest, $library->directory());
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * The destructive diff the confirm is pressed against: what the pair holds against
+     * what the app holds now.
+     *
+     * Every number here names its own source: the pair's reader half from the manifest
+     * both halves were written under, the pair's manga half from the file itself read
+     * through the same reader the run verifies with, and the live half from the
+     * app's own tables. The manga half is read only while the dialog is open, the same
+     * courtesy the downloads size asks Suwayomi for, so reading this page costs nothing.
+     *
+     * @return array{pair: array{series: int, chapters: int}, live: array{series: int, chapters: int}, manga: array<string, int|string|null>, mangaProblem: string|null, takenAt: string, version: string}|null
+     */
+    #[Computed]
+    public function restoreDiff(): ?array
+    {
+        if (! $this->restoreDialogOpen) {
+            return null;
+        }
+
+        $pair = $this->restorePair();
+
+        if ($pair === null) {
+            return null;
+        }
+
+        $manga = null;
+        $mangaProblem = null;
+
+        try {
+            $manga = (new TachibkReader)->read($pair->pathOf('suwayomi'))->summary();
+        } catch (ImportRefused $refusal) {
+            /*
+             * Its message, not ours, the shape the pair listing already carries: the
+             * format reader owns what a file that is not a backup is, and a second
+             * sentence about it would be a second opinion.
+             */
+            $mangaProblem = $refusal->getMessage();
+        }
+
+        return [
+            'pair' => ['series' => $pair->seriesStates, 'chapters' => $pair->chapterStates],
+            'live' => [
+                'series' => (int) DB::table('series_states')->count(),
+                'chapters' => (int) DB::table('chapter_states')->count(),
+            ],
+            'manga' => $manga ?? [],
+            'mangaProblem' => $mangaProblem,
+            'takenAt' => $pair->takenAt,
+            'version' => $pair->suwayomiVersion,
+        ];
+    }
+
+    public function restore(): void
+    {
+        $run = $this->activeRestoreRun();
+
+        if ($run !== null && $run->isRunning() && ! $this->runIsAbandoned($run)) {
+            Flux::toast(
+                text: __('A restore is already going. Wait for it to finish: two runs swapping the same live database is the one thing this feature must never do.'),
+                heading: __('Already running'),
+                variant: 'danger',
+            );
+
+            return;
+        }
+
+        if ($this->restoreToken === null) {
+            return;
+        }
+
+        RunLiveRestore::dispatch(
+            userId: (int) auth()->id(),
+            token: $this->restoreToken,
+        );
+
+        Flux::toast(
+            text: __('Restore started. The run below names each half as it lands, and the pair on disk is only ever read.'),
+            heading: __('Started'),
+            variant: 'success',
+        );
+
+        $this->reset('restoreToken', 'restoreDialogOpen');
+
+        $this->restorePolling = true;
+
+        $this->dispatch('close-put-back-now');
+    }
+
+    /**
+     * The latest restore run, the shape {@see activeRun()} reads for the backup side.
+     */
+    #[Computed]
+    public function activeRestoreRun(): ?LiveRestoreRun
+    {
+        return LiveRestoreRun::query()->latest('id')->first();
+    }
+
+    /** @return \Illuminate\Support\Collection<int, LiveRestoreRun> */
+    #[Computed]
+    public function restoreRuns(): \Illuminate\Support\Collection
+    {
+        return LiveRestoreRun::query()->latest('id')->limit(20)->get();
+    }
+
+    /** Whether the restore side should be asked what is happening, the same shape as shouldPoll(). */
+    public function shouldPollRestore(): bool
+    {
+        if (! $this->restorePolling) {
+            return false;
+        }
+
+        $run = $this->activeRestoreRun();
+
+        if ($run === null) {
+            return true;
+        }
+
+        return $run->isRunning() && ! $this->runIsAbandoned($run);
+    }
+
+    /**
+     * What the server reports its own restore doing, while one is in flight.
+     *
+     * Answered only while a run row still claims to be running, so a finished run costs
+     * the server nothing. Unreachable is named as unreachable rather than swallowed: the
+     * row completes itself whatever the bar shows.
+     *
+     * @return array{unreachable: bool, status: array{state: string, mangaProgress: int, totalManga: int}|null}|null
+     */
+    #[Computed]
+    public function restoreServerStatus(): ?array
+    {
+        $run = $this->activeRestoreRun();
+
+        if ($run === null || ! $run->isRunning() || $this->runIsAbandoned($run)) {
+            return null;
+        }
+
+        try {
+            $status = app(BackupGateway::class)->restoreStatus();
+        } catch (SuwayomiException) {
+            return ['unreachable' => true, 'status' => null];
+        }
+
+        return ['unreachable' => false, 'status' => $status];
+    }
+
+    /**
+     * The server's own restore states, in this app's words, with an unknown name carried
+     * as the name it is rather than a meaning invented for it.
+     */
+    public function restoreStateWords(string $state): string
+    {
+        return match ($state) {
+            'IDLE' => __('waiting to start'),
+            'RESTORING_META' => __('reading the backup'),
+            'RESTORING_CATEGORIES' => __('restoring categories'),
+            'RESTORING_MANGA' => __('restoring series'),
+            'RESTORING_SETTINGS' => __('restoring settings'),
+            'SUCCESS' => __('finished'),
+            'FAILURE' => __('failed'),
+            default => $state,
+        };
+    }
+
+    /**
+     * What a restore run is saying, in its own sentences.
+     */
+    public function restoreRunSummary(LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => __('This restore stopped without finishing. The pair on disk is untouched, because its files are only ever read.'),
+            $run->state === LiveRestoreRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
+            $run->state === LiveRestoreRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
+            $run->state === LiveRestoreRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
+            $run->state === LiveRestoreRun::COMPLETE => (string) ($run->progress_note ?? __('The pair is back.')),
+            default => (string) $run->state,
+        };
+    }
+
+    /** The badge colours, the backup side's own mapping in the restore's words. */
+    public function restoreBadgeColour(LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => 'orange',
+            $run->state === LiveRestoreRun::COMPLETE => 'green',
+            $run->state === LiveRestoreRun::RUNNING => 'blue',
+            $run->state === LiveRestoreRun::FAILED => 'red',
+            $run->state === LiveRestoreRun::REFUSED => 'orange',
+            default => 'zinc',
+        };
+    }
+
+    /** What a restore run's state says to a reader, one word, the backup listing's words. */
+    public function restoreStateLabel(LiveRestoreRun $run): string
+    {
+        return match (true) {
+            $this->runIsAbandoned($run) => __('Stopped'),
+            $run->state === LiveRestoreRun::COMPLETE => __('Finished'),
+            $run->state === LiveRestoreRun::RUNNING => __('Running'),
+            $run->state === LiveRestoreRun::FAILED => __('Stopped'),
+            $run->state === LiveRestoreRun::REFUSED => __('Refused'),
+            default => (string) $run->state,
+        };
+    }
 }; ?>
 
 <section
     class="w-full"
     x-on:open-back-up-now.window="$dispatch('modal-show', { name: 'back-up-now' })"
     x-on:close-back-up-now.window="$dispatch('modal-close', { name: 'back-up-now' })"
+    x-on:open-put-back-now.window="$dispatch('modal-show', { name: 'put-back-now' })"
+    x-on:close-put-back-now.window="$dispatch('modal-close', { name: 'put-back-now' })"
 >
     @include('partials.settings-heading')
 
@@ -401,6 +672,7 @@ new #[Title('Backups')] class extends Component {
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('What it holds') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Size') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Files') }}</th>
+                            <th scope="col" class="px-3 py-2 font-medium">{{ __('Restore') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
@@ -430,6 +702,19 @@ new #[Title('Backups')] class extends Component {
                                     @else
                                         <span class="text-red-700 dark:text-red-300">{{ __('Incomplete') }}</span>
                                     @endif
+                                </td>
+                                <td class="px-3 py-2">
+                                    @if ($pair->complete && $pair->intact)
+                                        <flux:button
+                                            size="sm"
+                                            icon="arrow-path"
+                                            wire:click="openRestoreDialog('{{ $pair->token }}')"
+                                            wire:target="openRestoreDialog('{{ $pair->token }}')"
+                                        >
+                                            {{ __('Restore') }}
+                                        </flux:button>
+                                    @endif
+                                    {{-- The Files cell beside this one names why the button is not here. --}}
                                 </td>
                             </tr>
                         @endforeach
@@ -548,6 +833,119 @@ new #[Title('Backups')] class extends Component {
         </flux:card>
 
         {{--
+            The restore card.
+
+            The launcher's restore does its work on a stopped install, which is why its button
+            lives in a terminal. The in-app restore takes the other bargain: both halves go back
+            while the app keeps running, which makes a restore something a reader can press
+            casually. So the button sits only on the rows whose pair is whole, the confirm is the
+            heaviest on this page, and this card keeps the run rows and the server's own reading
+            of its restore, the state vocabulary the manga server itself reports while the pair
+            goes back: IDLE, RESTORING_META, RESTORING_CATEGORIES, RESTORING_MANGA,
+            RESTORING_SETTINGS, then SUCCESS or FAILURE.
+        --}}
+        <flux:card class="mb-6 space-y-4 p-4">
+            <div @if ($this->shouldPollRestore()) wire:poll.3s @endif>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <flux:heading level="3" class="text-base">{{ __('Putting one back, without stopping anything') }}</flux:heading>
+
+                    @php($restoring = $this->activeRestoreRun())
+
+                    @if ($restoring !== null && $restoring->isRunning() && ! $this->runIsAbandoned($restoring))
+                        <flux:badge size="sm" color="blue" icon="loading">
+                            {{ __('A restore is running') }}
+                        </flux:badge>
+                    @endif
+                </div>
+
+                <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ __('A restore replaces what the app holds with what the pair holds. The manga half goes to Suwayomi through its own import while it keeps running, and the reader half is swapped in one brief pass on this machine. Nothing is stopped, nothing is sent anywhere, and closing this page while a restore runs changes nothing.') }}
+                </p>
+
+                {{--
+                    What the server itself says, while a run row still claims to be running.
+
+                    A null status is not a lie the page has to cover for: on a server process that
+                    has never restored, the answer is null until its first restore names itself,
+                    so this reads as waiting rather than as failure. The counts are the server's
+                    own vocabulary, the manga entries its file carries, which is a wider count
+                    than the pair's series, so the bar is the server's reading of its work and
+                    never passed off as the pair's.
+                --}}
+                @php($listening = $this->restoreServerStatus())
+
+                @if ($listening !== null && ($listening['unreachable'] || $listening['status'] === null))
+                    <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        @if ($listening['unreachable'])
+                            {{ __('The server cannot be reached to say what its restore is doing. The run below owns the truth either way.') }}
+                        @else
+                            {{ __('The server has not said anything yet. It names each stage as it happens, and the run below carries the truth with it.') }}
+                        @endif
+                    </p>
+                @elseif ($listening !== null)
+                    @php($said = $listening['status'])
+                    @php($held = $said['state'] === 'RESTORING_MANGA' && $said['totalManga'] > 0)
+                    @php($pct = $held ? min(100, (int) round($said['mangaProgress'] * 100 / $said['totalManga'])) : null)
+
+                    <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('The server says: :state', ['state' => $this->restoreStateWords($said['state'])]) }}
+
+                        @if ($held)
+                            <span class="ml-1">{{ $said['mangaProgress'] }} of {{ $said['totalManga'] }}</span>
+                        @endif
+                    </p>
+
+                    @if ($pct !== null)
+                        <div
+                            class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="{{ $pct }}"
+                        >
+                            <div class="h-full rounded-full bg-blue-500 transition-all" style="width: {{ $pct }}%"></div>
+                        </div>
+                    @endif
+                @endif
+
+                {{-- The runs, newest first, the backup card's rows in the restore's words. --}}
+                <div class="mt-4 space-y-3">
+                    @if ($this->restoreRuns()->isEmpty())
+                        <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                            @if ($this->restorePolling)
+                                {{ __('Queued. The run below will appear in a moment.') }}
+                            @else
+                                {{ __('Nothing has been put back from here yet.') }}
+                            @endif
+                        </p>
+                    @else
+                        @foreach ($this->restoreRuns() as $run)
+                            <div class="border-t border-zinc-200 pt-3 first:border-0 first:pt-0 dark:border-white/10">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="truncate text-sm font-medium">
+                                        {{ $run->token !== null ? $run->token : __('being put back now') }}
+                                    </span>
+
+                                    <flux:badge size="sm" :color="$this->restoreBadgeColour($run)">
+                                        {{ $this->restoreStateLabel($run) }}
+                                    </flux:badge>
+                                </div>
+
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ $this->restoreRunSummary($run) }}
+                                </p>
+
+                                <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                                    {{ __('Started :when.', ['when' => $run->started_at->diffForHumans()]) }}
+                                </p>
+                            </div>
+                        @endforeach
+                    @endif
+                </div>
+            </div>
+        </flux:card>
+
+        {{--
             The press dialog.
 
             Opened through openDialog rather than a trigger, because the size row the reader
@@ -609,6 +1007,103 @@ new #[Title('Backups')] class extends Component {
                 >
                     {{ __('Take the backup') }}
                 </flux:button>
+            </div>
+        </flux:modal>
+
+        {{--
+            The restore confirm, and the two claims it must never make.
+
+            The heaviest confirm on this page, because the launcher's own restore asks the same
+            question with a stopped install between the reader's press and the work, while this
+            one asks it over what the app holds right now. Two claims it must never carry: that
+            it "restarts" anything, a word for processes, and nothing here stops, and that what
+            was there before is kept, because this restore replaces what the app holds with what
+            the pair holds. Every number is read from the pair's own reader shape and its
+            manifest, never from the server's totalManga, which counts the manga entries a
+            backup file gathers, a wider set than the pair names. The manga file is read only
+            while the dialog is open, the same courtesy the backup dialog's size asks Suwayomi for.
+        --}}
+        <flux:modal name="put-back-now" class="max-w-md" @close="restoreDialogClosed">
+            <div class="flex items-start gap-4">
+                <span
+                    class="mt-0.5 flex size-10 flex-none items-center justify-center rounded-xl bg-vermilion-600/10 text-vermilion-600 dark:bg-vermilion-500/15 dark:text-vermilion-400"
+                    aria-hidden="true"
+                >
+                    <flux:icon name="exclamation-triangle" class="size-5" />
+                </span>
+
+                <div class="min-w-0">
+                    <flux:heading size="lg">
+                        {{ __('What goes over what is there now') }}
+                    </flux:heading>
+
+                    @if ($this->restoreDialogOpen && ($putting = $this->restoreDiff()) !== null)
+                        <flux:subheading class="mt-1">
+                            {{ __('The pair is put back over everything the app holds now, and whatever the app holds that this pair does not carry is gone from the reader side. The pair on disk is only ever read.') }}
+                        </flux:subheading>
+
+                        <div class="mt-4 space-y-1.5 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                            <p class="flex justify-between gap-4">
+                                <span class="font-medium">{{ __('The pair') }}</span>
+
+                                <span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ $this->restoreToken }}</span>
+                            </p>
+
+                            <p class="flex justify-between gap-4">
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('The pair holds') }}</span>
+
+                                <span>{{ __(':series series and :chapters chapters', ['series' => $putting['pair']['series'], 'chapters' => $putting['pair']['chapters']]) }}</span>
+                            </p>
+
+                            <p class="flex justify-between gap-4">
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('The app holds now') }}</span>
+
+                                <span>{{ __(':series series and :chapters chapters', ['series' => $putting['live']['series'], 'chapters' => $putting['live']['chapters']]) }}</span>
+                            </p>
+
+                            @if ($putting['mangaProblem'] !== null)
+                                <p class="text-red-700 dark:text-red-300">
+                                    {{ __('The manga half could not be read: :words', ['words' => $putting['mangaProblem']]) }}
+                                </p>
+                            @elseif (isset($putting['manga']['library_series']))
+                                <p class="flex justify-between gap-4">
+                                    <span class="text-zinc-500 dark:text-zinc-400">{{ __('The manga file carries') }}</span>
+
+                                    <span>{{ __(':series series, :chapters chapters, :read read', ['series' => $putting['manga']['library_series'], 'chapters' => $putting['manga']['chapters'], 'read' => $putting['manga']['chapters_read']]) }}</span>
+                                </p>
+                            @endif
+                        </div>
+
+                        <flux:subheading class="mt-4">
+                            {{ __('Nothing is put back until this is confirmed, and Never mind leaves everything as it is.') }}
+                        </flux:subheading>
+
+                        <div class="mt-7 flex justify-end gap-2">
+                            <flux:modal.close>
+                                <flux:button variant="filled">{{ __('Never mind') }}</flux:button>
+                            </flux:modal.close>
+
+                            <flux:button
+                                variant="primary"
+                                wire:click="restore"
+                                wire:target="restore"
+                                wire:loading.attr="disabled"
+                            >
+                                {{ __('Put it back') }}
+                            </flux:button>
+                        </div>
+                    @elseif ($this->restoreDialogOpen)
+                        <flux:subheading class="mt-1">
+                            {{ __('The pair this confirm was opened on cannot be read anymore: its manifest is gone or disagrees with its own files. Nothing is being offered for this pair.') }}
+                        </flux:subheading>
+
+                        <div class="mt-7 flex justify-end gap-2">
+                            <flux:modal.close>
+                                <flux:button variant="filled">{{ __('Never mind') }}</flux:button>
+                            </flux:modal.close>
+                        </div>
+                    @endif
+                </div>
             </div>
         </flux:modal>
     </x-pages::settings.layout>
