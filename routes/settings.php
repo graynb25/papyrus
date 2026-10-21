@@ -70,6 +70,24 @@ Route::middleware(['auth'])->group(function () {
 
     Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');
     Route::livewire('settings/licences', 'pages::settings.licences')->name('licences.edit');
+
+    /*
+     * The same questions the public FAQ page answers, inside the app.
+     *
+     * The public page stays public and stays where it is. A reader who has just run an
+     * application from an unknown download is, by definition, not signed in yet, and that page
+     * is the one somebody else can be sent to. But the Settings navlist's FAQ item pointed at
+     * it, so a reader who opened Settings to ask a question was thrown out of the app shell to
+     * read it and had to find their way back afterwards. This route is the in-shell seat of
+     * the same list.
+     *
+     * The list is in one place, `App\Support\Faq`, and the markup is in one component, so the
+     * two pages cannot answer different questions. Behind plain `auth` and not `verified`,
+     * beside `about` and for the same reason: it reads nothing about the reader, it is prose,
+     * and a reader who has just signed up and cannot yet receive a mail is exactly the one
+     * most likely to be reading what the app does with their library.
+     */
+    Route::livewire('settings/faq', 'pages::settings.faq')->name('settings.faq');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

@@ -80,12 +80,26 @@ class FaqTest extends TestCase
         $this->get(route('login'))->assertOk()->assertSee('faq', escape: false);
     }
 
+    /**
+     * The settings page offers it as well, and now at a seat inside the app.
+     *
+     * The public page is still public and still there. The Settings navlist's item used to point
+     * at it, which threw the reader out of the app shell to read a paragraph, so the item points
+     * at the in-shell route now. **The assertion is an exact href rather than a path, because
+     * "/settings/faq" contains "/faq"** and a substring check would pass for the wrong reason,
+     * which is the F16 family: a check that cannot fail is not a check.
+     */
     public function test_settings_offers_it_as_well(): void
     {
-        $this->actingAs(User::factory()->create())
-            ->get(route('profile.edit'))
-            ->assertOk()
-            ->assertSee(route('faq'), escape: false);
+        $response = $this->actingAs(User::factory()->create())
+            ->get(route('profile.edit'));
+
+        $response->assertOk();
+
+        $content = (string) $response->getContent();
+
+        $this->assertStringContainsString('href="'.route('settings.faq').'"', $content);
+        $this->assertStringNotContainsString('href="'.route('faq').'"', $content);
     }
 
     // The privacy claim --------------------------------------------------
@@ -425,4 +439,72 @@ class FaqTest extends TestCase
     }
 
     // The same questions, inside the app --------------------------------
+
+    /**
+     * The in-shell seat of the same list.
+     *
+     * The Settings navlist's FAQ item used to point at the public page, which sits on the
+     * marketing layout, so answering a question meant leaving the app. The list is in one place
+     * and the markup is in one component, so the two pages cannot answer different questions.
+     */
+    public function test_the_questions_are_reachable_inside_the_app(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get(route('settings.faq'))
+            ->assertOk()
+            ->assertSee('Does anything leave my computer?')
+            ->assertSee('How do I make a backup?');
+    }
+
+    /**
+     * The in-shell seat is behind the login, because the app is.
+     *
+     * The public page is the one that answers for a reader who has not signed in yet, and this
+     * one answers for a reader who has.
+     */
+    public function test_the_in_shell_questions_are_not_public(): void
+    {
+        $this->get(route('settings.faq'))
+            ->assertRedirect(route('login'));
+    }
+
+    /**
+     * The public page is still the public page for a reader who is signed in.
+     *
+     * Deliberately not redirected: it is the page somebody else can be sent to, and a redirect
+     * would remove it from the reader who can reach it most easily.
+     */
+    public function test_the_public_page_still_renders_for_a_signed_in_reader(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get(route('faq'))
+            ->assertOk()
+            ->assertSee('Does anything leave my computer?');
+    }
+
+    /**
+     * The two pages render one list.
+     *
+     * The count is the check, because a page that answered a different set of questions on the
+     * other side of the shell would still pass every assertion above.
+     */
+    public function test_both_pages_answer_the_same_questions(): void
+    {
+        $reader = User::factory()->create();
+
+        $public = (string) $this->actingAs($reader)->get(route('faq'))->getContent();
+        $inside = (string) $this->actingAs($reader)->get(route('settings.faq'))->getContent();
+
+        $this->assertSame(
+            $this->faq()->totalCount(),
+            substr_count($public, '<details'),
+            'the public page renders every question, one disclosure each',
+        );
+
+        $this->assertSame(
+            substr_count($public, '<details'),
+            substr_count($inside, '<details'),
+            'the two pages render one list, so they cannot answer different questions',
+        );
+    }
 }

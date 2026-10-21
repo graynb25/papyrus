@@ -11,10 +11,12 @@
                  the bottom rather than among the things you set up. --}}
             <flux:navlist.item :href="route('backups.edit')" wire:navigate>{{ __('Backups') }}</flux:navlist.item>
     <flux:navlist.item :href="route('about.edit')" wire:navigate>{{ __('About') }}</flux:navlist.item>
-              {{-- Points out of Settings rather than into it, because /faq is public and a reader
-                   should be able to reach it from either side. Listed with the read-only pages
-                   because it changes nothing about the reader's account or their library. --}}
-              <flux:navlist.item :href="route('faq')" wire:navigate>{{ __('FAQ') }}</flux:navlist.item>
+              {{-- Stays inside the app, because answering a question should not throw the reader
+                   out of it. The public FAQ page is still there and is still public, for a reader
+                   who has not signed in yet and for somebody else to be sent to; this is the same
+                   list at a seat the reader can stay in. Listed with the read-only pages because
+                   it changes nothing about the reader's account or their library. --}}
+              <flux:navlist.item :href="route('settings.faq')" wire:navigate>{{ __('FAQ') }}</flux:navlist.item>
               <flux:navlist.item :href="route('licences.edit')" wire:navigate>{{ __('Licences') }}</flux:navlist.item>
         </flux:navlist>
     </div>
