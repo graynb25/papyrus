@@ -268,9 +268,17 @@ final class TachibkSchema
      * Whether the reader had the chapter as a bookmark. Declared, deliberately not written.
      *
      * The import landed bookmarks in the ledger only, and this file cannot be the place to
-     * write the first ones: the sample could not distinguish an inner field 12 flag from a
-     * bookmark flag, so what Suwayomi's own writer puts where is not measured yet, and a
-     * bookmark written to the wrong field looks exactly like nothing.
+     * write the first ones. The number is not a guess: the pinned jar's own writer says
+     * field 5 is `bookmark` and field 4 is `read` (read out of
+     * `suwayomi/tachidesk/manga/impl/backup/proto/models/BackupChapter` in
+     * `Suwayomi-Server-v2.4.2366.jar`, whose serializer holds each field's number in its
+     * constant pool). What the sample alone could not tell apart was field 12, which that
+     * same paperwork calls `version` and which therefore was never a bookmark.
+     *
+     * So the number is known and the field is still not written, for the reason that has
+     * always stood: a bookmark written to a field the receiving reader does not read
+     * looks exactly like no bookmark at all, and a reader who believes their bookmarks
+     * travelled when they did not is worse off than one who is told they did not.
      */
     public const CHAPTER_BOOKMARK = 5;
 }

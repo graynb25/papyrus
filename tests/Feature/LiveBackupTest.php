@@ -370,6 +370,53 @@ class LiveBackupTest extends TestCase
         }
     }
 
+    /**
+     * A server whose own library holds nothing is named as what it is.
+     *
+     * Measured against a live v2.4.2366 with an empty library: the server answers with a
+     * real backup of 352 bytes whose payload carries one category record and no series
+     * record at all. The reader's gate refuses that file, and it is right to, but the
+     * refusal's words have to name the cause: the server answered, and what it answered
+     * was a library with nothing in it. Refusing it as "not a Mihon or Suwayomi backup"
+     * would tell the reader their manga server is broken when it is answering fine.
+     */
+    public function test_a_server_with_an_empty_library_is_refused_in_words_that_name_it(): void
+    {
+        $this->withoutSeries = true;
+        $this->withCategories = true;
+
+        $directory = BackupLibrary::forThisInstall()->directory();
+
+        try {
+            app(LiveBackup::class)->run(false);
+            $this->fail('The run took a pair whose manga half held no series at all.');
+        } catch (SuwayomiException $e) {
+            $this->assertStringContainsString('a real backup of a library that holds nothing', $e->getMessage());
+            $this->assertStringContainsString('no series at all', $e->getMessage());
+        }
+
+        $this->assertSame([], (array) glob($directory.DIRECTORY_SEPARATOR.'backup-*.json'), 'a refused run names no pair');
+        $this->assertSame([], (array) glob($directory.DIRECTORY_SEPARATOR.'suwayomi-*.tachibk'), 'a refused run renames no half');
+        $this->assertFileDoesNotExist($directory.DIRECTORY_SEPARATOR.'staging', 'a refused run cleans staging whole');
+    }
+
+    /**
+     * A file that is not the measured empty library shape is still refused as a broken
+     * file, so the new wording cannot become a catch-all for anything unreadable.
+     */
+    public function test_a_manga_half_that_is_not_a_backup_at_all_is_still_refused_as_one(): void
+    {
+        $this->gzipButNotProtobuf = true;
+
+        try {
+            app(LiveBackup::class)->run(false);
+            $this->fail('The run took a pair whose manga half was not a backup at all.');
+        } catch (SuwayomiException $e) {
+            $this->assertStringContainsString('does not read as a Mihon or Suwayomi backup', $e->getMessage());
+            $this->assertStringNotContainsString('a real backup of a library that holds nothing', $e->getMessage());
+        }
+    }
+
     /** The private compare, invoked through the same reflection template HealthTest uses. */
     private function verify(string $target): void
     {

@@ -6842,3 +6842,115 @@ exactly that moment and it costs five minutes.
     red run: its summary counted 5,889 assertions against a green baseline of 5,905, because a
     failing test stops counting its own asserts, so a red run's counts do not compare to a green
     baseline at all.
+
+324. **An empty PHP array is a JSON list, and a GraphQL input object is not a list.**
+
+    Measured 2026-10-21 against a live Suwayomi v2.4.2366 on both seats.
+    `BackupGateway::createBackup()` sent `['input' => ['flags' => $flags]]` with its own
+    default `$flags = []`, and an empty PHP array json-encodes as `[]`, a JSON list, which
+    the server refuses before the resolver ever runs:
+
+    ```
+    Variable 'input' has an invalid value: Expected type 'Map' but was 'ArrayList'.
+    Variables for input objects must be an instance of type 'Map'.
+    ```
+
+    The same call with `flags` as an empty **object** (`{}`), with no `flags` key at all,
+    and with every flag a boolean all answer with a url. So the in-app backup's manga
+    half and the in-app outward export, both of which call `createBackup()` with no
+    flags, could not ask a real server for anything, and every one of them would have
+    been refused by any real server, every time. The unit suites did not see it because
+    `BackupGatewayTest`'s fake answers `mutation CreateBackup` without ever reading the
+    variables. The fix is a cast, `(object) $flags`, and the test that keeps it honest
+    reads the recorded request's body and refuses a `"flags":[]` on it. The general
+    shape: **a fake that answers a request without reading it is a fake that cannot see
+    a malformed request**, and the wire shape of a GraphQL variable is part of the
+    request.
+
+325. **A server whose library holds nothing writes a real backup, and a reader must be
+    told that rather than told their server is broken.**
+
+    Measured 2026-10-21 against a live v2.4.2366 whose library was empty: its own
+    fresh export is 352 bytes, gzip magic `1f8b0800`, and its payload holds exactly one
+    category record (field 2, name `Default`, no order) and one Suwayomi-only field
+    9001, and **zero** series records. `TachibkReader::recognises()` refuses that file,
+    and it is right to: its gate is narrow on purpose, so a CBZ is never read as a
+    backup. But the refusal's words ("not a Mihon or Suwayomi backup") are true of the
+    bytes and wrong about the cause, because the server answered with a genuine backup
+    of an empty library. The app turned that into a `SuwayomiException` saying the
+    download "does not read as a Mihon or Suwayomi backup", which told a reader their
+    manga server was broken when it was answering fine. `TachibkFile` now reads the
+    file's own top level fields so the refusal can name which of the two it is, and the
+    file is not read as a library at all. The general shape: **a refusal that is true of
+    the bytes and wrong about the cause teaches the reader the wrong thing**, which is
+    the same lesson F26 filed for a fresh install that could not read a source.
+
+326. **A `.tachibk` carries the server's library and nothing else, and the reader's own
+    arrangement can only ride on what the file names.**
+
+    Measured 2026-10-21 against a live v2.4.2366 holding 2,834 manga rows of which 5
+    were in library: the server's own fresh export carried exactly those **5** series
+    records and no others. The 2,829 rows it held were the source's browse cache, and a
+    backup is a backup of the library. So an export whose basis is the server's file can
+    carry a shelf order only for a series the file already names, and a series the
+    reader has state for but the server does not hold in its library has no record for
+    that order to attach to. This is the same design the reader half already lives
+    with: `ReadingState`'s own docblock says the server is single-tenant, so every
+    authenticated request resolves to `Admin(1)` and its "library" belongs to whoever
+    logged in last, and the app therefore owns library membership in its own
+    `series_states` table and never writes the server's library flag. **The consequence
+    is that the arrangement travels only over the series the server's library holds,
+    and a round trip that measures the arrangement has to measure it over that set.**
+
+327. **A series' shelf order is field 17, a shelf record's order is field 2, and a
+    duplicate order discards a shelf rather than merging two.**
+
+    Measured 2026-10-21, first by reading the pinned jar's own writer
+    (`Suwayomi-Server-v2.4.2366.jar`, whose `suwayomi.tachidesk.manga.impl.backup.proto.models`
+    serializers hold each field's number in their constant pool, read with `javap -v`),
+    and then by importing files into a live v2.4.2366 and reading the receiving
+    reader's own pills back. The jar's own numbers: `Backup.backupManga` 1,
+    `backupCategories` 2, `backupSources` 101; `BackupManga.source` 1, `url` 2, `title` 3,
+    `chapters` 16, **`categories` 17**, `history` 104, `lastModifiedAt` 106;
+    `BackupCategory.name` 1, **`order` 2**, `flags` 100, `uid` 602; `BackupChapter.url` 1,
+    `name` 2, `scanlator` 3, **`read` 4**, **`bookmark` 5**, `chapterNumber` 9,
+    `sourceOrder` 10. **All twenty-four of the repository's own `TachibkSchema`
+    constants match the jar's own numbers digit for digit, and zero differ.** The
+    measured behaviour on the receiving side: a file whose shelf records carry orders 10
+    and 20 and whose series carry the order 10 put **all five** of its series on the
+    shelf whose record carried 10; **two shelf records carrying the SAME order leave the
+    earlier one empty and give the members to the later one**, so the orders must be
+    unique across the file; a series pointing at an order no shelf record carries is
+    **dropped**, which is the only forward rule a format can have; and a shelf record
+    with **no order field at all** is the order 0 shelf, which a series pointing at 0
+    lands on. A chapter's read flag round trips too: a file with one chapter marked read
+    under field 4 produced a read chapter on the receiving reader. The general shape:
+    **the format's paperwork is in the writer's own jar, and reading it settles the
+    questions a sample alone cannot**, because the sample can show a field's bytes but
+    not what the writer meant by them.
+
+328. **A pointer at a scratch copy is not a pointer at the live database, and the
+    ledger's own history is the only witness to what it held.**
+
+    Measured 2026-10-21, and paid for. A probe pointed the app at a scratch copy of the
+    checkout's own `database/database.sqlite` with `config()` and `DB::purge()`, and
+    ran the real `.tmb` import against it. The import's own bookkeeping (the run row,
+    the ledger's stamps, the shelf landing) went to the scratch copy, correctly. The
+    reader half's rows went to the **checkout's own file**, because `SeriesWriter` writes
+    through Laravel's own connection and the connection pool had an open handle on it:
+    521 extra series states and 12,718 extra chapter states, and an import run left
+    `running` at 900 of 1,277. Two repairs were then needed and the second one is the
+    lesson. The first deleted the import run, and the ledger's `imported_series.import_run_id`
+    carries **`on delete CASCADE`**, so the **920** ledger rows that pointed at it went
+    with it and the ledger fell from 1,277 rows to 357. The second put those rows back
+    and then could not tell which of the restored server ids the import had added and
+    which the standing ledger had earned, **because the import had overwritten the
+    ledger's own record of what those rows carried before it ran**. The repair that
+    worked used a witness that predates the damage: the pair this phase's own backup
+    had taken twenty minutes earlier, whose reader half was measured to carry all
+    fifteen standing numbers. The general shape: **a destructive flow against a live
+    database needs the database's prior state kept, and the way to keep it is the
+    repository's own backup**, because the file's own history is overwritten by the very
+    thing the restore is undoing. And a cascading foreign key is a delete that takes
+    more than it names: `on delete CASCADE` on a run row takes the ledger with it.
+

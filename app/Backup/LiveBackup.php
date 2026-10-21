@@ -4,6 +4,7 @@ namespace App\Backup;
 
 use App\Import\BackupReader;
 use App\Import\ImportRefused;
+use App\Import\Tachibk\TachibkFile;
 use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
 use App\Support\Versions;
@@ -357,6 +358,18 @@ final class LiveBackup
      * gate, so an export that is not the Mihon format is refused in this reader's own words,
      * and what survives answers its real summary: series, chapters, read chapters, categories.
      *
+     * ## The empty library is named as what it is
+     *
+     * A server whose own library holds nothing still writes a real backup, and that
+     * file carries no series record, so the reader's gate refuses it. Measured against
+     * a live v2.4.2366 with an empty library: 352 bytes, one category record, one
+     * Suwayomi-only field 9001, zero series records. Refusing that as "not a Mihon or
+     * Suwayomi backup" would be true of the bytes and wrong about the cause, because
+     * the server answered with a genuine backup of an empty library, and the reader
+     * would be told their manga server has nothing rather than that the server
+     * answered. {@see TachibkFile} reads the file's own top level fields, so the
+     * refusal can name which of the two it is.
+     *
      * @return array<string, int|string|null>
      *
      * @throws SuwayomiException
@@ -377,8 +390,7 @@ final class LiveBackup
             $summary = (new TachibkReader)->read($target)->summary();
         } catch (ImportRefused $e) {
             throw new SuwayomiException(
-                'The downloaded manga half does not read as a Mihon or Suwayomi backup, so it '
-                .'cannot be one half of a pair: '.$e->getMessage(),
+                $this->whyTheMangaHalfIsUnreadable($target).' '.$e->getMessage(),
                 FailureKind::Unavailable,
                 previous: $e,
             );
@@ -393,6 +405,31 @@ final class LiveBackup
         ));
 
         return $summary;
+    }
+
+    /**
+     * Why the staged manga half could not be read, in the words the cause deserves.
+     *
+     * Two causes, and they are not the same thing to a reader. A file the server wrote
+     * for a library that holds nothing is a real backup of an empty library, and the
+     * reader needs to know that their manga server answered with nothing rather than
+     * that something went wrong. A file that is not that shape is a genuine failure and
+     * says so.
+     *
+     * The read is on the staged file, before anything is renamed, so a refusal here
+     * leaves no half in the backups folder.
+     */
+    private function whyTheMangaHalfIsUnreadable(string $target): string
+    {
+        if (TachibkFile::isAnEmptyLibraryBackup($target)) {
+            return 'The downloaded manga half is a real backup of a library that holds nothing: '
+                .'the server answered with a file that carries its own shelves and no series at all, '
+                .'so there is no manga half to pair with the reader half. The run was refused with '
+                .'nothing taken.';
+        }
+
+        return 'The downloaded manga half does not read as a Mihon or Suwayomi backup, so it '
+            .'cannot be one half of a pair:';
     }
 
     /**

@@ -58,6 +58,34 @@ class BackupGatewayTest extends TestCase
         });
     }
 
+    /**
+     * The empty flags are an object on the wire, and this is the test that says so.
+     *
+     * Measured against a live v2.4.2366 on both seats: `{"input":{"flags":[]}}` is
+     * refused before the resolver ever runs, with `Variable 'input' has an invalid
+     * value: Expected type 'Map' but was 'ArrayList'.` An empty PHP array
+     * json-encodes as a list, so the gateway's own default could not ask a real server
+     * for anything, and every caller of it would have been refused by any real server,
+     * every time.
+     *
+     * The assertion reads the recorded request's body rather than trusting the call,
+     * because a fake that answers the mutation without reading the variables is
+     * exactly what let this through in the first place.
+     */
+    public function test_the_empty_flags_travel_as_an_object_and_not_as_a_list(): void
+    {
+        Http::fake($this->fake());
+
+        $this->gateway()->createBackup();
+
+        Http::assertSent(function (Request $request): bool {
+            $body = (string) $request->body();
+
+            return str_contains($body, '"flags":{}')
+                && ! str_contains($body, '"flags":[]');
+        });
+    }
+
     public function test_a_mutation_answer_without_a_url_refuses_loudly(): void
     {
         Http::fake(function (Request $request) {

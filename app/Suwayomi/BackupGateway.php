@@ -77,6 +77,18 @@ class BackupGateway
     /**
      * Ask Suwayomi to write its own fresh backup, and answer the path to fetch it from.
      *
+     * ## The empty flags are an object, not a list
+     *
+     * The flags ride the mutation as a GraphQL input object, and an empty PHP array
+     * json-encodes as `[]`, a JSON list, which the server refuses before the resolver
+     * ever runs: measured against a live v2.4.2366 on both seats, `{"input":{"flags":[]}}`
+     * answers `Variable 'input' has an invalid value: Expected type 'Map' but was
+     * 'ArrayList'.` The same call with `flags` as an empty object, or with no flags
+     * key at all, answers with a url. The cast is therefore the shape of the call
+     * itself, not a tidy-up: without it this method cannot ask a real server for
+     * anything, and every caller of it (the in-app backup's manga half and the
+     * outward export) would be refused by any real server, every time.
+     *
      * @param  array<string, bool>  $flags
      * @return string The root-relative path to download.
      *
@@ -88,7 +100,7 @@ class BackupGateway
             mutation CreateBackup($input: CreateBackupInput!) {
                 createBackup(input: $input) { url }
             }
-            GQL, ['input' => ['flags' => $flags]]);
+            GQL, ['input' => ['flags' => (object) $flags]]);
 
         $url = $data['createBackup']['url'] ?? null;
 
