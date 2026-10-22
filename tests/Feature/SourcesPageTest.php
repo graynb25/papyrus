@@ -143,11 +143,16 @@ class SourcesPageTest extends TestCase
      * @param  array<int, array<string, mixed>>  $nodes
      */
     /**
-     * The nodes the fake will serve, honouring an `isInstalled` filter.
+     * The nodes the fake will serve, honouring the `isInstalled` and `lang` filters.
      *
      * The real server filters server-side, and the drift notice asks for the installed ones
      * only. A fake that ignored the filter would hand the notice every uninstalled extension
      * in the catalogue and it would accuse the reader of missing sources they never added.
+     *
+     * The language filter is honoured the same way and for the same reason: the whole
+     * claim of the language selector is that the list it shows is the list the server
+     * would send, and a fake that ignored the filter would let a page that sends the
+     * wrong filter look exactly like one that sends the right one.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -165,22 +170,39 @@ class SourcesPageTest extends TestCase
          */
         $variables = $this->requestVariables($request);
 
+        $installed = null;
+        $languagesOut = [];
+
         foreach ($variables['filter']['and'] ?? [] as $clause) {
             $field = $clause['isInstalled'] ?? null;
 
-            if (! is_array($field)) {
+            if (is_array($field)) {
+                $installed = (bool) ($field['equalTo'] ?? false);
+
                 continue;
             }
 
-            $wanted = (bool) ($field['equalTo'] ?? false);
+            $lang = $clause['lang'] ?? null;
 
-            return array_values(array_filter(
-                $this->nodes,
-                fn (array $n): bool => (bool) ($n['isInstalled'] ?? false) === $wanted,
-            ));
+            if (is_array($lang) && is_array($lang['notIn'] ?? null)) {
+                $languagesOut = $lang['notIn'];
+            }
         }
 
-        return $this->nodes;
+        return array_values(array_filter(
+            $this->nodes,
+            function (array $n) use ($installed, $languagesOut): bool {
+                if ($installed !== null && (bool) ($n['isInstalled'] ?? false) !== $installed) {
+                    return false;
+                }
+
+                if ($languagesOut !== [] && in_array((string) ($n['lang'] ?? ''), $languagesOut, true)) {
+                    return false;
+                }
+
+                return true;
+            },
+        ));
     }
 
     /**
@@ -460,14 +482,14 @@ class SourcesPageTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function extension(string $pkg, string $name, bool $installed, bool $trusted): array
+    private function extension(string $pkg, string $name, bool $installed, bool $trusted, string $lang = 'en'): array
     {
         return [
             'pkgName' => $pkg,
             'name' => $name,
             'versionName' => '1.2.3',
             'contentWarning' => 'SAFE',
-            'lang' => 'en',
+            'lang' => $lang,
             'isInstalled' => $installed,
             'hasUpdate' => false,
             'isObsolete' => false,
@@ -1942,6 +1964,201 @@ class SourcesPageTest extends TestCase
             ->assertSee('pinned by you')
             ->call('unpinSite', 'example.test')
             ->assertDontSee('pinned by you');
+    }
+
+    // The language selector --------------------------------------------------
+
+    /**
+     * The catalogue the language tests read, one language per extension.
+     *
+     * Two of each language, so a pill's count is a number and not a one, and
+     * the names carry the language so an assertion about the list can tell
+     * one extension from another.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function languageNodes(): array
+    {
+        return [
+            $this->extension('eu.kanade.tachiyomi.extension.en.one', 'English One', false, true, 'en'),
+            $this->extension('eu.kanade.tachiyomi.extension.en.two', 'English Two', false, true, 'en'),
+            $this->extension('eu.kanade.tachiyomi.extension.ja.one', 'Japanese One', false, true, 'ja'),
+            $this->extension('eu.kanade.tachiyomi.extension.ja.two', 'Japanese Two', false, true, 'ja'),
+            $this->extension('eu.kanade.tachiyomi.extension.fr.one', 'French One', false, true, 'fr'),
+            $this->extension('eu.kanade.tachiyomi.extension.fr.two', 'French Two', false, true, 'fr'),
+        ];
+    }
+
+    /**
+     * The pills name every language the catalogue holds, and say how many
+     * sources are in each.
+     *
+     * The count is the number of extensions carrying that language under the
+     * filters the reader can see, and it is what makes the row worth reading:
+     * a language with two sources in it and a language with three hundred are
+     * not the same thing to a reader deciding where to look.
+     */
+    public function test_the_language_pills_name_every_language_the_catalogue_holds(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('English, 2 sources')
+            ->assertSee('Japanese, 2 sources')
+            ->assertSee('French, 2 sources');
+    }
+
+    /**
+     * The pill says the language by name and not by its code.
+     *
+     * The code is the catalogue's own and it stays on the pill's title, but
+     * the name is what a reader thinks in, and the map that names language
+     * codes is the one place in this repository that knows them. The code
+     * chosen here is one whose name and code say different things, because
+     * "English" and "en" would pass even with the two swapped.
+     */
+    public function test_the_language_pill_says_the_language_by_name(): void
+    {
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.pt.br.one', 'Brazil One', false, true, 'pt-BR'),
+        ]);
+
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('Portuguese (Brazil)')
+            ->assertDontSee('>pt-BR<', false);
+    }
+
+    /**
+     * Switching a language off leaves its sources out of the list.
+     *
+     * The claim is the owner's: "uncheck a language and its sources leave the
+     * installable list, check it and they return". The list below the pills
+     * is the list the server sends, so the fake has to honour the filter for
+     * this to mean anything, and it does.
+     */
+    public function test_switching_a_language_off_leaves_its_sources_out_of_the_list(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('French One')
+            ->call('toggleLanguage', 'fr')
+            ->assertDontSee('French One')
+            ->assertSee('English One')
+            ->assertSet('lang', ['fr']);
+    }
+
+    /**
+     * Switching it back on puts them back.
+     */
+    public function test_switching_a_language_back_on_puts_its_sources_back(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->call('toggleLanguage', 'fr')
+            ->assertDontSee('French One')
+            ->call('toggleLanguage', 'fr')
+            ->assertSee('French One')
+            ->assertSet('lang', []);
+    }
+
+    /**
+     * The choice survives a reload.
+     *
+     * The reader came back to the page and the language they had switched off
+     * is still switched off. The state is in the URL, the same way the
+     * catalogue's slice and the content filter are, and this is the test that
+     * says so rather than leaving it to the reader to find out.
+     */
+    public function test_the_language_choice_survives_a_reload(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        Livewire::withQueryParams(['view' => 'available', 'lang' => ['fr']])
+            ->test('pages::sources')
+            ->assertSet('lang', ['fr'])
+            ->assertDontSee('French One')
+            ->assertSee('English One');
+    }
+
+    /**
+     * The filter reaches the server, in the shape the server understands.
+     *
+     * The whole claim of the selector is that the list it shows is the list
+     * the server would send, and the server's own field for a language is a
+     * `notIn`, so that is what goes over the wire. A page that narrowed its
+     * own fifty rows would look the same on screen and be a different thing.
+     */
+    public function test_the_language_filter_is_sent_to_the_server(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')->call('toggleLanguage', 'fr');
+
+        Http::assertSent(function (Request $request): bool {
+            $query = $request->data()['query'] ?? '';
+            $variables = (array) ($request->data()['variables'] ?? []);
+
+            if (! str_contains($query, 'extensions(')) {
+                return false;
+            }
+
+            $and = $variables['filter']['and'] ?? [];
+
+            return in_array(['lang' => ['notIn' => ['fr']]], $and, true);
+        });
+    }
+
+    /**
+     * The count under the list and the list itself read the same number.
+     *
+     * The page's count comes from the server's own `totalCount` over the same
+     * filter the rows came from, so a reader who switches a language off sees
+     * the count move with the rows rather than sit at the old number.
+     */
+    public function test_the_count_line_reads_the_same_number_as_the_list(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('6 extensions')
+            ->call('toggleLanguage', 'fr')
+            ->assertSee('4 extensions');
+    }
+
+    /**
+     * "Show none" and "Show every language" are the two ends of the row.
+     *
+     * Switching twenty-two languages off one at a time is twenty-two round
+     * trips and twenty-two renders of a list of a thousand rows, and a reader
+     * who reads two languages should not pay for that. Both ends are one
+     * press, and the list reads as empty when every language is left out,
+     * which is what "none" means.
+     */
+    public function test_showing_no_language_leaves_the_list_empty_and_showing_every_language_puts_it_back(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->call('showNoLanguage')
+            ->assertSet('lang', ['en', 'fr', 'ja'])
+            ->assertDontSee('English One')
+            ->assertSee('0 extensions')
+            ->assertSee('Every language is switched off')
+            ->call('showEveryLanguage')
+            ->assertSet('lang', [])
+            ->assertSee('English One')
+            ->assertSee('6 extensions');
     }
 
     /**

@@ -20,9 +20,19 @@ final class LanguageName
      * source's pseudo-language. Keys match Suwayomi's casing (`zh-Hant`, not
      * `zh-hant`), and the lookup is case sensitive because the fallback covers
      * whatever casing this map misses.
+     *
+     * The first three are not languages at all: they are the codes Keiyoushi
+     * and Suwayomi use for the three cases where a source publishes in every
+     * language, in no particular language, or from a local folder. They were
+     * read off the live catalogue on 2026-10-21, where 56 extensions carry
+     * `all` and one carries `other`, and they are named here rather than left
+     * to fall through to the raw code, because a row of language pills that
+     * says "all" next to "English" reads as a label rather than as a language.
      */
     private const MAP = [
         'localsourcelang' => 'Local files',
+        'all' => 'All languages',
+        'other' => 'Other',
 
         'en' => 'English',
         'ja' => 'Japanese',

@@ -4,6 +4,7 @@ use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
 use App\Models\UserSource;
+use App\Support\LanguageName;
 use App\Support\Library;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
@@ -34,6 +35,34 @@ new #[Title('Sources')] class extends Component
      */
     #[Url(as: 'content', except: '')]
     public array $content = [Source::SAFE, Source::MIXED];
+
+    /**
+     * The languages the reader has switched off.
+     *
+     * ## Why the list is what is left out and not what is wanted
+     *
+     * The catalogue the Keiyoushi store ships is one extension per language,
+     * and it held 1,443 of them across 24 languages on 2026-10-21, so a reader
+     * who reads two languages is looking at twenty-two they have no use for.
+     *
+     * An allow list would have to name every language it wanted, which means
+     * the URL carries the whole catalogue's worth of codes and the filter has
+     * to be rewritten every time the catalogue grows one. A list of what is
+     * left out carries one code for the one language a reader does not want,
+     * and the default (nothing left out) is the page as it was before.
+     *
+     * It is also the only shape in which "no language at all" can be said.
+     * An allow list of nothing and an absent filter are the same empty array,
+     * and only one of them can mean "nothing".
+     *
+     * The codes are the catalogue's own, with its own casing, because the
+     * server's match is case sensitive: `notIn ["pt-BR"]` takes the available
+     * set from 1,055 to 976 and `notIn ["pt-br"]` takes it to 1,055.
+     *
+     * @var array<int, string>
+     */
+    #[Url(as: 'lang', except: '')]
+    public array $lang = [];
 
     public string $name = '';
 
@@ -123,6 +152,21 @@ new #[Title('Sources')] class extends Component
         $this->content = $this->view === 'installed'
             ? []
             : ($this->content !== [] ? $this->content : [Source::SAFE, Source::MIXED]);
+
+        /*
+         * The languages left out, cleaned of anything that is not a code.
+         *
+         * A URL can carry `?lang[]=` with nothing after it, and Laravel reads
+         * that as a list holding one empty string. Left alone it would reach
+         * the server as `notIn [""]`, which matches no extension and would
+         * empty the list for a reason the reader never gave. A code that is
+         * not a code is not a language, so it is dropped here rather than
+         * sent.
+         */
+        $this->lang = array_values(array_filter(
+            $this->lang,
+            fn ($code): bool => is_string($code) && trim($code) !== '',
+        ));
     }
 
     public function updatedView(): void
@@ -1228,6 +1272,110 @@ new #[Title('Sources')] class extends Component
     }
 
     /**
+     * The languages the catalogue holds, with how many sources each one has.
+     *
+     * ## Why this asks the server again rather than reading the page's own rows
+     *
+     * Because the page's rows are one page of fifty out of a thousand, and a
+     * language whose sources all sit on page nine would not be on the row of
+     * pills at all. A reader who has switched a language off and then wants it
+     * back has to be able to find it, and it has to be there before they
+     * switch it off in the first place.
+     *
+     * The count is the number of sources in that language under the filters
+     * the reader can see, so a pill reads "English 317" and the reader knows
+     * what turning it on would give them. The language filter itself is left
+     * out of the ask, so the pills do not disappear as the reader switches
+     * them off.
+     *
+     * The name is the catalogue's own code read through the one map that
+     * names language codes, so a pill says "Portuguese (Brazil)" rather than
+     * "pt-BR" and the raw code is still on it for anyone who wants to match it
+     * against the package name.
+     *
+     * @return array<int, array{code: string, name: string, count: int, on: bool}>
+     */
+    #[Computed]
+    public function catalogueLanguages(): array
+    {
+        try {
+            $languages = app(ExtensionManager::class)->extensionLanguages($this->filtersWithoutLanguage());
+        } catch (SuwayomiException) {
+            // A language list that cannot be read is an empty list, not a page
+            // that answers 500. The catalogue below it is still readable, and
+            // a reader who cannot switch a language off is not worse off than
+            // a reader whose server is down.
+            return [];
+        }
+
+        return array_map(fn (array $language): array => [
+            'code' => $language['code'],
+            'name' => LanguageName::name($language['code']),
+            'count' => $language['count'],
+            'on' => ! in_array($language['code'], $this->lang, true),
+        ], $languages);
+    }
+
+    /**
+     * Switch one language off, or back on.
+     *
+     * The one place the choice is made, so the pill and the filter cannot
+     * disagree: the pill asks for a language, and the filter is built from
+     * the same list the pill reads.
+     */
+    public function toggleLanguage(string $code): void
+    {
+        $code = trim($code);
+
+        if ($code === '') {
+            return;
+        }
+
+        $this->lang = in_array($code, $this->lang, true)
+            ? array_values(array_diff($this->lang, [$code]))
+            : [...$this->lang, $code];
+
+        $this->reset(['page', 'selected']);
+    }
+
+    /**
+     * Put every language back.
+     *
+     * The way back from a reader who has switched off more than they meant
+     * to, and the way to a list of every language again.
+     */
+    public function showEveryLanguage(): void
+    {
+        $this->lang = [];
+
+        $this->reset(['page', 'selected']);
+    }
+
+    /**
+     * Leave every language out.
+     *
+     * Not a flourish: it is how a reader who reads two languages gets to
+     * those two. Switching twenty-two languages off one at a time is
+     * twenty-two round trips to the server and twenty-two renders of a list
+     * of a thousand rows, and the reader who wants English and nothing else
+     * should not pay for it.
+     *
+     * The languages of the view the reader is on are added to the ones they
+     * had already left out, and not swapped for them, because a reader who
+     * left Japanese out on the Available tab and then came to the Installed
+     * tab did not change their mind about Japanese.
+     */
+    public function showNoLanguage(): void
+    {
+        $this->lang = array_values(array_unique([
+            ...$this->lang,
+            ...array_map(fn (array $language): string => $language['code'], $this->catalogueLanguages),
+        ]));
+
+        $this->reset(['page', 'selected']);
+    }
+
+    /**
      * Whether this extension's publisher has been trusted by this user.
      *
      * Used for the lock icon. The refusal itself is enforced in the action, so
@@ -1365,6 +1513,29 @@ new #[Title('Sources')] class extends Component
         if ($this->content !== []) {
             $filters['content'] = $this->content;
         }
+
+        if ($this->lang !== []) {
+            $filters['lang'] = $this->lang;
+        }
+
+        return $filters;
+    }
+
+    /**
+     * The same filters, without the reader's language choice.
+     *
+     * For the one thing that has to answer without it: which languages there
+     * are. A list of pills that was asked for the languages still in the
+     * result would lose a language the moment the reader switched it off, and
+     * a language that cannot be seen cannot be switched back on.
+     *
+     * @return array<string, mixed>
+     */
+    private function filtersWithoutLanguage(): array
+    {
+        $filters = $this->filters();
+
+        unset($filters['lang']);
 
         return $filters;
     }
@@ -2043,6 +2214,99 @@ new #[Title('Sources')] class extends Component
         @endif
 
         {{--
+            The language selector.
+
+            The owner's ask, 2026-10-19: "add to the UI/UX pass the option to
+            select the installable sources by language. Since some sources have
+            other languages, it would be good if in the source it could show a
+            flag or a language pill, that you can check and uncheck for the
+            language source you want to use."
+
+            A row of pills under the Content filter, which is the shape the
+            owner chose when the seat was put to them, and the shape the Content
+            filter already is: one control, every value visible at once, and
+            nothing hidden behind a dropdown.
+
+            A pill says the language and how many sources are in it, because a
+            language with three sources in it and a language with three hundred
+            are not the same thing to a reader deciding where to look. The
+            count is the number under the filters the reader can see, so it
+            answers "what does turning this on give me".
+
+            The pill carries the catalogue's own code as its title, because the
+            code is what the package name carries and a reader matching a
+            source they know by hand needs the code, not the name of the
+            language.
+
+            "Show none" is not a flourish. Switching twenty-two languages off
+            one at a time is twenty-two round trips and twenty-two renders of a
+            list of a thousand rows, and a reader who reads two languages
+            should not pay that. Switching every language off is one press, and
+            switching one back on is a second.
+        --}}
+        @if ($view !== 'migrate' && $this->catalogueLanguages !== [])
+            @php($stillOn = array_values(array_diff(array_column($this->catalogueLanguages, 'code'), $this->lang)))
+
+            <div class="flex flex-wrap items-center gap-3">
+                <flux:label>{{ __('Language') }}</flux:label>
+
+                {{--
+                    A wrapping row of pills rather than a button group.
+
+                    A Flux button group is one row by design: it welds its
+                    buttons into a single strip, which is right for four tabs
+                    and wrong for twenty-three languages. The Content filter
+                    above already solved this shape with a wrapping flex row,
+                    and this is the same answer.
+                --}}
+                <div class="flex flex-wrap items-center gap-2">
+                    @foreach ($this->catalogueLanguages as $language)
+                        <flux:button
+                            size="sm"
+                            :variant="$language['on'] ? 'outline' : 'ghost'"
+                            class="rounded-full!"
+                            wire:click="toggleLanguage({{ Illuminate\Support\Js::from($language['code'])->toHtml() }})"
+                            aria-pressed="{{ $language['on'] ? 'true' : 'false' }}"
+                            title="{{ $language['code'] }}"
+                            aria-label="{{ trans_choice(
+                                ':language, :count source|:language, :count sources',
+                                $language['count'],
+                                [
+                                    'language' => $language['name'],
+                                    'count' => Number::format($language['count']),
+                                ],
+                            ) }}"
+                        >
+                            <span @class(['line-through' => ! $language['on']])>{{ $language['name'] }}</span>
+
+                            <span class="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
+                                {{ Number::format($language['count']) }}
+                            </span>
+                        </flux:button>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('Switch a language off to leave its sources out of the list. The choice stays when you come back.') }}
+                </span>
+
+                @if ($stillOn !== [])
+                    <flux:button size="sm" variant="ghost" wire:click="showNoLanguage">
+                        {{ __('Show none') }}
+                    </flux:button>
+                @endif
+
+                @if ($this->lang !== [])
+                    <flux:button size="sm" variant="ghost" wire:click="showEveryLanguage">
+                        {{ __('Show every language') }}
+                    </flux:button>
+                @endif
+            </div>
+        @endif
+
+        {{--
             Every extension in a store inherits that store's trust, so with one
             untrusted store this page is 999 rows of lock icons. The gate stays,
             but the way past it has to be obvious, so it is named here rather than
@@ -2137,6 +2401,9 @@ new #[Title('Sources')] class extends Component
                     {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
                 @elseif ($view === 'updates')
                     {{ __('Nothing to update. Every installed extension is on the version its store ships.') }}
+                @elseif ($this->lang !== [])
+                    {{-- The reader's own choice, named as their own choice. --}}
+                    {{ __('Every language is switched off, so there is nothing to list. Switch one on, or put them all back.') }}
                 @else
                     {{ __('Nothing matches. Try a shorter name or widen the content filter.') }}
                 @endif
@@ -2170,7 +2437,24 @@ new #[Title('Sources')] class extends Component
                                     <span class="font-medium">{{ $extension['name'] }}</span>
 
                                     @if (($extension['lang'] ?? null) !== null)
-                                        <flux:badge size="sm" color="zinc">{{ $extension['lang'] }}</flux:badge>
+                                        {{--
+                                            The language, named rather than coded.
+
+                                            The code is the catalogue's own and it is
+                                            what the package name carries, so it
+                                            stays on the badge's title for anyone
+                                            matching a source they know by hand.
+                                            The name is what a reader thinks in, and
+                                            the selector above says the same thing
+                                            for the same language, so the two
+                                            cannot be read as two different
+                                            languages.
+                                        --}}
+                                        <flux:badge
+                                            size="sm"
+                                            color="zinc"
+                                            title="{{ $extension['lang'] }}"
+                                        >{{ LanguageName::name((string) $extension['lang']) }}</flux:badge>
                                     @endif
 
                                     @if (($extension['contentWarning'] ?? null) === Source::NSFW)

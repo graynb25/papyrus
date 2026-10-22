@@ -176,6 +176,92 @@ class ExtensionManagerTest extends TestCase
         );
     }
 
+    /**
+     * The languages left out travel as the server's own `notIn`.
+     *
+     * The key is the list of what the reader does not want, so the wire shape
+     * is a `notIn` and not an `in`. Measured against the live server on
+     * 2026-10-21: `notIn ["pt-BR"]` on the available set takes it from
+     * 1,055 to 976, and `notIn ["pt-br"]` takes it to 1,055, so the case of
+     * the code is the catalogue's own.
+     */
+    public function test_the_languages_left_out_travel_as_the_servers_own_not_in(): void
+    {
+        $this->fakeSuwayomi();
+
+        app(ExtensionManager::class)->extensions(['lang' => ['fr', 'pt-BR']]);
+
+        $this->assertContains(
+            ['lang' => ['notIn' => ['fr', 'pt-BR']]],
+            $this->lastFilter()['and'],
+        );
+    }
+
+    /**
+     * No languages left out is no language filter at all.
+     */
+    public function test_no_language_left_out_sends_no_language_filter(): void
+    {
+        $this->fakeSuwayomi();
+
+        app(ExtensionManager::class)->extensions(['lang' => []]);
+
+        $this->assertNotContains(
+            ['lang' => ['notIn' => []]],
+            $this->lastFilter()['and'],
+        );
+    }
+
+    /**
+     * The language scan counts what it reads, biggest language first.
+     *
+     * Suwayomi has no group-by, so the only way to learn which languages
+     * there are is to read the language of every extension that matches and
+     * count them here. The order is the size order, so the row of pills puts
+     * the language a reader is most likely to want first, and the code
+     * breaks a tie so two languages of the same size never swap places.
+     */
+    public function test_the_language_scan_counts_each_language_and_orders_them_by_size(): void
+    {
+        $this->fakeSuwayomi(overrides: ['catch' => function (string $query): bool {
+            return str_contains($query, 'query Languages');
+        }, 'respond' => ['data' => ['extensions' => ['nodes' => [
+            ['lang' => 'en'],
+            ['lang' => 'ja'],
+            ['lang' => 'en'],
+            ['lang' => 'fr'],
+            ['lang' => 'ja'],
+            ['lang' => 'en'],
+        ]]]]]);
+
+        $languages = app(ExtensionManager::class)->extensionLanguages();
+
+        $this->assertSame([
+            ['code' => 'en', 'count' => 3],
+            ['code' => 'ja', 'count' => 2],
+            ['code' => 'fr', 'count' => 1],
+        ], $languages);
+    }
+
+    /**
+     * The scan asks for the language and nothing else.
+     *
+     * A thousand rows of package names and icons are a thousand rows the
+     * server did not need to send, and the scan is the one request on the
+     * page that reads the whole catalogue.
+     */
+    public function test_the_language_scan_asks_for_the_language_and_nothing_else(): void
+    {
+        $this->fakeSuwayomi();
+
+        app(ExtensionManager::class)->extensionLanguages();
+
+        $query = end($this->sent)['query'];
+
+        $this->assertStringContainsString('nodes { lang }', $query);
+        $this->assertStringNotContainsString('pkgName', $query);
+    }
+
     public function test_adding_a_store_mirrors_it_into_our_own_table(): void
     {
         $this->fakeSuwayomi();

@@ -25,6 +25,17 @@ use Illuminate\Support\Collection;
  */
 class ExtensionManager
 {
+    /**
+     * How many rows the language scan reads.
+     *
+     * The catalogue held 1,443 extensions on 2026-10-21, and the available
+     * set 1,055, so this is roughly three times the largest measured. It is a
+     * bound and not a page size: the scan counts what it reads, and a
+     * catalogue past the bound would be counted short rather than counted
+     * wrong.
+     */
+    public const LANGUAGE_SCAN_LIMIT = 5000;
+
     public function __construct(
         private readonly Gateway $gateway,
     ) {}
@@ -32,7 +43,7 @@ class ExtensionManager
     /**
      * List extensions, narrowed by Suwayomi rather than in PHP.
      *
-     * @param  array{installed?: bool|null, has_update?: bool|null, obsolete?: bool|null, content?: array<int, string>, name?: string, store?: string}  $filters
+     * @param  array{installed?: bool|null, has_update?: bool|null, obsolete?: bool|null, content?: array<int, string>, name?: string, store?: string, lang?: array<int, string>}  $filters
      * @return Collection<int, array<string, mixed>>
      */
     public function extensions(array $filters = [], int $limit = 60, int $offset = 0): Collection
@@ -74,6 +85,71 @@ class ExtensionManager
         );
 
         return (int) ($data['extensions']['totalCount'] ?? 0);
+    }
+
+    /**
+     * Every language the catalogue holds, with how many extensions carry it.
+     *
+     * ## Why this is a scan and not a query
+     *
+     * Suwayomi has no group-by, so the only way to learn which languages exist
+     * and how many of them there are is to read the language of every extension
+     * that matches the filters and count them here. Measured against the live
+     * server on 2026-10-21: the available set is 1,055 extensions across 23
+     * languages, and the scan costs **39 ms**, which is less than the filtered
+     * count the page already asks for.
+     *
+     * The scan is bounded at {@see LANGUAGE_SCAN_LIMIT} rows, three times the
+     * largest catalogue measured (1,443), so a catalogue that grew past the
+     * bound would report a short count rather than a wrong one. The bound is
+     * here rather than in the call because the size of the catalogue is the
+     * server's fact and not the page's.
+     *
+     * The codes are the catalogue's own, with its own casing: `pt-BR` and
+     * `zh-Hant` are not `pt-br` and `zh-hant`, and the server's match on the
+     * language filter is case sensitive. Measured: `notIn ["pt-BR"]` on the
+     * available set takes it from 1,055 to 976, and `notIn ["pt-br"]` takes it
+     * to 1,055, so a code that has been folded to lower case filters nothing
+     * and says so by not filtering.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array{code: string, count: int}>
+     */
+    public function extensionLanguages(array $filters = []): array
+    {
+        $data = $this->gateway->execute(
+            'query Languages($first: Int, $filter: ExtensionFilterInput) { extensions(first: $first, filter: $filter) { nodes { lang } } }',
+            [
+                'first' => self::LANGUAGE_SCAN_LIMIT,
+                'filter' => ['and' => $this->buildFilter($filters)],
+            ],
+        );
+
+        $counts = [];
+
+        foreach (($data['extensions']['nodes'] ?? []) as $node) {
+            $code = (string) ($node['lang'] ?? '');
+
+            if ($code === '') {
+                continue;
+            }
+
+            $counts[$code] = ($counts[$code] ?? 0) + 1;
+        }
+
+        // Biggest first, because the languages a reader is most likely to want
+        // are the ones with the most sources in them, and the order has to be
+        // the same on every render or the row reflows for no reason. The code
+        // breaks a tie, so two languages of the same size never swap places.
+        uksort($counts, fn (string $a, string $b): int => ($counts[$b] <=> $counts[$a]) ?: strcmp($a, $b));
+
+        $languages = [];
+
+        foreach ($counts as $code => $count) {
+            $languages[] = ['code' => $code, 'count' => $count];
+        }
+
+        return $languages;
     }
 
     /**
@@ -246,6 +322,14 @@ class ExtensionManager
      * scalars, so it cannot express "content in SAFE or MIXED" or a case
      * insensitive name match, which is exactly what the catalogue needs.
      *
+     * The `lang` key is the one whose shape is not obvious: it holds the
+     * languages to **leave out**, not the ones to show. The reason is that the
+     * list a reader starts from is every language, and a filter that had to
+     * name every language it wanted would have to be rewritten every time the
+     * catalogue grew one. Excluding is also the only shape in which "no
+     * language at all" can be said: an allow list of nothing and an absent
+     * filter are the same empty array, and only one of them can mean "nothing".
+     *
      * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
@@ -273,6 +357,10 @@ class ExtensionManager
 
         if (! empty($filters['store'])) {
             $and[] = ['storeIndexUrl' => ['equalTo' => $filters['store']]];
+        }
+
+        if (! empty($filters['lang'])) {
+            $and[] = ['lang' => ['notIn' => array_values($filters['lang'])]];
         }
 
         return $and;
