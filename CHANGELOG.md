@@ -23,6 +23,8 @@ for what the portable shape will do when it ships.
 
 ### Added
 
+**A safer source list, and the pages that explain the app.** Settings > Sources can now filter the installable extensions by language: every card carries its language, and the languages you switch off stay off across a reload. The source families also remember which ones you had open. Controls that had no accessible name now have one. Adult content stays off until you confirm that you are 18 or older; while it is off, the catalogue and search refuse the rating at the source and the Installed tab says how many extensions it is holding back. The bulk migration page has a way back to Sources, and the app now carries a privacy page and a terms of service page in plain language, naming the laws without their articles. `b4794cc` `a51bee7` `f43b021` `bae1a3d`
+
 **The questions the app can now answer.** The FAQ gained six answers written from the code that
 does the work: what a search asks once you pin a site, what a block does and how long the wait is,
 what happens when a series exists with no chapters, how to move one series or a whole shelf, what a

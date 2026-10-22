@@ -419,6 +419,116 @@ class FaqTest extends TestCase
     }
 
     /**
+     * The adult content answer has to agree with where the switch actually is.
+     *
+     * The gate is a permission and the rating chips are a scope, and the two are
+     * deliberately not the same control: the Sources page puts the gate in a row of
+     * its own, because the Installed slice has no Content filter at all, and the
+     * Search page puts it below the filter in its own block. The answer read against
+     * the page rather than against a copy of the page, so a future change to where
+     * the switch sits has to come here too.
+     */
+    public function test_the_adult_content_answer_says_where_the_switch_actually_sits(): void
+    {
+        $answer = $this->answerTo('How do I turn on adult content?');
+
+        $this->assertStringNotContainsString(
+            'in the same row as the rating filter',
+            $answer,
+            'the gate renders in a row of its own, so the answer must not send a reader looking among the rating chips',
+        );
+
+        $this->assertStringContainsString(
+            'row of its own',
+            $answer,
+            'the answer has to say where the switch is, because that is the question a reader asks',
+        );
+
+        // Named exactly rather than globbed: a wildcard before "sources" also
+        // matches "migrate-sources", and that page sorts first, so the glob
+        // read the wrong file and every assertion below was about the wrong page.
+        $pages = [
+            'sources' => '⚡sources.blade.php',
+            'search' => '⚡search.blade.php',
+        ];
+
+        foreach ($pages as $page => $file) {
+            $blade = __DIR__.'/../../resources/views/pages/'.$file;
+
+            $this->assertFileExists($blade, "the {$page} page file is missing: {$file}");
+
+            $contents = (string) file_get_contents($blade);
+
+            $this->assertStringContainsString(
+                '<x-adult-content.gate',
+                $contents,
+                "the {$page} page has to render the gate, or the answer names a control that is not there",
+            );
+
+            $this->assertStringNotContainsString(
+                '<x-adult-content.gate',
+                $this->ratingGroupOf($contents),
+                "the {$page} page's rating group must not hold the gate, or the answer's row of its own is untrue",
+            );
+        }
+    }
+
+    /**
+     * The part of a page that holds the rating chips, which is what the gate must not be inside.
+     *
+     * Read out of the rendered markup rather than guessed at: the group opens at the
+     * first `flux:checkbox.group` and closes at its matching close, and anything
+     * between them is what a reader sees as the rating row.
+     */
+    private function ratingGroupOf(string $contents): string
+    {
+        $open = strpos($contents, '<flux:checkbox.group');
+
+        if ($open === false) {
+            return '';
+        }
+
+        $close = strpos($contents, '</flux:checkbox.group>', $open);
+
+        return $close === false ? '' : substr($contents, $open, $close - $open);
+    }
+
+    /**
+     * The move answer has to agree with the dialog the migration page renders.
+     *
+     * The dialog asks three things about what to carry, and it asks a fourth about
+     * AniList only when the reader has connected an account, because a checkbox
+     * wired to nothing would be a promise the page could not keep. The old answer
+     * said four things flatly, which is wrong for every reader who has not
+     * connected AniList.
+     */
+    public function test_the_move_answer_says_when_the_anilist_row_is_asked(): void
+    {
+        $answer = $this->answerTo('How do I move a series to another source?');
+
+        $this->assertStringNotContainsString(
+            'you are asked four things',
+            $answer,
+            'the AniList row is only asked of a reader with an account, so the answer must not promise four questions flatly',
+        );
+
+        $this->assertStringContainsString(
+            'If you have connected an AniList account',
+            $answer,
+            'the answer has to say when the AniList question is asked, because it is not asked of everybody',
+        );
+
+        $blade = collect(glob(__DIR__.'/../../resources/views/pages/*migrate.blade.php'))->first();
+        $contents = (string) file_get_contents($blade);
+
+        $this->assertStringContainsString(
+            '@if ($this->trackConnected)',
+            $contents,
+            'the AniList row has to be behind the account check, or the answer describes a row the page does not show',
+        );
+    }
+
+    /**
      * The public copy carries no em or en dash.
      *
      * The rule the repository already enforces everywhere, held here for the copy that ships to

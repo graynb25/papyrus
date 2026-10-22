@@ -7213,7 +7213,8 @@ instead of the feature.
   shape: a refusal that is true of the bytes and wrong about the cause teaches the reader the
   wrong thing. Trap 325.
 
-**The honest limits.** Three, all measured, none hidden.
+**The honest limits.** Three were measured; the third was a copy defect rather than a limit of
+the feature, and it is corrected below.
 
 - **The export's basis is the server's library.** A `.tachibk` carries the server's library and
   nothing else, and Papyrus owns library membership in its own table and never writes the server's
@@ -7231,13 +7232,17 @@ instead of the feature.
   The format's own half was proved separately and directly: a hand built file with a shelf record
   and a series carrying its order under field 17 was imported into a live reader, and the series
   came back on that shelf and no other, with the read flags round tripping beside it. Trap 327.
-- **The public FAQ still contradicts the page.** The marketing FAQ's backup answer (in
-  `app/Support/Faq.php`, the "How do I make a backup?" entry) still says "Copy the folder ... Copy it
-  while Papyrus is closed", which the app stopped needing on the day this page became true, and it
-  also says there is "nothing to export", which the outward `.tachibk` has now made false. The
-  umbrella plan gives that copy to Phase 8 ("Remove the contradiction: the marketing backup answer
-  is rewritten to match Phase 7's truth"), and Phase 8 is the FAQ substance phase, so it is Phase 8's
-  line to rewrite. This section names it rather than quietly editing another phase's prose.
+- **The public FAQ used to contradict the page, and the correction is held by a test.** The
+  backup answer said "Copy the folder ... Copy it while Papyrus is closed" and that there was
+  "nothing to export", both of which this phase made false. Phase 8 rewrote the answer
+  (`7ee558f`) to say what the Backups page does, what a pair holds and what it never promises.
+  The release review then read every shipped answer against the page it describes, and two
+  more had drifted: the adult content answer said the switch sat "in the same row as the
+  rating filter" when both pages give it a row of its own, and the move answer promised four
+  questions flatly when the AniList row is asked only of a reader who has connected an
+  account. Both are corrected, and `FaqTest` now reads the pages' own markup for the gate's
+  row and the dialog's `trackConnected` check, so a later move of either control has to come
+  with the copy.
 
 **The mishap, owned.** The acceptance sitting broke this checkout's own database and put it back. A
 probe pointed the app at a scratch copy of `database/database.sqlite` with `config()` and
