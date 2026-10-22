@@ -156,7 +156,7 @@ Goal: prove the deletion SQL on a copy before any live change.
 
 ### 4.1 Setup
 
-- Temp folder: `C:\Users\graynb25\AppData\Local\Temp\opencode\scratch-cleanup-rehearsal\`.
+- Temp folder: `C:\Users\<you>\AppData\Local\Temp\opencode\scratch-cleanup-rehearsal\`.
 - Copy the checkout's database to the temp folder as a single clean file using SQLite's `VACUUM INTO` (atomic, no sidecar files, no WAL dependency). This is the repository's own snapshot style (the app uses `VACUUM INTO` for reader-half snapshots).
 - Record the copy's SHA-256 hash before the delete.
 - Record before-counts for every table in section 2.1 plus the walk artifacts (Eleceed series state, reading_sessions 1-7, bulk items 25-31 pending, 78 pending items).

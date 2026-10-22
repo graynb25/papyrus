@@ -2186,10 +2186,14 @@ new #[Title('Sources')] class extends AdultContentPage
                 <flux:input
                     wire:model="storeUrl"
                     :label="__('Add a store')"
-                    placeholder="https://github.com/keiyoushi/extensions/raw/repo/index.pb"
+                    placeholder=""
                     icon="link"
                     required
                 />
+
+                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('Papyrus does not ship with any store. Search for an extension repository you trust, paste its index URL here, and compare its signing key before you trust it.') }}
+                </p>
 
                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                     {{ __('The index file itself, not the repository root. Keiyoushi publishes protobuf at index.pb.') }}
