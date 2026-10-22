@@ -306,6 +306,61 @@ new #[Title('Import a backup')] class extends Component
     }
 
     /**
+     * Whether the details modal is open.
+     */
+    public bool $modalOpen = false;
+
+    /**
+     * The run the open modal is showing, by id.
+     */
+    public ?int $modalRunId = null;
+
+    public function openRunModal(int $runId): void
+    {
+        $this->modalRunId = $runId;
+        $this->modalOpen = true;
+
+        $this->dispatch('open-import-run');
+    }
+
+    public function openImportRunModal(int $runId): void
+    {
+        $this->openRunModal($runId);
+    }
+
+    public function closeRunModal(): void
+    {
+        $this->modalOpen = false;
+        $this->modalRunId = null;
+    }
+
+    public function closeImportRunModal(): void
+    {
+        $this->closeRunModal();
+    }
+
+    #[Computed]
+    public function modalRun(): ?ImportRun
+    {
+        if ($this->modalRunId === null) {
+            return null;
+        }
+
+        return ImportRun::query()->forUser(auth()->id())->find($this->modalRunId);
+    }
+
+    public function modalRunIsRunning(): bool
+    {
+        $run = $this->modalRun();
+
+        if ($run === null) {
+            return false;
+        }
+
+        return $run->state === ImportRun::RUNNING && ! $this->abandoned($run);
+    }
+
+    /**
      * Every run this reader has made, newest first.
      */
     #[Computed]
@@ -701,25 +756,17 @@ public function wasInspection(ImportRun $run): bool
                 </flux:button>
             </flux:card>
 
-            {{-- The run in progress, and the runs already done. --}}
-            {{--
-                    The run list, polling itself while there is something to wait for.
+            {{-- The runs already done, as one line each. --}}
+            <div class="space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <flux:heading level="3">{{ __('Your imports') }}</flux:heading>
 
-                    The attribute is bound rather than left on, because a page left polling at
-                    three second intervals forever is a page that costs a request every three
-                    seconds for as long as it stays open. `shouldPoll()` stops it the moment a
-                    run finishes, and starts it the moment a button is pressed.
-                --}}
-                <div class="space-y-4 p-4" @if ($this->shouldPoll()) wire:poll.3s @endif>
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <flux:heading level="3">{{ __('Your imports') }}</flux:heading>
-
-                        @if ($this->activeRun()?->state === ImportRun::RUNNING && ! $this->abandoned($this->activeRun()))
-                            <flux:badge size="sm" color="blue" icon="loading">
-                                {{ __('Running') }}
-                            </flux:badge>
-                        @endif
-                    </div>
+                    @if ($this->activeRun()?->state === ImportRun::RUNNING && ! $this->abandoned($this->activeRun()))
+                        <flux:badge size="sm" color="blue" icon="loading">
+                            {{ __('Running') }}
+                        </flux:badge>
+                    @endif
+                </div>
 
                 @if ($this->runs()->isEmpty())
                     <p class="text-sm text-zinc-500 dark:text-zinc-400">
@@ -730,59 +777,213 @@ public function wasInspection(ImportRun $run): bool
                         @endif
                     </p>
                 @else
-                    <div class="space-y-3">
+                    <ul class="space-y-2">
                         @foreach ($this->runs() as $run)
-                            <div class="border-t border-zinc-200 pt-3 first:border-0 first:pt-0 dark:border-white/10">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <span class="truncate text-sm font-medium">
-                                        {{ $run->file_name ?? __('unnamed file') }}
-                                    </span>
+                            <li class="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 pt-2 first:border-0 first:pt-0 dark:border-white/10">
+                                <span class="truncate text-sm font-medium">
+                                    {{ $run->file_name ?? __('unnamed file') }}
+                                </span>
 
+                                <div class="flex items-center gap-2">
                                     <flux:badge size="sm" :color="$this->badgeColour($run)">
                                         {{ $this->stateLabel($run) }}
                                     </flux:badge>
+
+                                    <button
+                                        type="button"
+                                        class="text-sm font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+                                        wire:click="openRunModal({{ $run->id }})"
+                                    >
+                                        {{ __('Show details') }}
+                                    </button>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </div>
+
+            {{--
+                One modal per run, opened from a single line above.
+
+                It polls while it is open and the run is running, and stops the moment the run
+                reaches a finished state. The page itself no longer polls: the list carries
+                nothing that changes during a run, so nothing on it moves.
+            --}}
+            <div x-on:open-import-run.window="$dispatch('modal-show', { name: 'import-run' })">
+                <flux:modal
+                    name="import-run"
+                    class="max-w-lg"
+                    :dismissible="! $this->modalRunIsRunning()"
+                    :escapable="! $this->modalRunIsRunning()"
+                    @close="closeRunModal"
+                >
+                    @if ($run = $this->modalRun())
+                        @php
+                            $note = (string) ($run->progress_note ?? '');
+                            $isAbandoned = $this->abandoned($run);
+                            $isFinished = in_array($run->state, [ImportRun::COMPLETE, ImportRun::FAILED, ImportRun::REFUSED], true) || $isAbandoned;
+                            $isRunning = $run->state === ImportRun::RUNNING && ! $isAbandoned;
+
+                            if ($run->library_series === null) {
+                                $phaseKey = 'reading';
+                            } elseif (str_starts_with(trim($note), 'extensions:')) {
+                                $phaseKey = 'extensions';
+                            } elseif (preg_match('/^\s*\d+\s+of\s+\d+\s+series/i', $note)) {
+                                $phaseKey = 'series';
+                            } elseif (str_starts_with(trim($note), 'categories:')) {
+                                $phaseKey = 'categories';
+                            } else {
+                                $phaseKey = 'finished';
+                            }
+
+                            $phaseOrder = ['reading', 'extensions', 'series', 'categories'];
+                            $phaseIndex = array_search($phaseKey, $phaseOrder, true);
+                            if ($phaseIndex === false) {
+                                $phaseIndex = 4;
+                            }
+
+                            $phaseTitles = [
+                                'reading' => __('Reading the file'),
+                                'extensions' => __('Installing what it needs'),
+                                'series' => __('Bringing your series across'),
+                                'categories' => __('Filing your shelves'),
+                            ];
+
+                            $statuses = [];
+                            foreach ($phaseOrder as $index => $key) {
+                                if ($isFinished) {
+                                    if ($isAbandoned || in_array($run->state, [ImportRun::FAILED, ImportRun::REFUSED], true)) {
+                                        $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'failed' : 'pending');
+                                    } else {
+                                        $statuses[$key] = 'done';
+                                    }
+                                } elseif ($isRunning) {
+                                    $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'running' : 'pending');
+                                } else {
+                                    $statuses[$key] = 'pending';
+                                }
+                            }
+                        @endphp
+
+                        @if ($this->modalOpen && $isRunning)
+                            <div wire:poll.3s>
+                        @else
+                            <div>
+                        @endif
+                            <div class="flex items-center gap-2">
+                                <span
+                                    class="size-2 rounded-full {{ match (true) {
+                                        $isAbandoned => 'bg-red-500',
+                                        $run->state === ImportRun::COMPLETE => 'bg-green-500',
+                                        $run->state === ImportRun::RUNNING => 'animate-pulse bg-zinc-400',
+                                        $run->state === ImportRun::FAILED => 'bg-red-500',
+                                        $run->state === ImportRun::REFUSED => 'bg-amber-500',
+                                        default => 'bg-zinc-400',
+                                    } }}"
+                                    aria-hidden="true"
+                                ></span>
+
+                                <flux:heading size="lg">
+                                    {{ $this->stateLabel($run) }}
+                                </flux:heading>
+                            </div>
+
+                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ $run->file_name ?? __('unnamed file') }}
+                                @if ($run->format !== null || $run->schema_version !== null)
+                                    , {{ $run->format ?? __('unknown') }} {{ __('format') }}
+                                    @if ($run->schema_version !== null)
+                                        {{ __('version') }} {{ number_format($run->schema_version) }}
+                                    @endif
+                                @endif
+                            </p>
+
+                            @if (! $this->wasInspection($run) && $run->library_series !== null)
+                                @php($pct = $this->percent($run) ?? 0)
+
+                                <div
+                                    class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
+                                    role="progressbar"
+                                    aria-valuemin="0"
+                                    aria-valuemax="100"
+                                    aria-valuenow="{{ $pct }}"
+                                    aria-label="{{ __('Import progress') }}"
+                                >
+                                    <div
+                                        class="h-full rounded-full bg-zinc-900 transition-all duration-300 dark:bg-zinc-100"
+                                        style="width: {{ $pct }}%"
+                                    ></div>
                                 </div>
 
-                                {{--
-                                    The bar.
+                                <div class="mt-1 flex justify-between text-xs text-zinc-400">
+                                    <span>{{ number_format($run->series_processed ?? 0) }} {{ __('of') }} {{ number_format($run->library_series) }} {{ __('series') }}</span>
+                                    <span>{{ $run->started_at !== null ? $run->started_at->diffInSeconds(now()) : 0 }}s</span>
+                                </div>
+                            @endif
 
-                                    Only while the series loop is what the run is doing. Before it,
-                                    `library_series` is null and there is nothing for a bar to be a
-                                    fraction of, so showing one would be claiming a position the
-                                    page cannot know. The note below carries the run through that
-                                    part, which is where the extension install happens.
-                                --}}
-                                @if ($run->state === ImportRun::RUNNING && $this->percent($run) !== null)
-                                    @php($pct = $this->percent($run))
+                            <ol class="mt-4 space-y-2" role="list">
+                                @foreach (['reading', 'extensions', 'series', 'categories'] as $key)
+                                    @php($status = $statuses[$key] ?? 'pending')
 
-                                    <div
-                                        class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10"
-                                        role="progressbar"
-                                        aria-valuemin="0"
-                                        aria-valuemax="100"
-                                        aria-valuenow="{{ $pct }}"
-                                    >
-                                        <div
-                                            class="h-full rounded-full bg-blue-500 transition-all"
-                                            style="width: {{ $pct }}%"
-                                        ></div>
-                                    </div>
-                                @endif
+                                    <li role="listitem" class="flex items-center gap-3 py-2">
+                                        <span
+                                            class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($status) {
+                                                'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
+                                                'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
+                                                'failed' => 'border-red-500 bg-red-500 text-white',
+                                                default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
+                                            } }}"
+                                            aria-hidden="true"
+                                        >
+                                            @if ($status === 'done')
+                                                &#10003;
+                                            @elseif ($status === 'failed')
+                                                &#10005;
+                                            @elseif ($status === 'running')
+                                                <flux:icon name="loading" class="size-3" />
+                                            @endif
+                                        </span>
 
-                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    {{ $this->summary($run) }}
-                                </p>
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium">{{ $phaseTitles[$key] }}</p>
+                                        </div>
+                                    </li>
+                                @endforeach
+                            </ol>
 
-                                @if ($run->started_at !== null)
-                                    <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                                        {{ $run->started_at->diffForHumans() }}
-                                    </p>
+                            <p
+                                class="mt-4 text-sm"
+                                aria-live="polite"
+                            >
+                                {{ $this->summary($run) }}
+                            </p>
+
+                            <div class="mt-6 flex justify-end gap-2">
+                                @if ($isFinished)
+                                    @if ($run->state === ImportRun::COMPLETE)
+                                        <flux:modal.close>
+                                            <flux:button variant="primary">{{ __('Done') }}</flux:button>
+                                        </flux:modal.close>
+                                    @elseif ($run->state === ImportRun::REFUSED)
+                                        <flux:modal.close>
+                                            <flux:button variant="primary">{{ __('Try again') }}</flux:button>
+                                        </flux:modal.close>
+                                    @else
+                                        <flux:modal.close>
+                                            <flux:button variant="primary">{{ __('Show details') }}</flux:button>
+                                        </flux:modal.close>
+                                    @endif
+                                @else
+                                    <flux:modal.close>
+                                        <flux:button variant="filled" :disabled="true">{{ __('Close') }}</flux:button>
+                                    </flux:modal.close>
                                 @endif
                             </div>
-                        @endforeach
-                    </div>
-                @endif
-                </div>
+                        </div>
+                    @endif
+                </flux:modal>
+            </div>
         </div>
     </x-pages::settings.layout>
 </section>

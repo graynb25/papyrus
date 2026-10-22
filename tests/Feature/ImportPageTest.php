@@ -488,7 +488,10 @@ class ImportPageTest extends TestCase
             'updated_at' => now()->subHours(3),
         ])->save();
 
+        $run = ImportRun::query()->latest('id')->first();
+
         $this->page()
+            ->call('openRunModal', $run->id)
             ->assertDontSee(__('This import has not moved'))
             ->assertSee('That is not a backup this app can read.');
     }
@@ -532,6 +535,7 @@ class ImportPageTest extends TestCase
         $run->forceFill(['updated_at' => now()->subHour()])->save();
 
         $this->page()
+            ->call('openRunModal', $run->fresh()->id)
             ->assertSee(__('This run stopped without finishing.'))
             ->assertSee(__('Stopped'));
 
@@ -582,6 +586,7 @@ class ImportPageTest extends TestCase
         ])->save();
 
         $this->page()
+            ->call('openRunModal', $run->id)
             ->assertSee('25')
             ->assertSee('250 of 1000 series');
     }
@@ -615,7 +620,7 @@ class ImportPageTest extends TestCase
 
     public function test_a_finished_run_reports_the_three_numbers_that_matter(): void
     {
-        ImportRun::createFor($this->user, [
+        $run = ImportRun::createFor($this->user, [
             'format' => 'tachimanga',
             'state' => ImportRun::COMPLETE,
             'file_name' => 'library.tmb',
@@ -628,6 +633,7 @@ class ImportPageTest extends TestCase
         ]);
 
         $this->page()
+            ->call('openRunModal', $run->id)
             ->assertSee('1,082')
             ->assertSee('195')
             ->assertSee(__('Finished'));
@@ -682,7 +688,10 @@ class ImportPageTest extends TestCase
             'finished_at' => now(),
         ]);
 
+        $run = ImportRun::query()->latest('id')->first();
+
         $this->page()
+            ->call('openRunModal', $run->id)
             ->assertSee('1277 series on the shelf')
             ->assertDontSee(__('0 series imported'));
     }
@@ -702,7 +711,10 @@ class ImportPageTest extends TestCase
             'finished_at' => now(),
         ]);
 
+        $run = ImportRun::query()->latest('id')->first();
+
         $this->page()
+            ->call('openRunModal', $run->id)
             ->assertSee('1,082')
             ->assertSee('195');
     }
