@@ -17,6 +17,11 @@
                    list at a seat the reader can stay in. Listed with the read-only pages because
                    it changes nothing about the reader's account or their library. --}}
               <flux:navlist.item :href="route('settings.faq')" wire:navigate>{{ __('FAQ') }}</flux:navlist.item>
+              {{-- The privacy page and the terms of service, with the read only pages for the
+                   same reason: they change nothing about the reader's account or their library,
+                   they only say what the application does. --}}
+              <flux:navlist.item :href="route('settings.privacy')" wire:navigate>{{ __('Privacy') }}</flux:navlist.item>
+              <flux:navlist.item :href="route('settings.terms')" wire:navigate>{{ __('Terms') }}</flux:navlist.item>
               <flux:navlist.item :href="route('licences.edit')" wire:navigate>{{ __('Licences') }}</flux:navlist.item>
         </flux:navlist>
     </div>

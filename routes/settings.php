@@ -88,6 +88,22 @@ Route::middleware(['auth'])->group(function () {
      * most likely to be reading what the app does with their library.
      */
     Route::livewire('settings/faq', 'pages::settings.faq')->name('settings.faq');
+
+    /*
+     * The privacy page and the terms of service page, inside the app.
+     *
+     * The same two seats the FAQ has, and the same reason: the content is in
+     * `App\Support\Legal`, the markup is in one component, and the public
+     * pages stay exactly where they are for a reader who has not signed in
+     * yet and for somebody else to be sent to.
+     *
+     * Under plain `auth` and not `verified`, beside the FAQ and for the same
+     * reason: they read nothing about the reader, they are prose, and a reader
+     * who has just signed up and cannot yet receive a mail is exactly the one
+     * most likely to want to read what the app does with their library.
+     */
+    Route::livewire('settings/privacy', 'pages::settings.privacy')->name('settings.privacy');
+    Route::livewire('settings/terms', 'pages::settings.terms')->name('settings.terms');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

@@ -126,6 +126,23 @@ class BulkMigrationTest extends TestCase
         $this->get('/migrate/sources')->assertOk();
     }
 
+    /**
+     * The way back along the button that brought the reader here.
+     *
+     * The Sources page's "Move a whole source" button is the only way into this
+     * page, and the page had no way back along it, so a reader who came to look
+     * at the shelf they were holding had to go and find it again.
+     *
+     * The same shape the single series wizard carries, which is the house's way
+     * of saying a page knows where it was reached from.
+     */
+    public function test_it_offers_a_way_back_to_the_sources_page(): void
+    {
+        $this->page()
+            ->assertSee('Back to sources')
+            ->assertSee(route('sources'), escape: false);
+    }
+
     public function test_the_wizard_route_is_not_swallowed_by_it(): void
     {
         /*

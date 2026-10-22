@@ -7,6 +7,7 @@ use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
 use App\Models\UserSource;
+use App\Support\AdultContent;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -143,7 +144,8 @@ class SourcesPageTest extends TestCase
      * @param  array<int, array<string, mixed>>  $nodes
      */
     /**
-     * The nodes the fake will serve, honouring the `isInstalled` and `lang` filters.
+     * The nodes the fake will serve, honouring the `isInstalled`, `lang` and
+     * `contentWarning` filters.
      *
      * The real server filters server-side, and the drift notice asks for the installed ones
      * only. A fake that ignored the filter would hand the notice every uninstalled extension
@@ -153,6 +155,11 @@ class SourcesPageTest extends TestCase
      * claim of the language selector is that the list it shows is the list the server
      * would send, and a fake that ignored the filter would let a page that sends the
      * wrong filter look exactly like one that sends the right one.
+     *
+     * The rating filter is honoured for the same reason and one more: the whole claim
+     * of the adult content gate is that the rating in the address bar cannot reach an
+     * adult rated extension. A fake that ignored it would let a page that sends no
+     * rating filter look exactly like one that sends the right one.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -172,6 +179,7 @@ class SourcesPageTest extends TestCase
 
         $installed = null;
         $languagesOut = [];
+        $ratingsIn = [];
 
         foreach ($variables['filter']['and'] ?? [] as $clause) {
             $field = $clause['isInstalled'] ?? null;
@@ -186,17 +194,29 @@ class SourcesPageTest extends TestCase
 
             if (is_array($lang) && is_array($lang['notIn'] ?? null)) {
                 $languagesOut = $lang['notIn'];
+
+                continue;
+            }
+
+            $rating = $clause['contentWarning'] ?? null;
+
+            if (is_array($rating) && is_array($rating['in'] ?? null)) {
+                $ratingsIn = $rating['in'];
             }
         }
 
         return array_values(array_filter(
             $this->nodes,
-            function (array $n) use ($installed, $languagesOut): bool {
+            function (array $n) use ($installed, $languagesOut, $ratingsIn): bool {
                 if ($installed !== null && (bool) ($n['isInstalled'] ?? false) !== $installed) {
                     return false;
                 }
 
                 if ($languagesOut !== [] && in_array((string) ($n['lang'] ?? ''), $languagesOut, true)) {
+                    return false;
+                }
+
+                if ($ratingsIn !== [] && ! in_array((string) ($n['contentWarning'] ?? ''), $ratingsIn, true)) {
                     return false;
                 }
 
@@ -482,13 +502,13 @@ class SourcesPageTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function extension(string $pkg, string $name, bool $installed, bool $trusted, string $lang = 'en'): array
+    private function extension(string $pkg, string $name, bool $installed, bool $trusted, string $lang = 'en', string $rating = Source::SAFE): array
     {
         return [
             'pkgName' => $pkg,
             'name' => $name,
             'versionName' => '1.2.3',
-            'contentWarning' => 'SAFE',
+            'contentWarning' => $rating,
             'lang' => $lang,
             'isInstalled' => $installed,
             'hasUpdate' => false,
@@ -2288,5 +2308,204 @@ class SourcesPageTest extends TestCase
             'is_installed' => true,
             'supports_latest' => true,
         ]);
+    }
+
+    /*
+     * The adult content gate, on the catalogue side.
+     *
+     * The measurement that sent this work, read in a browser on 2026-10-21:
+     * with `?content[]=NSFW` in the address the Available tab listed 874
+     * extensions and 41 of the fifty cards on its first page carried an NSFW
+     * badge, with nothing asked and the page still claiming they were hidden.
+     * The tests below hold the fix for that, and each one names the half of
+     * the claim it is holding.
+     */
+
+    /**
+     * The catalogue's own nodes for the gate tests: one safe, one mixed and one
+     * adult rated, none of them installed.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function ratedNodes(): array
+    {
+        return [
+            $this->extension('eu.kanade.tachiyomi.extension.en.safe', 'Safe One', false, true, 'en', Source::SAFE),
+            $this->extension('eu.kanade.tachiyomi.extension.en.mixed', 'Mixed One', false, true, 'en', Source::MIXED),
+            $this->extension('eu.kanade.tachiyomi.extension.en.adult', 'Adult One', false, true, 'en', Source::NSFW),
+        ];
+    }
+
+    public function test_the_catalogue_hides_the_adult_rated_extensions_while_the_gate_is_off(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $this->page()->set('view', 'available')
+            ->assertDontSee('Adult One')
+            ->assertSee('Safe One')
+            ->assertSee('2 extensions');
+    }
+
+    public function test_the_address_bar_cannot_open_the_gate(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        /*
+         * The address bar, as a link would deliver it.
+         *
+         * `withQueryParams` is the framework's own way of mounting a component
+         * with a query string, so the page hydrates from the address the way a
+         * reader following a link would, rather than the test setting the
+         * property behind the page's back. That matters here because the
+         * defect was in the hydration: Livewire merges the array in the
+         * address over the declared one by key, so `content[]=NSFW` replaced
+         * SAFE with NSFW and the catalogue answered with every adult rated
+         * extension in the store.
+         */
+        $page = Livewire::actingAs($this->user)
+            ->withQueryParams([
+                'view' => 'available',
+                'content' => ['NSFW', 'MIXED'],
+            ])
+            ->test('pages::sources');
+
+        $page->assertDontSee('Adult One')
+            ->assertSee('Adult content off')
+            ->assertSee('Nothing marked NSFW is listed or searched.');
+    }
+
+    public function test_the_adult_rating_is_not_offered_as_a_choice_while_the_gate_is_off(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $this->page()->set('view', 'available')
+            ->assertDontSee('value="NSFW"', escape: false)
+            ->assertSee('Adult content off')
+            ->assertSee('Nothing marked NSFW is listed or searched.')
+            ->assertSee('Turn on adult content?');
+    }
+
+    public function test_the_confirmation_states_the_age_ask(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $this->page()->set('view', 'available')
+            ->assertSee('Turn on adult content?')
+            ->assertSee('18 or older')
+            ->assertSee('I am 18 or older, turn it on');
+    }
+
+    public function test_confirming_the_gate_opens_the_adult_rated_extensions(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $this->page()->set('view', 'available')
+            ->assertDontSee('Adult One')
+            ->call('confirmAdultContent');
+
+        /*
+         * A fresh instance for the read, and this is the load-bearing part.
+         *
+         * `catalogue()` is a computed, and the instance that ran the confirmation
+         * cached it before the setting was written: it was rendered with the gate
+         * shut and would answer with the adult rated extension missing for ever
+         * after. Asserting on the same instance therefore proves nothing about
+         * the page, and asserting on the rendered HTML would fail for the same
+         * reason.
+         *
+         * In a browser this is invisible, because the response to the click is a
+         * fresh render and the computed's cache is cleared between requests. The
+         * test has to reproduce that by asking a new instance, which is what a
+         * page load does.
+         *
+         * The rating rides in the filter as well as the gate, so the fresh
+         * instance is given it: that is what the confirmation does, and a page
+         * load carries it in the address.
+         */
+        $page = Livewire::actingAs($this->user)
+            ->withQueryParams([
+                'view' => 'available',
+                'content' => [Source::SAFE, Source::MIXED, Source::NSFW],
+            ])
+            ->test('pages::sources');
+
+        $page->assertSee('Adult One')
+            ->assertSee('Adult content on')
+            ->assertSee('3 extensions');
+    }
+
+    public function test_the_gate_is_per_reader(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $other = User::factory()->create();
+
+        $this->page()->set('view', 'available')
+            ->call('confirmAdultContent');
+
+        $this->assertTrue(app(AdultContent::class)->enabled($this->user));
+        $this->assertFalse(app(AdultContent::class)->enabled($other));
+    }
+
+    public function test_turning_the_gate_off_puts_the_rating_back_out_of_the_address(): void
+    {
+        $this->serveExtensions($this->ratedNodes());
+
+        $this->page()->set('view', 'available')
+            ->call('confirmAdultContent')
+            ->set('content', [Source::SAFE, Source::NSFW])
+            ->call('turnAdultContentOff')
+            ->assertSet('content', [Source::SAFE]);
+
+        // A fresh instance for the read, for the reason named above.
+        $page = $this->page()->set('view', 'available');
+
+        $page->assertDontSee('Adult One')
+            ->assertSee('Adult content off');
+    }
+
+    public function test_the_installed_slice_hides_an_adult_rated_extension_and_names_it(): void
+    {
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.safe', 'Safe One', true, true, 'en', Source::SAFE),
+            $this->extension('eu.kanade.tachiyomi.extension.en.adult', 'Adult One', true, true, 'en', Source::NSFW),
+        ]);
+
+        $this->page()->set('view', 'installed')
+            ->assertDontSee('Adult One')
+            ->assertSee('Safe One')
+            ->assertSee('1 extension')
+            ->assertSee('1 of the installed extensions is marked NSFW and is hidden.');
+    }
+
+    public function test_the_installed_slice_lists_the_adult_rated_extension_once_the_gate_is_on(): void
+    {
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.safe', 'Safe One', true, true, 'en', Source::SAFE),
+            $this->extension('eu.kanade.tachiyomi.extension.en.adult', 'Adult One', true, true, 'en', Source::NSFW),
+        ]);
+
+        $this->page()->set('view', 'installed')
+            ->call('confirmAdultContent');
+
+        // A fresh instance for the read, for the reason named above.
+        $page = $this->page()->set('view', 'installed');
+
+        $page->assertSee('Adult One')
+            ->assertSee('2 extensions')
+            ->assertDontSee('is marked NSFW and is hidden');
+    }
+
+    public function test_an_installed_extension_that_is_only_adult_rated_does_not_read_as_nothing_installed(): void
+    {
+        $this->store();
+
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.en.adult', 'Adult One', true, true, 'en', Source::NSFW),
+        ]);
+
+        $this->page()->set('view', 'installed')
+            ->assertDontSee('Nothing installed yet')
+            ->assertSee('The 1 extension installed is marked NSFW and is hidden until you turn adult content on.');
     }
 }

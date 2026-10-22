@@ -2112,6 +2112,7 @@ every existing tab. That is expected, not a fault.
 | 7 | Source chooser | **Done.** A search card that turned up the same series on more than one source named the others under its title and then linked both the cover and the title to whichever one the deduplicator ranked first. The card was already telling the reader there were others, so the information existed and only the action was missing. Clicking such a card now opens a chooser listing every source with its own link and its own bookmark, because the two answers differ: a reader may want to read the site they trust and keep the copy on their shelf. A single-source card keeps its plain link, since a chooser over one entry is a dialog that can only be dismissed. **Three bugs, all found in the browser and all invisible to a feature test.** The dialog was opened by the click, which is a race with the round trip that fills it; the group was looked up by its primary, which a streaming search moves underneath the reader; and `libraryMap()` covered primaries only, so an alternative already in the library offered to add itself. Traps 139, 140 and 141. **The cover's bookmark was then taken off these cards entirely.** It used to sit on every card filing the primary, which put two bookmarks on one picture answering two different questions: one silently picked a source the reader had not chosen and never named, and the one in the chooser filed whichever source it sat beside. A reader who wanted Asura Scans and pressed the bookmark on the cover got Manga Demon, and nothing on screen said so. A card that needs a decision has no shortcut past the decision. Single-source cards keep theirs, because a button that files the only candidate is not a guess. The card's "+N sources" line is now the only thing telling the reader a choice exists, so it has to stay: a check that reads it off the button rather than the card passes on a card that has lost every name it had. The choice is not remembered between searches, since a stored preference needs a per-group key and group identity shifts as sources answer, so the key would have to be the manga id picked rather than anything about the group. |
 | 7 | Design overhaul | **Complete.** "Second Pressing": the cover atom as one `x-cover.art` component with blur-up, glow, tilt and sheen; `x-page-header` on every page; glass material on panels and all Flux modals; a shared-element view transition from grid cover to series hero; `x-confirm` modals replacing the native `confirm()` dialogs whose buttons no test parses; the reader re-tokenised onto the app's oklch values with no architectural change; bento stat tiles on downloads and health; skeleton loading states; the Reading Room login built from the collection itself behind the public, single-mode gated `/showcase` endpoints, with a seeded ink garden on a fresh install; custom 404 and 500 pages. All pins held: 1,076 tests green, the October browser pass green, PHPStan level 7 clean, zero em dashes. Traps 147 to 149. |
 | 7 (master plan) | In-app backup and restore | **Complete, and the page is true.** The reader half is captured through SQLite's own `VACUUM INTO` and the manga half through the server's own fresh export, both verified before the manifest is named and the pair renamed into place with nothing stopped; the reader half is swapped back under one `BEGIN IMMEDIATE` that refuses rather than forces, and the manga half rides the server's own import route with the server's own progress on the bar; the arrangement travels out as a `.tachibk` with the read marks and the shelf memberships merged in, adding only. **Measured:** the backup taken while the standing 10 s churn ran, the restore's four tables round-tripping on a scratch copy of the reader half, the export imported into the throwaway with the receiving pills read back (Snowflakes 13, Youtube 17), and the owner's real `.tmb` landing its two named shelves for the first time. **What it does not claim:** the export's basis is the server's library, and this box's servers hold one extension, so 80 of that file's 110 shelf members are on sources no server here can name. Section 15 carries the run notes. |
+| 9 (master plan) | Adult content gate, back affordances, legal pages | **Built, and the hole it closes was measured before it was closed.** The rating is the catalogue's own `contentWarning`, and the defect was that a link could reach the adult rated extensions with nothing asked: `?content[]=NSFW` put **41 adult rated cards on the first page of 50** and a count of **874**, while the page still claimed they were hidden. The cause is Livewire's own URL hydration, which merges an array over the declared one **by key** (trap 332). The gate is now a per reader setting in `user_settings`, off until a confirmation that carries the 18+ statement inside it, and it is applied in the query rather than in the page: the catalogue and the fanout's universe exclude the rating server-side, the chip is not offered, the browse surfaces refuse with a named refusal, and the Installed slice names how many it is holding back rather than showing a count that is short. **Measured:** the gate shut reads **1,055** with **0** adult rated cards, the same address reads **487** with **0**, and the gate open reads **1,442** with **34**. The back affordances were walked before they were built: eleven candidates, and the house already had one on every page that needs it except the bulk migration page, which carries "← Back to sources" now. The legal pages are a privacy page and a terms page in the shape the owner chose, in the FAQ's own two seats, and the list of the three things that reach the internet is now one list read by both. Traps 332 and 333. |
 
 Six pages are live at `/search`, `/sources`, `/health`, `/library`, `/downloads` and
 `/series/{manga}`, plus the reader at `/read/{manga}/{chapter}` and four settings pages at
@@ -7032,6 +7033,82 @@ exactly that moment and it costs five minutes.
     component's script had run. **Measure the thing a reader gets, not the thing
     the server wrote.**
 
+332. **A URL parameter merges an array over the declared one BY KEY, so a link
+    can replace a default rather than widen it.**
+
+    Measured 2026-10-21, on the sources page, while building the adult content
+    gate. The page's rating filter is `#[Url(as: 'content', except: '')] public
+    array $content = [SAFE, MIXED]`, and the catalogue is filtered by it. The
+    gate's whole claim was that a link could not reach the adult rated
+    extensions, and the default was right: the Available tab read **1,055
+    extensions** with **0** of its fifty cards carrying an NSFW badge.
+
+    **The address bar reached them anyway.** With `?content[]=NSFW` in the
+    address the count line read **874** and **41** of the fifty cards carried
+    an NSFW badge, and the page's own helper line went on claiming they were
+    hidden. The number is the catalogue's own: **387 NSFW** plus **487 MIXED** is
+    **874**.
+
+    The mechanism is Livewire's own, read out of the framework rather than
+    guessed: `BaseUrl::setPropertyFromQueryString()` returns early when the
+    parameter is **absent**, so the declared default stands, and when the
+    parameter is **present** it merges the decoded array over the current one
+    **by key**. So `content[0]=NSFW` lands on key 0 and **replaces** SAFE
+    rather than joining it, and the page's filter became `[NSFW, MIXED]`.
+
+    Two things follow, and the second is the one that bit. **A query parameter
+    on an array property is not additive, so a link can narrow a page's scope as
+    well as widen it**, and a default that looks like a floor is not one. And
+    **the merge is silent**: nothing in the page's own code changed, nothing
+    threw, and the page rendered a list the reader never asked for and the
+    application never agreed to show.
+
+    The general form: **an address bar is a second caller, and it arrives
+    without asking.** A control that decides what a reader sees has to be
+    decided by the application and not by a parameter, which is why the gate
+    ended up a stored per reader setting and the rating filter ended up
+    narrowed by it in the query rather than by the address.
+
+    The neighbour is worth naming because it is the same attribute and the
+    opposite behaviour, and the code in the tree has to answer both: the
+    sources page's own comment describes a Livewire that hydrated an **absent**
+    array as empty, and the code in `mount()` defends against it. **The current
+    framework does not need that defence**, and the code is right to keep it
+    anyway, because a defence against a framework's older behaviour is cheap
+    and a page that changes its filter when a reader opens a link is not.
+
+333. **A trait whose only users live in a Blade file is code the analyser never
+    sees.**
+
+    Measured 2026-10-21, on the same sitting, and the analyser said it out
+    loud rather than letting it pass. The adult content gate is shared by the
+    two pages that filter by the catalogue's rating, and both of them are
+    anonymous classes inside `.blade.php` files, because that is how every page
+    in this application is written. A trait looked like the natural home for
+    the shared behaviour, exactly as `App\Concerns\PasswordValidationRules` is
+    the home for the shared validation rules.
+
+    **PHPStan reported it as "Trait App\Concerns\AdultContentGate is used zero
+    times and is not analysed."** It does not read Blade, so a trait used only
+    there has no class in the analysed tree that uses it, and its body is never
+    type checked at all. Every rule in it would have been a rule nobody checked,
+    and the trait's own use of `$this->content` would have gone unexamined,
+    which is the part that would have bitten.
+
+    The fix was the shape the analyser can see: a **base class**,
+    `App\Livewire\AdultContentPage`, which is a file under `app/` and is read.
+    It carries the shared property with its `#[Url]` attribute too, because an
+    attribute on an inherited property is still found: Livewire's own
+    `AttributeCollection::fromComponent()` reads the class's properties with
+    `ReflectionObject::getProperties()`, inherited ones included.
+
+    The general form: **a shared behaviour belongs where the tool that checks
+    it can see it.** The question to ask of any new seam is not "where do the
+    users live" but "where does the analyser read from", and the answer for a
+    project whose pages are anonymous Blade classes is a class in `app/`, not a
+    trait. The same question applies to a base class, an interface and a
+    service: all three are visible to the analyser, and a trait whose users are
+    all in a file the analyser does not parse is not one of them.
 ---
 
 ## 15. Phase 7 run notes: the backup that never stops anything, and the round trip

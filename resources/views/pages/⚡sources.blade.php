@@ -1,6 +1,7 @@
 <?php
 
 use App\Local\LocalLibrary;
+use App\Livewire\AdultContentPage;
 use App\Models\ExtensionStore;
 use App\Models\Source;
 use App\Models\UserSource;
@@ -15,9 +16,8 @@ use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
-use Livewire\Component;
 
-new #[Title('Sources')] class extends Component
+new #[Title('Sources')] class extends AdultContentPage
 {
     public string $storeUrl = '';
 
@@ -29,12 +29,6 @@ new #[Title('Sources')] class extends Component
      */
     #[Url(as: 'view', except: 'installed')]
     public string $view = 'installed';
-
-    /**
-     * @var array<int, string>
-     */
-    #[Url(as: 'content', except: '')]
-    public array $content = [Source::SAFE, Source::MIXED];
 
     /**
      * The languages the reader has switched off.
@@ -172,10 +166,20 @@ new #[Title('Sources')] class extends Component
          * currently ships no NSFW extension among the installed set, so this
          * hides nothing today, which is exactly why it needs a test rather than
          * a look.
+         *
+         * And the gate, which is the third thing this line decides. An address
+         * carrying content[]=NSFW is not a confirmation: measured on 2026-10-21 it
+         * put 41 adult-rated extensions on the first page of this catalogue with
+         * nothing asked, because Livewire merges the array in the address over
+         * the declared one and NSFW replaced SAFE. So while the gate is off the
+         * rating is not in the address either, and the page says so where the
+         * rating used to be.
          */
         $this->content = $this->view === 'installed'
             ? []
-            : ($this->content !== [] ? $this->content : [Source::SAFE, Source::MIXED]);
+            : $this->visibleRatings(
+                $this->content !== [] ? $this->content : [Source::SAFE, Source::MIXED],
+            );
 
         /*
          * The languages left out, cleaned of anything that is not a code.
@@ -200,7 +204,9 @@ new #[Title('Sources')] class extends Component
         // The Installed tab has no content rating to filter by: an extension is
         // either on the server or it is not. NSFW gating belongs to the reader,
         // not to a list of what is technically present.
-        $this->content = $this->view === 'installed' ? [] : [Source::SAFE, Source::MIXED];
+        $this->content = $this->view === 'installed'
+            ? []
+            : $this->visibleRatings([Source::SAFE, Source::MIXED]);
     }
 
     public function addStore(): void
@@ -936,9 +942,26 @@ new #[Title('Sources')] class extends Component
         foreach ($installed as $extension) {
             $pkg = (string) ($extension['pkgName'] ?? '');
 
-            if ($pkg !== '' && ! in_array($pkg, $mirrored, true)) {
-                $missing[] = ['name' => (string) ($extension['name'] ?? $pkg), 'pkg' => $pkg];
+            if ($pkg === '' || in_array($pkg, $mirrored, true)) {
+                continue;
             }
+
+            /*
+             * An adult rated extension the gate is holding back is not drift.
+             *
+             * The notice is about the mirror's lag: the server holds something
+             * this page has not caught up with yet. While the gate is off the
+             * extension is held back as well, and the count under the
+             * catalogue already says how many are, so naming it here too would
+             * be two notices about one extension saying different things. The
+             * notice fires again the moment the gate is on, which is when the
+             * lag starts to matter.
+             */
+            if (! $this->adultContentOn() && ($extension['contentWarning'] ?? null) === Source::NSFW) {
+                continue;
+            }
+
+            $missing[] = ['name' => (string) ($extension['name'] ?? $pkg), 'pkg' => $pkg];
         }
 
         return $missing;
@@ -1110,8 +1133,21 @@ new #[Title('Sources')] class extends Component
     #[Computed]
     public function browseSites(): array
     {
+        /*
+         * The adult rated sources are left out while the gate is off.
+         *
+         * The picker is a door: every card on it opens a source's own
+         * catalogue, which is where that source's manga is. Offering a door
+         * the app has decided not to open is a dead end dressed as a choice,
+         * so the gate applies here as well as on the catalogue and on the
+         * search.
+         */
         $rows = Source::query()
             ->installed()
+            ->when(
+                ! $this->adultContentOn(),
+                fn ($q) => $q->where('content_warning', '!=', Source::NSFW),
+            )
             ->orderBy('display_name')
             ->get();
 
@@ -1254,7 +1290,7 @@ new #[Title('Sources')] class extends Component
      * the guest's Suwayomi was up and answering, and this page showed the app's 500
      * page while all 58 checks passed.
      *
-     * @return array{extensions: Collection<int, array<string, mixed>>, total: int, error: string|null}
+     * @return array{extensions: Collection<int, array<string, mixed>>, total: int, error: string|null, hidden: int}
      */
     #[Computed]
     public function catalogue(): array
@@ -1267,11 +1303,34 @@ new #[Title('Sources')] class extends Component
             );
 
             $total = app(ExtensionManager::class)->extensionCount($this->filters());
+
+            /*
+             * How many installed extensions the gate is holding back.
+             *
+             * The Installed slice hides the adult-rated ones while the gate is
+             * off, so the count above is the count of what is listed and the
+             * reader is told how many are not. Without this the page would say
+             * "1 extension" on a server that holds two, which is the same lie
+             * as an empty library reading as an empty one.
+             *
+             * It is a second count rather than a subtraction because the slice
+             * with the gate on carries no rating filter at all, and there is
+             * no second number to subtract from. Measured on 2026-10-21: the
+             * count costs 25 to 38 ms against the live server.
+             */
+            $hidden = 0;
+
+            if ($this->view === 'installed' && ! $this->adultContentOn()) {
+                $hidden = app(ExtensionManager::class)->extensionCount([
+                    'installed' => true,
+                    'content' => [Source::NSFW],
+                ]);
+            }
         } catch (SuwayomiException $e) {
-            return ['extensions' => new Collection(), 'total' => 0, 'error' => $e->getMessage()];
+            return ['extensions' => new Collection(), 'total' => 0, 'error' => $e->getMessage(), 'hidden' => 0];
         }
 
-        return ['extensions' => $extensions, 'total' => $total, 'error' => null];
+        return ['extensions' => $extensions, 'total' => $total, 'error' => null, 'hidden' => $hidden];
     }
 
     /**
@@ -1559,8 +1618,27 @@ new #[Title('Sources')] class extends Component
             $filters['name'] = trim($this->name);
         }
 
-        if ($this->content !== []) {
-            $filters['content'] = $this->content;
+        /*
+         * The rating, in two different shapes for two different slices.
+         *
+         * The Installed slice carries no rating filter at all while the gate is
+         * on: an extension is either on the server or it is not, and a rating
+         * belongs to the reader rather than to a list of what happens to be
+         * present. While the gate is off it carries the gate's own allow list,
+         * because an adult-rated extension that is installed is one the reader
+         * has not agreed to see, and the count of what is hidden is named
+         * beside the list.
+         *
+         * The other three slices carry what the reader chose, narrowed by the
+         * gate. The gate is applied in the query and not only here, so the
+         * rating cannot come back through the address bar.
+         */
+        if ($this->view === 'installed') {
+            $filters['content'] = $this->adultContentOn()
+                ? []
+                : [Source::SAFE, Source::MIXED];
+        } else {
+            $filters['content'] = $this->visibleRatings($this->content);
         }
 
         if ($this->lang !== []) {
@@ -2261,18 +2339,32 @@ new #[Title('Sources')] class extends Component
                     checkbox.group is a wrapper, so the individual checkboxes
                     nest inside it. Repeating the group per option renders bare
                     label text with no control.
+
+                    The NSFW option is only offered when the gate is on. The
+                    rating is a permission and not a scope, and an option that is
+                    offered and then does nothing is a control that lies, so
+                    the gate's own control sits beside the filter instead.
                 --}}
                 <flux:checkbox.group wire:model.live="content" variant="pills">
                     <flux:checkbox value="{{ Source::SAFE }}" label="{{ __('Safe') }}" />
                     <flux:checkbox value="{{ Source::MIXED }}" label="{{ __('Mixed') }}" />
-                    <flux:checkbox value="{{ Source::NSFW }}" label="{{ __('NSFW') }}" />
+                    @if ($this->adultContentOn())
+                        <flux:checkbox value="{{ Source::NSFW }}" label="{{ __('NSFW') }}" />
+                    @endif
                 </flux:checkbox.group>
-
-                <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('NSFW extensions are hidden unless you opt in.') }}
-                </span>
             </div>
         @endif
+
+        {{--
+            The gate, on every slice of this page.
+
+            Its own row because the Installed slice has no Content filter at
+            all, and the gate is not a filter: it says whether the rating is in
+            scope, and the reader may want to say that from any slice.
+        --}}
+        <div class="flex flex-wrap items-center gap-3">
+            <x-adult-content.gate :enabled="$this->adultContentOn()" />
+        </div>
 
         {{--
             The language selector.
@@ -2430,6 +2522,24 @@ new #[Title('Sources')] class extends Component
             </p>
         @endif
 
+        @if ($this->catalogue['error'] === null && $this->catalogue['hidden'] > 0)
+            {{--
+                What the gate is holding back, named.
+
+                The count above is the count of what is listed. Without this
+                line the page would read "1 extension" on a server that holds
+                two, which is the same lie as an empty library reading as an
+                empty one.
+            --}}
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                {{ trans_choice(
+                    '{1} :count of the installed extensions is marked NSFW and is hidden.|[2,*] :count of the installed extensions are marked NSFW and are hidden.',
+                    $this->catalogue['hidden'],
+                    ['count' => Number::format($this->catalogue['hidden'])],
+                ) }}
+            </p>
+        @endif
+
         @if ($this->catalogue['error'] === null && $this->autoloadNoteStillHolds())
             {{--
                 The automatic load's reply was accepted upstream but named zero,
@@ -2459,7 +2569,21 @@ new #[Title('Sources')] class extends Component
                 @if ($this->stores->isEmpty())
                     {{ __('Add a store first, then refresh the catalogue.') }}
                 @elseif ($view === 'installed')
-                    {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
+                    @if ($this->catalogue['hidden'] > 0)
+                        {{--
+                            Not "nothing installed". What is installed is there and
+                            the gate is holding it back, and saying the wrong one
+                            of those sends the reader off to install a source they
+                            already have.
+                        --}}
+                        {{ trans_choice(
+                            '{1} The :count extension installed is marked NSFW and is hidden until you turn adult content on.|[2,*] The :count extensions installed are marked NSFW and are hidden until you turn adult content on.',
+                            $this->catalogue['hidden'],
+                            ['count' => Number::format($this->catalogue['hidden'])],
+                        ) }}
+                    @else
+                        {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
+                    @endif
                 @elseif ($view === 'updates')
                     {{ __('Nothing to update. Every installed extension is on the version its store ships.') }}
                 @elseif ($this->lang !== [])

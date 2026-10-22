@@ -57,6 +57,28 @@ Route::livewire('faq', 'pages::faq')
     ->middleware('throttle:120,1')
     ->name('faq');
 
+/*
+ * The privacy page and the terms of service page, public for the same reason
+ * the FAQ is.
+ *
+ * A reader who has just run an application from an unknown download and does
+ * not trust it is exactly the person who most needs to read what it collects
+ * and what it promises, and they are by definition not logged in yet. Behind
+ * the login these two pages would answer the question for everybody except
+ * the person asking it.
+ *
+ * Throttled, like the FAQ and for the same reason: a GET that reads nothing
+ * expensive should not need a write to rate limit, and these render a static
+ * document out of one PHP file.
+ */
+Route::livewire('privacy', 'pages::legal.privacy')
+    ->middleware('throttle:120,1')
+    ->name('privacy');
+
+Route::livewire('terms', 'pages::legal.terms')
+    ->middleware('throttle:120,1')
+    ->name('terms');
+
 Route::get('showcase', ShowcaseController::class)
     ->middleware('throttle:120,1')
     ->name('showcase.index');

@@ -9,6 +9,7 @@ use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
 use App\Models\UserSource;
+use App\Support\AdultContent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -253,6 +254,16 @@ class SearchPageTest extends TestCase
     /**
      * NSFW is opt-in per user, because in shared deployment one reader's
      * preference must not decide what another sees.
+     *
+     * Rewritten on 2026-10-21, when the opt-in became a stored per reader
+     * setting behind a confirmation rather than a rating in the address bar.
+     * The sentence above was always the intent and was not always the
+     * behaviour: the rating used to be a query parameter, so one reader's
+     * choice could travel in a link and land on somebody else's screen.
+     *
+     * The test now holds what it always meant to hold. The adult source is
+     * out of the scope while the gate is off, it comes in when the reader
+     * turns the gate on, and the address bar cannot do it on its own.
      */
     public function test_nsfw_sources_are_excluded_unless_requested(): void
     {
@@ -268,10 +279,92 @@ class SearchPageTest extends TestCase
 
         $this->assertSame(1, $component->instance()->eligibleSources());
 
+        // The rating in the address bar is not a confirmation, so the scope
+        // does not move because of it. Measured on 2026-10-21: the same
+        // address on the sources page put 41 adult rated extensions on the
+        // first page of the catalogue with nothing asked.
         $component->set('content', [Source::SAFE, Source::NSFW])
             ->call('search');
 
+        $this->assertSame(1, $component->instance()->eligibleSources(), 'The rating in the address bar does not open the gate.');
+
+        app(AdultContent::class)->set($this->user, true);
+
+        $component->set('content', [Source::SAFE, Source::NSFW])
+            ->call('search');
+
+        $this->assertSame(2, $component->instance()->eligibleSources(), 'The gate opens the rating for this reader.');
+    }
+
+    /**
+     * The gate is per reader, and one reader opening it does not open it for
+     * anybody else. The same rule the AniList switch has carried since it was
+     * built, and the reason the setting is stored rather than carried in the
+     * address.
+     */
+    public function test_the_gate_is_per_reader(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Safe Source');
+        $adult = $this->source('Adult Source', 1);
+        $adult->update(['content_warning' => Source::NSFW]);
+
+        $other = User::factory()->create();
+
+        app(AdultContent::class)->set($this->user, true);
+
+        $component = Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->set('content', [Source::SAFE, Source::NSFW])
+            ->call('search');
+
         $this->assertSame(2, $component->instance()->eligibleSources());
+
+        $theirs = Livewire::actingAs($other)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search');
+
+        $this->assertSame(1, $theirs->instance()->eligibleSources(), 'One reader opening the gate is not consent for another.');
+    }
+
+    /**
+     * The rating is not offered as a choice while the gate is off, and it is
+     * offered once the reader has confirmed.
+     *
+     * An option that is offered and then does nothing is a control that
+     * lies, and the reader would tick it and see nothing change.
+     */
+    public function test_the_rating_is_only_offered_once_the_gate_is_on(): void
+    {
+        $page = Livewire::actingAs($this->user)->test('pages::search');
+
+        $page->assertDontSee('value="NSFW"', escape: false)
+            ->assertSee('Adult content off')
+            ->assertSee('Nothing marked NSFW is listed or searched.');
+
+        $page->call('confirmAdultContent');
+
+        // A fresh instance for the read, because the component caches its
+        // computeds for its own life and the instance that ran the
+        // confirmation would answer from the cache it took before the setting
+        // was written.
+        $fresh = Livewire::actingAs($this->user)->test('pages::search');
+
+        $fresh->assertSee('value="NSFW"', escape: false)
+            ->assertSee('Adult content on');
+    }
+
+    /**
+     * The confirmation states the age ask, because the age ask is the point
+     * of the confirmation.
+     */
+    public function test_the_confirmation_states_the_age_ask(): void
+    {
+        Livewire::actingAs($this->user)->test('pages::search')
+            ->assertSee('Turn on adult content?')
+            ->assertSee('18 or older')
+            ->assertSee('I am 18 or older, turn it on');
     }
 
     public function test_a_language_filter_narrows_the_fan_out(): void

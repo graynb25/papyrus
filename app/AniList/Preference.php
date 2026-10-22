@@ -3,7 +3,7 @@
 namespace App\AniList;
 
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use App\Support\UserPreference;
 
 /**
  * Whether this reader wants their searches sent to a third party.
@@ -27,6 +27,10 @@ use Illuminate\Support\Facades\DB;
  * key rather than a column, because the next preference belongs beside this one and
  * adding a migration for every reader toggle is a worse answer than a key.
  *
+ * The reading and the writing of that table live in `App\Support\UserPreference`
+ * now, because the next preference did arrive and two copies of the same four
+ * lines are two copies that can drift.
+ *
  * The value is JSON in the column, and a plain boolean in the interface, because the
  * storage is generic and the meaning is not.
  */
@@ -39,25 +43,7 @@ class Preference
      */
     public function enabled(User|int $user): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
-
-        $row = DB::connection()->table('user_settings')
-            ->where('user_id', $userId)
-            ->where('key', self::KEY)
-            ->value('value');
-
-        if ($row === null) {
-            return false;
-        }
-
-        // The column is JSON, so a stored `true` arrives as the string "1".
-        $value = json_decode((string) $row, true);
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        return in_array($value, [1, '1', 'true'], true);
+        return app(UserPreference::class)->read($user, self::KEY) ?? false;
     }
 
     /**
@@ -65,16 +51,7 @@ class Preference
      */
     public function set(User|int $user, bool $enabled): void
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
-
-        DB::connection()->table('user_settings')->updateOrInsert(
-            ['user_id' => $userId, 'key' => self::KEY],
-            [
-                'value' => json_encode($enabled),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-        );
+        app(UserPreference::class)->write($user, self::KEY, $enabled);
     }
 
     /**

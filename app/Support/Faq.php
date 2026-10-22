@@ -29,7 +29,8 @@ namespace App\Support;
  *
  * That check is why the exceptions list has three entries rather than one. The first draft of this
  * file said AniList and moved on, and the test below failed, because a claim with an unlisted
- * exception is the exact failure this page is for.
+ * exception is the exact failure this page is for. The list itself now lives in
+ * {@see Outbound}, because the privacy page carries the same three facts.
  *
  * ## Where the mechanism answers were checked
  *
@@ -39,8 +40,9 @@ namespace App\Support;
  * wait from `config/source-notices.php`, the sources page's install press and
  * `App\Search\HealthRecorder`, the empty listing from the series page's own `emptyReason()` and
  * `App\Migration\SeriesMigrator`, the migration from the wizard and the bulk page's own copy, the
- * backup from `App\Backup\LiveBackup` and the Backups page, and the licences from
- * `App\Support\Licences` and the Licences page.
+ * backup from `App\Backup\LiveBackup` and the Backups page, the licences from
+ * `App\Support\Licences` and the Licences page, and the adult content gate from
+ * `App\Support\AdultContent`, the fanout's own universe and the Sources page.
  *
  * Four of these answers end in "it depends on the source", and they say so rather than rounding it
  * off. A page that hid the dependence would be wrong in the exact way this one exists to prevent.
@@ -50,28 +52,16 @@ final class Faq
     /**
      * The three things that genuinely contact the internet.
      *
-     * Each one says who initiated it, because that is the difference between a reader's choice and
-     * something the app did on its own. All three are the reader's choice, which is worth saying
-     * plainly rather than leaving implied.
+     * The list itself is in {@see Outbound}, because the privacy page
+     * carries the same three facts and a second copy of the list is a second
+     * copy that can drift from the first. The measurement that produced it is
+     * recorded there.
      *
      * @return list<array{what: string, who: string}>
      */
     public function outbound(): array
     {
-        return [
-            [
-                'what' => __('AniList, if you connect your AniList account in Settings'),
-                'who' => __('Only once you have connected it yourself. It receives the series you are reading and the chapter number you finished. Nothing else about you is sent, and disconnecting in Settings stops it.'),
-            ],
-            [
-                'what' => __('The manga source, when you download or read a chapter'),
-                'who' => __('This one is not something you can avoid, because it is how manga is fetched. When you download a chapter, the source is a third-party site and it sees your request. Papyrus cannot fetch a comic without contacting whoever hosts it.'),
-            ],
-            [
-                'what' => __('The extension repository, when you install a source or a store'),
-                'who' => __('Only once you have installed one. A source is a small program someone else wrote, and installing it downloads it from the repository it came from. A store works the same way one index fetch further: the bundled manga server re-reads the index of every store you have installed when it starts up. Papyrus ships with neither installed, so an install you have not touched makes no requests to fetch anything.'),
-            ],
-        ];
+        return app(Outbound::class)->routes();
     }
 
     /**
@@ -130,6 +120,17 @@ final class Faq
                 answer: [
                     __('A source is a small program, written by someone who is not us, that knows how to find and download manga from one particular website. Papyrus installs and runs them inside the bundled manga server. Without at least one, the app starts and shows you an empty library.'),
                     __('Treat them the way you would treat any other program you did not write: install the ones you want, and notice that they run with your user\'s permissions. They are the least Papyrus-controlled part of the stack, and the Licences page does not pretend otherwise.'),
+                ],
+            ),
+
+            new FaqEntry(
+                question: __('How do I turn on adult content?'),
+                answer: [
+                    __('Adult content is off until you turn it on, and turning it on asks you to confirm that you are 18 or older. Nothing the catalogue marks NSFW is listed in the extension catalogue or asked in a search until you have done that, and the setting is per reader on this machine.'),
+                    __('The switch sits on the Sources page and on the Search page, in the same row as the rating filter, and it is one switch and not two. The rating in the address bar does not turn it on, because a link is not a confirmation.'),
+                    __('There was a real hole here once. A link carrying the rating put 41 adult-rated extensions on the first page of the catalogue with nothing asked, and the page went on saying they were hidden. That is fixed: the rating is behind the confirmation now, and the count on the page tells you how many installed extensions the switch is holding back.'),
+                    __('The rating is the catalogue\'s own, and it belongs to the extension rather than to a series inside it. A site rated Safe can still carry a series that is adult, and the app does not claim otherwise: the search page says so beside the rating it shows.'),
+                    __('Nothing is sent anywhere when you turn it on. It is one row in the database on this machine, beside your other settings, and turning it off again takes it away at once.'),
                 ],
             ),
 

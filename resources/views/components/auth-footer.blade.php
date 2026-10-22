@@ -18,12 +18,36 @@
         {{ __('Self-hosted. No tracking, no telemetry, no third party between you and your sources.') }}
     </p>
 
-    <nav aria-label="{{ __('About Papyrus') }}" class="mt-2.5 flex items-center gap-3">
+    <nav aria-label="{{ __('About Papyrus') }}" class="mt-2.5 flex flex-wrap items-center gap-3">
         <a
             href="{{ route('faq') }}"
             @if (request()->routeIs('faq')) aria-current="page" @endif
             class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
         >{{ __('FAQ') }}</a>
+
+        <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
+
+        {{--
+            The privacy page and the terms of service, beside the FAQ.
+
+            The reader who is standing on the login screen, deciding whether to
+            trust a download, is the reader who most needs to read what the
+            application collects and what running it means. Leaving them to
+            find it would be the same mistake the FAQ's link was.
+        --}}
+        <a
+            href="{{ route('privacy') }}"
+            @if (request()->routeIs('privacy')) aria-current="page" @endif
+            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+        >{{ __('Privacy') }}</a>
+
+        <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
+
+        <a
+            href="{{ route('terms') }}"
+            @if (request()->routeIs('terms')) aria-current="page" @endif
+            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+        >{{ __('Terms') }}</a>
 
         <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
 

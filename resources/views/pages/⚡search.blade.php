@@ -3,6 +3,7 @@
 use App\AniList\Preference as AniListPreference;
 use App\AniList\TitleResolver;
 use App\Jobs\ResolveAniListTitles;
+use App\Livewire\AdultContentPage;
 use App\Models\AniListMedia;
 use App\Models\SearchResult;
 use App\Models\SearchRun;
@@ -23,9 +24,8 @@ use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
-use Livewire\Component;
 
-new #[Title('Search')] class extends Component
+new #[Title('Search')] class extends AdultContentPage
 {
     /**
      * The search terms, in the URL.
@@ -60,16 +60,6 @@ new #[Title('Search')] class extends Component
     #[Url(as: 'lang', except: '')]
     public array $langs = [];
 
-    /**
-     * Content ratings to include. NSFW is opt-in per user rather than a global
-     * setting, because in shared deployment one reader's preference must not
-     * decide what another sees.
-     *
-     * @var array<int, string>
-     */
-    #[Url(as: 'content', except: '')]
-    public array $content = [Source::SAFE, Source::MIXED];
-
     public int $limit = 40;
 
     public ?int $runId = null;
@@ -95,6 +85,20 @@ new #[Title('Search')] class extends Component
     public function mount(): void
     {
         $this->anilistOn = app(AniListPreference::class)->enabled(Auth::user());
+
+        /*
+         * The rating, narrowed by the gate.
+         *
+         * The gate decides whether NSFW is in scope at all, so the address bar
+         * cannot put it there. Measured on 2026-10-21: the same address on the
+         * sources page put 41 adult-rated extensions on the first page of the
+         * catalogue, because Livewire merges the array in the address over the
+         * declared one and NSFW replaced SAFE rather than joining it.
+         *
+         * The same default the sources page applies, for the same reason, and
+         * the fanout asks the same question from the other side.
+         */
+        $this->content = $this->visibleRatings($this->content);
 
         /*
          * Arrive at a search and run it.
@@ -201,7 +205,7 @@ new #[Title('Search')] class extends Component
 
         $run = app(SearchFanout::class)->start(Auth::user(), $this->query, [
             'langs' => $this->langs === [] ? null : $this->langs,
-            'content' => $this->content,
+            'content' => $this->visibleRatings($this->content),
             'limit' => $this->limit,
         ]);
 
@@ -653,7 +657,7 @@ new #[Title('Search')] class extends Component
     {
         return [
             'langs' => $this->langs === [] ? null : $this->langs,
-            'content' => $this->content,
+            'content' => $this->visibleRatings($this->content),
             'limit' => $this->limit,
         ];
     }
@@ -901,17 +905,32 @@ new #[Title('Search')] class extends Component
 
             <div>
                 <flux:label>{{ __('Content') }}</flux:label>
-                <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('NSFW sources are excluded unless you opt in.') }}
-                </p>
 
                 <div class="mt-2">
+                    {{--
+                        The NSFW option is only offered when the gate is on. The
+                        rating is a permission and not a scope, and an option
+                        that is offered and then does nothing is a control that
+                        lies.
+                    --}}
                     <flux:checkbox.group wire:model="content" variant="pills">
                         <flux:checkbox value="SAFE" label="{{ __('Safe') }}" />
                         <flux:checkbox value="MIXED" label="{{ __('Mixed') }}" />
-                        <flux:checkbox value="NSFW" label="{{ __('NSFW') }}" />
+                        @if ($this->adultContentOn())
+                            <flux:checkbox value="NSFW" label="{{ __('NSFW') }}" />
+                        @endif
                     </flux:checkbox.group>
                 </div>
+            </div>
+
+            {{--
+                The gate, on the same page as the filter it narrows. Its own
+                block because it is a permission rather than a filter, and
+                because the reader who searches and gets nothing is the reader
+                most likely to want it.
+            --}}
+            <div class="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                <x-adult-content.gate :enabled="$this->adultContentOn()" />
             </div>
         </div>
 

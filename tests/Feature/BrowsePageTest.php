@@ -6,6 +6,7 @@ use App\Jobs\FetchSeriesChapters;
 use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
+use App\Support\AdultContent;
 use App\Support\Library;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -148,7 +149,7 @@ class BrowsePageTest extends TestCase
         });
     }
 
-    private function source(bool $installed = true, bool $latest = true): Source
+    private function source(bool $installed = true, bool $latest = true, string $rating = Source::SAFE): Source
     {
         return Source::query()->create([
             'suwayomi_source_id' => 4242,
@@ -157,9 +158,44 @@ class BrowsePageTest extends TestCase
             'extension_pkg_name' => 'com.example.testscans',
             'lang' => 'en',
             'home_url' => 'https://testscans.test',
+            'content_warning' => $rating,
             'is_installed' => $installed,
             'supports_latest' => $latest,
         ]);
+    }
+
+    /**
+     * The adult content gate, on the browse page.
+     *
+     * A source's own catalogue is where that source's manga is, so this is
+     * the third door the app controls: the extension catalogue and the search
+     * are gated too. The refusal is named rather than a 404, because a 404
+     * says the page is not here and the reader would think the link was
+     * broken.
+     */
+    public function test_an_adult_rated_source_is_refused_while_the_gate_is_off(): void
+    {
+        $source = $this->source(rating: Source::NSFW);
+
+        Livewire::actingAs($this->user)
+            ->test('pages::browse', ['source' => $source])
+            ->assertOk()
+            ->assertSee('Adult content is off')
+            ->assertSee('This source is marked NSFW')
+            ->assertDontSee('Popular P1 #1');
+    }
+
+    public function test_an_adult_rated_source_opens_once_the_gate_is_on(): void
+    {
+        $source = $this->source(rating: Source::NSFW);
+
+        app(AdultContent::class)->set($this->user, true);
+
+        Livewire::actingAs($this->user)
+            ->test('pages::browse', ['source' => $source])
+            ->assertOk()
+            ->assertDontSee('Adult content is off')
+            ->assertSee('Popular P1 #1');
     }
 
     public function test_it_renders_a_source_popular_catalogue(): void

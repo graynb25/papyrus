@@ -8,6 +8,7 @@ use App\Models\Source;
 use App\Models\SourcePreference;
 use App\Models\User;
 use App\Models\UserSource;
+use App\Support\AdultContent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -225,11 +226,33 @@ class SearchFanout
      */
     private function universe(User $user, array $options): Collection
     {
+        /*
+         * The adult content gate, applied here and not in the page.
+         *
+         * This is the one place that decides which sources a search asks, so a
+         * gate that lived in the page would be a gate the CLI and the tests
+         * walked straight past. Measured on 2026-10-21: an address carrying
+         * `content[]=NSFW` put 41 adult-rated extensions on the first page of
+         * the catalogue with nothing asked and the page still claiming they
+         * were hidden, so the rating a reader may reach cannot be a thing the
+         * address bar decides.
+         *
+         * It is a second filter rather than an intersection written in PHP,
+         * because the two are ANDed by the query and a list that came out
+         * empty would be an empty list and not an absent one, which are the
+         * same array and mean opposite things.
+         */
+        $adult = app(AdultContent::class)->enabled($user);
+
         return Source::query()
             ->runnableFor($user->id, (bool) ($options['include_dead'] ?? false))
             ->when(
                 $options['langs'] ?? null,
                 fn ($q, $langs) => $q->whereIn('lang', (array) $langs),
+            )
+            ->when(
+                ! $adult,
+                fn ($q) => $q->whereIn('content_warning', [Source::SAFE, Source::MIXED]),
             )
             ->when(
                 $options['content'] ?? null,

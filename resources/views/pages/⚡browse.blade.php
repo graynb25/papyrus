@@ -3,6 +3,7 @@
 use App\Models\SeriesState;
 use App\Models\Source;
 use App\Search\SourceSearcher;
+use App\Support\AdultContent;
 use App\Support\ImageUrl;
 use App\Support\Library;
 use App\Support\ReadingState;
@@ -84,6 +85,16 @@ new #[Title('Browse')] class extends Component
     public ?string $loadError = null;
 
     /**
+     * Whether this page is refusing to show an adult rated source.
+     *
+     * A refusal and not a 404, because a 404 says the page is not here and
+     * the reader would think the link was broken. The extension catalogue and
+     * the search are gated too, so this is the third door the app controls:
+     * a source's own catalogue is where that source's manga is.
+     */
+    public bool $adultRefused = false;
+
+    /**
      * The most pages a shared or hand-written link will rebuild.
      */
     public const MOUNT_PAGE_LIMIT = 12;
@@ -103,6 +114,21 @@ new #[Title('Browse')] class extends Component
         abort_unless($source->is_installed, 404);
 
         $this->source = $source;
+
+        /*
+         * The adult content gate, before anything is fetched.
+         *
+         * The refusal is here rather than after the listing is loaded,
+         * because a gate that fetches the content and then declines to show
+         * it has already done the thing it says it does not do.
+         */
+        if ($source->content_warning === Source::NSFW
+            && ! app(AdultContent::class)->enabled(auth()->user())) {
+            $this->adultRefused = true;
+
+            return;
+        }
+
         $this->type = strtoupper($this->type) === 'LATEST' ? 'LATEST' : 'POPULAR';
         $this->loadedThrough = max(1, min($this->loadedThrough, self::MOUNT_PAGE_LIMIT));
         $this->activeQuery = trim($this->query);
@@ -514,7 +540,8 @@ new #[Title('Browse')] class extends Component
         different question, and leaving them under a result grid invites the reader to think the
         grid is one of them.
     --}}
-    <form wire:submit="runSearch" class="flex flex-wrap items-center gap-2">
+    @unless ($adultRefused)
+        <form wire:submit="runSearch" class="flex flex-wrap items-center gap-2">
         <flux:input
             name="query"
             wire:model="query"
@@ -579,8 +606,24 @@ new #[Title('Browse')] class extends Component
             @endif
         </div>
     @endif
+    @endunless
 
-    @if ($loadError !== null && $rows === [])
+    @if ($adultRefused)
+        {{--
+            The refusal.
+
+            Named rather than a 404, because a 404 says the page is not here and
+            the reader would think the link was broken. The gate is on the
+            Sources page and on the Search page, and this says where the switch
+            is rather than leaving the reader to look for it.
+        --}}
+        <flux:callout variant="secondary" icon="lock-closed" data-test="adult-refused">
+            <flux:heading size="sm">{{ __('Adult content is off') }}</flux:heading>
+            <p class="mt-1.5 text-sm text-zinc-600 dark:text-zinc-300">
+                {{ __('This source is marked NSFW, so its catalogue is not shown until you turn adult content on. The switch is on the Sources page and on the Search page.') }}
+            </p>
+        </flux:callout>
+    @elseif ($loadError !== null && $rows === [])
         <flux:callout variant="secondary" icon="exclamation-circle">
             <flux:heading size="sm">{{ __('This listing did not load') }}</flux:heading>
             <p class="mt-1.5 text-sm text-zinc-600 dark:text-zinc-300">{{ $loadError }}</p>
