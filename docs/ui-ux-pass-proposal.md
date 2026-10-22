@@ -28,6 +28,12 @@ app: Ink and Vermilion, Bricolage Grotesque for headings and numerals,
 Instrument Sans for the interface, Instrument Serif italic for the editorial
 moments, vermilion as the single saturated accent on neutral zinc.
 
+This pass does not change the app. It improves what is already there and refines
+it. Every proposal names the existing component or token it extends and states
+that it improves, it does not replace. No Flux component is proposed for
+replacement, no new design system is proposed, and no colour or spacing is
+proposed outside the app's existing tokens.
+
 ## Surfaces
 
 - Onboarding
@@ -37,13 +43,12 @@ moments, vermilion as the single saturated accent on neutral zinc.
 - Sources
 - Health
 - Backups
-- Migrate and migrate sources
+- Migrate
 - Import
 - Licences and connections
 - Insights
 - Series and reader
-- Settings, FAQ, privacy and terms
-- The empty and error states
+- Settings and FAQ
 - Copy and words (humanized copy pass)
 - Mobile-first image sizing
 
@@ -91,12 +96,14 @@ who already understands the model, and the signing-key comparison is the first
 thing the reader meets. There is no "what is a source" sentence and no "what
 happens next" sentence.
 
-Concrete proposal: Add a first-run path that does four things in order. First,
-name the thing the reader needs in one sentence on the empty library: "Papyrus
-reads from sources. A source is an extension repository that holds manga;
-Papyrus ships with none, so the first step is to add one." Second, name
-Keiyoushi as the thing to search for, without embedding its URL or any store
-URL, because the app must not ship a link to a third-party extension
+Concrete proposal: Improve the existing empty state and the existing store card;
+do not replace either. Add a first-run path that does four things in order, all
+inside the components the app already carries. First, name the thing the reader
+needs in one sentence on the empty library, beside the existing empty-state
+copy: "Papyrus reads from sources. A source is an extension repository that
+holds manga; Papyrus ships with none, so the first step is to add one." Second,
+name Keiyoushi as the thing to search for, without embedding its URL or any
+store URL, because the app must not ship a link to a third-party extension
 repository: "The most common source is Keiyoushi. Search for 'Keiyoushi
 extensions' in your browser, open the repository, and paste its index URL into
 the field below." Give the "Add a store" input a helper line that says exactly
@@ -114,12 +121,15 @@ overlay. The empty library's "Add series" door stays; "Add a source" is added
 beside it as the first door, because on a fresh install it is the first thing
 the reader can actually do.
 
-Files it would touch: `resources/views/pages/library.blade.php` (the
-empty-state doors), `resources/views/pages/settings/sources.blade.php` (the
-one-sentence source definition, the Keiyoushi search hint on the "Add a store"
-input, the automatic catalogue load trigger, the "what happens next" line on
-the Available tab), `app/Livewire/Sources.php` or wherever the store-add and
-catalogue-load logic lives (trigger the load on trust, not on a button press).
+Extends: `resources/views/pages/library.blade.php` (empty-state doors),
+`resources/views/pages/settings/sources.blade.php` (store card notice, the "Add a
+store" input and helper, the Available tab), `app/Livewire/Sources.php`
+(store-add and catalogue-load logic). Tokens: zinc neutrals and vermilion accent
+already used by the empty state and the store card.
+
+Files it would touch: `resources/views/pages/library.blade.php`,
+`resources/views/pages/settings/sources.blade.php`,
+`app/Livewire/Sources.php`.
 
 Estimated cost: 90 minutes.
 
@@ -128,7 +138,39 @@ Preview: The current empty library is captured as
 sources page as `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The
 mockup of the proposed first-run path is rendered with the app's own tokens.
 
-### 2. The signing key and the trust step are unexplained
+### 2. The catalogue does not load when a store is added
+
+Severity: M
+
+Surface: Sources, store card and Available tab
+
+What the reader sees today: After a store is added and trusted, the Available tab
+reads "Nothing is installable until you trust a store" until the reader presses
+Refresh catalogue by hand. The reader has to know that the catalogue is a
+separate step from trusting.
+
+Why it is wrong or could be better: Manual Refresh catalogue is for recovering
+from failure, not for the happy path. A reader who has just trusted a store
+expects to see extensions, and asking them to press a button for the normal case
+makes the happy path look like a failure path.
+
+Concrete proposal: Improve the existing store card and the existing Available
+tab. Trigger the catalogue load on trust, not on a button press, and show
+progress ("Loading the catalogue... N extensions found") in the place the
+Available tab already uses for its empty message. Keep Refresh catalogue on the
+page as the recovery path when a load fails. No new component, no new route.
+
+Extends: `app/Livewire/Sources.php` (trust handler, catalogue load trigger),
+`resources/views/pages/settings/sources.blade.php` (Available tab empty message).
+
+Files it would touch: `app/Livewire/Sources.php`,
+`resources/views/pages/settings/sources.blade.php`.
+
+Estimated cost: 30 minutes.
+
+Preview: Current sources page captured as `onboarding-sources-current-...jpg`.
+
+### 3. The signing key and the trust step are unexplained
 
 Severity: M
 
@@ -147,22 +189,23 @@ it reads like a developer's note. The reader needs one sentence that says what
 the key is and what trusting it does, in the same voice as the rest of the
 notice.
 
-Concrete proposal: Replace the developer-facing notice with one sentence in the
+Concrete proposal: Improve the existing store card's notice copy; do not
+replace the card. Replace the developer-facing notice with one sentence in the
 app's voice: "Every store signs its extensions with a key. Compare the key
 above against the one the publisher has published; if they match, trust it, and
 the store's extensions become installable." Keep the key, the Trust button and
 the Remove button where they are. Drop the second paragraph about enforcement,
 which is a developer's justification rather than a reader's instruction.
 
-Files it would touch: `resources/views/pages/settings/sources.blade.php` (the
-store card's notice copy).
+Extends: `resources/views/pages/settings/sources.blade.php` (store card notice).
+
+Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 
 Estimated cost: 15 minutes.
 
-Preview: Current sources page captured as
-`onboarding-sources-current-2026-10-22T21-41-28-933.jpg`.
+Preview: Current sources page captured as `onboarding-sources-current-...jpg`.
 
-### 3. The sources page ships a store URL in the input
+### 4. The sources page ships a store URL in the input
 
 Severity: H
 
@@ -179,19 +222,22 @@ means to reach a store, not the store itself. The URL in the field reads as if
 the app endorses it, and a reader who copies it without reading the signing key
 has skipped the one step that makes the cautious path the default. The page
 already carries the conduct copy ("Trust is a gate in this interface, not an
-enforcement the Suwayomi API offers"); the pre-filled URL undercuts it.
+enforcement the Suwayomi API offers"); the pre-filled URL undercuts it. This is
+also a legal concern, not only a UX concern.
 
-Concrete proposal: Empty the input on load. Keep the helper line that tells the
-reader what to look for ("The index file itself, not the repository root.
-Keiyoushi publishes protobuf at index.pb.") and add one sentence above it:
-"Papyrus does not ship with any store. Search for an extension repository you
-trust, paste its index URL here, and compare its signing key before you trust
-it." The field becomes a place the reader fills in, which is what the trust
-step assumes they did.
+Concrete proposal: Improve the existing "Add a store" input and its helper.
+Empty the input on load. Keep the helper line that tells the reader what to
+look for ("The index file itself, not the repository root. Keiyoushi publishes
+protobuf at index.pb.") and add one sentence above it: "Papyrus does not ship
+with any store. Search for an extension repository you trust, paste its index
+URL here, and compare its signing key before you trust it." The field becomes a
+place the reader fills in, which is what the trust step assumes they did.
 
-Files it would touch: `resources/views/pages/settings/sources.blade.php` (the
-"Add a store" input and its helper), and the test that asserts the pre-filled
-value.
+Extends: `resources/views/pages/settings/sources.blade.php` (the "Add a store"
+input and its helper).
+
+Files it would touch: `resources/views/pages/settings/sources.blade.php`, and
+the test that asserts the pre-filled value.
 
 Estimated cost: 15 minutes, plus a test change.
 
@@ -201,7 +247,7 @@ it.
 
 ## Login and public shell
 
-### 4. The login page's footer links are the only navigation a signed-out reader has
+### 5. The login page's footer links are the only navigation a signed-out reader has
 
 Severity: M
 
@@ -220,11 +266,16 @@ in space, and the footer's links are small and quiet against the promise line.
 The promise line itself is the strongest sentence on the page and it is the
 one thing a reader should see first.
 
-Concrete proposal: Tighten the vertical rhythm so the card sits in the upper
-third of the viewport on desktop, keep the footer where it is but give its links
-the same weight as the promise line's second clause, and put the promise line
-first in the reading order. No new component, no new copy. The footer stays
-shared by the simple shell and the content shell so it cannot drift.
+Concrete proposal: Improve the existing login page and the existing auth footer.
+Tighten the vertical rhythm so the card sits in the upper third of the viewport
+on desktop, keep the footer where it is but give its links the same weight as
+the promise line's second clause, and put the promise line first in the reading
+order. No new component, no new copy. The footer stays shared by the simple
+shell and the content shell so it cannot drift.
+
+Extends: `resources/views/pages/auth/login.blade.php`,
+`resources/views/components/auth-footer.blade.php`,
+`resources/views/layouts/auth/simple.blade.php`.
 
 Files it would touch: `resources/views/pages/auth/login.blade.php`,
 `resources/views/components/auth-footer.blade.php`,
@@ -236,7 +287,7 @@ Preview: The current login page is captured in the walk set; the mockup shows
 the proposed rhythm with the promise line first and the footer links at equal
 weight.
 
-### 5. The register route answers 404 with no link back to sign in
+### 6. The register route answers 404 with no link back to sign in
 
 Severity: L
 
@@ -251,10 +302,13 @@ is fine, but the 404 page does not say so. It reads as a dead link rather than
 as a decision. The reader's next step is to sign in, and the page does not
 offer it.
 
-Concrete proposal: Replace the generic 404 with a short, honest line: "Sign-up
-is closed on this install. If you have an account, sign in." with a link to the
-login page, and keep the generic 404 for everything else. One Blade branch on
-the registration flag.
+Concrete proposal: Improve the existing 404 page. Replace the generic 404 with a
+short, honest line: "Sign-up is closed on this install. If you have an
+account, sign in." with a link to the login page, and keep the generic 404 for
+everything else. One Blade branch on the registration flag.
+
+Extends: `resources/views/errors/404.blade.php` or the route's own handler,
+`routes/web.php`.
 
 Files it would touch: `resources/views/errors/404.blade.php` or the route's own
 handler, `routes/web.php`.
@@ -266,34 +320,7 @@ card with the honest sentence and a sign-in link.
 
 ## Library
 
-### 6. The empty library's notice dismiss button is named after the copy is made
-
-Severity: M
-
-Surface: Library, empty-library toast
-
-What the reader sees today: The toast's dismiss button has no accessible name
-on first paint; the name "Close notification" is applied by the shell script
-after the copy is made. A screen reader meeting the notice before the script runs
-hears an unnamed button.
-
-Why it is wrong or could be better: The naming seam lives in the wrong place for
-a control that appears with the notice. The fix is to move the name into the
-component so it is there on first paint. Already flagged in the Phase 9 walk
-findings as item 6 and held here as a proposal rather than a change.
-
-Concrete proposal: Put `aria-label="Close notification"` on the button inside
-the toast component's own template, and remove the post-hoc naming from the shell
-script. One attribute, one deletion.
-
-Files it would touch: the empty-library toast component,
-`resources/views/components/behaviors.blade.php`.
-
-Estimated cost: 10 minutes.
-
-Preview: Captured as `p9-library-toast-desktop.jpg` in the walk set.
-
-### 7. The library notice is the only thing on an empty shelf
+### 7. The empty library's notice and the empty state say the same thing twice
 
 Severity: L
 
@@ -308,12 +335,16 @@ Why it is wrong or could be better: Two surfaces for one fact. The notice is the
 louder one and it competes with the empty state's own copy, which is the one
 that carries the doors.
 
-Concrete proposal: Drop the toast notice on an empty library and let the empty
-state carry the message and the doors on its own. Keep the toast for genuine
-errors and for the "series added" confirmation, which are different facts.
+Concrete proposal: Improve the existing empty state and the existing toast. Drop
+the toast notice on an empty library and let the empty state carry the message
+and the doors on its own. Keep the toast for genuine errors and for the "series
+added" confirmation, which are different facts.
+
+Extends: `resources/views/pages/library.blade.php` (empty state),
+`app/Livewire/Library.php` (where the notice is raised).
 
 Files it would touch: `resources/views/pages/library.blade.php`,
-`app/Livewire/Library.php` or wherever the notice is raised.
+`app/Livewire/Library.php`.
 
 Estimated cost: 20 minutes.
 
@@ -338,13 +369,16 @@ turns the grid into a reading list rather than a catalogue of things owned.
 Asura's home page does the same with its "continue reading" rail above the
 grid.
 
-Concrete proposal: Add a small unread badge in the top-left corner of every
-cover, carrying the unread chapter count, and a single "Continue" affordance
-that appears on hover or focus and opens the last-read chapter (or chapter one
-if nothing has been read). Keep the existing title and the "Add to library"
-name. The badge uses the vermilion accent, which is already the app's unread
-voice, so no new colour is introduced. On a phone, where there is no hover, the
-badge stays and the affordance becomes a tap target on the cover's lower edge.
+Concrete proposal: Improve the existing cover component. Add a small unread badge
+in the top-left corner of every cover, carrying the unread chapter count, and a
+single "Continue" affordance that appears on hover or focus and opens the
+last-read chapter (or chapter one if nothing has been read). Keep the existing
+title and the "Add to library" name. The badge uses the vermilion accent, which
+is already the app's unread voice, so no new colour is introduced. On a phone,
+where there is no hover, the badge stays and the affordance becomes a tap
+target on the cover's lower edge.
+
+Extends: the cover component (`x-cover.art`), `resources/views/pages/library.blade.php`.
 
 Files it would touch: the cover component, `resources/views/pages/library.blade.php`.
 
@@ -364,16 +398,20 @@ mid-series has to find the series in the grid and open it before they can
 continue; there is no "pick up where you left off" affordance.
 
 Why it is wrong or could be better: Asura Scans and Tachimanga both put a
-continue-reading rail above the grid, because that is the first thing a returning
-reader wants. The app already holds the last-read chapter and the reading
-sessions, so the data is there; only the surface is missing.
+continue-reading rail above the grid, because that is the first thing a
+returning reader wants. The app already holds the last-read chapter and the
+reading sessions, so the data is there; only the surface is missing.
 
-Concrete proposal: Add a horizontal rail above the grid, titled "Continue
+Concrete proposal: Improve the existing library page and the existing
+reading-sessions seam. Add a horizontal rail above the grid, titled "Continue
 reading", showing the three to five series the reader has most recently opened,
 each as a small cover with its title and the chapter it will open. Tapping one
-opens that chapter. The rail hides when there is nothing to continue. It reuses
-the existing reading-sessions seam and the cover component, so no new data
-source is needed.
+opens that chapter. The rail hides when there is nothing to continue. It
+reuses the existing reading-sessions seam and the cover component, so no new
+data source is needed.
+
+Extends: `resources/views/pages/library.blade.php`,
+`app/Livewire/Library.php`, the cover component (`x-cover.art`).
 
 Files it would touch: `resources/views/pages/library.blade.php`,
 `app/Livewire/Library.php`.
@@ -383,9 +421,40 @@ Estimated cost: 45 minutes.
 Preview: The current library is captured as `p9-library-desktop.jpg`. The mockup
 shows the rail above the grid.
 
+### 10. The notice dismiss button is named after the copy is made
+
+Severity: M
+
+Surface: Library, empty-library toast
+
+What the reader sees today: The toast's dismiss button has no accessible name on
+first paint; the name "Close notification" is applied by the shell script after
+the copy is made. A screen reader meeting the notice before the script runs
+hears an unnamed button.
+
+Why it is wrong or could be better: The naming seam lives in the wrong place
+for a control that appears with the notice. The fix is to move the name into
+the component so it is there on first paint. Already flagged in the Phase 9
+walk findings as item 6 and held here as a proposal rather than a change.
+
+Concrete proposal: Improve the existing toast component. Put
+`aria-label="Close notification"` on the button inside the toast component's own
+template, and remove the post-hoc naming from the shell script. One attribute,
+one deletion.
+
+Extends: the empty-library toast component,
+`resources/views/components/behaviors.blade.php`.
+
+Files it would touch: the empty-library toast component,
+`resources/views/components/behaviors.blade.php`.
+
+Estimated cost: 10 minutes.
+
+Preview: Captured as `p9-library-toast-desktop.jpg`.
+
 ## Search and browse
 
-### 10. The search page's query input is named by its placeholder
+### 11. The search page's query input is named by its placeholder
 
 Severity: M
 
@@ -393,25 +462,31 @@ Surface: Search, query input
 
 What the reader sees today: The query input's visible caption is a Flux label
 that renders as a `<ui-label>` rather than a `<label>`, so on first paint the
-input's accessible name comes from its placeholder ("Series title"). The caption
-is wired to the input by the component's own script, but only after hydration.
+input's accessible name comes from its placeholder ("Series title"). The
+caption is wired to the input by the component's own script, but only after
+hydration.
 
-Why it is wrong or could be better: A placeholder is not a name, because it goes
-the moment the reader types. The input needs a real label that points at it by
-`for` and `id`, so the name survives typing and is there before hydration.
+Why it is wrong or could be better: A placeholder is not a name, because it
+goes the moment the reader types. The input needs a real label that points at
+it by `for` and `id`, so the name survives typing and is there before
+hydration.
 
-Concrete proposal: Add a visible `<label for="search-query">` (or
-`aria-labelledby`) to the input and give the input the matching `id`. Keep the
-placeholder as a hint. One line in the component and one in the Blade.
+Concrete proposal: Improve the existing search page and its input. Add a visible
+`<label for="search-query">` (or `aria-labelledby`) to the input and give the
+input the matching `id`. Keep the placeholder as a hint. One line in the
+component and one in the Blade.
+
+Extends: `resources/views/pages/search.blade.php`,
+`app/Livewire/Search.php` if the id is bound there.
 
 Files it would touch: `resources/views/pages/search.blade.php`,
-`app/Livewire/Search.php` if the id is bound there.
+`app/Livewire/Search.php`.
 
 Estimated cost: 15 minutes.
 
 Preview: Captured as `p9-search-desktop.jpg`.
 
-### 11. The browse page's source picker is a wall of sources with no grouping
+### 12. The browse page's source picker is a wall of sources with no grouping
 
 Severity: L
 
@@ -427,9 +502,11 @@ has to scan the whole grid. Grouping by language (the same grouping the sources
 page already uses) would make the picker scannable without changing what it
 offers.
 
-Concrete proposal: Group the picker's cards by language with a small heading per
-group, reusing the language-name map the sources page already uses. No new data,
-no new query.
+Concrete proposal: Improve the existing browse picker. Group the picker's cards
+by language with a small heading per group, reusing the language-name map the
+sources page already uses. No new data, no new query.
+
+Extends: `resources/views/pages/browse.blade.php` or the picker partial.
 
 Files it would touch: `resources/views/pages/browse.blade.php` or the picker
 partial.
@@ -440,7 +517,7 @@ Preview: Captured as `p9-browse-desktop.jpg`.
 
 ## Sources
 
-### 12. The sources page's language row is heavy at desktop width
+### 13. The sources page's language row is heavy at desktop width
 
 Severity: L
 
@@ -454,9 +531,11 @@ chosen shape, so this is a compaction rather than a redesign: collapse to a
 compact chip row with a "more" affordance on narrow widths, and keep the full
 row on desktop.
 
-Concrete proposal: Make the row a horizontally scrolling chip strip below a
-threshold width, with a fade and a "show all" toggle, and leave the wrapping row
-on desktop where there is room.
+Concrete proposal: Improve the existing language row. Make the row a
+horizontally scrolling chip strip below a threshold width, with a fade and a
+"show all" toggle, and leave the wrapping row on desktop where there is room.
+
+Extends: `resources/views/pages/settings/sources.blade.php` (language row).
 
 Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 
@@ -464,7 +543,7 @@ Estimated cost: 25 minutes.
 
 Preview: Captured as `p9-sources-languages-desktop.jpg`.
 
-### 13. The sources Available tab shows the adult content badge and button as two actions
+### 14. The sources Available tab shows the adult content badge and button as two actions
 
 Severity: L
 
@@ -476,9 +555,12 @@ button that opens a confirm dialog, so one decision is presented twice.
 Why it is wrong or could be better: Minor duplication. The dialog is the real
 gate and the badge is status, but today both read as actions.
 
-Concrete proposal: Keep the badge as status and make the button the only action:
-the badge becomes a plain text label, and the button keeps its confirm dialog.
-No new component.
+Concrete proposal: Improve the existing badge and button. Keep the badge as
+status and make the button the only action: the badge becomes a plain text
+label, and the button keeps its confirm dialog. No new component.
+
+Extends: `resources/views/pages/settings/sources.blade.php` (adult content
+badge and button).
 
 Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 
@@ -486,7 +568,7 @@ Estimated cost: 10 minutes.
 
 Preview: Captured as `p9u2-nsfw-gate-shut-available.jpg`.
 
-### 14. The source card carries no health summary
+### 15. The source card carries no health summary
 
 Severity: M
 
@@ -502,10 +584,13 @@ search from needs to know which ones will answer. The app already computes this
 (`Source::scopeRunnableFor()` skips dead sources by default, and `HealthRecorder`
 marks them after five failures); only the card does not say it.
 
-Concrete proposal: Add a single line under the variant count on each card:
-"Healthy" in moss, or "Not answering" in zinc-500 with a "Retry" affordance,
-read from the source's own health record. No new query; the card already has the
-source id.
+Concrete proposal: Improve the existing source card. Add a single line under the
+variant count on each card: "Healthy" in moss, or "Not answering" in zinc-500
+with a "Retry" affordance, read from the source's own health record. No new
+query; the card already has the source id.
+
+Extends: `resources/views/pages/settings/sources.blade.php` (source card),
+`app/Livewire/Sources.php`.
 
 Files it would touch: `resources/views/pages/settings/sources.blade.php`,
 `app/Livewire/Sources.php`.
@@ -518,7 +603,7 @@ card with the health line.
 
 ## Health
 
-### 15. The health page's site chevrons carry no summary
+### 16. The health page's site chevrons carry no summary
 
 Severity: M
 
@@ -528,13 +613,15 @@ What the reader sees today: 25 site chevrons are named, but their expanded state
 has no summary line, so a reader who opens one learns nothing until they read
 every row.
 
-Why it is wrong or could be better: The expanded state is where the dead sources
-live, and there is no "N sources, M dead" line to scan first. A reader scanning
-for the one dead source has to open every site.
+Why it is wrong or could be better: The expanded state is where the dead
+sources live, and there is no "N sources, M dead" line to scan first. A reader
+scanning for the one dead source has to open every site.
 
-Concrete proposal: Add "N sources, M dead" beside each site chevron in its
-expanded state, computed from the site's own source rows. One line in the loop
-that renders the chevron.
+Concrete proposal: Improve the existing health page. Add "N sources, M dead"
+beside each site chevron in its expanded state, computed from the site's own
+source rows. One line in the loop that renders the chevron.
+
+Extends: `resources/views/pages/settings/health.blade.php`.
 
 Files it would touch: `resources/views/pages/settings/health.blade.php`.
 
@@ -544,7 +631,7 @@ Preview: Captured as `p9-health-desktop.jpg` and `p9-health-named-desktop.jpg`.
 
 ## Backups
 
-### 16. The backups run panel is an inline block that cannot be read
+### 17. The backups run panel is an inline block that cannot be read
 
 Severity: H
 
@@ -562,17 +649,20 @@ highest-value item in this pass. The running backup never says how far it has
 got either: "Started" / "being staged now" with no bar, no elapsed time, and no
 stage name a reader can parse.
 
-Concrete proposal: Replace the inline block with a modal carrying a checkpoint
-timeline (stages: Checking target, Stopping, Copying manga half, Copying reader
-half, Writing manifest, Restarting, each pending, running, done or failed), a
-live progress bar with elapsed seconds, a final verdict sentence, and one clear
-next action. The inline block becomes a single line: "Last run: finished 22
-hours ago." with a "Show details" link. The page stops jumping on every poll.
-The same modal and timeline serve the running backup, so the reader sees "N of 6
-stages" and elapsed seconds while it runs.
+Concrete proposal: Improve the existing "The last time" block and the existing
+run rows; do not replace the page. Replace the inline block with a modal
+carrying a checkpoint timeline (stages: Checking target, Stopping, Copying manga
+half, Copying reader half, Writing manifest, Restarting, each pending, running,
+done or failed), a live progress bar with elapsed seconds, a final verdict
+sentence, and one clear next action. The inline block becomes a single line:
+"Last run: finished 22 hours ago." with a "Show details" link. The page stops
+jumping on every poll. The same modal and timeline serve the running backup, so
+the reader sees "N of 6 stages" and elapsed seconds while it runs.
 
-Files it would touch: `resources/views/pages/settings/backups.blade.php` (the
-"The last time" section).
+Extends: `resources/views/pages/settings/backups.blade.php` (the "The last
+time" section), `flux:modal`.
+
+Files it would touch: `resources/views/pages/settings/backups.blade.php`.
 
 Estimated cost: 90 minutes.
 
@@ -581,7 +671,7 @@ Preview: The current page is captured as `uxpass-backups-desktop-...jpg` and
 with the checkpoint timeline and the progress bar, drawn with the app's own
 tokens.
 
-### 17. The backups page has no "last restored" line per pair
+### 18. The backups page has no "last restored" line per pair
 
 Severity: M
 
@@ -595,17 +685,19 @@ Why it is wrong or could be better: The restore surface never says what the pair
 holds in a scannable way beyond the table, and a reader who restored a week ago
 has no record of it.
 
-Concrete proposal: Add a "last restored" line to each pair row once a restore run
-exists for it, reading the restore run's own row and timestamp.
+Concrete proposal: Improve the existing pairs table. Add a "last restored" line
+to each pair row once a restore run exists for it, reading the restore run's own
+row and timestamp.
 
-Files it would touch: `resources/views/pages/settings/backups.blade.php` (pairs
-table).
+Extends: `resources/views/pages/settings/backups.blade.php` (pairs table).
+
+Files it would touch: `resources/views/pages/settings/backups.blade.php`.
 
 Estimated cost: 30 minutes.
 
 Preview: Captured as `uxpass-backups-desktop-...jpg`.
 
-### 18. The restore confirmation does not name what it replaces
+### 19. The restore confirmation does not name what it replaces
 
 Severity: M
 
@@ -619,19 +711,22 @@ Why it is wrong or could be better: A restore is destructive and names nothing o
 what it takes, so a reader cannot confirm they are about to overwrite the right
 thing.
 
-Concrete proposal: Name the pair's token and the counts it will replace in the
-confirm dialog, and show the same checkpoint timeline the backup modal uses.
+Concrete proposal: Improve the existing restore confirm dialog. Name the pair's
+token and the counts it will replace in the confirm dialog, and show the same
+checkpoint timeline the backup modal uses.
 
-Files it would touch: `resources/views/pages/settings/backups.blade.php`
-(restore confirm).
+Extends: `resources/views/pages/settings/backups.blade.php` (restore confirm),
+`flux:modal`.
+
+Files it would touch: `resources/views/pages/settings/backups.blade.php`.
 
 Estimated cost: 30 minutes.
 
 Preview: Captured as `uxpass-backups-desktop-...jpg`.
 
-## Migrate and migrate sources
+## Migrate
 
-### 19. The migrate-sources page does not say where you came from
+### 20. The migrate-sources page does not say where you came from
 
 Severity: M
 
@@ -644,12 +739,13 @@ Why it is wrong or could be better: A reader who opened the page from a
 particular source has to go back to remember which one they were moving, because
 the page carries no origin.
 
-Concrete proposal: Show which source the reader came from on the migrate-sources
-page, beside the existing "Back to sources" link, read from the query string or
-the referrer and named on the page.
+Concrete proposal: Improve the existing migrate-sources page. Show which source
+the reader came from on the migrate-sources page, beside the existing "Back to
+sources" link, read from the query string or the referrer and named on the page.
 
-Files it would touch:
-`resources/views/pages/settings/migrate-sources.blade.php`.
+Extends: `resources/views/pages/settings/migrate-sources.blade.php`.
+
+Files it would touch: `resources/views/pages/settings/migrate-sources.blade.php`.
 
 Estimated cost: 20 minutes.
 
@@ -657,7 +753,7 @@ Preview: Captured as `uxpass-migrate-sources-desktop-...jpg`.
 
 ## Import
 
-### 20. The import page's run rows are an inline block
+### 21. The import page's run rows are an inline block
 
 Severity: M
 
@@ -671,10 +767,14 @@ Why it is wrong or could be better: Same family as the backups run panel: a
 long-lived job shown as a paragraph. The fix is the same shape: one line per run
 with a "Show details" link opening a modal with the checkpoint timeline.
 
-Concrete proposal: Replace the inline run block with one line per run (file name,
-badge, "Show details") and a single modal carrying the checkpoint timeline, the
-progress bar, the verdict sentence and one next action. Reuse the same modal
-component as the backups page rather than a second one.
+Concrete proposal: Improve the existing import page. Replace the inline run
+block with one line per run (file name, badge, "Show details") and a single
+modal carrying the checkpoint timeline, the progress bar, the verdict sentence
+and one next action. Reuse the same modal component as the backups page rather
+than a second one.
+
+Extends: `resources/views/pages/settings/import.blade.php`,
+`app/Models/ImportRun.php`, the backups modal component.
 
 Files it would touch: `resources/views/pages/settings/import.blade.php`,
 `app/Models/ImportRun.php`.
@@ -685,7 +785,7 @@ Preview: Captured as `uxpass-import-desktop-...jpg`.
 
 ## Licences and connections
 
-### 21. The connections page has no test of its own connection
+### 22. The connections page has no test of its own connection
 
 Severity: L
 
@@ -698,9 +798,13 @@ Why it is wrong or could be better: A reader who mistyped a key saves it and
 sees "saved" with no signal that the key is wrong. A "Test connection" button
 that runs the same check the app runs on start would close the loop.
 
-Concrete proposal: Add a "Test connection" button beside the save button that
-runs the connection check and reports the result as a toast, reusing the
-existing check rather than a new one.
+Concrete proposal: Improve the existing connections page. Add a "Test
+connection" button beside the save button that runs the connection check and
+reports the result as a toast, reusing the existing check rather than a new
+one.
+
+Extends: `resources/views/pages/settings/connections.blade.php`,
+`app/Livewire/Connections.php`.
 
 Files it would touch: `resources/views/pages/settings/connections.blade.php`,
 `app/Livewire/Connections.php`.
@@ -711,7 +815,7 @@ Preview: Captured as `uxpass-connections-desktop-...jpg`.
 
 ## Insights
 
-### 22. The insights page is numbers only, with no pictures
+### 23. The insights page is numbers only, with no pictures
 
 Severity: H
 
@@ -720,37 +824,45 @@ Surface: Insights
 What the reader sees today: The insights page shows cards with numbers: minutes
 read, pages turned, series read. There is no graph, no series cover, and no
 picture of reading time over time. A reader who has read for a month sees
-"42 minutes" and nothing else.
+"42 minutes" and nothing else. The page does already render a per-series
+horizontal bar with a cover and a minutes badge, so the surface is not empty;
+it is a list of rows rather than a picture of reading.
 
 Why it is wrong or could be better: Insights should show what the reader's
 reading looks like, not just count it. A number alone does not tell a reader
 whether they read more this week than last, which series they spent time on, or
 when they read. The page is about the reader's own reading, and a page about
 reading with no pictures of reading is missing the point. Tachimanga's reading
-history and Mihon's stats both lead with a chart and a covered series list.
+insights and Mihon's stats both lead with a chart and a covered series list.
 
-Concrete proposal: Add three pictures to the page, all drawn from data the app
-already holds. First, a reading-time chart: a simple bar or line chart of
-minutes read per day (or per week) for the chosen window, with the total on the
-same line. Second, a series list with covers: the series the reader spent time
-on, each with its cover, its minutes, and its pages, sorted by time spent.
-Third, keep the empty state honest: when there is no reading yet, show one
-sentence ("No reading recorded yet. Open a chapter and it will show up here.")
-with a link to the library, and hide the zero cards until there is something to
-show.
+Concrete proposal: Improve the existing insights page and its existing
+per-series bar. Match the Tachimanga pattern exactly: a series cover image on
+the left, a horizontal bar whose width is proportional to the reading time for
+that series, ordered from the longest reading time to the shortest, with the
+text beside the bar carrying the series name, the minutes read, and the pages
+turned. The app already holds the data (ReadingInsights::bySeries, the library
+lens for covers and titles) and already renders the bar; the improvement is to
+make the cover, the bar and the text read as one row rather than as a row with
+a bar underneath it, and to keep the order descending by minutes. Keep the
+totals cards and the window picker where they are. Keep the empty state
+honest: when there is no reading yet, show one sentence ("No reading recorded
+yet. Open a chapter and it will show up here.") with a link to the library,
+and hide the zero cards until there is something to show.
 
-Files it would touch: `resources/views/pages/insights.blade.php`,
-`app/Livewire/Insights.php` (or wherever the page's data comes from).
+Extends: `resources/views/pages/insights.blade.php` (the per-series list and
+its bar), `x-cover.art` (the cover atom), `app/Support/ReadingInsights.php`.
 
-Estimated cost: 90 minutes.
+Files it would touch: `resources/views/pages/insights.blade.php`.
 
-Preview: The current insights page is captured as
-`uxpass-insights-desktop-...jpg`. The mockup shows the chart and the covered
-series list beside it.
+Estimated cost: 60 minutes.
+
+Preview: The current insights page is captured as `uxpass-insights-desktop-...jpg`.
+The mockup shows the cover, the bar and the text beside it, in descending
+order of minutes.
 
 ## Series and reader
 
-### 23. The series page's empty reason is one sentence for three causes
+### 24. The series page's empty reason is one sentence for three causes
 
 Severity: M
 
@@ -758,17 +870,20 @@ Surface: Series, chapter list empty
 
 What the reader sees today: When a series has no chapters, the page says "The
 source returned no chapters" with the body "This is an upstream condition: the
-source answered, and its chapter listing was empty." The same sentence covers a
-series that moved, a source that changed its layout, and a source that is
+source answered, and its chapter listing was empty." The same sentence covers
+a series that moved, a source that changed its layout, and a source that is
 broken.
 
 Why it is wrong or could be better: The app cannot tell which of the three it
 is, and it says so honestly, but the sentence reads as a single cause. A reader
 who sees it cannot tell whether to wait, to search manually, or to give up.
 
-Concrete proposal: Keep the honest sentence and add a second line that names the
-three possibilities in plain words and points at the migrate page ("If the
-series moved, you can move it to another source from here."). No new data.
+Concrete proposal: Improve the existing series page. Keep the honest sentence
+and add a second line that names the three possibilities in plain words and
+points at the migrate page ("If the series moved, you can move it to another
+source from here."). No new data.
+
+Extends: `resources/views/pages/series.blade.php`.
 
 Files it would touch: `resources/views/pages/series.blade.php`.
 
@@ -776,23 +891,26 @@ Estimated cost: 15 minutes.
 
 Preview: No capture of an empty series; the proposal carries the mockup only.
 
-### 24. The reader has no way back to the chapter list from the page
+### 25. The reader has no way back to the chapter list from the page
 
 Severity: L
 
 Surface: Reader
 
 What the reader sees today: The reader page shows the chapter's pages and the
-settings panel, but the only way back to the series is the browser's back button
-or the series link in the breadcrumb.
+settings panel, but the only way back to the series is the browser's back
+button or the series link in the breadcrumb.
 
 Why it is wrong or could be better: A reader who opened a chapter from search
 rather than from the series page has no in-app way back to the series. The back
 affordance should be on the page.
 
-Concrete proposal: Add a "Back to the series" link in the reader's header,
-pointing at the series route for the manga the chapter belongs to, in the same
-shape as the migrate wizard's back link.
+Concrete proposal: Improve the existing reader page. Add a "Back to the series"
+link in the reader's header, pointing at the series route for the manga the
+chapter belongs to, in the same shape as the migrate wizard's back link.
+
+Extends: `resources/views/pages/reader.blade.php` or
+`app/Http/Controllers/ReaderController.php`.
 
 Files it would touch: `resources/views/pages/reader.blade.php` or
 `app/Http/Controllers/ReaderController.php`.
@@ -802,7 +920,7 @@ Estimated cost: 15 minutes.
 Preview: No capture of the reader in this pass; the proposal carries the mockup
 only.
 
-### 25. The chapter list does not show read state or download state
+### 26. The chapter list does not show read state or download state
 
 Severity: L
 
@@ -812,15 +930,18 @@ What the reader sees today: The chapter list shows chapter numbers and names,
 but read and unread chapters look the same, and there is no download indicator.
 A reader scanning for the next unread chapter has to open each one.
 
-Why it is wrong or could be better: Mihon and Tachimanga both mark read chapters
-in the list, and Mihon shows a download indicator, because that is the
-information a reader uses to decide which chapter to open next. The app already
-holds the read state and the download state; only the list does not show them.
+Why it is wrong or could be better: Mihon and Tachimanga both mark read
+chapters in the list, and Mihon shows a download indicator, because that is
+the information a reader uses to decide which chapter to open next. The app
+already holds the read state and the download state; only the list does not
+show them.
 
-Concrete proposal: Mark read chapters in the list with a small check in the
-accent colour, and show a download indicator beside any chapter whose pages are
-on disk. Keep the existing number and name. No new data; the list already has
-both.
+Concrete proposal: Improve the existing series page. Mark read chapters in the
+list with a small check in the accent colour, and show a download indicator
+beside any chapter whose pages are on disk. Keep the existing number and name.
+No new data; the list already has both.
+
+Extends: `resources/views/pages/series.blade.php`.
 
 Files it would touch: `resources/views/pages/series.blade.php`.
 
@@ -829,28 +950,7 @@ Estimated cost: 30 minutes.
 Preview: The series page is captured in the walk set. The mockup shows the list
 with read marks and download indicators.
 
-## Settings, FAQ, privacy and terms
-
-### 26. The in-shell FAQ has no filter and will not scale
-
-Severity: L
-
-Surface: Settings > FAQ
-
-What the reader sees today: 15 questions in one long column, privacy open on
-arrival, no search.
-
-Why it is wrong or could be better: Fine for the current count, but it will not
-scale past about 25 questions. The fix is deferred until the count crosses 20.
-
-Concrete proposal: Add a filter input above the list when the count crosses 20,
-filtering on the question text. Defer until then.
-
-Files it would touch: `resources/views/pages/settings/faq.blade.php`.
-
-Estimated cost: 20 minutes when triggered.
-
-Preview: Captured as `uxpass-faq-desktop-...jpg`.
+## Settings and FAQ
 
 ### 27. The FAQ does not open and close like an accordion
 
@@ -866,12 +966,15 @@ Why it is wrong or could be better: A FAQ that does not behave like a FAQ is
 confusing. The title should be the toggle, the answer should show and hide, and
 the open and closed states should be easy to see.
 
-Concrete proposal: Use a native disclosure (details and summary) for each
-question, with the question as the summary and the answer inside. The privacy
-question stays open on arrival. Show a clear open and closed state, for example
-a small chevron that turns. Do not use a custom script when the browser already
-does this. This matches the series page's folded description, which is the
-house pattern.
+Concrete proposal: Improve the existing FAQ pages. Use a native disclosure
+(details and summary) for each question, with the question as the summary and
+the answer inside. The privacy question stays open on arrival. Show a clear
+open and closed state, for example a small chevron that turns. Do not use a
+custom script when the browser already does this. This matches the series
+page's folded description, which is the house pattern.
+
+Extends: `resources/views/pages/settings/faq.blade.php`,
+`resources/views/pages/faq.blade.php`, `app/Support/Faq.php`.
 
 Files it would touch: `resources/views/pages/settings/faq.blade.php`,
 `resources/views/pages/faq.blade.php`, `app/Support/Faq.php`.
@@ -890,18 +993,21 @@ Severity: M
 Surface: All copy: FAQ, settings, backups, empty states, error pages
 
 What the reader sees today: Sentences use long, heavy words that nobody says out
-loud. They run long. They read like a manual. A reader who is already unsure has
-to work to understand them.
+loud. They run long. They read like a manual. A reader who is already unsure
+has to work to understand them.
 
 Why it is wrong or could be better: The app is for a person reading manga on
 their own machine. Its words should sound like a person explaining to a friend.
 Short sentences. Plain words. No jargon. No filler.
 
-Concrete proposal: Go through every sentence the app shows and rewrite it. Start
-with the FAQ, then settings, then backups, then empty states, then error pages.
-For each sentence, ask: would I say this to a friend? If not, say it the way I
-would. Keep the meaning. Drop the padding. The research notes list the sources
-this borrows from.
+Concrete proposal: Improve the existing copy across the app. Go through every
+sentence the app shows and rewrite it. Start with the FAQ, then settings, then
+backups, then empty states, then error pages. For each sentence, ask: would I
+say this to a friend? If not, say it the way I would. Keep the meaning. Drop
+the padding. The research notes list the sources this borrows from.
+
+Extends: `app/Support/Faq.php`, the settings pages, the backups page, the empty
+states, the error pages.
 
 Files it would touch: `app/Support/Faq.php`, the settings pages, the backups
 page, the empty states, the error pages.
@@ -926,11 +1032,15 @@ Why it is wrong or could be better: Most readers use a phone. The image should
 be sized for the phone first, and grown for a bigger screen only when there is
 room. This is the mobile-first rule for images.
 
-Concrete proposal: Use `srcset` and `sizes` on every image, with the smallest
-size first and the larger sizes after it. Write the `sizes` attribute for a
-phone first and add a media query for wider screens. Use `loading="lazy"` so
-images below the fold wait. Use the `picture` element only when the art itself
-changes between sizes. Measure the result on a phone and on a desktop.
+Concrete proposal: Improve the existing image markup. Use `srcset` and `sizes`
+on every image, with the smallest size first and the larger sizes after it.
+Write the `sizes` attribute for a phone first and add a media query for wider
+screens. Use `loading="lazy"` so images below the fold wait. Use the `picture`
+element only when the art itself changes between sizes. Measure the result on a
+phone and on a desktop.
+
+Extends: the cover component (`x-cover.art`), the reader page, the browse and
+search cards.
 
 Files it would touch: the cover component, the reader page, the browse and
 search cards.
@@ -942,8 +1052,8 @@ Preview: The research notes cite the sources this borrows from.
 ## What this pass does not touch
 
 - The clean-machine sandbox gate and F26's verification. The gate is parked on
-  the owner's word (eleven deaths to 0x80370106) and is not run in this pass.
-  F26's fix is committed but never sandbox verified.
+  the owner's word and is not run in this pass. F26's fix is committed but never
+  sandbox verified.
 - The push. Nothing is pushed; the push decision is the owner's.
 - The sandbox park itself, and the resumption bar (one hands-off run ending
   "PASS, every check held" with 67 checks).
@@ -996,68 +1106,75 @@ captures.
 - Block 1 (first-run path): current `onboarding-empty-library-current-...jpg`,
   `onboarding-sources-current-...jpg`, proposed mockup rendered with the app's
   tokens.
-- Block 2 (signing key and trust): current `onboarding-sources-current-...jpg`.
-- Block 3 (no shipped store URL): current `onboarding-sources-current-...jpg`,
+- Block 2 (catalogue auto-load): current `onboarding-sources-current-...jpg`.
+- Block 3 (signing key and trust): current `onboarding-sources-current-...jpg`.
+- Block 4 (no shipped store URL): current `onboarding-sources-current-...jpg`,
   proposed mockup of the empty input.
-- Block 4 (login rhythm): current login capture, proposed mockup.
-- Block 5 (register 404): current `02-register-404-...jpg`, proposed mockup.
-- Block 6 (notice dismiss): current `p9-library-toast-desktop.jpg`.
-- Block 7 (empty library): current `04-library-empty-...jpg`, `p9-library-desktop.jpg`.
+- Block 5 (login rhythm): current login capture, proposed mockup.
+- Block 6 (register 404): current `02-register-404-...jpg`, proposed mockup.
+- Block 7 (empty library): current `04-library-empty-...jpg`,
+  `p9-library-desktop.jpg`.
 - Block 8 (cover grid): current `p9-library-desktop.jpg`, proposed mockup.
 - Block 9 (continue rail): current `p9-library-desktop.jpg`, proposed mockup.
-- Block 10 (search input): current `p9-search-desktop.jpg`.
-- Block 11 (browse picker): current `p9-browse-desktop.jpg`.
-- Block 12 (language row): current `p9-sources-languages-desktop.jpg`.
-- Block 13 (adult content badge): current `p9u2-nsfw-gate-shut-available.jpg`.
-- Block 14 (source health): current `onboarding-sources-current-...jpg`, proposed mockup.
-- Block 15 (health chevrons): current `p9-health-desktop.jpg`, `p9-health-named-desktop.jpg`.
-- Block 16 (backups run panel): current `uxpass-backups-desktop-...jpg`,
+- Block 10 (notice dismiss): current `p9-library-toast-desktop.jpg`.
+- Block 11 (search input): current `p9-search-desktop.jpg`.
+- Block 12 (browse picker): current `p9-browse-desktop.jpg`.
+- Block 13 (language row): current `p9-sources-languages-desktop.jpg`.
+- Block 14 (adult content badge): current `p9u2-nsfw-gate-shut-available.jpg`.
+- Block 15 (source health): current `onboarding-sources-current-...jpg`,
+  proposed mockup.
+- Block 16 (health chevrons): current `p9-health-desktop.jpg`,
+  `p9-health-named-desktop.jpg`.
+- Block 17 (backups run panel): current `uxpass-backups-desktop-...jpg`,
   `p7-step5-backups-populated-desktop-...jpg`, proposed mockup of the modal.
-- Block 17 (last restored): current `uxpass-backups-desktop-...jpg`.
-- Block 18 (restore confirm): current `uxpass-backups-desktop-...jpg`.
-- Block 19 (migrate-sources origin): current `uxpass-migrate-sources-desktop-...jpg`.
-- Block 20 (import run rows): current `uxpass-import-desktop-...jpg`.
-- Block 21 (connections test): current `uxpass-connections-desktop-...jpg`.
-- Block 22 (insights pictures): current `uxpass-insights-desktop-...jpg`, proposed mockup.
-- Block 23 (series empty reason): mockup only.
-- Block 24 (reader back link): mockup only.
-- Block 25 (chapter list read state): series page capture, proposed mockup.
-- Block 26 (FAQ filter): current `uxpass-faq-desktop-...jpg`.
-- Block 27 (FAQ accordion): current `uxpass-faq-desktop-...jpg`, proposed mockup.
+- Block 18 (last restored): current `uxpass-backups-desktop-...jpg`.
+- Block 19 (restore confirm): current `uxpass-backups-desktop-...jpg`.
+- Block 20 (migrate-sources origin): current
+  `uxpass-migrate-sources-desktop-...jpg`.
+- Block 21 (import run rows): current `uxpass-import-desktop-...jpg`.
+- Block 22 (connections test): current `uxpass-connections-desktop-...jpg`.
+- Block 23 (insights pictures): current `uxpass-insights-desktop-...jpg`,
+  proposed mockup.
+- Block 24 (series empty reason): mockup only.
+- Block 25 (reader back link): mockup only.
+- Block 26 (chapter list read state): series page capture, proposed mockup.
+- Block 27 (FAQ accordion): current `uxpass-faq-desktop-...jpg`, proposed
+  mockup.
 - Block 28 (humanized copy): before and after in the Humanized copy section.
 - Block 29 (mobile-first images): measured on a phone and a desktop.
 
 ## Ranked order by reader value
 
-1. Block 16, the backups run panel (H)
+1. Block 17, the backups run panel (H)
 2. Block 1, the first-run path (H)
-3. Block 3, no shipped store URL (H)
-4. Block 4, the login rhythm (M)
+3. Block 4, no shipped store URL (H)
+4. Block 5, the login rhythm (M)
 5. Block 8, the cover grid (M)
 6. Block 9, the continue rail (M)
 7. Block 10, the search input label (M)
-8. Block 15, the health chevrons (M)
-9. Block 17, last restored per pair (M)
-10. Block 18, restore confirm naming (M)
-11. Block 19, migrate-sources origin (M)
-12. Block 20, import run rows (M)
-13. Block 21, connections test (L)
-14. Block 22, insights pictures (H)
-15. Block 23, series empty reason (M)
-16. Block 24, reader back link (L)
-17. Block 25, chapter list read state (L)
-18. Block 26, FAQ filter (L)
-19. Block 27, FAQ accordion (M)
-20. Block 28, humanized copy (M)
-21. Block 29, mobile-first images (M)
-22. Block 6, notice dismiss name (M)
-23. Block 7, empty library notice (L)
-24. Block 11, browse picker grouping (L)
-25. Block 12, language row compaction (L)
-26. Block 13, adult content badge (L)
-27. Block 14, source health summary (M)
-28. Block 2, signing key and trust (M)
-29. Block 5, register 404 honesty (L)
+8. Block 16, the health chevrons (M)
+9. Block 18, last restored per pair (M)
+10. Block 19, restore confirm naming (M)
+11. Block 20, migrate-sources origin (M)
+12. Block 21, import run rows (M)
+13. Block 22, connections test (L)
+14. Block 23, insights pictures (H)
+15. Block 24, series empty reason (M)
+16. Block 25, reader back link (L)
+17. Block 26, chapter list read state (L)
+18. Block 27, FAQ accordion (M)
+19. Block 28, humanized copy (M)
+20. Block 29, mobile-first images (M)
+21. Block 7, empty library notice (L)
+22. Block 11, browse picker grouping (L)
+23. Block 12, language row compaction (L)
+24. Block 13, adult content badge (L)
+25. Block 14, source health summary (M)
+26. Block 2, signing key and trust (M)
+27. Block 3, catalogue auto-load (M)
+28. Block 6, register 404 honesty (L)
+29. Block 10, notice dismiss name (M)
+30. Block 15, language row (already revised above)
 
 ## Research notes
 
@@ -1114,6 +1231,20 @@ and the thing taken from it.
   Tachimanga changelog and App Store listing; Mihon README and reader settings
   guide; Suwayomi-WebUI README and release notes; Asura Scans home and manga
   pages.
+- Insights and reading stats. Tachimanga's reading insights page leads with the
+  series cover, a horizontal bar whose width is proportional to the reading time
+  for that series, ordered from the longest reading time to the shortest, with the
+  series name, the minutes read and the pages turned beside the bar. Mihon's stats
+  PR (#2728) adds the same shape with a toggle between "by manga" (bars relative
+  to the most-read series) and "total" (bars as a share of all reading time), and
+  a cover style toggle between square and book. This proposal matches the
+  Tachimanga shape exactly: cover, horizontal bar proportional to reading time,
+  descending order, text beside the bar. Source: Tachimanga changelog (reading
+  insights, v4.1 build 296, 2025-01-26; logo hide, v4.1 build 300; quotes
+  update, v4.1 build 297); Mihon PR #2728 "Feature: Add per-manga reading time
+  statistics with visualization in statistics view"; Reddit r/mangapiracy "Manga
+  reader with manga-specific statistics" (2026-03-09) describing the Tachimanga
+  insights screenshot.
 - Onboarding and empty states. The empty state as an onboarding opportunity,
   with a single clear next action rather than a tour overlay, comes from
   UserTourKit's guided-action pattern and the UX Patterns Guide on onboarding
@@ -1144,18 +1275,33 @@ Each line shows the old wording and the new wording.
   "Checking target", "Copying manga half", and so on, in plain words.
 - Backups page, empty state: old "No backups yet" new "No backups yet. Take one
   from the button below, or use `papyrus snapshot` from the terminal."
-- Library, empty state: old "This library is empty" new "Nothing here yet. Add a
-  series, or bring a library from another app."
-- Search, empty state: old "No results" new "No series found. Try a shorter
-  title, or pick a source on the left."
-- Series, empty chapters: old "This is an upstream condition: the source
-  answered, and its chapter listing was empty." new "The source answered, but its
-  chapter listing was empty. The series may have moved, or the source may have
-  changed its layout."
-- Error page: old "A page fell out of its binding." new "Something went wrong
-  on this page. Nothing you did caused it."
-- Settings, save button: old "Saved" new "Saved."
-- Toast, success: old "Operation completed successfully" new "Done."
+- Sources page, store card notice: old "Trust is a gate in this interface, not
+  an enforcement the Suwayomi API offers." new "Every store signs its extensions
+  with a key. Compare the key above against the one the publisher has published;
+  if they match, trust it, and the store's extensions become installable."
+- Insights page, empty state: old "No reading counted yet in this window." new
+  "No reading recorded yet. Open a chapter and it will show up here."
 
-The full pass touches `app/Support/Faq.php`, the settings pages, the backups
-page, the empty states, and the error pages. Estimated cost: 3 hours.
+## How each improvement is verified
+
+The six gates from AGENTS.md section 2 run on the tree that carries each
+improvement, not on the branch it was based on:
+
+1. `php -d memory_limit=2048M artisan test --without-tty`
+2. `php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G`
+3. `php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/`
+4. `python ..\.tools\suwayomi\check-dashes.py`
+5. `python tools\check-machine-detail.py`
+6. `python tools\test-check-machine-detail.py`
+
+Each improvement that changes a rendered page is also verified in a real browser
+against the standing stack, with a throwaway account minted for the walk and
+deleted afterwards, read back gone. A change whose test could pass without the
+fix gets a mutation check: the fix is reverted, the test must die, the fix is
+restored, the test must live. A change that touches time, ports or processes is
+run more than once.
+
+The improvements that are L-severity polish carry a lighter bar: the unit tests
+for the touched page, the dash scan and the machine-detail scan, and a
+screenshot read back from disk. No improvement is claimed verified until the
+artifact is read back from disk, per AGENTS.md section 0.6.
