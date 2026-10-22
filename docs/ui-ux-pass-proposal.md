@@ -7,9 +7,10 @@ owner can see the change before deciding.
 Every block is judged on one question: does this surface feel like a person
 designed it for a person, or like a machine executing a spec? The words matter,
 but so do the layout, the spacing, the interactions and the structure. A block
-that reads as machine-made is revised, not just reworded. Severity, surface, what the reader
-sees today, why it is wrong or could be better, the concrete proposal, the
-files it would touch, the estimated cost, and a preview.
+that reads as machine-made is revised, not just reworded. Each block carries
+severity, surface, what the reader sees today, why it is wrong or could be
+better, the concrete proposal, the files it would touch, the estimated cost,
+and a preview.
 
 Severities: S data loss, credentials, or the library reachable by someone it
 should not be. H the feature does not work for the reader, or a gate cannot
@@ -23,7 +24,9 @@ Walked in a real browser against the standing stack on 2026-10-22, signed in as
 a throwaway account minted for the walk. Screenshots are in the workspace's
 `.openchamber/screenshots/` with names that carry their own timestamp and what
 they show. Mockups are rendered with the app's own tokens so they read as the
-app.
+app: Ink and Vermilion, Bricolage Grotesque for headings and numerals,
+Instrument Sans for the interface, Instrument Serif italic for the editorial
+moments, vermilion as the single saturated accent on neutral zinc.
 
 ## Surfaces
 
@@ -42,152 +45,124 @@ app.
 - Settings, FAQ, privacy and terms
 - The empty and error states
 - Copy and words (humanized copy pass)
+- Mobile-first image sizing
 
 ## Onboarding
 
-### 26. A fresh install has no first-run path at all
+### 1. A fresh install has no first-run path at all
 
 Severity: H
 
 Surface: First run, from the shortcut to the first readable page
 
-What the reader sees today: A reader who has just installed Papyrus and double-clicked
-the shortcut lands on a login page that says "Log in to your account" with the
-promise line "Your whole library, every source, one quiet room." and a footer of
-four links. There is no sign-up link unless registration is open on that install,
-and there is no sentence that says what Papyrus is or what to do first. After
-signing in, the reader lands on an empty library whose doors are "Add series",
-"Go to search" and "Bring a library from another app", none of which is the thing
-the reader has to do first, which is to add a source. The sources page then opens
-with a notice that reads "Sources are Keiyoushi extensions running inside
-Suwayomi. Nothing is bundled: point Papyrus at a store, read its signing key, then
-trust it if you recognise the publisher." followed by a paragraph about trust being
-a gate in the interface rather than an enforcement the Suwayomi API offers. The
-store URL is pre-filled in the "Add a store" input, the signing key sits below it,
-and the "Trust this key" button asks the reader to compare a 64-character hex
-string against something the publisher published. The Available tab reads "Nothing
-is installable until you trust a store" with "1 store is registered. Compare its
-signing key above against the one its publisher has published, then trust it." A
-reader who has never heard of Keiyoushi, Suwayomi or an extension repository has
-no way to know any of this, and nothing on the page says what a source is in one
-sentence or what happens after it is added.
+What the reader sees today: A reader who has just installed Papyrus and
+double-clicked the shortcut lands on a login page that says "Log in to your
+account" with the promise line "Your whole library, every source, one quiet
+room." and a footer of four links. There is no sign-up link unless
+registration is open on that install, and there is no sentence that says what
+Papyrus is or what to do first. After signing in, the reader lands on an empty
+library whose doors are "Add series", "Go to search" and "Bring a library from
+another app", none of which is the thing the reader has to do first, which is
+to add a source. The sources page then opens with a notice that reads
+"Sources are Keiyoushi extensions running inside Suwayomi. Nothing is bundled:
+point Papyrus at a store, read its signing key, then trust it if you recognise
+the publisher." followed by a paragraph about trust being a gate in the
+interface rather than an enforcement the Suwayomi API offers. The store URL is
+pre-filled in the "Add a store" input, the signing key sits below it, and the
+"Trust this key" button asks the reader to compare a 64-character hex string
+against something the publisher published. The Available tab reads "Nothing is
+installable until you trust a store" with "1 store is registered. Compare its
+signing key above against the one its publisher has published, then trust it."
+A reader who has never heard of Keiyoushi, Suwayomi or an extension repository
+has no way to know any of this, and nothing on the page says what a source is in
+one sentence or what happens after it is added.
 
-Why it is wrong or could be better: The app's whole point is launching Papyrus to
-read your manga, and a fresh install that serves HTTP perfectly while showing the
-reader nothing has not been proved to work (F26). The onboarding requirements in
-the findings register (F26, F23, F27) ask for three things: name Keiyoushi and let
-the reader add it without hunting for the store URL by hand; load the catalogue
-automatically once a store is added, because manual Refresh catalogue is for
-recovering from failure only; and make the first visit usable without reading the
-docs. Today none of the three holds. The empty library's doors point at search and
-import, both of which presuppose a source the reader does not have yet. The sources
-page's notice is written for a reader who already understands the model, and the
-signing-key comparison is the first thing the reader meets. There is no "what is a
-source" sentence and no "what happens next" sentence.
+Why it is wrong or could be better: The app's whole point is launching Papyrus
+to read your manga, and a fresh install that serves HTTP perfectly while
+showing the reader nothing has not been proved to work (F26). The onboarding
+requirements in the findings register (F26, F23, F27) ask for three things:
+name Keiyoushi and let the reader add it without hunting for the store URL by
+hand; load the catalogue automatically once a store is added, because manual
+Refresh catalogue is for recovering from failure only; and make the first visit
+usable without reading the docs. Today none of the three holds. The empty
+library's doors point at search and import, both of which presuppose a source
+the reader does not have yet. The sources page's notice is written for a reader
+who already understands the model, and the signing-key comparison is the first
+thing the reader meets. There is no "what is a source" sentence and no "what
+happens next" sentence.
 
-Concrete proposal: Add a first-run path that does four things in order. First, name
-the thing the reader needs in one sentence on the empty library: "Papyrus reads
-from sources. A source is an extension repository that holds manga; Papyrus ships
-with none, so the first step is to add one." Second, name Keiyoushi as the thing
-to search for, without embedding its URL or any store URL, because the app must not
-ship a link to a third-party extension repository: "The most common source is
-Keiyoushi. Search for 'Keiyoushi extensions' in your browser, open the repository,
-and paste its index URL into the field below." Give the "Add a store" input a
-helper line that says exactly that, and keep the input empty so the reader pastes
-what they found. Third, once a store is added and trusted, load its catalogue
-automatically and show progress ("Loading the catalogue... N extensions found")
-instead of asking the reader to press Refresh catalogue, which stays on the page
-only as the recovery path when a load fails. Fourth, on the Available tab, once the
-catalogue has loaded, show the first page of extensions with a one-line sentence
-above it: "These are the extensions this store offers. Install one to start
-reading." The path is three screens (empty library, sources, available) and uses
-the components the app already carries: the empty-state doors, the store card, the
-trust button, the Available tab. No new component, no new route, no tour overlay.
-The empty library's "Add series" door stays; "Add a source" is added beside it as
-the first door, because on a fresh install it is the first thing the reader can
-actually do.
+Concrete proposal: Add a first-run path that does four things in order. First,
+name the thing the reader needs in one sentence on the empty library: "Papyrus
+reads from sources. A source is an extension repository that holds manga;
+Papyrus ships with none, so the first step is to add one." Second, name
+Keiyoushi as the thing to search for, without embedding its URL or any store
+URL, because the app must not ship a link to a third-party extension
+repository: "The most common source is Keiyoushi. Search for 'Keiyoushi
+extensions' in your browser, open the repository, and paste its index URL into
+the field below." Give the "Add a store" input a helper line that says exactly
+that, and keep the input empty so the reader pastes what they found. Third,
+once a store is added and trusted, load its catalogue automatically and show
+progress ("Loading the catalogue... N extensions found") instead of asking the
+reader to press Refresh catalogue, which stays on the page only as the recovery
+path when a load fails. Fourth, on the Available tab, once the catalogue has
+loaded, show the first page of extensions with a one-line sentence above it:
+"These are the extensions this store offers. Install one to start reading."
+The path is three screens (empty library, sources, available) and uses the
+components the app already carries: the empty-state doors, the store card, the
+trust button, the Available tab. No new component, no new route, no tour
+overlay. The empty library's "Add series" door stays; "Add a source" is added
+beside it as the first door, because on a fresh install it is the first thing
+the reader can actually do.
 
-Files it would touch: `resources/views/pages/library.blade.php` (the empty-state
-doors), `resources/views/pages/settings/sources.blade.php` (the one-sentence source
-definition, the Keiyoushi search hint on the "Add a store" input, the automatic
-catalogue load trigger, the "what happens next" line on the Available tab),
-`app/Livewire/Sources.php` or wherever the store-add and catalogue-load logic
-lives (trigger the load on trust, not on a button press).
+Files it would touch: `resources/views/pages/library.blade.php` (the
+empty-state doors), `resources/views/pages/settings/sources.blade.php` (the
+one-sentence source definition, the Keiyoushi search hint on the "Add a store"
+input, the automatic catalogue load trigger, the "what happens next" line on
+the Available tab), `app/Livewire/Sources.php` or wherever the store-add and
+catalogue-load logic lives (trigger the load on trust, not on a button press).
 
 Estimated cost: 90 minutes.
 
 Preview: The current empty library is captured as
 `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg` and the current
 sources page as `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The
-mockup of the proposed first-run path is rendered below with the app's own tokens.
+mockup of the proposed first-run path is rendered with the app's own tokens.
 
-### 27. The catalogue does not load when a store is added
-
-Severity: M
-
-Surface: Sources, store card and catalogue load
-
-What the reader sees today: After a store is added, the Available tab reads
-"Nothing is installable until you trust a store" and the Refresh catalogue button
-sits in the store card's action row. The reader has to press Refresh catalogue by
-hand to see what the store offers. If they do not, the page stays empty and they
-conclude the store did not work.
-
-Why it is wrong or could be better: Manual Refresh catalogue is for recovering from
-failure, not for the first load. The catalogue should load on its own once the
-store is trusted, because a reader who has just trusted a store has already said
-yes and should not have to ask again. The button stays for the case where the load
-failed or the store's index changed.
-
-Concrete proposal: Trigger the catalogue load automatically when a store transitions
-from untrusted to trusted, and show progress on the Available tab ("Loading the
-catalogue... N extensions found") while it runs. Keep Refresh catalogue as a
-secondary action on the store card for the recovery case. No new component; the
-existing poll and progress seam carries it.
-
-Files it would touch: `resources/views/pages/settings/sources.blade.php` (the
-progress line on the Available tab), `app/Livewire/Sources.php` (the trust-to-load
-trigger).
-
-Estimated cost: 45 minutes.
-
-Preview: Current sources page captured as
-`onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The proposed progress
-line appears in the first-run mockup below.
-
-### 28. The signing key and the trust step are unexplained
+### 2. The signing key and the trust step are unexplained
 
 Severity: M
 
 Surface: Sources, store card
 
 What the reader sees today: The store card shows "SIGNING KEY" followed by a
-64-character hex string, a "Trust this key" button and a "Remove" button, and the
-notice above says "Trust is a gate in this interface, not an enforcement the
-Suwayomi API offers. It is here so that you read the key before installing, and so
-the cautious path is the default one." A reader who has never compared a signing key
-has no way to know what they are looking at or what "trust" changes.
+64-character hex string, a "Trust this key" button and a "Remove" button, and
+the notice above says "Trust is a gate in this interface, not an enforcement the
+Suwayomi API offers. It is here so that you read the key before installing, and
+so the cautious path is the default one." A reader who has never compared a
+signing key has no way to know what they are looking at or what "trust"
+changes.
 
-Why it is wrong or could be better: The trust step is the app's safety gate and it
-reads like a developer's note. The reader needs one sentence that says what the key
-is and what trusting it does, in the same voice as the rest of the notice.
+Why it is wrong or could be better: The trust step is the app's safety gate and
+it reads like a developer's note. The reader needs one sentence that says what
+the key is and what trusting it does, in the same voice as the rest of the
+notice.
 
-Concrete proposal: Replace the developer-facing notice with one sentence in the app's
-voice: "Every store signs its extensions with a key. Compare the key above against
-the one the publisher has published; if they match, trust it, and the store's
-extensions become installable." Keep the key, the Trust button and the Remove
-button where they are. Drop the second paragraph about enforcement, which is a
-developer's justification rather than a reader's instruction.
+Concrete proposal: Replace the developer-facing notice with one sentence in the
+app's voice: "Every store signs its extensions with a key. Compare the key
+above against the one the publisher has published; if they match, trust it, and
+the store's extensions become installable." Keep the key, the Trust button and
+the Remove button where they are. Drop the second paragraph about enforcement,
+which is a developer's justification rather than a reader's instruction.
 
-Files it would touch: `resources/views/pages/settings/sources.blade.php` (the store
-card's notice copy).
+Files it would touch: `resources/views/pages/settings/sources.blade.php` (the
+store card's notice copy).
 
 Estimated cost: 15 minutes.
 
 Preview: Current sources page captured as
 `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`.
 
-### 29. The sources page ships the Keiyoushi store URL pre-filled in the input
+### 3. The sources page ships a store URL in the input
 
 Severity: H
 
@@ -199,21 +174,20 @@ Keiyoushi sees a long GitHub URL sitting in a field, with no explanation of
 where it came from or what it is.
 
 Why it is wrong or could be better: The app must not ship a link to a
-third-party extension store. Doing so is a DMCA concern: the app provides
-the means to reach a store, not the store itself. The URL in the field reads
-as if the app endorses it, and a reader who copies it without reading the
-signing key has skipped the one step that makes the cautious path the
-default. The page already carries the conduct copy ("Trust is a gate in this
-interface, not an enforcement the Suwayomi API offers"); the pre-filled URL
-undercuts it.
+third-party extension store. Doing so is a DMCA concern: the app provides the
+means to reach a store, not the store itself. The URL in the field reads as if
+the app endorses it, and a reader who copies it without reading the signing key
+has skipped the one step that makes the cautious path the default. The page
+already carries the conduct copy ("Trust is a gate in this interface, not an
+enforcement the Suwayomi API offers"); the pre-filled URL undercuts it.
 
-Concrete proposal: Empty the input on load. Keep the helper line that tells
-the reader what to look for ("The index file itself, not the repository
-root. Keiyoushi publishes protobuf at index.pb.") and add one sentence above
-it: "Papyrus does not ship with any store. Search for an extension
-repository you trust, paste its index URL here, and compare its signing key
-before you trust it." The field becomes a place the reader fills in, which
-is what the trust step assumes they did.
+Concrete proposal: Empty the input on load. Keep the helper line that tells the
+reader what to look for ("The index file itself, not the repository root.
+Keiyoushi publishes protobuf at index.pb.") and add one sentence above it:
+"Papyrus does not ship with any store. Search for an extension repository you
+trust, paste its index URL here, and compare its signing key before you trust
+it." The field becomes a place the reader fills in, which is what the trust
+step assumes they did.
 
 Files it would touch: `resources/views/pages/settings/sources.blade.php` (the
 "Add a store" input and its helper), and the test that asserts the pre-filled
@@ -227,7 +201,7 @@ it.
 
 ## Login and public shell
 
-### 1. The login page's footer links are the only navigation a signed-out reader has
+### 4. The login page's footer links are the only navigation a signed-out reader has
 
 Severity: M
 
@@ -258,24 +232,24 @@ Files it would touch: `resources/views/pages/auth/login.blade.php`,
 
 Estimated cost: 20 minutes.
 
-Preview: The current login page is captured as
-`uxpass-login-desktop-2026-10-22T...jpg` in the walk set; the mockup shows the
-proposed rhythm with the promise line first and the footer links at equal
+Preview: The current login page is captured in the walk set; the mockup shows
+the proposed rhythm with the promise line first and the footer links at equal
 weight.
 
-### 2. The register route answers 404 with no link back to sign in
+### 5. The register route answers 404 with no link back to sign in
 
 Severity: L
 
 Surface: `/register` when registration is closed
 
-What the reader sees today: "This shelf does not exist. The page you asked for is
-not here." with one button, "Back to the reading room". A reader who typed the
-URL expecting a sign-up form gets a 404 that reads like a broken page.
+What the reader sees today: "This shelf does not exist. The page you asked for
+is not here." with one button, "Back to the reading room". A reader who typed
+the URL expecting a sign-up form gets a 404 that reads like a broken page.
 
-Why it is wrong or could be better: Registration is closed on purpose, and that is
-fine, but the 404 page does not say so. It reads as a dead link rather than as
-a decision. The reader's next step is to sign in, and the page does not offer it.
+Why it is wrong or could be better: Registration is closed on purpose, and that
+is fine, but the 404 page does not say so. It reads as a dead link rather than
+as a decision. The reader's next step is to sign in, and the page does not
+offer it.
 
 Concrete proposal: Replace the generic 404 with a short, honest line: "Sign-up
 is closed on this install. If you have an account, sign in." with a link to the
@@ -287,12 +261,12 @@ handler, `routes/web.php`.
 
 Estimated cost: 15 minutes.
 
-Preview: The current 404 is captured in the walk set as `02-register-404-...jpg`.
-The mockup shows the same card with the honest sentence and a sign-in link.
+Preview: The current 404 is captured in the walk set. The mockup shows the same
+card with the honest sentence and a sign-in link.
 
 ## Library
 
-### 3. The empty library's notice dismiss button is named after the copy is made
+### 6. The empty library's notice dismiss button is named after the copy is made
 
 Severity: M
 
@@ -308,8 +282,8 @@ a control that appears with the notice. The fix is to move the name into the
 component so it is there on first paint. Already flagged in the Phase 9 walk
 findings as item 6 and held here as a proposal rather than a change.
 
-Concrete proposal: Put `aria-label="Close notification"` on the button inside the
-toast component's own template, and remove the post-hoc naming from the shell
+Concrete proposal: Put `aria-label="Close notification"` on the button inside
+the toast component's own template, and remove the post-hoc naming from the shell
 script. One attribute, one deletion.
 
 Files it would touch: the empty-library toast component,
@@ -319,16 +293,16 @@ Estimated cost: 10 minutes.
 
 Preview: Captured as `p9-library-toast-desktop.jpg` in the walk set.
 
-### 4. The library notice is the only thing on an empty shelf
+### 7. The library notice is the only thing on an empty shelf
 
 Severity: L
 
 Surface: Library, empty state
 
 What the reader sees today: An empty library shows "Good reading. Nothing added
-yet." with an "Add series" button, "Go to search", "Bring a library from another
-app", and a notice card "This library is empty" with its own close button. The
-notice and the empty state say the same thing twice.
+yet." with an "Add series" button, "Go to search", "Bring a library from
+another app", and a notice card "This library is empty" with its own close
+button. The notice and the empty state say the same thing twice.
 
 Why it is wrong or could be better: Two surfaces for one fact. The notice is the
 louder one and it competes with the empty state's own copy, which is the one
@@ -345,9 +319,73 @@ Estimated cost: 20 minutes.
 
 Preview: Captured as `04-library-empty-...jpg` and `p9-library-desktop.jpg`.
 
+### 8. The library grid does not show reading progress on the cover
+
+Severity: M
+
+Surface: Library, grid of series
+
+What the reader sees today: The library grid shows covers with titles and unread
+counts, but the cover itself carries no reading progress: no last-read chapter,
+no unread badge in a consistent seat, and no "continue reading" affordance on
+the grid. A reader who has read three chapters of a series sees the same cover
+as one they have never opened.
+
+Why it is wrong or could be better: Tachimanga and Mihon both put the reading
+state on the cover, because the cover is the thing the reader scans first. An
+unread badge in a fixed corner and a single "continue" affordance per series
+turns the grid into a reading list rather than a catalogue of things owned.
+Asura's home page does the same with its "continue reading" rail above the
+grid.
+
+Concrete proposal: Add a small unread badge in the top-left corner of every
+cover, carrying the unread chapter count, and a single "Continue" affordance
+that appears on hover or focus and opens the last-read chapter (or chapter one
+if nothing has been read). Keep the existing title and the "Add to library"
+name. The badge uses the vermilion accent, which is already the app's unread
+voice, so no new colour is introduced. On a phone, where there is no hover, the
+badge stays and the affordance becomes a tap target on the cover's lower edge.
+
+Files it would touch: the cover component, `resources/views/pages/library.blade.php`.
+
+Estimated cost: 60 minutes.
+
+Preview: The current library grid is captured as `p9-library-desktop.jpg`. The
+mockup shows the badge and the continue affordance on a row of covers.
+
+### 9. There is no continue-reading rail above the library
+
+Severity: M
+
+Surface: Library, top of the page
+
+What the reader sees today: The library opens on the grid. A reader who is
+mid-series has to find the series in the grid and open it before they can
+continue; there is no "pick up where you left off" affordance.
+
+Why it is wrong or could be better: Asura Scans and Tachimanga both put a
+continue-reading rail above the grid, because that is the first thing a returning
+reader wants. The app already holds the last-read chapter and the reading
+sessions, so the data is there; only the surface is missing.
+
+Concrete proposal: Add a horizontal rail above the grid, titled "Continue
+reading", showing the three to five series the reader has most recently opened,
+each as a small cover with its title and the chapter it will open. Tapping one
+opens that chapter. The rail hides when there is nothing to continue. It reuses
+the existing reading-sessions seam and the cover component, so no new data
+source is needed.
+
+Files it would touch: `resources/views/pages/library.blade.php`,
+`app/Livewire/Library.php`.
+
+Estimated cost: 45 minutes.
+
+Preview: The current library is captured as `p9-library-desktop.jpg`. The mockup
+shows the rail above the grid.
+
 ## Search and browse
 
-### 5. The search page's query input is named by its placeholder
+### 10. The search page's query input is named by its placeholder
 
 Severity: M
 
@@ -362,9 +400,9 @@ Why it is wrong or could be better: A placeholder is not a name, because it goes
 the moment the reader types. The input needs a real label that points at it by
 `for` and `id`, so the name survives typing and is there before hydration.
 
-Concrete proposal: Add a visible `<label for="search-query">` (or `aria-labelledby`)
-to the input and give the input the matching `id`. Keep the placeholder as a
-hint. One line in the component and one in the Blade.
+Concrete proposal: Add a visible `<label for="search-query">` (or
+`aria-labelledby`) to the input and give the input the matching `id`. Keep the
+placeholder as a hint. One line in the component and one in the Blade.
 
 Files it would touch: `resources/views/pages/search.blade.php`,
 `app/Livewire/Search.php` if the id is bound there.
@@ -373,7 +411,7 @@ Estimated cost: 15 minutes.
 
 Preview: Captured as `p9-search-desktop.jpg`.
 
-### 6. The browse page's source picker is a wall of sources with no grouping
+### 11. The browse page's source picker is a wall of sources with no grouping
 
 Severity: L
 
@@ -384,9 +422,10 @@ door into that source's catalogue. On a wide screen the grid is wide and dense,
 and there is no grouping by language or by whether the source is already
 installed.
 
-Why it is wrong or could be better: A reader looking for one scanlation site has
-to scan the whole grid. Grouping by language (the same grouping the sources page
-already uses) would make the picker scannable without changing what it offers.
+Why it is wrong or could be better: A reader looking for one scanlation site
+has to scan the whole grid. Grouping by language (the same grouping the sources
+page already uses) would make the picker scannable without changing what it
+offers.
 
 Concrete proposal: Group the picker's cards by language with a small heading per
 group, reusing the language-name map the sources page already uses. No new data,
@@ -401,14 +440,14 @@ Preview: Captured as `p9-browse-desktop.jpg`.
 
 ## Sources
 
-### 7. The sources page's language row is heavy at desktop width
+### 12. The sources page's language row is heavy at desktop width
 
 Severity: L
 
 Surface: Sources, language row
 
-What the reader sees today: 23 language pills wrapping over three lines at desktop
-width, each carrying its count. Functional, but visually heavy.
+What the reader sees today: 23 language pills wrapping over three lines at
+desktop width, each carrying its count. Functional, but visually heavy.
 
 Why it is wrong or could be better: Optional polish. The pills are the owner's
 chosen shape, so this is a compaction rather than a redesign: collapse to a
@@ -425,7 +464,7 @@ Estimated cost: 25 minutes.
 
 Preview: Captured as `p9-sources-languages-desktop.jpg`.
 
-### 8. The sources Available tab shows the adult content badge and button as two actions
+### 13. The sources Available tab shows the adult content badge and button as two actions
 
 Severity: L
 
@@ -446,9 +485,40 @@ Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 Estimated cost: 10 minutes.
 
 Preview: Captured as `p9u2-nsfw-gate-shut-available.jpg`.
+
+### 14. The source card carries no health summary
+
+Severity: M
+
+Surface: Sources, source card
+
+What the reader sees today: A source card shows its name, its variant count and
+its pin, but nothing about whether it is healthy: a dead source (five failures
+in a row) looks the same as a live one until the reader opens the health page.
+
+Why it is wrong or could be better: Suwayomi's own WebUI marks dead sources in
+the source list, and Mihon grays them out, because a reader choosing a source to
+search from needs to know which ones will answer. The app already computes this
+(`Source::scopeRunnableFor()` skips dead sources by default, and `HealthRecorder`
+marks them after five failures); only the card does not say it.
+
+Concrete proposal: Add a single line under the variant count on each card:
+"Healthy" in moss, or "Not answering" in zinc-500 with a "Retry" affordance,
+read from the source's own health record. No new query; the card already has the
+source id.
+
+Files it would touch: `resources/views/pages/settings/sources.blade.php`,
+`app/Livewire/Sources.php`.
+
+Estimated cost: 20 minutes.
+
+Preview: The current sources page is captured as
+`onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The mockup shows the
+card with the health line.
+
 ## Health
 
-### 9. The health page's site chevrons carry no summary
+### 15. The health page's site chevrons carry no summary
 
 Severity: M
 
@@ -474,7 +544,7 @@ Preview: Captured as `p9-health-desktop.jpg` and `p9-health-named-desktop.jpg`.
 
 ## Backups
 
-### 10. The backups run panel is an inline block that cannot be read
+### 16. The backups run panel is an inline block that cannot be read
 
 Severity: H
 
@@ -488,7 +558,9 @@ whole page jump every 3 seconds while a run is in flight.
 Why it is wrong or could be better: A long-lived job is shown as if it were a
 paragraph. The reader cannot tell what is happening, how far it has got, or what
 to do next, and the page reflows under them while they read it. This is the
-highest-value item in this pass.
+highest-value item in this pass. The running backup never says how far it has
+got either: "Started" / "being staged now" with no bar, no elapsed time, and no
+stage name a reader can parse.
 
 Concrete proposal: Replace the inline block with a modal carrying a checkpoint
 timeline (stages: Checking target, Stopping, Copying manga half, Copying reader
@@ -496,6 +568,8 @@ half, Writing manifest, Restarting, each pending, running, done or failed), a
 live progress bar with elapsed seconds, a final verdict sentence, and one clear
 next action. The inline block becomes a single line: "Last run: finished 22
 hours ago." with a "Show details" link. The page stops jumping on every poll.
+The same modal and timeline serve the running backup, so the reader sees "N of 6
+stages" and elapsed seconds while it runs.
 
 Files it would touch: `resources/views/pages/settings/backups.blade.php` (the
 "The last time" section).
@@ -507,7 +581,7 @@ Preview: The current page is captured as `uxpass-backups-desktop-...jpg` and
 with the checkpoint timeline and the progress bar, drawn with the app's own
 tokens.
 
-### 11. The backups page has no "last restored" line per pair
+### 17. The backups page has no "last restored" line per pair
 
 Severity: M
 
@@ -531,7 +605,7 @@ Estimated cost: 30 minutes.
 
 Preview: Captured as `uxpass-backups-desktop-...jpg`.
 
-### 12. The restore confirmation does not name what it replaces
+### 18. The restore confirmation does not name what it replaces
 
 Severity: M
 
@@ -557,7 +631,7 @@ Preview: Captured as `uxpass-backups-desktop-...jpg`.
 
 ## Migrate and migrate sources
 
-### 13. The migrate-sources page does not say where you came from
+### 19. The migrate-sources page does not say where you came from
 
 Severity: M
 
@@ -583,7 +657,7 @@ Preview: Captured as `uxpass-migrate-sources-desktop-...jpg`.
 
 ## Import
 
-### 14. The import page's run rows are an inline block
+### 20. The import page's run rows are an inline block
 
 Severity: M
 
@@ -594,8 +668,8 @@ with the run's progress note and counts, re-rendering the whole row on every
 poll. A long import makes the page jump.
 
 Why it is wrong or could be better: Same family as the backups run panel: a
-long-lived job shown as a paragraph. The fix is the same shape: one line per
-run with a "Show details" link opening a modal with the checkpoint timeline.
+long-lived job shown as a paragraph. The fix is the same shape: one line per run
+with a "Show details" link opening a modal with the checkpoint timeline.
 
 Concrete proposal: Replace the inline run block with one line per run (file name,
 badge, "Show details") and a single modal carrying the checkpoint timeline, the
@@ -611,30 +685,7 @@ Preview: Captured as `uxpass-import-desktop-...jpg`.
 
 ## Licences and connections
 
-### 15. The licences page rows are uneven in height
-
-Severity: M
-
-Surface: Settings > Licences
-
-What the reader sees today: Some licence rows are one line and some are two,
-because the button cluster and the name cell fight for the same 512 px slot, so
-the row height depends on the length of the package name.
-
-Why it is wrong or could be better: The settings slot is a constant width, and
-the old one-line fit was a race a row could win only on a short lock-file word.
-The page reads as uneven.
-
-Concrete proposal: Every row becomes one three-line shape: name with its licence,
-then the source, then the duty buttons. One shape for every row, no race.
-
-Files it would touch: `resources/views/pages/settings/licences.blade.php`.
-
-Estimated cost: 30 minutes.
-
-Preview: Captured as `uxpass-licences-desktop-...jpg`.
-
-### 16. The connections page has no test of its own connection
+### 21. The connections page has no test of its own connection
 
 Severity: L
 
@@ -660,7 +711,7 @@ Preview: Captured as `uxpass-connections-desktop-...jpg`.
 
 ## Insights
 
-### 17. The insights page is numbers only, with no pictures
+### 22. The insights page is numbers only, with no pictures
 
 Severity: H
 
@@ -675,13 +726,14 @@ Why it is wrong or could be better: Insights should show what the reader's
 reading looks like, not just count it. A number alone does not tell a reader
 whether they read more this week than last, which series they spent time on, or
 when they read. The page is about the reader's own reading, and a page about
-reading with no pictures of reading is missing the point.
+reading with no pictures of reading is missing the point. Tachimanga's reading
+history and Mihon's stats both lead with a chart and a covered series list.
 
 Concrete proposal: Add three pictures to the page, all drawn from data the app
 already holds. First, a reading-time chart: a simple bar or line chart of
-minutes read per day (or per week) for the chosen window, with the total on
-the same line. Second, a series list with covers: the series the reader spent
-time on, each with its cover, its minutes, and its pages, sorted by time spent.
+minutes read per day (or per week) for the chosen window, with the total on the
+same line. Second, a series list with covers: the series the reader spent time
+on, each with its cover, its minutes, and its pages, sorted by time spent.
 Third, keep the empty state honest: when there is no reading yet, show one
 sentence ("No reading recorded yet. Open a chapter and it will show up here.")
 with a link to the library, and hide the zero cards until there is something to
@@ -692,10 +744,13 @@ Files it would touch: `resources/views/pages/insights.blade.php`,
 
 Estimated cost: 90 minutes.
 
-Preview: Captured as `uxpass-insights-desktop-...jpg`. The mockup shows the
-chart and the covered series list beside it.
+Preview: The current insights page is captured as
+`uxpass-insights-desktop-...jpg`. The mockup shows the chart and the covered
+series list beside it.
 
-### 18. The series page's empty reason is one sentence for three causes
+## Series and reader
+
+### 23. The series page's empty reason is one sentence for three causes
 
 Severity: M
 
@@ -721,7 +776,7 @@ Estimated cost: 15 minutes.
 
 Preview: No capture of an empty series; the proposal carries the mockup only.
 
-### 19. The reader has no way back to the chapter list from the page
+### 24. The reader has no way back to the chapter list from the page
 
 Severity: L
 
@@ -747,9 +802,36 @@ Estimated cost: 15 minutes.
 Preview: No capture of the reader in this pass; the proposal carries the mockup
 only.
 
+### 25. The chapter list does not show read state or download state
+
+Severity: L
+
+Surface: Series, chapter list
+
+What the reader sees today: The chapter list shows chapter numbers and names,
+but read and unread chapters look the same, and there is no download indicator.
+A reader scanning for the next unread chapter has to open each one.
+
+Why it is wrong or could be better: Mihon and Tachimanga both mark read chapters
+in the list, and Mihon shows a download indicator, because that is the
+information a reader uses to decide which chapter to open next. The app already
+holds the read state and the download state; only the list does not show them.
+
+Concrete proposal: Mark read chapters in the list with a small check in the
+accent colour, and show a download indicator beside any chapter whose pages are
+on disk. Keep the existing number and name. No new data; the list already has
+both.
+
+Files it would touch: `resources/views/pages/series.blade.php`.
+
+Estimated cost: 30 minutes.
+
+Preview: The series page is captured in the walk set. The mockup shows the list
+with read marks and download indicators.
+
 ## Settings, FAQ, privacy and terms
 
-### 20. The in-shell FAQ has no filter and will not scale
+### 26. The in-shell FAQ has no filter and will not scale
 
 Severity: L
 
@@ -770,7 +852,7 @@ Estimated cost: 20 minutes when triggered.
 
 Preview: Captured as `uxpass-faq-desktop-...jpg`.
 
-### 21. The FAQ does not open and close like an accordion
+### 27. The FAQ does not open and close like an accordion
 
 Severity: M
 
@@ -801,15 +883,15 @@ accordion with one question open and the chevron turned.
 
 ## Copy and words
 
-### 24. The app's copy is written like a machine, not a person
+### 28. The app's copy is written like a machine, not a person
 
 Severity: M
 
 Surface: All copy: FAQ, settings, backups, empty states, error pages
 
-What the reader sees today: Sentences use long, heavy words that nobody says
-out loud. They run long. They read like a manual. A reader who is already
-unsure has to work to understand them.
+What the reader sees today: Sentences use long, heavy words that nobody says out
+loud. They run long. They read like a manual. A reader who is already unsure has
+to work to understand them.
 
 Why it is wrong or could be better: The app is for a person reading manga on
 their own machine. Its words should sound like a person explaining to a friend.
@@ -817,8 +899,8 @@ Short sentences. Plain words. No jargon. No filler.
 
 Concrete proposal: Go through every sentence the app shows and rewrite it. Start
 with the FAQ, then settings, then backups, then empty states, then error pages.
-For each sentence, ask: would I say this to a friend? If not, say it the way
-I would. Keep the meaning. Drop the padding. The research notes list the sources
+For each sentence, ask: would I say this to a friend? If not, say it the way I
+would. Keep the meaning. Drop the padding. The research notes list the sources
 this borrows from.
 
 Files it would touch: `app/Support/Faq.php`, the settings pages, the backups
@@ -830,15 +912,15 @@ Preview: The before and after is in the "Humanized copy" section below.
 
 ## Mobile-first image sizing
 
-### 25. Image sizing is desktop first, with a mobile fallback
+### 29. Image sizing is desktop first, with a mobile fallback
 
 Severity: M
 
 Surface: All images: covers, thumbnails, reader pages
 
-What the reader sees today: Images are sized for a desktop screen and shrunk
-for a phone. On a phone the browser downloads a desktop image and scales it
-down. That is slow and wastes data.
+What the reader sees today: Images are sized for a desktop screen and shrunk for
+a phone. On a phone the browser downloads a desktop image and scales it down.
+That is slow and wastes data.
 
 Why it is wrong or could be better: Most readers use a phone. The image should
 be sized for the phone first, and grown for a bigger screen only when there is
@@ -876,6 +958,8 @@ Preview: The research notes cite the sources this borrows from.
 - The clean-machine gate's premise checks, which are not re-run here.
 - No application code is changed by this pass. The proposal is the only
   artifact.
+- Block 15 (licences row height) is already shipped in 1.3.0 and needs no
+  change.
 
 ## How each improvement is verified
 
@@ -909,65 +993,71 @@ timestamp and what they show. The proposed-state mockups are rendered with
 `openchamber_render` using the app's own tokens and are saved beside the
 captures.
 
-- Block 1 (login rhythm): current `uxpass-login-desktop-...jpg`, proposed mockup saved as `uxpass-login-proposed-2026-10-22T...jpg`.
-- Block 2 (register 404): current `02-register-404-...jpg`, proposed mockup saved beside it.
-- Block 3 (notice dismiss): current `p9-library-toast-desktop.jpg`.
-- Block 4 (empty library): current `04-library-empty-...jpg`, `p9-library-desktop.jpg`.
-- Block 5 (search input): current `p9-search-desktop.jpg`.
-- Block 6 (browse picker): current `p9-browse-desktop.jpg`.
-- Block 7 (language row): current `p9-sources-languages-desktop.jpg`.
-- Block 8 (adult content badge): current `p9u2-nsfw-gate-shut-available.jpg`.
-- Block 9 (health chevrons): current `p9-health-desktop.jpg`, `p9-health-named-desktop.jpg`.
-- Block 10 (backups run panel): current `uxpass-backups-desktop-...jpg`, `p7-step5-backups-populated-desktop-...jpg`.
-- Block 11 (last restored): current `uxpass-backups-desktop-...jpg`.
-- Block 12 (restore confirm): current `uxpass-backups-desktop-...jpg`.
-- Block 13 (migrate-sources origin): current `uxpass-migrate-sources-desktop-...jpg`.
-- Block 14 (import run rows): current `uxpass-import-desktop-...jpg`.
-- Block 15 (licences rows): current `uxpass-licences-desktop-...jpg`.
-- Block 16 (connections test): current `uxpass-connections-desktop-...jpg`.
-- Block 17 (insights pictures): current `uxpass-insights-desktop-...jpg`, proposed mockup.
-- Block 18 (series empty reason): mockup only.
-- Block 19 (reader back link): mockup only.
-- Block 20 (FAQ filter): current `uxpass-faq-desktop-...jpg`.
-- Block 21 (FAQ accordion): current `uxpass-faq-desktop-...jpg`.
+- Block 1 (first-run path): current `onboarding-empty-library-current-...jpg`,
+  `onboarding-sources-current-...jpg`, proposed mockup rendered with the app's
+  tokens.
+- Block 2 (signing key and trust): current `onboarding-sources-current-...jpg`.
+- Block 3 (no shipped store URL): current `onboarding-sources-current-...jpg`,
+  proposed mockup of the empty input.
+- Block 4 (login rhythm): current login capture, proposed mockup.
+- Block 5 (register 404): current `02-register-404-...jpg`, proposed mockup.
+- Block 6 (notice dismiss): current `p9-library-toast-desktop.jpg`.
+- Block 7 (empty library): current `04-library-empty-...jpg`, `p9-library-desktop.jpg`.
+- Block 8 (cover grid): current `p9-library-desktop.jpg`, proposed mockup.
+- Block 9 (continue rail): current `p9-library-desktop.jpg`, proposed mockup.
+- Block 10 (search input): current `p9-search-desktop.jpg`.
+- Block 11 (browse picker): current `p9-browse-desktop.jpg`.
+- Block 12 (language row): current `p9-sources-languages-desktop.jpg`.
+- Block 13 (adult content badge): current `p9u2-nsfw-gate-shut-available.jpg`.
+- Block 14 (source health): current `onboarding-sources-current-...jpg`, proposed mockup.
+- Block 15 (health chevrons): current `p9-health-desktop.jpg`, `p9-health-named-desktop.jpg`.
+- Block 16 (backups run panel): current `uxpass-backups-desktop-...jpg`,
+  `p7-step5-backups-populated-desktop-...jpg`, proposed mockup of the modal.
+- Block 17 (last restored): current `uxpass-backups-desktop-...jpg`.
+- Block 18 (restore confirm): current `uxpass-backups-desktop-...jpg`.
+- Block 19 (migrate-sources origin): current `uxpass-migrate-sources-desktop-...jpg`.
+- Block 20 (import run rows): current `uxpass-import-desktop-...jpg`.
+- Block 21 (connections test): current `uxpass-connections-desktop-...jpg`.
+- Block 22 (insights pictures): current `uxpass-insights-desktop-...jpg`, proposed mockup.
+- Block 23 (series empty reason): mockup only.
+- Block 24 (reader back link): mockup only.
+- Block 25 (chapter list read state): series page capture, proposed mockup.
+- Block 26 (FAQ filter): current `uxpass-faq-desktop-...jpg`.
+- Block 27 (FAQ accordion): current `uxpass-faq-desktop-...jpg`, proposed mockup.
+- Block 28 (humanized copy): before and after in the Humanized copy section.
+- Block 29 (mobile-first images): measured on a phone and a desktop.
 
-- Block 24 (humanized copy): before and after in the Humanized copy section.
-- Block 25 (mobile-first images): measured on a phone and a desktop.
-- Block 26 (first-run path): current `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg`,
-  `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`, proposed mockup saved as
-  `onboarding-first-run-proposed-2026-10-22T...jpg`.
-- Block 27 (catalogue auto-load): current `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`.
-- Block 28 (signing key and trust): current `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`.
-- Block 29 (no shipped store URL): current `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`, proposed mockup of the empty input.
 ## Ranked order by reader value
 
-1. Block 10, the backups run panel (H)
-2. Block 1, the login rhythm (M)
-3. Block 4, the empty library notice (L)
-4. Block 3, the notice dismiss name (M)
-5. Block 5, the search input label (M)
-6. Block 9, the health chevrons summary (M)
-7. Block 11, last restored per pair (M)
-8. Block 12, restore confirm naming (M)
-9. Block 13, migrate-sources origin (M)
-10. Block 14, import run rows (M)
-11. Block 15, licences row height (M)
-12. Block 16, connections test (L)
-13. Block 17, insights pictures (H)
-14. Block 18, series empty reason (M)
-15. Block 19, reader back link (L)
-16. Block 20, FAQ filter (L)
-17. Block 21, FAQ accordion (M)
-18. Block 24, humanized copy (M)
-19. Block 25, mobile-first images (M)
-22. Block 6, browse picker grouping (L)
-23. Block 7, language row compaction (L)
-24. Block 8, adult content badge (L)
-25. Block 2, register 404 honesty (L)
-26. Block 26, first-run path (H)
-27. Block 27, catalogue auto-load (M)
-28. Block 28, signing key and trust (M)
-29. Block 29, no shipped store URL (H)
+1. Block 16, the backups run panel (H)
+2. Block 1, the first-run path (H)
+3. Block 3, no shipped store URL (H)
+4. Block 4, the login rhythm (M)
+5. Block 8, the cover grid (M)
+6. Block 9, the continue rail (M)
+7. Block 10, the search input label (M)
+8. Block 15, the health chevrons (M)
+9. Block 17, last restored per pair (M)
+10. Block 18, restore confirm naming (M)
+11. Block 19, migrate-sources origin (M)
+12. Block 20, import run rows (M)
+13. Block 21, connections test (L)
+14. Block 22, insights pictures (H)
+15. Block 23, series empty reason (M)
+16. Block 24, reader back link (L)
+17. Block 25, chapter list read state (L)
+18. Block 26, FAQ filter (L)
+19. Block 27, FAQ accordion (M)
+20. Block 28, humanized copy (M)
+21. Block 29, mobile-first images (M)
+22. Block 6, notice dismiss name (M)
+23. Block 7, empty library notice (L)
+24. Block 11, browse picker grouping (L)
+25. Block 12, language row compaction (L)
+26. Block 13, adult content badge (L)
+27. Block 14, source health summary (M)
+28. Block 2, signing key and trust (M)
+29. Block 5, register 404 honesty (L)
 
 ## Research notes
 
@@ -1011,6 +1101,27 @@ and the thing taken from it.
   Penpot "Using design tokens for a proportional typographic scale"; Toptal
   "Mobile Typography Tips and Guidelines"; The Type Founders "Typography in your
   design system".
+- Reader and library patterns. The cover-first library grid with an unread badge
+  in a fixed corner and a continue-reading rail above the grid come from
+  Tachimanga (cover-driven library, chapter numbers with read state, pinned
+  sources prioritised in search) and Mihon (library grid with covers, categories,
+  download indicators, chapter list with read state). The continue-reading
+  affordance and the cover-as-door pattern come from Asura Scans' home page
+  (trending covers with ratings, latest updates with chapter numbers, "continue
+  reading"). The source management patterns (dead source marking, source language
+  filter, migration between sources) come from Suwayomi's WebUI (source filter,
+  migration of manga between sources, global search with pinned sources). Source:
+  Tachimanga changelog and App Store listing; Mihon README and reader settings
+  guide; Suwayomi-WebUI README and release notes; Asura Scans home and manga
+  pages.
+- Onboarding and empty states. The empty state as an onboarding opportunity,
+  with a single clear next action rather than a tour overlay, comes from
+  UserTourKit's guided-action pattern and the UX Patterns Guide on onboarding
+  versus empty state. The "name the thing in one sentence, then name the next
+  step" shape comes from Once UI's handbook on welcome dialogs and guided empty
+  dashboards. Source: UserTourKit "Onboarding UX patterns"; UX Patterns Guide
+  "Onboarding, empty states, wizards, progressive disclosure"; Once UI Handbook
+  "Welcome dialog and guided empty dashboard".
 
 ## Humanized copy
 
@@ -1048,4 +1159,3 @@ Each line shows the old wording and the new wording.
 
 The full pass touches `app/Support/Faq.php`, the settings pages, the backups
 page, the empty states, and the error pages. Estimated cost: 3 hours.
-
