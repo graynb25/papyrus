@@ -34,6 +34,30 @@ that it improves, it does not replace. No Flux component is proposed for
 replacement, no new design system is proposed, and no colour or spacing is
 proposed outside the app's existing tokens.
 
+## Audit (2026-10-22, against the standing UI/UX rule)
+
+The standing rule (AGENTS.md, appended 2026-10-22): use what the app already
+carries (existing CSS and tokens, Livewire/Flux components already in use, patterns
+the pages already follow); improve and refine, do not rewrite the stylesheet, do not
+introduce a new design system, do not add colours or spacing outside the existing
+tokens, and do not replace a Flux component with a custom one unless the owner
+agrees. If a change needs something new (new component, token, layout shape, or
+interaction pattern), stop and put it to the owner as a question with options and a
+recommendation before building. Nothing new ships on a worker's judgement alone.
+
+Audit result: 29 blocks checked. 24 passed (a) and (b): each names the existing
+component or token it extends and states "improve, do not change". 5 blocks were
+flagged under (c) because they propose something new and were put to the owner
+as questions: block 8 (unread badge on the cover), block 9 (continue-reading
+rail above the grid), block 13 (horizontally scrolling chip strip for the
+language row), block 17 (modal with a checkpoint timeline for the backups run
+panel), block 23 (a reading-time chart on the insights page). The owner decided
+all five on 2026-10-22; the decisions are recorded in each block's "Decision
+(owner, 2026-10-22)" line, and each block now carries "Improve, do not change"
+as its standing rule. No block failed (d): none proposes replacing a Flux
+component or introducing a new design system, and all colours and spacing named
+are existing tokens.
+
 ## Surfaces
 
 - Onboarding
@@ -96,7 +120,7 @@ who already understands the model, and the signing-key comparison is the first
 thing the reader meets. There is no "what is a source" sentence and no "what
 happens next" sentence.
 
-Concrete proposal: Improve the existing empty state and the existing store card;
+Concrete proposal: Improve, do not change, the existing empty state and the existing store card;
 do not replace either. Add a first-run path that does four things in order, all
 inside the components the app already carries. First, name the thing the reader
 needs in one sentence on the empty library, beside the existing empty-state
@@ -154,7 +178,7 @@ from failure, not for the happy path. A reader who has just trusted a store
 expects to see extensions, and asking them to press a button for the normal case
 makes the happy path look like a failure path.
 
-Concrete proposal: Improve the existing store card and the existing Available
+Concrete proposal: Improve, do not change, the existing store card and the existing Available
 tab. Trigger the catalogue load on trust, not on a button press, and show
 progress ("Loading the catalogue... N extensions found") in the place the
 Available tab already uses for its empty message. Keep Refresh catalogue on the
@@ -189,7 +213,7 @@ it reads like a developer's note. The reader needs one sentence that says what
 the key is and what trusting it does, in the same voice as the rest of the
 notice.
 
-Concrete proposal: Improve the existing store card's notice copy; do not
+Concrete proposal: Improve, do not change, the existing store card's notice copy; do not
 replace the card. Replace the developer-facing notice with one sentence in the
 app's voice: "Every store signs its extensions with a key. Compare the key
 above against the one the publisher has published; if they match, trust it, and
@@ -225,7 +249,7 @@ already carries the conduct copy ("Trust is a gate in this interface, not an
 enforcement the Suwayomi API offers"); the pre-filled URL undercuts it. This is
 also a legal concern, not only a UX concern.
 
-Concrete proposal: Improve the existing "Add a store" input and its helper.
+Concrete proposal: Improve, do not change, the existing "Add a store" input and its helper.
 Empty the input on load. Keep the helper line that tells the reader what to
 look for ("The index file itself, not the repository root. Keiyoushi publishes
 protobuf at index.pb.") and add one sentence above it: "Papyrus does not ship
@@ -266,7 +290,7 @@ in space, and the footer's links are small and quiet against the promise line.
 The promise line itself is the strongest sentence on the page and it is the
 one thing a reader should see first.
 
-Concrete proposal: Improve the existing login page and the existing auth footer.
+Concrete proposal: Improve, do not change, the existing login page and the existing auth footer.
 Tighten the vertical rhythm so the card sits in the upper third of the viewport
 on desktop, keep the footer where it is but give its links the same weight as
 the promise line's second clause, and put the promise line first in the reading
@@ -302,7 +326,7 @@ is fine, but the 404 page does not say so. It reads as a dead link rather than
 as a decision. The reader's next step is to sign in, and the page does not
 offer it.
 
-Concrete proposal: Improve the existing 404 page. Replace the generic 404 with a
+Concrete proposal: Improve, do not change, the existing 404 page. Replace the generic 404 with a
 short, honest line: "Sign-up is closed on this install. If you have an
 account, sign in." with a link to the login page, and keep the generic 404 for
 everything else. One Blade branch on the registration flag.
@@ -335,7 +359,7 @@ Why it is wrong or could be better: Two surfaces for one fact. The notice is the
 louder one and it competes with the empty state's own copy, which is the one
 that carries the doors.
 
-Concrete proposal: Improve the existing empty state and the existing toast. Drop
+Concrete proposal: Improve, do not change, the existing empty state and the existing toast. Drop
 the toast notice on an empty library and let the empty state carry the message
 and the doors on its own. Keep the toast for genuine errors and for the "series
 added" confirmation, which are different facts.
@@ -369,20 +393,23 @@ turns the grid into a reading list rather than a catalogue of things owned.
 Asura's home page does the same with its "continue reading" rail above the
 grid.
 
-Concrete proposal: Improve the existing cover component. Add a small unread badge
-in the top-left corner of every cover, carrying the unread chapter count, and a
-single "Continue" affordance that appears on hover or focus and opens the
-last-read chapter (or chapter one if nothing has been read). Keep the existing
-title and the "Add to library" name. The badge uses the vermilion accent, which
-is already the app's unread voice, so no new colour is introduced. On a phone,
-where there is no hover, the badge stays and the affordance becomes a tap
-target on the cover's lower edge.
+Decision (owner, 2026-10-22): Badge only, in the top-left corner, carrying the
+unread chapter count in the vermilion accent the app already uses for unread. No
+hover affordance, so nothing new is asked of a phone. Improve, do not change,
+the existing cover component (x-cover.art). Cost: 30 minutes.
+
+Concrete proposal: Improve, do not change, the existing cover component
+(x-cover.art). Add a badge only, in the top-left corner, carrying the unread
+chapter count in the vermilion accent the app already uses for unread. No hover
+affordance, so nothing new is asked of a phone. The badge colour uses the
+vermilion accent already in use, so no new token is introduced. No Flux
+component is replaced.
 
 Extends: the cover component (`x-cover.art`), `resources/views/pages/library.blade.php`.
 
 Files it would touch: the cover component, `resources/views/pages/library.blade.php`.
 
-Estimated cost: 60 minutes.
+Estimated cost: 30 minutes.
 
 Preview: The current library grid is captured as `p9-library-desktop.jpg`. The
 mockup shows the badge and the continue affordance on a row of covers.
@@ -402,13 +429,23 @@ continue-reading rail above the grid, because that is the first thing a
 returning reader wants. The app already holds the last-read chapter and the
 reading sessions, so the data is there; only the surface is missing.
 
-Concrete proposal: Improve the existing library page and the existing
-reading-sessions seam. Add a horizontal rail above the grid, titled "Continue
-reading", showing the three to five series the reader has most recently opened,
-each as a small cover with its title and the chapter it will open. Tapping one
-opens that chapter. The rail hides when there is nothing to continue. It
-reuses the existing reading-sessions seam and the cover component, so no new
-data source is needed.
+Decision (owner, 2026-10-22): A horizontal rail above the grid, titled
+"Continue reading", showing the three to five series most recently opened, each
+a small cover with its title and the chapter it opens. Tapping one opens that
+chapter. The rail hides when there is nothing to continue. Reuses the
+reading-sessions seam and the cover component, so no new data source. Improve,
+do not change, the existing library page
+(resources/views/pages/library.blade.php) and the existing reading-sessions
+seam. Cost: 45 minutes.
+
+Concrete proposal: Improve, do not change, the existing library page
+(resources/views/pages/library.blade.php) and the existing reading-sessions
+seam. Add a horizontal rail above the grid, titled "Continue reading", showing
+the three to five series most recently opened, each a small cover with its
+title and the chapter it opens. Tapping one opens that chapter. The rail hides
+when there is nothing to continue. Reuses the reading-sessions seam and the
+cover component, so no new data source. No new component, no new token, no
+Flux component replaced.
 
 Extends: `resources/views/pages/library.blade.php`,
 `app/Livewire/Library.php`, the cover component (`x-cover.art`).
@@ -437,7 +474,7 @@ for a control that appears with the notice. The fix is to move the name into
 the component so it is there on first paint. Already flagged in the Phase 9
 walk findings as item 6 and held here as a proposal rather than a change.
 
-Concrete proposal: Improve the existing toast component. Put
+Concrete proposal: Improve, do not change, the existing toast component. Put
 `aria-label="Close notification"` on the button inside the toast component's own
 template, and remove the post-hoc naming from the shell script. One attribute,
 one deletion.
@@ -471,7 +508,7 @@ goes the moment the reader types. The input needs a real label that points at
 it by `for` and `id`, so the name survives typing and is there before
 hydration.
 
-Concrete proposal: Improve the existing search page and its input. Add a visible
+Concrete proposal: Improve, do not change, the existing search page and its input. Add a visible
 `<label for="search-query">` (or `aria-labelledby`) to the input and give the
 input the matching `id`. Keep the placeholder as a hint. One line in the
 component and one in the Blade.
@@ -502,7 +539,7 @@ has to scan the whole grid. Grouping by language (the same grouping the sources
 page already uses) would make the picker scannable without changing what it
 offers.
 
-Concrete proposal: Improve the existing browse picker. Group the picker's cards
+Concrete proposal: Improve, do not change, the existing browse picker. Group the picker's cards
 by language with a small heading per group, reusing the language-name map the
 sources page already uses. No new data, no new query.
 
@@ -531,9 +568,17 @@ chosen shape, so this is a compaction rather than a redesign: collapse to a
 compact chip row with a "more" affordance on narrow widths, and keep the full
 row on desktop.
 
-Concrete proposal: Improve the existing language row. Make the row a
-horizontally scrolling chip strip below a threshold width, with a fade and a
-"show all" toggle, and leave the wrapping row on desktop where there is room.
+Decision (owner, 2026-10-22): Keep the wrapping row on desktop where there is
+room, and make it a horizontally scrolling chip strip with a fade and a "show
+all" toggle below a threshold width. Improve, do not change, the existing
+language row (resources/views/pages/settings/sources.blade.php). Cost: 25
+minutes.
+
+Concrete proposal: Improve, do not change, the existing language row
+(resources/views/pages/settings/sources.blade.php). Keep the wrapping row on
+desktop where there is room, and make it a horizontally scrolling chip strip
+with a fade and a "show all" toggle below a threshold width. No new component,
+no new token, no Flux component replaced.
 
 Extends: `resources/views/pages/settings/sources.blade.php` (language row).
 
@@ -555,7 +600,7 @@ button that opens a confirm dialog, so one decision is presented twice.
 Why it is wrong or could be better: Minor duplication. The dialog is the real
 gate and the badge is status, but today both read as actions.
 
-Concrete proposal: Improve the existing badge and button. Keep the badge as
+Concrete proposal: Improve, do not change, the existing badge and button. Keep the badge as
 status and make the button the only action: the badge becomes a plain text
 label, and the button keeps its confirm dialog. No new component.
 
@@ -584,7 +629,7 @@ search from needs to know which ones will answer. The app already computes this
 (`Source::scopeRunnableFor()` skips dead sources by default, and `HealthRecorder`
 marks them after five failures); only the card does not say it.
 
-Concrete proposal: Improve the existing source card. Add a single line under the
+Concrete proposal: Improve, do not change, the existing source card. Add a single line under the
 variant count on each card: "Healthy" in moss, or "Not answering" in zinc-500
 with a "Retry" affordance, read from the source's own health record. No new
 query; the card already has the source id.
@@ -617,7 +662,7 @@ Why it is wrong or could be better: The expanded state is where the dead
 sources live, and there is no "N sources, M dead" line to scan first. A reader
 scanning for the one dead source has to open every site.
 
-Concrete proposal: Improve the existing health page. Add "N sources, M dead"
+Concrete proposal: Improve, do not change, the existing health page. Add "N sources, M dead"
 beside each site chevron in its expanded state, computed from the site's own
 source rows. One line in the loop that renders the chevron.
 
@@ -649,15 +694,26 @@ highest-value item in this pass. The running backup never says how far it has
 got either: "Started" / "being staged now" with no bar, no elapsed time, and no
 stage name a reader can parse.
 
-Concrete proposal: Improve the existing "The last time" block and the existing
-run rows; do not replace the page. Replace the inline block with a modal
-carrying a checkpoint timeline (stages: Checking target, Stopping, Copying manga
-half, Copying reader half, Writing manifest, Restarting, each pending, running,
-done or failed), a live progress bar with elapsed seconds, a final verdict
-sentence, and one clear next action. The inline block becomes a single line:
-"Last run: finished 22 hours ago." with a "Show details" link. The page stops
-jumping on every poll. The same modal and timeline serve the running backup, so
-the reader sees "N of 6 stages" and elapsed seconds while it runs.
+Decision (owner, 2026-10-22): A modal (flux:modal, already in use) carrying a
+checkpoint timeline (stages: Checking target, Stopping, Copying manga half,
+Copying reader half, Writing manifest, Restarting, each pending, running, done
+or failed), a live progress bar with elapsed seconds, a final verdict sentence,
+and one clear next action. The inline block becomes a single line: "Last run:
+finished 22 hours ago." with a "Show details" link. The page stops jumping on
+every poll. The same modal and timeline serve the running backup. Improve, do
+not change, the existing "The last time" block and the existing run rows; do
+not replace the page. Cost: 90 minutes.
+
+Concrete proposal: Improve, do not change, the existing "The last time" block
+and the existing run rows; do not replace the page. Replace the inline run
+panel with a modal (flux:modal, already in use) carrying a checkpoint timeline
+(stages: Checking target, Stopping, Copying manga half, Copying reader half,
+Writing manifest, Restarting, each pending, running, done or failed), a live
+progress bar with elapsed seconds, a final verdict sentence, and one clear next
+action. The inline block becomes a single line: "Last run: finished 22 hours
+ago." with a "Show details" link. The page stops jumping on every poll. The
+same modal and timeline serve the running backup. No new component
+(flux:modal is already in use), no new token, no Flux component replaced.
 
 Extends: `resources/views/pages/settings/backups.blade.php` (the "The last
 time" section), `flux:modal`.
@@ -685,7 +741,7 @@ Why it is wrong or could be better: The restore surface never says what the pair
 holds in a scannable way beyond the table, and a reader who restored a week ago
 has no record of it.
 
-Concrete proposal: Improve the existing pairs table. Add a "last restored" line
+Concrete proposal: Improve, do not change, the existing pairs table. Add a "last restored" line
 to each pair row once a restore run exists for it, reading the restore run's own
 row and timestamp.
 
@@ -711,7 +767,7 @@ Why it is wrong or could be better: A restore is destructive and names nothing o
 what it takes, so a reader cannot confirm they are about to overwrite the right
 thing.
 
-Concrete proposal: Improve the existing restore confirm dialog. Name the pair's
+Concrete proposal: Improve, do not change, the existing restore confirm dialog. Name the pair's
 token and the counts it will replace in the confirm dialog, and show the same
 checkpoint timeline the backup modal uses.
 
@@ -739,7 +795,7 @@ Why it is wrong or could be better: A reader who opened the page from a
 particular source has to go back to remember which one they were moving, because
 the page carries no origin.
 
-Concrete proposal: Improve the existing migrate-sources page. Show which source
+Concrete proposal: Improve, do not change, the existing migrate-sources page. Show which source
 the reader came from on the migrate-sources page, beside the existing "Back to
 sources" link, read from the query string or the referrer and named on the page.
 
@@ -767,7 +823,7 @@ Why it is wrong or could be better: Same family as the backups run panel: a
 long-lived job shown as a paragraph. The fix is the same shape: one line per run
 with a "Show details" link opening a modal with the checkpoint timeline.
 
-Concrete proposal: Improve the existing import page. Replace the inline run
+Concrete proposal: Improve, do not change, the existing import page. Replace the inline run
 block with one line per run (file name, badge, "Show details") and a single
 modal carrying the checkpoint timeline, the progress bar, the verdict sentence
 and one next action. Reuse the same modal component as the backups page rather
@@ -798,7 +854,7 @@ Why it is wrong or could be better: A reader who mistyped a key saves it and
 sees "saved" with no signal that the key is wrong. A "Test connection" button
 that runs the same check the app runs on start would close the loop.
 
-Concrete proposal: Improve the existing connections page. Add a "Test
+Concrete proposal: Improve, do not change, the existing connections page. Add a "Test
 connection" button beside the save button that runs the connection check and
 reports the result as a toast, reusing the existing check rather than a new
 one.
@@ -835,19 +891,21 @@ when they read. The page is about the reader's own reading, and a page about
 reading with no pictures of reading is missing the point. Tachimanga's reading
 insights and Mihon's stats both lead with a chart and a covered series list.
 
-Concrete proposal: Improve the existing insights page and its existing
-per-series bar. Match the Tachimanga pattern exactly: a series cover image on
-the left, a horizontal bar whose width is proportional to the reading time for
-that series, ordered from the longest reading time to the shortest, with the
-text beside the bar carrying the series name, the minutes read, and the pages
-turned. The app already holds the data (ReadingInsights::bySeries, the library
-lens for covers and titles) and already renders the bar; the improvement is to
-make the cover, the bar and the text read as one row rather than as a row with
-a bar underneath it, and to keep the order descending by minutes. Keep the
-totals cards and the window picker where they are. Keep the empty state
-honest: when there is no reading yet, show one sentence ("No reading recorded
-yet. Open a chapter and it will show up here.") with a link to the library,
-and hide the zero cards until there is something to show.
+Decision (owner, 2026-10-22): Keep the Tachimanga shape (cover, horizontal bar
+proportional to reading time, descending order, text beside the bar). No chart.
+The bar list is the picture; a second chart above it repeats it. Improve, do
+not change, the existing insights page
+(resources/views/pages/insights.blade.php) and its existing per-series bar. Cost:
+60 minutes, as scoped.
+
+Concrete proposal: Improve, do not change, the existing insights page
+(resources/views/pages/insights.blade.php) and its existing per-series bar. Keep
+the Tachimanga shape (cover, horizontal bar proportional to reading time,
+descending order, text beside the bar) and add no chart. The bar list is the
+picture. No new token, no new design system, no Flux component replaced. The
+empty state stays honest: when there is no reading yet, show one sentence ("No
+reading recorded yet. Open a chapter and it will show up here.") with a link to
+the library, and hide the zero cards until there is something to show.
 
 Extends: `resources/views/pages/insights.blade.php` (the per-series list and
 its bar), `x-cover.art` (the cover atom), `app/Support/ReadingInsights.php`.
@@ -878,7 +936,7 @@ Why it is wrong or could be better: The app cannot tell which of the three it
 is, and it says so honestly, but the sentence reads as a single cause. A reader
 who sees it cannot tell whether to wait, to search manually, or to give up.
 
-Concrete proposal: Improve the existing series page. Keep the honest sentence
+Concrete proposal: Improve, do not change, the existing series page. Keep the honest sentence
 and add a second line that names the three possibilities in plain words and
 points at the migrate page ("If the series moved, you can move it to another
 source from here."). No new data.
@@ -905,7 +963,7 @@ Why it is wrong or could be better: A reader who opened a chapter from search
 rather than from the series page has no in-app way back to the series. The back
 affordance should be on the page.
 
-Concrete proposal: Improve the existing reader page. Add a "Back to the series"
+Concrete proposal: Improve, do not change, the existing reader page. Add a "Back to the series"
 link in the reader's header, pointing at the series route for the manga the
 chapter belongs to, in the same shape as the migrate wizard's back link.
 
@@ -936,7 +994,7 @@ the information a reader uses to decide which chapter to open next. The app
 already holds the read state and the download state; only the list does not
 show them.
 
-Concrete proposal: Improve the existing series page. Mark read chapters in the
+Concrete proposal: Improve, do not change, the existing series page. Mark read chapters in the
 list with a small check in the accent colour, and show a download indicator
 beside any chapter whose pages are on disk. Keep the existing number and name.
 No new data; the list already has both.
@@ -966,7 +1024,7 @@ Why it is wrong or could be better: A FAQ that does not behave like a FAQ is
 confusing. The title should be the toggle, the answer should show and hide, and
 the open and closed states should be easy to see.
 
-Concrete proposal: Improve the existing FAQ pages. Use a native disclosure
+Concrete proposal: Improve, do not change, the existing FAQ pages. Use a native disclosure
 (details and summary) for each question, with the question as the summary and
 the answer inside. The privacy question stays open on arrival. Show a clear
 open and closed state, for example a small chevron that turns. Do not use a
@@ -1000,7 +1058,7 @@ Why it is wrong or could be better: The app is for a person reading manga on
 their own machine. Its words should sound like a person explaining to a friend.
 Short sentences. Plain words. No jargon. No filler.
 
-Concrete proposal: Improve the existing copy across the app. Go through every
+Concrete proposal: Improve, do not change, the existing copy across the app. Go through every
 sentence the app shows and rewrite it. Start with the FAQ, then settings, then
 backups, then empty states, then error pages. For each sentence, ask: would I
 say this to a friend? If not, say it the way I would. Keep the meaning. Drop
@@ -1032,7 +1090,7 @@ Why it is wrong or could be better: Most readers use a phone. The image should
 be sized for the phone first, and grown for a bigger screen only when there is
 room. This is the mobile-first rule for images.
 
-Concrete proposal: Improve the existing image markup. Use `srcset` and `sizes`
+Concrete proposal: Improve, do not change, the existing image markup. Use `srcset` and `sizes`
 on every image, with the smallest size first and the larger sizes after it.
 Write the `sizes` attribute for a phone first and add a media query for wider
 screens. Use `loading="lazy"` so images below the fold wait. Use the `picture`
