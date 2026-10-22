@@ -452,6 +452,7 @@ new #[Title('Health')] class extends Component {
         <flux:input
             wire:model.live.debounce.400ms="search"
             placeholder="{{ __('Filter by site or source name') }}"
+            aria-label="{{ __('Filter by site or source name') }}"
             icon="funnel"
             class="max-w-sm"
         />
@@ -492,6 +493,12 @@ new #[Title('Health')] class extends Component {
                             wire:click="toggleSite('{{ $row->site }}')"
                             :aria-expanded="$openSite === $row->site ? 'true' : 'false'"
                             icon="{{ $openSite === $row->site ? 'chevron-down' : 'chevron-right' }}"
+                            {{-- The site's own name, because a row of chevrons is a
+                                 row of buttons a screen reader announces identically
+                                 without it. The house's shape is the thing in the
+                                 name ("Add <title> to your library", "Open <title>
+                                 on <source>"). --}}
+                            aria-label="{{ __('Show the sources of :site', ['site' => $row->label ?: $row->site]) }}"
                         />
 
                         <div class="min-w-0 flex-1">

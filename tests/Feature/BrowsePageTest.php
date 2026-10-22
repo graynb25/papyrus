@@ -171,6 +171,26 @@ class BrowsePageTest extends TestCase
             ->assertSee('Popular P1 #1');
     }
 
+    /**
+     * The cover is not the only way into a series.
+     *
+     * The cover anchor is hidden from assistive technology on purpose, and
+     * the name sits one element down at the title, so a reader who cannot see
+     * the picture still has a link that says which series it is. This is the
+     * house's shape for a poster, and the sweep's job is to hold it rather
+     * than to rename the cover.
+     */
+    public function test_the_cover_is_hidden_and_the_title_carries_the_name(): void
+    {
+        $html = Livewire::actingAs($this->user)
+            ->test('pages::browse', ['source' => $this->source()])
+            ->html();
+
+        $this->assertStringContainsString('aria-hidden="true"', $html);
+        $this->assertStringContainsString('tabindex="-1"', $html);
+        $this->assertStringContainsString('Popular P1 #1', $html);
+    }
+
     public function test_the_latest_tab_asks_for_a_different_listing(): void
     {
         Livewire::actingAs($this->user)

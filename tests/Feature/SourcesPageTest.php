@@ -1990,6 +1990,58 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * The catalogue's name filter is named.
+     *
+     * A placeholder is not a name: it goes the moment the reader types, and a
+     * screen reader announces a control with no name as an edit box. The two
+     * words are the ones the box already shows, so the name and the visible
+     * text agree.
+     */
+    public function test_the_catalogue_filter_is_named(): void
+    {
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('aria-label="Filter by name"', false);
+    }
+
+    /**
+     * The tick that selects an extension for a bulk install is named.
+     *
+     * One tick per card, so a card that carried no name was a screen reader
+     * hearing "check box" over and over with nothing to tell them apart.
+     */
+    public function test_the_install_tick_is_named(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('aria-label="Select English One to install"', false)
+            ->assertSee('aria-label="Select Japanese One to install"', false);
+    }
+
+    /**
+     * The card's language badge says the language the pill says.
+     *
+     * The two are read on the same screen, so a card saying "en" and a pill
+     * saying "English" would be two different-looking languages for the same
+     * thing. The catalogue's own code stays on the badge's title.
+     */
+    public function test_the_card_names_the_language_the_pill_names(): void
+    {
+        $this->serveExtensions([
+            $this->extension('eu.kanade.tachiyomi.extension.pt.br.one', 'Brazil One', false, true, 'pt-BR'),
+        ]);
+
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('Portuguese (Brazil)')
+            ->assertSee('title="pt-BR"', false);
+    }
+
+    /**
      * The pills name every language the catalogue holds, and say how many
      * sources are in each.
      *

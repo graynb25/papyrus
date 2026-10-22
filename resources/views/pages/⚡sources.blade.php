@@ -2101,6 +2101,7 @@ new #[Title('Sources')] class extends Component
                 <flux:input
                     wire:model.live.debounce.400ms="name"
                     placeholder="{{ __('Filter by name') }}"
+                    aria-label="{{ __('Filter by name') }}"
                     icon="funnel"
                     class="max-w-xs"
                 />
@@ -2488,10 +2489,19 @@ new #[Title('Sources')] class extends Component
                             </div>
 
                             @unless ($installed)
+                                {{--
+                                    The tick that selects an extension for a bulk
+                                    install, named so a screen reader says what
+                                    it is for. The house's shape for a selection
+                                    is "Select <thing>" (the library's own bulk
+                                    checkbox says "Select <title>"), and here the
+                                    selection is for an install, so it says that.
+                                --}}
                                 <flux:checkbox
                                     wire:model="selected"
                                     :value="$extension['pkgName']"
                                     class="shrink-0"
+                                    aria-label="{{ __('Select :name to install', ['name' => $extension['name']]) }}"
                                 />
                             @endunless
                         </div>

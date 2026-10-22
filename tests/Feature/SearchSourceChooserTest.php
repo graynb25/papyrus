@@ -156,6 +156,30 @@ class SearchSourceChooserTest extends TestCase
             ->assertSee('Eternally Regressing Knight');
     }
 
+    /**
+     * The button that opens a series says which series it opens, and on which source.
+     *
+     * Five rows in a list all reading "Open" are five buttons a screen reader
+     * announces identically, and the rows of a chooser differ by the source
+     * they are choosing between, so the name carries both. The house's shape
+     * is the title in the name, the same way the bookmark beside it says
+     * "Add <title> to your library".
+     */
+    public function test_the_open_button_says_which_series_it_opens(): void
+    {
+        $runId = $this->givenResults([
+            [1, 'Manga Demon (EN)', 'Eternally Regressing Knight'],
+            [2, 'Asura Scans (EN)', 'Eternally Regressing Knight'],
+        ]);
+
+        Livewire::actingAs($this->user)
+            ->test('pages::search')
+            ->set('runId', $runId)
+            ->call('chooseSource', 1)
+            ->assertSee('aria-label="Open Eternally Regressing Knight on Manga Demon (EN)"', false)
+            ->assertSee('aria-label="Open Eternally Regressing Knight on Asura Scans (EN)"', false);
+    }
+
     public function test_a_chooser_entry_can_be_bookmarked(): void
     {
         $runId = $this->givenResults([

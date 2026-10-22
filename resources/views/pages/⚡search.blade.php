@@ -1466,6 +1466,14 @@ new #[Title('Search')] class extends Component
                             href="{{ route('series', ['manga' => $one['manga']]) }}"
                             wire:navigate
                             data-test="source-chooser-open"
+                            {{-- The title and the source in the name, because five rows
+                                 of a list all reading "Open" are five buttons a screen
+                                 reader announces identically, and the rows of a chooser
+                                 differ by the source they are choosing between. The
+                                 house's shape is the title in the name, the same way
+                                 the bookmark beside it says "Add <title> to your
+                                 library". --}}
+                            aria-label="{{ __('Open :title on :source', ['title' => $one['title'], 'source' => $one['source']]) }}"
                         >
                             {{ __('Open') }}
                         </flux:button>

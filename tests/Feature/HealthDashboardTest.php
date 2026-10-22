@@ -326,6 +326,37 @@ class HealthDashboardTest extends TestCase
             ->assertDontSee('example.test');
     }
 
+    /**
+     * The filter is named.
+     *
+     * A placeholder is not a name: it goes the moment the reader types, and a
+     * screen reader announces a control with no name as an edit box. The words
+     * are the ones the box already shows, so the name and the visible text
+     * agree.
+     */
+    public function test_the_filter_is_named(): void
+    {
+        $this->health($this->source('https://good.test'));
+
+        $this->page()
+            ->assertSee('aria-label="Filter by site or source name"', false);
+    }
+
+    /**
+     * The row that opens a site says which site it opens.
+     *
+     * A row of chevrons is a row of buttons a screen reader announces
+     * identically without the site's name in it, and there is one of them for
+     * every site the ledger knows.
+     */
+    public function test_the_row_that_opens_a_site_is_named(): void
+    {
+        $this->health($this->source('https://mangadex.org', 'en', 'MangaDex (EN)'));
+
+        $this->page()
+            ->assertSee('aria-label="Show the sources of MangaDex (EN)"', false);
+    }
+
     public function test_the_drill_down_lists_every_language_variant(): void
     {
         foreach (['en', 'ja', 'de'] as $lang) {
