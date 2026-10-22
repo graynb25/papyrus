@@ -6976,6 +6976,62 @@ exactly that moment and it costs five minutes.
     have failed loudly rather than quietly. **A check that fails loudly is a check; a
     check that passes for the wrong reason is a comment.**
 
+330. **A Blade directive that does not exist reaches the browser as text, and the
+    page's own guard only looks inside a component's attributes.**
+
+    Measured 2026-10-21, while giving the sources page's family groups a memory.
+    The markup wanted a conditional `open` attribute, and the obvious spelling
+    `@open(...)` is **not** a directive: this Laravel carries `@checked`,
+    `@selected`, `@disabled`, `@required` and `@readonly`, and no `@open`. Blade
+    does not refuse an unknown directive, it leaves the text where it was, so the
+    page rendered `<details class="group" @open(in_array(...)) x-on:toggle="...">`
+    and the browser was handed a broken tag.
+
+    Two things make this worth writing down. First, **the page still rendered**:
+    no exception, no failed test, no console error, just an attribute that is
+    not an attribute. Second, **the repository already had a guard for this
+    family** and it did not catch it: `test_no_directive_is_left_uncompiled_in_an_attribute`
+    looks for `@something(` inside a `wire:` or `x-` attribute, and this one sat
+    between two attributes on a plain element. The general form: **a guard that
+    looks in one place is a guard about that place**, and a directive that does
+    not exist is not a syntax error, it is a silent string. The fix is the
+    ordinary conditional attribute, and the shape that holds it is a regular
+    expression that cannot be satisfied by the word "open" appearing inside
+    another attribute's value.
+
+331. **An `sr-only` label has no `innerText`, so a check that reads the rendered
+    text reads a named control as an unnamed one.**
+
+    Measured 2026-10-21, while auditing every input on every page for an
+    accessible name. The rule the audit used was the house's own: a control is
+    named when it has an `aria-label`, an `aria-labelledby` that resolves, a
+    label element that points at it, or a wrapping label. The series page's tag
+    input has a `<label for="series-tags" class="sr-only">Add a tag</label>`, so
+    `input.labels` holds one entry and its `textContent` is "Add a tag", and the
+    input **is** named. The audit read that label's `innerText`, which is empty
+    for a visually hidden element, and reported the input as unnamed. Measured
+    directly afterwards: `labels.length` 1, `innerText` empty, `textContent`
+    "Add a tag", and the accessible name computed from the label "Add a tag".
+
+    The general form: **a name is not a rendering, and a check that reads the
+    rendered text asks the wrong question about a control that is deliberately
+    not rendered.** `textContent` is the text; `innerText` is the text a reader
+    would see, and the second is empty for exactly the elements a screen reader
+    is the only reader of. A label that exists only for a screen reader is the
+    case where the two differ most, which is why the difference matters here.
+
+    The neighbour is worth naming because it is the same mistake with the
+    opposite sign: **Flux's own `label` prop renders a `<ui-label>`, not a
+    `<label>`**, so the server-rendered markup carries no `<label>` element and
+    the input carries no `id`. In the browser the component's own script wires
+    the caption to the input with `aria-labelledby`, and the name is the visible
+    caption, measured: the search page's query input is named "Search" in the
+    browser, not "Series title" as its placeholder says. A first reading of the
+    server-rendered markup said the caption was not associated at all, and that
+    reading was wrong, because it was made against the markup before the
+    component's script had run. **Measure the thing a reader gets, not the thing
+    the server wrote.**
+
 ---
 
 ## 15. Phase 7 run notes: the backup that never stops anything, and the round trip

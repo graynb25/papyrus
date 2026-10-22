@@ -2006,6 +2006,65 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * A family the reader opened is open again next time.
+     *
+     * Every family starts closed, because a group of sixty-one language
+     * variants pushes the page down by more than a screen. But a reader who
+     * opens MangaDex every time they come here should not have to open it
+     * every time they come here.
+     */
+    public function test_a_family_the_reader_opened_is_remembered(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        $this->page()->call('rememberFamily', 'example.test', true)
+            ->assertSet('openFamilies', ['example.test']);
+    }
+
+    /**
+     * And a family they closed again is closed again.
+     */
+    public function test_a_family_the_reader_closed_is_forgotten(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        $this->page()->call('rememberFamily', 'example.test', true)
+            ->call('rememberFamily', 'example.test', false)
+            ->assertSet('openFamilies', []);
+    }
+
+    /**
+     * The memory rides in the URL, so a link to the page carries it.
+     *
+     * The catalogue's slice, the content filter and the language choice all
+     * ride in the URL, and this is the reader's own choice about how the page
+     * looks, so it rides with them.
+     */
+    public function test_a_deep_link_carries_the_family_that_was_open(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        $html = Livewire::withQueryParams(['open' => ['example.test']])
+            ->test('pages::sources')
+            ->assertSet('openFamilies', ['example.test'])
+            ->html();
+
+        $this->assertMatchesRegularExpression('/<details\b[^>]*\bopen\b(?=[\s>])/', $html);
+    }
+
+    /**
+     * And a family nobody opened stays closed.
+     */
+    public function test_a_family_nobody_opened_stays_closed(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        $html = $this->page()->html();
+
+        $this->assertDoesNotMatchRegularExpression('/<details\b[^>]*\bopen\b(?=[\s>])/', $html);
+    }
+
+    /**
      * The tick that selects an extension for a bulk install is named.
      *
      * One tick per card, so a card that carried no name was a screen reader

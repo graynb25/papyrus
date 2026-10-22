@@ -64,6 +64,30 @@ new #[Title('Sources')] class extends Component
     #[Url(as: 'lang', except: '')]
     public array $lang = [];
 
+    /**
+     * The source families the reader has open.
+     *
+     * ## Why a memory and not just a closed page
+     *
+     * Every group starts closed, because a group of sixty-one language
+     * variants pushes the page down by more than a screen and the reader
+     * asked for it that way. But a reader who opens MangaDex every time they
+     * come here should not have to open it every time they come here, and
+     * the choice is the reader's own, so it is remembered.
+     *
+     * It is remembered in the URL, the same way the catalogue's slice, the
+     * content filter and the language choice are, because that is this
+     * page's own seam for state a reader chose. A link to the page carries
+     * the families open, and the reader's own back button carries it too.
+     *
+     * The key is the site's host, the same key the family is grouped by, so
+     * the memory cannot name a family that is not on the page.
+     *
+     * @var array<int, string>
+     */
+    #[Url(as: 'open', except: '')]
+    public array $openFamilies = [];
+
     public string $name = '';
 
     public int $page = 1;
@@ -1352,6 +1376,31 @@ new #[Title('Sources')] class extends Component
     }
 
     /**
+     * Remember that a source family is open, or that it is closed again.
+     *
+     * The open state itself is the browser's, and it changes the moment the
+     * reader presses the summary, without a round trip. What the server
+     * cannot see is that it happened, so the page tells it, and the server
+     * owns the memory that renders the family open on the next load.
+     *
+     * The re-render that follows changes nothing on screen: the state the
+     * server holds is the state the browser is already showing, so the
+     * markup that comes back is the markup that is there.
+     */
+    public function rememberFamily(string $host, bool $open): void
+    {
+        $host = trim($host);
+
+        if ($host === '') {
+            return;
+        }
+
+        $this->openFamilies = $open
+            ? array_values(array_unique([...$this->openFamilies, $host]))
+            : array_values(array_diff($this->openFamilies, [$host]));
+    }
+
+    /**
      * Leave every language out.
      *
      * Not a flourish: it is how a reader who reads two languages gets to
@@ -1656,7 +1705,8 @@ new #[Title('Sources')] class extends Component
                 @foreach ($this->browseSites as $group)
                     <li class="rounded-xl border border-zinc-200 dark:border-white/10">
                         {{--
-                            Every group starts closed.
+                            Every group starts closed, and the reader's own choice
+                            is remembered.
 
                             The first version opened the largest one, which put MangaDex's 61
                             language variants on screen as the first thing a reader saw, on top of
@@ -1668,8 +1718,18 @@ new #[Title('Sources')] class extends Component
                             The summary row stays the way in, so closing a group costs nothing.
                             A single-language site already shows its one source as a pill and never
                             needs expanding at all.
+
+                            And a reader who opens one every time they come here does not
+                            have to open it every time they come here: the group is open
+                            when the reader last left it open, and the page tells the
+                            server so it can say so next time. The browser does the opening
+                            itself, without a round trip, and the server is told after.
                         --}}
-                        <details class="group">
+                        <details
+                            class="group"
+                            @if (in_array($group['host'] ?? 'local', $this->openFamilies, true)) open @endif
+                            x-on:toggle="$wire.rememberFamily({{ Illuminate\Support\Js::from($group['host'] ?? 'local')->toHtml() }}, $el.open)"
+                        >
                             {{--
                                 The face of the card. Icon, name, host, count.
 
