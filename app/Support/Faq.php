@@ -146,20 +146,20 @@ final class Faq
             new FaqEntry(
                 question: __('What happens when a site blocks me?'),
                 answer: [
-                    __('Four sites are known to block readers who search hard, and the app says so before you install one: Kayn Scans, Asmotoon, Magustoon and Genztoons. Pressing install on one of them opens a warning first, and the warning says this: "This site is known to block readers that search aggressively. Space searches out or pin it; expect long bans, not errors you can retry away."'),
-                    __('A block is a wait, not an error, and nothing Papyrus does brings a site back sooner. Spacing your searches out or pinning the site is the whole of the advice, because both mean asking it less.'),
-                    __('One more site is a different problem rather than a ban. Comix scrambles what comes back: searches through its extension return titles unrelated to the query and pages arrive broken, and it pushes readers back to its own site. The app warns about that one at the install press as well.'),
-                    __('With a site that is merely failing, the app is plain about it. Each source gets its own budget inside a search, 20 seconds by default, so one slow site cannot use up the whole run, and a source that fails five times in a row is marked dead and left out of later searches, because asking a dead one costs the full wait every single time. The Health page shows what each site is doing, and a dead one can still be asked for by name.'),
+                    __('Some sites block readers who search too often. Papyrus warns you before you install Kayn Scans, Asmotoon, Magustoon or Genztoons. Space your searches out or pin the site; a ban can last a long time.'),
+                    __('A block is a waiting period, not an error Papyrus can fix. Asking the site less often is the only way to avoid making it worse.'),
+                    __('Comix is a different problem: its extension can return unrelated titles and broken pages, and it may send you back to its own site. Papyrus warns you before installation.'),
+                    __('When a site is simply failing, Papyrus gives it its own 20-second limit so it cannot hold up the whole search. Five failures in a row leave it out of later searches. Health shows what is happening, and you can still ask that source by name.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('What if a series has no chapters?'),
                 answer: [
-                    __('Sometimes a source lists a series and then lists no chapters for it. The series page says exactly that, in these words: "The source returned no chapters", and that this is an upstream condition, that the source answered and its chapter listing was empty, and that the series may have moved or the source may have changed its layout.'),
-                    __('Papyrus cannot tell you which of those it is. A publisher may have taken a series down, a series may have moved somewhere else, and a source may have changed the shape of its pages. The app does not guess, and it does not present a broken fetch as a missing series: when the call itself failed, the page shows the server\'s own message instead.'),
-                    __('The library check treats it as a fact about the source rather than a fault to fix, so a series with no chapters does not show up as something broken.'),
-                    __('Moving such a series is refused rather than half done. A destination that lists no chapters is refused with "That source lists no chapters for it, so there is nothing to move to." A source you are leaving that lists none is refused because your read progress there could not be carried over. And when none of your chapters can be matched to the new source, the move is refused too, because a move that carried nothing is not a move. Those rows offer you the source\'s own page to look at instead.'),
+                    __('Sometimes a source lists a series but no chapters. The series page says "The source returned no chapters." The source answered, but its chapter list was empty. The series may have moved, or the source may have changed its layout.'),
+                    __('Papyrus cannot tell which of those happened. It does not guess, and it does not call a failed request a missing series. When the request itself fails, the page says that the source could not be read.'),
+                    __('The library check treats an empty chapter list as a fact about the source, not as a problem with your library.'),
+                    __('A move is refused when the new source has no chapters, the source you are leaving has no chapters, or none of the chapters match. The row gives you the source page so you can look for yourself.'),
                 ],
             ),
 

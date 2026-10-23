@@ -7307,7 +7307,7 @@ that injects the old sentence is not evidence that the new sentence is rendered.
 review remains open until the owner has read the other settings, empty states and error pages.
 
 The first FAQ trust cluster was then revised as one unit: privacy, account, library storage, network
-access, offline reading, sources, adult content and search scope. The facts stayed the same, but the
+access, offline reading, sources, adult content, search scope, blocked sites and missing chapters. The facts stayed the same, but the
 answers now lead with what the reader can do and keep implementation terms such as "loopback" out of
 the public explanation. `FaqTest` holds the public claims and passed 26 tests with 179 assertions.
 
