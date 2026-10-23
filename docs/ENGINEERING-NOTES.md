@@ -7311,6 +7311,11 @@ access, offline reading, sources, adult content, search scope, blocked sites and
 answers now lead with what the reader can do and keep implementation terms such as "loopback" out of
 the public explanation. `FaqTest` holds the public claims and passed 26 tests with 179 assertions.
 
+The next copy clusters covered the import page's queue and stalled-run recovery messages, the About
+page's version warnings, and the reader's chapter-load error page. The import and About focused tests
+passed, and the wording now leads with what happened and what the reader can do next. These are still
+incremental Block 28 work, not proof that the whole application's copy has been reviewed.
+
 ### Trap 335: A restore needs a stage key, not a sentence parser
 
 The backup modal already had a stable stage key beside each reader-facing note. The restore row had
