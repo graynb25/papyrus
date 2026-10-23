@@ -335,7 +335,7 @@ class ImportPageTest extends TestCase
         // The HTML under assertion was rendered when the button was pressed, which was before
         // the job existed. Refresh so the callout is actually on the page being checked.
         $component->call('$refresh')
-            ->assertSee(__('It is sitting in the queue and nothing is processing it'))
+            ->assertSee(__('It is waiting in the queue because no worker has picked it up yet.'))
             ->assertSee('php artisan queue:work');
     }
 
@@ -400,7 +400,7 @@ class ImportPageTest extends TestCase
         $this->assertTrue($this->page()->instance()->queueIsInline());
 
         $this->page()
-            ->assertSee(__('This server runs its queue inside the request'))
+            ->assertSee(__('Imports need a worker on this server'))
             ->assertSee('QUEUE_CONNECTION=database');
     }
 
@@ -408,7 +408,7 @@ class ImportPageTest extends TestCase
     {
         $this->useDatabaseQueue();
 
-        $this->page()->assertDontSee(__('This server runs its queue inside the request'));
+        $this->page()->assertDontSee(__('Imports need a worker on this server'));
     }
 
     public function test_an_inline_queue_still_dispatches(): void
@@ -462,7 +462,7 @@ class ImportPageTest extends TestCase
         $run->forceFill(['updated_at' => now()->subMinutes(20)])->save();
 
         $this->page()
-            ->assertSee(__('This import has not moved'))
+            ->assertSee(__('This import is waiting'))
             ->assertSee('php artisan queue:work');
     }
 
@@ -475,7 +475,7 @@ class ImportPageTest extends TestCase
             'updated_at' => now()->subHours(3),
         ])->save();
 
-        $this->page()->assertDontSee(__('This import has not moved'));
+        $this->page()->assertDontSee(__('This import is waiting'));
     }
 
     public function test_a_refused_run_is_never_reported_as_stuck(): void

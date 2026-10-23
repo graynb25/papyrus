@@ -593,13 +593,13 @@ public function wasInspection(ImportRun $run): bool
             --}}
             @if ($this->queueIsInline())
                 <flux:callout variant="warning" icon="exclamation-triangle">
-                    <x-slot name="heading">{{ __('This server runs its queue inside the request') }}</x-slot>
+                    <x-slot name="heading">{{ __('Imports need a worker on this server') }}</x-slot>
 
-                    {{ __('An import of a large library takes about ten minutes of requests to other sites. With this setting the whole thing happens inside the browser request, which will very likely time out and leave you thinking it failed. It will probably still finish, but you will not be able to watch it.') }}
+                    {{ __('A large import can take about ten minutes because it reads from other sites. Without a worker, the browser request will probably time out and make the import look broken, even if it keeps running out of sight.') }}
 
                     <code class="mt-2 block font-mono text-sm">QUEUE_CONNECTION=database</code>
 
-                    {{ __('Set that in your .env, then run a worker alongside the site:') }}
+                    {{ __('Set this in your .env, then run a worker alongside the site:') }}
 
                     <code class="mt-2 block font-mono text-sm">php artisan queue:work</code>
                 </flux:callout>
@@ -619,12 +619,12 @@ public function wasInspection(ImportRun $run): bool
             --}}
             @if ($this->queueStalled() || $this->stuck)
                 <flux:callout variant="danger" icon="exclamation-triangle">
-                    <x-slot name="heading">{{ __('This import has not moved') }}</x-slot>
+                    <x-slot name="heading">{{ __('This import is waiting') }}</x-slot>
 
                     @if ($this->queueStalled())
-                        {{ __('It is sitting in the queue and nothing is processing it, so the import was queued and never started.') }}
+                        {{ __('It is waiting in the queue because no worker has picked it up yet.') }}
                     @else
-                        {{ __('It started and then went quiet, which usually means the worker was killed part way through. Nothing after its last line was applied.') }}
+                        {{ __('It started and then stopped reporting progress. The worker may have stopped, and nothing after its last update was applied.') }}
                     @endif
 
                     {{--
@@ -634,7 +634,7 @@ public function wasInspection(ImportRun $run): bool
                     --}}
                     <code class="mt-2 block font-mono text-sm">php artisan queue:work</code>
 
-                    {{ __('Start that in a terminal on the server, then press the button again. Running an import again costs nothing for whatever it already did.') }}
+                    {{ __('Run that command in a terminal on the server, then press the button again. Starting the import again will not repeat the work it already finished.') }}
                 </flux:callout>
             @endif
 
