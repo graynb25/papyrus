@@ -124,6 +124,22 @@ class FaqTest extends TestCase
         }
     }
 
+    public function test_the_first_trust_answers_use_reader_words(): void
+    {
+        $answers = array_map(
+            static fn (FaqEntry $entry): string => implode(' ', $entry->answer),
+            array_slice($this->faq()->entries(), 0, 5),
+        );
+        $text = implode(' ', $answers);
+
+        $this->assertStringContainsStringIgnoringCase('nothing leaves this computer', $text);
+        $this->assertStringContainsString('lives only on this computer', $text);
+        $this->assertStringContainsString('accepts connections only from this computer', $text);
+        $this->assertStringContainsString('chapters you have already downloaded', $text);
+        $this->assertStringNotContainsString('loopback address', $text);
+        $this->assertStringNotContainsString('phone-home check', $text);
+    }
+
     /**
      * The one that matters most, and the one the first draft got wrong.
      *

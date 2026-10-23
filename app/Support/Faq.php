@@ -75,9 +75,9 @@ final class Faq
             new FaqEntry(
                 question: __('Does anything leave my computer?'),
                 answer: [
-                    __('Nothing is reported anywhere. There is no telemetry, no analytics, no crash reporting and no error reporting service in this application, because there is no company behind it to receive any of it. No usage data, no page views, no device identifiers, no phone-home check.'),
-                    __('Everything Papyrus knows about you is in a database file on this machine, and you can open it, copy it, back it up or delete it yourself.'),
-                    __('Three things do contact the internet, and all three are things you set up yourself. If you use none of them, nothing is sent anywhere.'),
+                    __('No. Papyrus has no telemetry or analytics, no crash reporting or error reporting, and sends no page views, device IDs or automatic checks to anyone. There is no company or service waiting for them.'),
+                    __('What Papyrus knows about you stays in files on this computer. You can open them, copy them, back them up or delete them yourself.'),
+                    __('The only internet connections come from things you choose to set up, such as sources, extension stores and AniList. If you use none of them, nothing leaves this computer.'),
                 ],
                 exceptions: array_column($this->outbound(), 'who'),
                 isPrivacy: true,
@@ -86,50 +86,49 @@ final class Faq
             new FaqEntry(
                 question: __('Do I need an account?'),
                 answer: [
-                    __('You need a login, but it stays on your machine. Papyrus has no server and no sign-up that leaves your machine, so use any email you like, even test@example.com.'),
-                    __('The login exists for one reason: so that a second person who finds your copy cannot open your library. It is stored as a password hash in the same local database as everything else, it is never sent anywhere, and nobody can recover it for you if you forget it. The password check is the part that matters.'),
+                    __('You need a login, but it lives only on this computer. There is no Papyrus account online, so the email can be anything, including test@example.com.'),
+                    __('The login keeps someone else who finds this install from opening your library. If you forget the password, it cannot be recovered.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('Where is my library kept?'),
                 answer: [
-                    __('In a folder called Papyrus inside your user profile, in the same place Windows keeps other application data. It holds two halves: the manga server\'s own store of sources and downloads, and a single SQLite file holding your library, your read progress, your accounts and your settings.'),
-                    __('Uninstalling Papyrus removes the program and deliberately leaves that folder alone. Removing it is a separate, deliberate act, because deleting a reader\'s library by accident is not a recoverable mistake.'),
+                    __('Papyrus keeps its data in its own folder inside your Windows user profile. The folder contains your manga server\'s sources and downloads, plus a database with your library, read progress, accounts and settings.'),
+                    __('Uninstalling Papyrus removes the program but leaves that folder alone. Delete the folder separately if you also want to remove your library and settings.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('Can anyone else on my network get in?'),
                 answer: [
-                    __('No. Papyrus listens only on your own machine\'s loopback address, which is unreachable from another computer on your network, on your router, or from the internet. There is no port forwarding to set up and no setting to get wrong.'),
-                    __('This was a real bug once. The configuration named a loopback address but did not actually restrict the listener, so the server answered on every network interface until it was measured and fixed. It is worth knowing it was checked rather than assumed.'),
+                    __('No. Papyrus accepts connections only from this computer. Another device on your network or on the internet cannot reach it, and there is no port forwarding to set up.'),
+                    __('This is checked at the listener, not just in the configuration. A past bug made a listener look local while accepting connections from every network interface; that is why this is measured rather than assumed.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('Will this work offline?'),
                 answer: [
-                    __('Reading what you have already downloaded: yes, entirely. The reader, your library and your progress are all local, and nothing on that path touches the network.'),
-                    __('Finding anything new: no. Searching asks the sources directly, so a search needs the internet. An installed source that happens to be reachable another way is the exception, not the rule.'),
+                    __('Yes for chapters you have already downloaded. The reader, your library and your progress are local, so reading them does not need the internet.'),
+                    __('No for finding something new. Search asks the sources directly, so it needs the internet unless a source is already reachable another way.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('What is a source, and should I trust it?'),
                 answer: [
-                    __('A source is a small program, written by someone who is not us, that knows how to find and download manga from one particular website. Papyrus installs and runs them inside the bundled manga server. Without at least one, the app starts and shows you an empty library.'),
-                    __('Treat them the way you would treat any other program you did not write: install the ones you want, and notice that they run with your user\'s permissions. They are the least Papyrus-controlled part of the stack, and the Licences page does not pretend otherwise.'),
+                    __('A source is a small add-on that knows how to find manga on one website. Papyrus runs it inside its manga server. Without at least one source, the app starts with an empty library.'),
+                    __('Sources come from people outside Papyrus and run with your Windows account\'s permissions. Install only sources you trust. The Licences page names what Papyrus can and cannot vouch for.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('How do I turn on adult content?'),
                 answer: [
-                    __('Adult content is off until you turn it on, and turning it on asks you to confirm that you are 18 or older. Nothing the catalogue marks NSFW is listed in the extension catalogue or asked in a search until you have done that, and the setting is per reader on this machine.'),
-                    __('The switch sits on the Sources page and on the Search page, in a row of its own rather than among the rating chips, and it is one switch and not two: the rating says what may be shown and the switch says whether that rating is in scope at all. The rating in the address bar does not turn it on, because a link is not a confirmation.'),
-                    __('There was a real hole here once. A link carrying the rating put 41 adult-rated extensions on the first page of the catalogue with nothing asked, and the page went on saying they were hidden. That is fixed: the rating is behind the confirmation now, and the count on the page tells you how many installed extensions the switch is holding back.'),
-                    __('The rating is the catalogue\'s own, and it belongs to the extension rather than to a series inside it. A site rated Safe can still carry a series that is adult, and the app does not claim otherwise: the search page says so beside the rating it shows.'),
+                    __('Adult content starts off. Turning it on asks you to confirm that you are 18 or older. Until then, extensions and sources marked NSFW stay out of the catalogue and search. This choice belongs to your account on this computer.'),
+                    __('You will find the switch on the Sources page and the Search page in a row of its own, away from the rating chips. The rating describes the source; the switch is your permission to include it. A link with an NSFW rating cannot turn the switch on.'),
+                    __('The catalogue rating belongs to an extension, not to every series on its site. A site marked Safe can still list an adult series, so the search page shows the rating it received rather than guessing what every series contains.'),
                     __('Nothing is sent anywhere when you turn it on. It is one row in the database on this machine, beside your other settings, and turning it off again takes it away at once.'),
                 ],
             ),
@@ -137,10 +136,10 @@ final class Faq
             new FaqEntry(
                 question: __('Can I limit what a search asks?'),
                 answer: [
-                    __('Yes. Pin the sites you trust on the Sources page or on the Health page, and searches stop asking anyone else. With nothing pinned, a search asks every source that can run, which is what it has always done.'),
-                    __('A pin is for a site, not for one language of it. The extension repository ships one extension per language and they all point at the same site, so pinning MangaDex pins all 61 of its language variants at once. That is deliberate, and the measurement is why: on a measured run all 61 variants returned the same 51 titles in different scripts, and asking one variant per site kept 64% of the results and threw away every non-Latin one.'),
-                    __('The search page says what it left out. While a pin stands, it tells you how many installed sources are not pinned and lists them by name, so no results never reads as nobody having the series.'),
-                    __('Pins are about searching and about nothing else. Your shelves, your library and your read progress are not touched by them.'),
+                    __('Yes. Pin the sites you trust on the Sources or Health page, and search will stop asking the other sites. With no pins, search asks every source that can run.'),
+                    __('A pin applies to a site, not one language. One site can have several language extensions, and pinning the site covers them together so search does not ask the same site repeatedly.'),
+                    __('The Search page tells you what it left out. While pins are active, it shows how many installed sources were not pinned and lists them by name.'),
+                    __('Pins change search only. They do not change your shelves, library or reading progress.'),
                 ],
             ),
 

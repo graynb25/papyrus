@@ -1089,9 +1089,11 @@ Estimated cost: 3 hours.
 
 Status (2026-10-23): In progress. The backups page, backup job messages,
 restore messages, backup summaries, and backup FAQ have had a first humanizing
-pass. The broader review of settings, empty states, error pages and the rest of
-the FAQ is still open. Do not mark this block done until the owner has read the
-surfaces and confirmed the wording.
+pass. On 2026-10-24 the first trust cluster of the FAQ was also rewritten:
+privacy, account, library storage, network access, offline reading, sources,
+adult content and search scope. The broader review of settings, empty states,
+error pages and the rest of the FAQ is still open. Do not mark this block done
+until the owner has read the surfaces and confirmed the wording.
 
 Preview: The before and after is in the "Humanized copy" section below.
 

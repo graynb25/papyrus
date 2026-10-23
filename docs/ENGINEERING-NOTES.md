@@ -7306,6 +7306,11 @@ for the job and the manifest. The test fixture had to be changed with the produc
 that injects the old sentence is not evidence that the new sentence is rendered. The broader copy
 review remains open until the owner has read the other settings, empty states and error pages.
 
+The first FAQ trust cluster was then revised as one unit: privacy, account, library storage, network
+access, offline reading, sources, adult content and search scope. The facts stayed the same, but the
+answers now lead with what the reader can do and keep implementation terms such as "loopback" out of
+the public explanation. `FaqTest` holds the public claims and passed 26 tests with 179 assertions.
+
 ### Trap 335: A restore needs a stage key, not a sentence parser
 
 The backup modal already had a stable stage key beside each reader-facing note. The restore row had
