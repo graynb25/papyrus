@@ -155,6 +155,7 @@ class RunLiveBackupJobTest extends TestCase
 
         $this->assertSame(LiveBackupRun::COMPLETE, $run->state);
         $this->assertFalse($run->isRunning(), 'a finished run is not running, so the page does not poll it');
+        $this->assertSame('done', $run->progress_stage, 'the closing note carries the stage that lets the modal complete its timeline');
 
         $this->assertNotNull($run->token);
         $this->assertSame(1, $run->started_by_user_id);
@@ -221,6 +222,7 @@ class RunLiveBackupJobTest extends TestCase
         $this->assertSame(LiveBackupRun::REFUSED, $run->state);
         $this->assertStringContainsString('did not answer what version', (string) $run->refusal_reason);
         $this->assertNull($run->token, 'a refused run has no token, because it renamed nothing');
+        $this->assertNull($run->progress_stage, 'the version refusal reached no stage, so the row claims no progress');
         $this->assertNull($run->progress_note, 'a refusal clears the note, which described work that no longer exists');
         $this->assertNotNull($run->finished_at);
 

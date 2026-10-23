@@ -697,7 +697,7 @@ stage name a reader can parse.
 Decision (owner, 2026-10-22): A modal (flux:modal, already in use) carrying a
 checkpoint timeline (stages: Checking target, Stopping, Copying manga half,
 Copying reader half, Writing manifest, Restarting, each pending, running, done
-or failed), a live progress bar with elapsed seconds, a final verdict sentence,
+or failed), a live progress bar with whole elapsed seconds in words, a final verdict sentence,
 and one clear next action. The inline block becomes a single line: "Last run:
 finished 22 hours ago." with a "Show details" link. The page stops jumping on
 every poll. The same modal and timeline serve the running backup. Improve, do
@@ -709,7 +709,7 @@ and the existing run rows; do not replace the page. Replace the inline run
 panel with a modal (flux:modal, already in use) carrying a checkpoint timeline
 (stages: Checking target, Stopping, Copying manga half, Copying reader half,
 Writing manifest, Restarting, each pending, running, done or failed), a live
-progress bar with elapsed seconds, a final verdict sentence, and one clear next
+progress bar with whole elapsed seconds in words, a final verdict sentence, and one clear next
 action. The inline block becomes a single line: "Last run: finished 22 hours
 ago." with a "Show details" link. The page stops jumping on every poll. The
 same modal and timeline serve the running backup. No new component

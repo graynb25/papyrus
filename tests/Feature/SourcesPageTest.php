@@ -1776,7 +1776,7 @@ class SourcesPageTest extends TestCase
             ->assertSee('Beach House')
             ->assertSee('2 series')
             ->assertSee('1 series')
-            ->assertSee('Each count is how many series in your library come from that source.');
+            ->assertSee('The number is how many of your series come from that source.');
     }
 
     public function test_a_migrate_row_opens_the_compose_flow_for_its_source(): void
@@ -1834,7 +1834,7 @@ class SourcesPageTest extends TestCase
             ->set('name', 'Bogus Nonexistent')
             ->set('content', [Source::NSFW])
             ->call('setView', 'migrate')
-            ->assertSee('Each count is how many series in your library come from that source.')
+            ->assertSee('The number is how many of your series come from that source.')
             ->assertDontSee('The extension list did not load')
             ->assertDontSee('Nothing installed yet');
     }

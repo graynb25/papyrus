@@ -391,8 +391,8 @@ class LiveBackupTest extends TestCase
             app(LiveBackup::class)->run(false);
             $this->fail('The run took a pair whose manga half held no series at all.');
         } catch (SuwayomiException $e) {
-            $this->assertStringContainsString('a real backup of a library that holds nothing', $e->getMessage());
-            $this->assertStringContainsString('no series at all', $e->getMessage());
+            $this->assertStringContainsString('a real backup, but its library holds no series', $e->getMessage());
+            $this->assertStringContainsString('holds no series', $e->getMessage());
         }
 
         $this->assertSame([], (array) glob($directory.DIRECTORY_SEPARATOR.'backup-*.json'), 'a refused run names no pair');
@@ -413,7 +413,7 @@ class LiveBackupTest extends TestCase
             $this->fail('The run took a pair whose manga half was not a backup at all.');
         } catch (SuwayomiException $e) {
             $this->assertStringContainsString('does not read as a Mihon or Suwayomi backup', $e->getMessage());
-            $this->assertStringNotContainsString('a real backup of a library that holds nothing', $e->getMessage());
+            $this->assertStringNotContainsString('a real backup, but its library holds no series', $e->getMessage());
         }
     }
 

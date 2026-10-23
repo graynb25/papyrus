@@ -211,6 +211,38 @@ class BackupsPageTest extends TestCase
     }
 
     /**
+     * A live run has its own timeline, built from the stage key the job writes rather than from
+     * a sentence. Without this, the modal can look populated while telling a waiting reader none
+     * of the things block 17 promised: where the work is, how far it has got, or whether it is
+     * still updating.
+     */
+    public function test_a_running_live_backup_has_a_polling_timeline_in_the_last_run_modal(): void
+    {
+        $this->writeLiveRun(progressStage: 'manga_half');
+
+        $this->travel(34)->seconds();
+
+        $page = Livewire::test('pages::settings.backups')->call('openRunModal');
+
+        $page->assertSee('Checking server')
+            ->assertSee('Copying reader half')
+            ->assertSee('Copying manga half')
+            ->assertSee('Checking manga half')
+            ->assertSee('2 of 6')
+            ->assertSee('34 seconds elapsed')
+            ->assertSee('counting what the library holds')
+            ->assertSee('bg-blue-500', false);
+
+        $html = (string) $page->html();
+        $modal = substr($html, (int) strpos($html, 'data-modal="backup-run"'));
+        $modal = substr($modal, 0, (int) strpos($modal, '</dialog>'));
+
+        $this->assertStringContainsString('wire:poll.3s', $modal, 'the open modal keeps watching a live run');
+        $this->assertStringNotContainsString('aria-label="Close modal"', $modal, 'the running modal exposes no close button');
+        $this->assertTrue($page->instance()->runModalIsRunning(), 'the running live row locks the modal like a running launcher record');
+    }
+
+    /**
      * A backup with a half missing is called incomplete, not listed as if it were whole.
      */
     public function test_an_incomplete_backup_is_called_incomplete(): void
@@ -804,12 +836,17 @@ class BackupsPageTest extends TestCase
      * looks like on this page the moment a test needs it. `stale` ages the row past the page's
      * own silence threshold, which is how a killed worker shows up: running, and quiet.
      */
-    private function writeLiveRun(string $state = LiveBackupRun::RUNNING, bool $stale = false): void
+    private function writeLiveRun(string $state = LiveBackupRun::RUNNING, bool $stale = false, ?string $progressStage = null): void
     {
         $run = LiveBackupRun::create(array_filter([
             'state' => $state,
             'include_downloads' => false,
             'token' => $state === LiveBackupRun::COMPLETE ? '20261020-120000' : null,
+            'progress_stage' => $progressStage ?? match ($state) {
+                LiveBackupRun::RUNNING => 'manga_half',
+                LiveBackupRun::COMPLETE => 'done',
+                default => null,
+            },
             'progress_note' => match ($state) {
                 LiveBackupRun::RUNNING => 'counting what the library holds',
                 LiveBackupRun::COMPLETE => '1 series states and 1 chapter states against Suwayomi v3.4.2366, taken without stopping anything',

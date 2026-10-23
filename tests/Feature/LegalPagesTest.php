@@ -129,7 +129,7 @@ class LegalPagesTest extends TestCase
         $this->get('/privacy')
             ->assertSee('Mail to you, and only to you')
             ->assertSee('a password reset link when you ask for one')
-            ->assertSee('none of them leave the machine');
+            ->assertSee('none of them leave your machine');
     }
 
     public function test_the_public_pages_carry_no_dashes(): void

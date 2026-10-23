@@ -97,14 +97,14 @@ class RunLiveBackup implements ShouldQueue
 
         try {
             /*
-             * The run's own stage notes are full sentences, written for whoever is watching,
-             * so they go onto the row as they arrive and the page reads the row instead of
-             * translating anything.
+            * The run's own stage notes are full sentences, written for whoever is watching.
+            * The key travels with each sentence too: the modal can then show the reader where
+            * the work has reached without guessing from the sentence it happens to say.
              */
             $result = $backup->run(
                 $this->includeDownloads,
                 static function (string $stage, string $words) use ($run): void {
-                    $run->update(['progress_note' => $words]);
+                    $run->update(['progress_stage' => $stage, 'progress_note' => $words]);
                 },
             );
 

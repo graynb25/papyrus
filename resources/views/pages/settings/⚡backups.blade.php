@@ -13,6 +13,7 @@ use App\Models\LiveExportRun;
 use App\Models\LiveRestoreRun;
 use App\Suwayomi\BackupGateway;
 use App\Suwayomi\SuwayomiException;
+use Carbon\CarbonInterface;
 use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
@@ -255,13 +256,86 @@ new #[Title('Backups')] class extends Component {
     {
         $latest = $this->latestEvent();
 
-        if ($latest === null || $latest['outcome'] === null) {
+        if ($latest === null) {
             return false;
         }
 
-        $outcome = $latest['outcome'];
+        if ($latest['outcome'] !== null) {
+            $outcome = $latest['outcome'];
 
-        return ! $outcome->finished() && ! $outcome->failed() && ! $outcome->stalled();
+            return ! $outcome->finished() && ! $outcome->failed() && ! $outcome->stalled();
+        }
+
+        return $latest['row'] !== null
+            && $latest['row']->isRunning()
+            && ! $this->runIsAbandoned($latest['row']);
+    }
+
+    /**
+     * The amount of time a run has been going, in the reader's words.
+     *
+     * Carbon returns fractional seconds here. A fraction says more about the render than the
+     * backup, and changes every poll, so the page keeps whole elapsed seconds instead.
+     */
+    public function elapsedTime(CarbonInterface $startedAt): string
+    {
+        $seconds = (int) floor(max(0, $startedAt->diffInSeconds(now())));
+
+        return trans_choice(
+            '{0} 0 seconds elapsed|{1} 1 second elapsed|[2,*] :count seconds elapsed',
+            $seconds,
+            ['count' => $seconds],
+        );
+    }
+
+    /**
+     * The live backup's actual work, rather than the launcher's stop-and-restart stages.
+     *
+     * `LiveBackup` reports these keys as it reaches them. Keeping the key alongside the reader
+     * sentence means the modal can mark completed work without parsing prose, and an optional
+     * downloads zip adds only the work this press asked for.
+     *
+     * @return list<array{stage: string, title: string, state: 'pending'|'running'|'done'|'failed'}>
+     */
+    public function liveBackupTimeline(LiveBackupRun $run): array
+    {
+        $steps = [
+            ['stage' => 'version', 'title' => __('Checking server')],
+            ['stage' => 'reader_half', 'title' => __('Copying reader half')],
+        ];
+
+        if ($run->include_downloads) {
+            $steps[] = ['stage' => 'downloads', 'title' => __('Copying downloads')];
+        }
+
+        array_push($steps,
+            ['stage' => 'manga_half', 'title' => __('Copying manga half')],
+            ['stage' => 'manga_checked', 'title' => __('Checking manga half')],
+            ['stage' => 'manifest', 'title' => __('Writing manifest')],
+            ['stage' => 'renamed', 'title' => __('Finishing backup')],
+        );
+
+        if ($run->state === LiveBackupRun::COMPLETE) {
+            return array_map(static fn (array $step): array => [...$step, 'state' => 'done'], $steps);
+        }
+
+        $current = array_search($run->progress_stage, array_column($steps, 'stage'), true);
+
+        return array_map(function (array $step, int $index) use ($current, $run): array {
+            $state = 'pending';
+
+            if (is_int($current) && $index < $current) {
+                $state = 'done';
+            }
+
+            if (is_int($current) && $index === $current) {
+                $state = $run->isRunning() && ! $this->runIsAbandoned($run)
+                    ? 'running'
+                    : 'failed';
+            }
+
+            return [...$step, 'state' => $state];
+        }, $steps, array_keys($steps));
     }
 
     /** The one word the "Last run" line and the modal header read a run by. */
@@ -888,6 +962,7 @@ new #[Title('Backups')] class extends Component {
                 class="max-w-lg"
                 :dismissible="! $this->runModalIsRunning()"
                 :escapable="! $this->runModalIsRunning()"
+                :closable="! $this->runModalIsRunning()"
                 @close="closeRunModal"
             >
                 @if (($latest = $this->latestEvent()) !== null && $latest['outcome'] !== null)
@@ -964,7 +1039,7 @@ new #[Title('Backups')] class extends Component {
 
                         <div class="mt-1 flex justify-between text-xs text-zinc-400">
                             <span>{{ $doneCount }} of {{ $totalStages }}</span>
-                            <span>{{ $latest['at']->diffInSeconds(now()) }}s</span>
+                            <span>{{ $this->elapsedTime($latest['at']) }}</span>
                         </div>
 
                         <ol class="mt-4 space-y-2" role="list">
@@ -1055,6 +1130,112 @@ new #[Title('Backups')] class extends Component {
                                 </flux:modal.close>
                             @endif
                         </div>
+                    </div>
+                @elseif (($latest = $this->latestEvent()) !== null && $latest['row'] !== null)
+                    @php
+                        $row = $latest['row'];
+                        $liveLabel = $this->runLabelOfAny($row);
+                        $liveSummary = $this->runSummaryOfAny($row);
+                        $liveTone = $this->runToneOfAny($row);
+                        $liveIsRunning = $this->runModalIsRunning();
+                        $liveIsBackup = $row instanceof LiveBackupRun;
+                        $liveStages = $liveIsBackup ? $this->liveBackupTimeline($row) : [];
+                        $liveDoneCount = count(array_filter($liveStages, static fn (array $stage): bool => $stage['state'] === 'done'));
+                        $liveTotalStages = count($liveStages);
+                        $livePct = $liveTotalStages > 0 ? (int) round($liveDoneCount * 100 / $liveTotalStages) : 0;
+                        $liveDotClass = match ($liveTone) {
+                            'red' => 'bg-red-500',
+                            'amber' => 'animate-pulse bg-amber-400',
+                            'blue' => 'animate-pulse bg-blue-500',
+                            default => 'bg-green-500',
+                        };
+                    @endphp
+
+                    @if ($this->runModalOpen && $liveIsRunning)
+                        <div wire:poll.3s>
+                    @else
+                        <div>
+                    @endif
+                        <div class="flex items-center gap-2">
+                        <span class="size-2 rounded-full {{ $liveDotClass }}" aria-hidden="true"></span>
+
+                        <flux:heading size="lg">{{ $liveLabel }}</flux:heading>
+                    </div>
+
+                    @if ($liveIsBackup)
+                        <div
+                            class="mt-4 h-1 w-full overflow-hidden rounded-full bg-zinc-800"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="{{ $livePct }}"
+                            aria-label="{{ __('Backup progress') }}"
+                        >
+                            <div
+                                class="h-full rounded-full bg-accent transition-all duration-300"
+                                style="width: {{ $livePct }}%"
+                            ></div>
+                        </div>
+
+                        <div class="mt-1 flex justify-between text-xs text-zinc-400">
+                            <span>{{ $liveDoneCount }} of {{ $liveTotalStages }}</span>
+                            <span>{{ $this->elapsedTime($latest['at']) }}</span>
+                        </div>
+
+                        <ol class="mt-4 space-y-2" role="list">
+                            @foreach ($liveStages as $stage)
+                                <li role="listitem" class="flex items-center gap-3 py-2">
+                                    <span
+                                        class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($stage['state']) {
+                                            'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
+                                            'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
+                                            'failed' => 'border-red-500 bg-red-500 text-white',
+                                            default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
+                                        } }}"
+                                        aria-hidden="true"
+                                    >
+                                        @if ($stage['state'] === 'done')
+                                            &#10003;
+                                        @elseif ($stage['state'] === 'failed')
+                                            &#10005;
+                                        @elseif ($stage['state'] === 'running')
+                                            <flux:icon name="loading" class="size-3" />
+                                        @endif
+                                    </span>
+
+                                    <p class="text-sm font-medium">{{ $stage['title'] }}</p>
+                                </li>
+                            @endforeach
+                        </ol>
+                    @endif
+
+                    @if ($liveSummary !== '')
+                        <p class="mt-4 text-sm" aria-live="polite">{{ $liveSummary }}</p>
+                    @endif
+
+                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        @if ($latest['outcome'] !== null)
+                            {{ $latest['outcome']->token }}
+                        @elseif ($latest['row'] !== null)
+                            {{ $latest['row']->token ?? $latest['row']->file_name ?? '' }}
+                        @endif
+                    </p>
+
+                    <p class="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+                        {{ __('Started :when.', ['when' => $latest['at']->diffForHumans()]) }}
+                    </p>
+
+                    <div class="mt-6 flex justify-end gap-2">
+                        @if ($liveIsRunning)
+                            <flux:modal.close>
+                                <flux:button variant="filled" :disabled="true">{{ __('Close') }}</flux:button>
+                            </flux:modal.close>
+                        @else
+                            <flux:modal.close>
+                                <flux:button variant="primary">{{ __('Done') }}</flux:button>
+                            </flux:modal.close>
+                        @endif
+                    </div>
                     </div>
                 @endif
             </flux:modal>

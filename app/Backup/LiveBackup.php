@@ -422,14 +422,13 @@ final class LiveBackup
     private function whyTheMangaHalfIsUnreadable(string $target): string
     {
         if (TachibkFile::isAnEmptyLibraryBackup($target)) {
-            return 'The downloaded manga half is a real backup of a library that holds nothing: '
-                .'the server answered with a file that carries its own shelves and no series at all, '
-                .'so there is no manga half to pair with the reader half. The run was refused with '
+            return 'The server answered with a real backup, but its library holds no series, so '
+                .'there is no manga half to pair with the reader half. The run was refused with '
                 .'nothing taken.';
         }
 
-        return 'The downloaded manga half does not read as a Mihon or Suwayomi backup, so it '
-            .'cannot be one half of a pair:';
+        return 'That file does not read as a Mihon or Suwayomi backup, so it cannot be one '
+            .'half of a pair:';
     }
 
     /**

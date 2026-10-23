@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $token
  * @property string $state running|complete|failed|refused
  * @property bool $include_downloads
+ * @property string|null $progress_stage
  * @property string|null $progress_note
  * @property string|null $refusal_reason
  * @property string|null $suwayomi_version
@@ -55,6 +56,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'token',
     'state',
     'include_downloads',
+    'progress_stage',
     'progress_note',
     'refusal_reason',
     'suwayomi_version',

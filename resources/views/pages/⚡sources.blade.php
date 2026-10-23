@@ -2275,7 +2275,7 @@ new #[Title('Sources')] class extends AdultContentPage
                 renderings.
             --}}
             <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                {{ __('Each count is how many series in your library come from that source. Tapping a source opens the move flow with that source already picked.') }}
+                {{ __('The number is how many of your series come from that source. Tap one to start moving them.') }}
             </p>
 
             @if ($this->holdings['error'] !== null)

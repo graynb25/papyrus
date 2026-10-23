@@ -683,7 +683,7 @@ public function wasInspection(ImportRun $run): bool
                     </p>
 
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('Backups from other reader apps are not read yet. A backup from Mihon, Tachiyomi or a fork will not import.') }}
+                        {{ __('Only Tachimanga backups import today. Backups from Mihon, Tachiyomi or their forks are not read yet.') }}
 
                         <a
                             href="https://tachimanga.app/help/guides/backups.html"
@@ -743,7 +743,7 @@ public function wasInspection(ImportRun $run): bool
                 />
 
                 <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('Only for after this app was fixed. A normal import skips series it has already written, and it cannot tell the difference between "already written" and "written wrongly".') }}
+                    {{ __('Only for after a bad import. A normal import skips series it has already written, and cannot tell "already written" from "written wrongly".') }}
                 </p>
 
                 <flux:button

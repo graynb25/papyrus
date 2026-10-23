@@ -90,7 +90,7 @@ class ImportPageTest extends TestCase
     {
         $this->page()
             ->assertOk()
-            ->assertSee('Backups from other reader apps are not read yet')
+            ->assertSee('Only Tachimanga backups import today')
             ->assertSee('Mihon')
             ->assertSee('https://tachimanga.app/help/guides/backups.html', escape: false);
     }

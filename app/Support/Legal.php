@@ -78,8 +78,8 @@ final class Legal
                 new LegalSection(
                     heading: __('Mail to you, and only to you'),
                     paragraphs: [
-                        __('The application can send you three messages: a verification link when you sign up, a password reset link when you ask for one, and a welcome note if your account was made from the command line. On a default install none of them leave the machine, because the mailer ships writing to a local log file: there is nowhere for an application on your own computer to send mail from.'),
-                        __('Point it at a real mail server and that is you deciding to, and the address goes to whoever runs that server. In a shared or public install the sign up verification is not skipped, because those installs are reachable by people you have never met, so that message does go out.'),
+                        __('Papyrus can send three messages: a verification link when you sign up (only on shared or public installs, where registration is open), a password reset link when you ask for one, and a welcome note if your account was made from the command line. On a default install none of them leave your machine, because registration is closed and the mailer writes to a local log file.'),
+                        __('Point it at a real mail server and that is your choice, and the address goes to whoever runs that server. In a shared or public install the sign-up verification is not skipped, because those installs are reachable by people you have never met, so that message does go out.'),
                     ],
                 ),
 

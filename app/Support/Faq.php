@@ -86,8 +86,8 @@ final class Faq
             new FaqEntry(
                 question: __('Do I need an account?'),
                 answer: [
-                    __('No. Not with us, anyway, because there is no us. Papyrus has no server, no sign-up and no user database that leaves your machine.'),
-                    __('You will be asked to create a login the first time you start it, and that login exists for one reason: so that a second person who finds your copy cannot open your library. It is stored as a password hash in the same local database as everything else, it is never sent anywhere, and nobody including the person who wrote this can recover it for you.'),
+                    __('You need a login, but it stays on your machine. Papyrus has no server and no sign-up that leaves your machine, so use any email you like, even test@example.com.'),
+                    __('The login exists for one reason: so that a second person who finds your copy cannot open your library. It is stored as a password hash in the same local database as everything else, it is never sent anywhere, and nobody can recover it for you if you forget it. The password check is the part that matters.'),
                 ],
             ),
 

@@ -274,7 +274,7 @@ new #[Title('Licences')] class extends Component {
         <p class="mt-8 text-sm text-zinc-500 dark:text-zinc-400">
             {{
                 __(
-                    'Every package above is read from the lock files this build ships, so this list cannot claim something that is not here and cannot quietly miss something that is. The two bundled pieces appear in neither lock file, so their versions come from the manifests the build verifies against.'
+                    'Every package above is read from the lock files this build ships, so nothing here is invented and nothing is left out. The two bundled pieces are in neither lock file, so their versions come from the manifests the build checks against.'
                 )
             }}
         </p>

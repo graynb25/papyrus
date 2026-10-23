@@ -7109,6 +7109,21 @@ exactly that moment and it costs five minutes.
     trait. The same question applies to a base class, an interface and a
     service: all three are visible to the analyser, and a trait whose users are
     all in a file the analyser does not parse is not one of them.
+
+334. **An elapsed timer is a reader sentence, not the clock's raw measurement.**
+
+    Measured 2026-10-23 in the Backups modal. Carbon's `diffInSeconds()` returned
+    `34.34455`, and the template printed it as `34.34455s`. That number describes
+    the instant a three-second Livewire poll happened to render, not a useful fact
+    about the backup. A reader needs `34 seconds elapsed`.
+
+    The page had two modal paths, one for the launcher's record and one for the
+    live row, so wording the live path alone would have let the same defect return
+    through the other door. `elapsedTime()` is the one formatter for both: it floors
+    a non-negative duration to whole seconds and carries the singular and plural
+    words. `BackupsPageTest` travels 34 seconds and reads `34 seconds elapsed` from
+    the rendered live modal. A time test that only calls the helper would leave the
+    rendered sentence unproved.
 ---
 
 ## 15. Phase 7 run notes: the backup that never stops anything, and the round trip
