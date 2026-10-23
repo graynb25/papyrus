@@ -1564,11 +1564,17 @@ new #[Title('Library')] class extends Component
 
             <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
                 @if ($this->totalAll === 0)
-                    {{ __('Add something from search and it will show up here with its progress.') }}
+                    {{ __('Papyrus reads from sources. A source is an extension repository that holds manga; Papyrus ships with none, so the first step is to add one.') }}
                 @else
                     {{ __('Try a different search, or pick another shelf.') }}
                 @endif
             </p>
+
+            @if ($this->totalAll === 0)
+                <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ __('Add something from search and it will show up here with its progress.') }}
+                </p>
+            @endif
 
             @if ($this->totalAll === 0)
                 {{--
@@ -1581,7 +1587,11 @@ new #[Title('Library')] class extends Component
                     is going to do.
                 --}}
                 <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-                    <flux:button variant="primary" href="{{ route('search') }}" wire:navigate icon="magnifying-glass">
+                    <flux:button variant="primary" href="{{ route('sources') }}" wire:navigate icon="folder-git-2">
+                        {{ __('Add a source') }}
+                    </flux:button>
+
+                    <flux:button variant="outline" href="{{ route('search') }}" wire:navigate icon="magnifying-glass">
                         {{ __('Go to search') }}
                     </flux:button>
 

@@ -2598,6 +2598,11 @@ new #[Title('Sources')] class extends AdultContentPage
                 @endif
             </flux:callout>
         @else
+            @if ($view === 'available')
+                <p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ __('These are the extensions this store offers. Install one to start reading.') }}
+                </p>
+            @endif
             {{--
                 Cards, three to five to a row, on the same breakpoints as the library,
                 browse and search grids. This was the second full-width list on this page,
