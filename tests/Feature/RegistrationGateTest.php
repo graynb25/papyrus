@@ -159,6 +159,19 @@ class RegistrationGateTest extends TestCase
 
     // The page stops advertising it ---------------------------------------
 
+    public function test_the_closed_registration_404_points_the_reader_to_sign_in(): void
+    {
+        User::factory()->create();
+
+        $this->inMode(Deployment::SINGLE);
+
+        $this->get(route('register'))
+            ->assertNotFound()
+            ->assertSee(__('Sign-up is closed on this install.'))
+            ->assertSee(__('If you have an account, sign in.'))
+            ->assertSee(route('login', [], false));
+    }
+
     public function test_the_login_page_offers_sign_up_only_while_the_install_is_unclaimed(): void
     {
         /*

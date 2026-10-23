@@ -895,11 +895,11 @@ class LibraryTest extends TestCase
      * heading in the markup starts the same way, which is precisely the coincidence that
      * makes a test pass for the wrong reason.
      */
-    public function test_an_empty_library_says_a_library_can_be_brought_across(): void
+    public function test_an_empty_library_does_not_repeat_the_empty_state_as_a_toast(): void
     {
         $this->page()
             ->assertOk()
-            ->assertDispatched('toast-show');
+            ->assertNotDispatched('toast-show');
     }
 
     /**

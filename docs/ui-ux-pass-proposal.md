@@ -43,23 +43,23 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 17 | 2, 3, 4, 5, 8, 9, 10, 12, 14, 17, 18, 19, 20, 21, 23, 27, 28 |
+| Done | 18 | 2, 3, 4, 5, 7, 8, 9, 10, 12, 14, 17, 18, 19, 20, 21, 23, 27, 28 |
 | Partial | 2 | 1, 26 |
 | Active | 0 | None |
-| Remaining | 10 | 6, 7, 11, 13, 15, 16, 22, 24, 25, 29 |
+| Remaining | 9 | 6, 11, 13, 15, 16, 22, 24, 25, 29 |
 
 ```text
-Done       [#################     ] 17 of 29
+Done       [##################    ] 18 of 29
 Partial    [##                    ]  2 of 29
 Active     [                      ]  0 of 29
-Remaining  [##########            ] 10 of 29
+Remaining  [#########             ]  9 of 29
 ```
 
 | Surface | Visual review board |
 | --- | --- |
 | Onboarding | ◐ 1  ✓ 2  ✓ 3  ✓ 4 |
 | Login and public shell | ✓ 5  ○ 6 |
-| Library | ○ 7  ✓ 8  ✓ 9  ✓ 10 |
+| Library | ✓ 7  ✓ 8  ✓ 9  ✓ 10 |
 | Search and browse | ○ 11  ✓ 12 |
 | Sources and health | ○ 13  ✓ 14  ○ 15  ○ 16 |
 | Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |

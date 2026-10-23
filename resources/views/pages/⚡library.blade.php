@@ -628,37 +628,11 @@ new #[Title('Library')] class extends Component
          * arrive typed, and a shelf id belonging to somebody else, or a sort nobody offers, would
          * reach the page unvalidated.
          *
-         * It is called before the empty-library early return below, because that return is about
-         * whether to show a toast and must not also be the thing that decides whether the filters
-         * were checked.
-         *
          * Without it, `/library?shelf=999` filtered the library down to nothing and said "This
          * shelf is empty" about a shelf the reader never had. A wrong answer about their own data,
          * which is worse than an empty page.
          */
         $this->normalise();
-
-        if ($this->totalAll > 0) {
-            return;
-        }
-
-        Flux::toast(
-            text: __('If you keep your library in another reader app, you can bring it across instead of adding series one at a time.'),
-            heading: __('This library is empty'),
-            variant: 'info',
-            /*
-             * `link`, and not an icon.
-             *
-             * `Flux::toast()` takes $text, $heading, $duration, $variant, $position, $link
-             * and $action, and nothing else, so an `icon:` named argument is an unknown
-             * parameter rather than a missing glyph. Measured by the empty-library test
-             * failing with "Unknown named parameter $icon".
-             *
-             * The link is the better use of the slot anyway. A toast that says a route
-             * exists and then closes is a sentence the reader has to act on from memory.
-             */
-            link: route('import.edit'),
-        );
     }
 
     /**
