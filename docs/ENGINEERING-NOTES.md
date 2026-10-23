@@ -7316,6 +7316,10 @@ page's version warnings, and the reader's chapter-load error page. The import an
 passed, and the wording now leads with what happened and what the reader can do next. These are still
 incremental Block 28 work, not proof that the whole application's copy has been reviewed.
 
+Security and two-factor wording was then shortened to name the reader's action directly: choose a
+unique password and use the six-digit code from an authenticator app. `SecurityTest` and
+`PasswordMarginsTest` passed 13 tests with 54 assertions.
+
 ### Trap 335: A restore needs a stage key, not a sentence parser
 
 The backup modal already had a stable stage key beside each reader-facing note. The restore row had

@@ -1095,8 +1095,9 @@ adult content, search scope, blocked sites and missing chapters. The broader
 review of settings, empty states, error pages and the rest of the FAQ is still
 open. Do not mark this block done until the owner has read the surfaces and
 confirmed the wording. Import recovery messages, the About page's version
-warnings, and the reader's chapter-load error page have also had a first pass:
-each now leads with what happened and what the reader can do next.
+warnings, the Security and two-factor settings, and the reader's chapter-load
+error page have also had first passes; each now leads with what happened and
+what the reader can do next.
 
 Preview: The before and after is in the "Humanized copy" section below.
 
