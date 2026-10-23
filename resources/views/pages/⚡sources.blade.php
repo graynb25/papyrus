@@ -274,8 +274,12 @@ new #[Title('Sources')] class extends AdultContentPage
     {
         try {
             $count = $this->loadCatalogue();
-        } catch (SuwayomiException $e) {
-            Flux::toast(text: $e->getMessage(), variant: 'danger');
+        } catch (SuwayomiException) {
+            Flux::toast(
+                text: __('Papyrus could not refresh the catalogue. Try again.'),
+                heading: __('Catalogue not refreshed'),
+                variant: 'danger',
+            );
 
             return;
         }
@@ -1910,7 +1914,7 @@ new #[Title('Sources')] class extends AdultContentPage
     <flux:callout variant="secondary" icon="information-circle">
         <div class="space-y-1 text-sm">
             <p>
-                {{ __('Sources are Keiyoushi extensions running inside Suwayomi. Nothing is bundled: point Papyrus at a store, read its signing key, then trust it if you recognise the publisher.') }}
+                {{ __('Papyrus uses sources to find manga. Add a store, compare its signing key with the publisher\'s, then trust it before installing its extensions.') }}
             </p>
             <p class="text-zinc-500 dark:text-zinc-400">
                 {{ __('Every store signs its extensions with a key. Compare the key above against the one the publisher has published; if they match, trust it, and the store\'s extensions become installable.') }}
@@ -1940,7 +1944,7 @@ new #[Title('Sources')] class extends AdultContentPage
                     @if ($this->localVisible)
                         {{ __('One folder per series, each holding a CBZ and optionally a ComicInfo.xml. Suwayomi reads the folder when told to, so drop a file in and rescan.') }}
                     @else
-                        {{ __('The local folder is not visible from this machine. Suwayomi runs somewhere Papyrus cannot see its data directory, so what it is holding is not listed here.') }}
+                        {{ __('Papyrus cannot read this local folder. It may be on another computer or unavailable to this install, so its files are not listed here.') }}
                     @endif
                 </p>
             </div>
@@ -2087,7 +2091,7 @@ new #[Title('Sources')] class extends AdultContentPage
                 their eyes already are while they read a signing key.
             --}}
             <flux:callout variant="warning" icon="exclamation-triangle">
-                {{ __('The catalogue did not load itself: :why. Refresh catalogue above is the recovery for it.', ['why' => $loadProblem]) }}
+                {{ __('Papyrus could not load the catalogue. Refresh catalogue above to try again.') }}
             </flux:callout>
         @endif
 
@@ -2553,7 +2557,7 @@ new #[Title('Sources')] class extends AdultContentPage
                 catalogue retires it on the next look.
             --}}
             <flux:callout variant="secondary" icon="arrow-path">
-                {{ __('The server accepted the fetch and its catalogue holds no extensions yet. The list fills the moment the server has something to show, and Refresh catalogue above re-runs the fetch.') }}
+                {{ __('The catalogue was refreshed, but this store has no extensions to show yet. Refresh catalogue above to check again.') }}
             </flux:callout>
         @endif
 
@@ -2565,8 +2569,8 @@ new #[Title('Sources')] class extends AdultContentPage
                 "Nothing installed yet", with a number on it.
             --}}
             <flux:callout variant="danger" icon="exclamation-triangle">
-                <flux:heading class="mb-1">{{ __('The extension list did not load') }}</flux:heading>
-                <p class="text-sm">{{ $this->catalogue['error'] }}</p>
+                <flux:heading class="mb-1">{{ __('The extension list could not be loaded') }}</flux:heading>
+                <p class="text-sm">{{ __('Refresh catalogue above to try again.') }}</p>
             </flux:callout>
         @elseif ($this->extensions->isEmpty())
             <flux:callout variant="secondary" icon="magnifying-glass">

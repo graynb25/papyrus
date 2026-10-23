@@ -93,6 +93,22 @@ class SecurityTest extends TestCase
         ]);
     }
 
+    public function test_recovery_codes_explain_when_to_use_them_and_that_replacing_them_invalidates_the_list(): void
+    {
+        $user = User::factory()->create();
+
+        $user->forceFill([
+            'two_factor_secret' => encrypt('test-secret'),
+            'two_factor_recovery_codes' => encrypt(json_encode(['first-code', 'second-code'])),
+            'two_factor_confirmed_at' => now(),
+        ])->save();
+
+        Livewire::actingAs($user)
+            ->test('pages::settings.two-factor.recovery-codes')
+            ->assertSee('Use one of these codes to sign in if you lose access to your authenticator app.')
+            ->assertSee('Each code works once. Generating new codes replaces this list.');
+    }
+
     public function test_password_can_be_updated(): void
     {
         $user = User::factory()->create([

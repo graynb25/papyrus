@@ -56,7 +56,7 @@ new class extends Component {
             <flux:heading size="lg" level="3">{{ __('2FA recovery codes') }}</flux:heading>
         </div>
         <flux:text variant="subtle">
-            {{ __('Recovery codes let you regain access if you lose your 2FA device. Store them in a secure password manager.') }}
+            {{ __('Use one of these codes to sign in if you lose access to your authenticator app. Store them in a password manager.') }}
         </flux:text>
     </div>
 
@@ -127,7 +127,7 @@ new class extends Component {
                         @endforeach
                     </div>
                     <flux:text variant="subtle" class="text-xs">
-                        {{ __('Each recovery code can be used once to access your account and will be removed after use. If you need more, click Regenerate codes above.') }}
+                        {{ __('Each code works once. Generating new codes replaces this list.') }}
                     </flux:text>
                 @endif
             </div>

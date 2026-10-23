@@ -230,7 +230,7 @@ new #[Title('Insights')] class extends Component {
     {{-- The ledger's own honesty, said once, in its own block ---------------- --}}
     <flux:callout variant="secondary" icon="lock-closed">
         <p class="text-sm">
-            {{ __('Every number on this page comes from rows written on this machine while a chapter was open and moving. Nothing is sent anywhere and nothing is asked for: it is the ledger of what this reader already did on this server, and nothing more.') }}
+            {{ __('These numbers come from reading recorded on this machine. Papyrus does not send or request anything to create them.') }}
         </p>
     </flux:callout>
 

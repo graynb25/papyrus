@@ -31,7 +31,7 @@ new class extends Component {
             <flux:heading size="lg">{{ __('Are you sure you want to delete your account?') }}</flux:heading>
 
             <flux:subheading>
-                {{ __('Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.') }}
+                {{ __('This permanently removes this account and its saved settings and reading activity. It does not remove manga files stored by Papyrus. Enter your password to continue.') }}
             </flux:subheading>
         </div>
 

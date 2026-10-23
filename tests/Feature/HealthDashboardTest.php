@@ -162,6 +162,13 @@ class HealthDashboardTest extends TestCase
         $this->get('/health')->assertRedirect();
     }
 
+    public function test_the_page_explains_that_health_is_based_on_searches_not_a_live_source_status(): void
+    {
+        $this->page()
+            ->assertSee('Health shows what Papyrus has seen while searching.')
+            ->assertSee('Suwayomi does not report a live status for each source.');
+    }
+
     public function test_it_lists_one_row_per_site_not_per_source(): void
     {
         // The shape that matters: MangaDex arrives as 61 language variants.

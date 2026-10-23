@@ -194,6 +194,7 @@ class LicencesTest extends TestCase
         $this->actingAs($user)
             ->get(route('licences.edit'))
             ->assertOk()
+            ->assertSee('The software included with this install')
             ->assertSee('Suwayomi Server')
             ->assertSee('livewire/flux');
     }

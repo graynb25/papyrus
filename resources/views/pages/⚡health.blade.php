@@ -433,7 +433,7 @@ new #[Title('Health')] class extends Component {
 
     <flux:callout variant="secondary" icon="information-circle">
         <p class="text-sm">
-            {{ __('Health is observed, never asked for. Suwayomi exposes no per-source status anywhere in its API, so this ledger is built only from what our own searches came back with.') }}
+            {{ __('Health shows what Papyrus has seen while searching. Suwayomi does not report a live status for each source.') }}
         </p>
         <p class="text-sm text-zinc-500 dark:text-zinc-400">
             {{ trans_choice(

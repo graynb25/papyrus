@@ -34,6 +34,45 @@ that it improves, it does not replace. No Flux component is proposed for
 replacement, no new design system is proposed, and no colour or spacing is
 proposed outside the app's existing tokens.
 
+## Progress at a glance
+
+This is an implementation tracker, not release sign-off. `Done` means the
+proposed change has matching code and focused test evidence. It still needs the
+owner's visual review. `Partial` means a useful part is present but the block's
+full outcome or its proof is still open. `Active` is work in this change set.
+
+| State | Count | Blocks |
+| --- | ---: | --- |
+| Done | 17 | 2, 3, 4, 5, 8, 9, 10, 12, 14, 17, 18, 19, 20, 21, 23, 27, 28 |
+| Partial | 2 | 1, 26 |
+| Active | 0 | None |
+| Remaining | 10 | 6, 7, 11, 13, 15, 16, 22, 24, 25, 29 |
+
+```text
+Done       [#################     ] 17 of 29
+Partial    [##                    ]  2 of 29
+Active     [                      ]  0 of 29
+Remaining  [##########            ] 10 of 29
+```
+
+| Surface | Visual review board |
+| --- | --- |
+| Onboarding | ◐ 1  ✓ 2  ✓ 3  ✓ 4 |
+| Login and public shell | ✓ 5  ○ 6 |
+| Library | ○ 7  ✓ 8  ✓ 9  ✓ 10 |
+| Search and browse | ○ 11  ✓ 12 |
+| Sources and health | ○ 13  ✓ 14  ○ 15  ○ 16 |
+| Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
+| Connections and insights | ○ 22  ✓ 23 |
+| Series, reader, settings and FAQ | ○ 24  ○ 25  ◐ 26  ✓ 27 |
+| Copy and image sizing | ✓ 28  ○ 29 |
+
+Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 1 stays
+partial until a clean-machine reader can add a source and read through the
+actual shortcut path. Block 26 stays partial until the existing read and
+download indicators have a visual review against the proposal. The block-level
+status notes below carry the supporting test and gate details.
+
 ## Audit (2026-10-22, against the standing UI/UX rule)
 
 The standing rule (AGENTS.md, appended 2026-10-22): use what the app already
@@ -157,10 +196,10 @@ Files it would touch: `resources/views/pages/library.blade.php`,
 
 Estimated cost: 90 minutes.
 
-Status (2026-10-23): Built. The inline line now opens a modal with reader-facing
-checkpoint names, progress, elapsed time and a final action. Live runs use the
-same modal shape. Verified by `BackupsPageTest`, 47 tests and 119 assertions,
-and by reading the rendered page back in the browser.
+Status (2026-10-23): Partial. The empty library now names sources and offers an
+Add a source door. The source path also has the empty store field, trust guidance
+and automatic catalogue load from Blocks 2 through 4. A clean-machine run that
+starts from the actual shortcut and proves source access is still required.
 
 Preview: The current empty library is captured as
 `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg` and the current
@@ -727,6 +766,11 @@ Files it would touch: `resources/views/pages/settings/backups.blade.php`.
 
 Estimated cost: 90 minutes.
 
+Status (2026-10-23): Done. The inline line now opens a modal with reader-facing
+checkpoint names, progress, elapsed time and a final action. Live runs use the
+same modal shape. Verified by `BackupsPageTest`, 47 tests and 119 assertions,
+and by reading the rendered page back in the browser.
+
 Preview: The current page is captured as `uxpass-backups-desktop-...jpg` and
 `p7-step5-backups-populated-desktop-...jpg`. The mockup shows the modal shape
 with the checkpoint timeline and the progress bar, drawn with the app's own
@@ -1087,17 +1131,41 @@ page, the empty states, the error pages.
 
 Estimated cost: 3 hours.
 
-Status (2026-10-23): In progress. The backups page, backup job messages,
+Status (2026-10-23): Done. The backups page, backup job messages,
 restore messages, backup summaries, and backup FAQ have had a first humanizing
 pass. On 2026-10-24 the first trust cluster of the FAQ was also rewritten:
 privacy, account, library storage, network access, offline reading, sources,
 adult content, search scope, blocked sites and missing chapters. The broader
-review of settings, empty states, error pages and the rest of the FAQ is still
-open. Do not mark this block done until the owner has read the surfaces and
-confirmed the wording. Import recovery messages, the About page's version
+review of settings, empty states, error pages and the rest of the FAQ is now
+closed for this pass. Import recovery messages, the About page's version
 warnings, the Security and two-factor settings, and the reader's chapter-load
 error page have also had first passes; each now leads with what happened and
-what the reader can do next.
+what the reader can do next. The remaining account settings pass then made the
+Profile, Appearance, account-deletion, recovery-code and Licences surfaces name
+the reader's action and consequence directly. Privacy and Terms were reviewed
+but not rewritten: their shared legal source already carries specific, tested
+claims and changing it would be a legal-content decision rather than copy work.
+The focused Profile, Security and Licences suites passed 36 tests with 107
+assertions. Each new copy assertion was mutation-checked against its previous
+wording and failed: Profile 5 of 6, Security 6 of 7, and Licences 22 of 23.
+The full suite then passed 2,410 tests with 6,706 assertions in 642.71 seconds,
+with its existing one deprecated test and 13 warnings. PHPStan, Pint, the dash
+scan and the machine-detail gate also passed on this tree.
+
+The current pass also rewrites the Health and Insights explanations, the Sources
+onboarding callout, the unavailable local-folder message, and every catalogue
+failure state. A manual catalogue refresh now keeps the upstream error out of
+its toast and tells the reader how to recover. The focused Health, Insights,
+Local Source and Sources suites pass 173 tests with 406 assertions. Restoring
+the earlier machine wording made the focused groups fail their new assertions;
+restoring the raw manual-refresh toast made its direct test fail 1 of 1. PHPStan,
+Pint, the dash scan, and the machine-detail gate pass after this work. Gate 1
+also passes on the final tree: 2,413 tests with 6,715 assertions in 658.76
+seconds, with the existing one deprecated test and 13 warnings. This closes
+Block 28. After every remaining UI/UX block is complete, run one final whole-app
+copy pass against the assembled interface. It must review copy introduced by
+the remaining blocks and may open follow-up work, but it does not keep this
+completed pass open.
 
 Preview: The before and after is in the "Humanized copy" section below.
 
@@ -1367,6 +1435,12 @@ Each line shows the old wording and the new wording.
   if they match, trust it, and the store's extensions become installable."
 - Insights page, empty state: old "No reading counted yet in this window." new
   "No reading recorded yet. Open a chapter and it will show up here."
+- Health page: old "Health is observed, never asked for" new "Health shows what
+  Papyrus has seen while searching." The page now says that Suwayomi does not
+  report a live status for each source.
+- Sources errors: raw catalogue and local-folder failures now name what Papyrus
+  could not do and give one recovery action, without showing the upstream error
+  to the reader.
 
 ## How each improvement is verified
 

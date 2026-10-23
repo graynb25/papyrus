@@ -15,7 +15,10 @@ class ProfileUpdateTest extends TestCase
     {
         $this->actingAs($user = User::factory()->create());
 
-        $this->get(route('profile.edit'))->assertOk();
+        $this->get(route('profile.edit'))
+            ->assertOk()
+            ->assertSee('Change the name and email address for this account')
+            ->assertSee('Delete this account and its settings and reading activity');
     }
 
     public function test_profile_information_can_be_updated(): void
@@ -85,5 +88,15 @@ class ProfileUpdateTest extends TestCase
         $response->assertHasErrors(['password']);
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_account_deletion_names_what_it_removes_and_keeps(): void
+    {
+        $user = User::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test('pages::settings.delete-user-modal')
+            ->assertSee('This permanently removes this account and its saved settings and reading activity.')
+            ->assertSee('It does not remove manga files stored by Papyrus.');
     }
 }

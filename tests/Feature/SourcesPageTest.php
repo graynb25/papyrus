@@ -539,6 +539,13 @@ class SourcesPageTest extends TestCase
         $this->get('/sources')->assertRedirect();
     }
 
+    public function test_the_page_explains_the_store_and_trust_path_in_reader_words(): void
+    {
+        $this->page()
+            ->assertSee('Papyrus uses sources to find manga.')
+            ->assertSee('Add a store, compare its signing key with the publisher\'s, then trust it before installing its extensions.');
+    }
+
     /**
      * F26. The sandbox run of 2026-10-15 passed all 58 checks while the guest's
      * Suwayomi was up and answering and this page showed the app's 500: the list
@@ -555,10 +562,24 @@ class SourcesPageTest extends TestCase
 
         $this->get('/sources')
             ->assertOk()
-            ->assertSee('The extension list did not load')
-            ->assertSee('Suwayomi returned HTTP 500')
+            ->assertSee('The extension list could not be loaded')
+            ->assertSee('Refresh catalogue above to try again.')
+            ->assertDontSee('Suwayomi returned HTTP 500')
             ->assertDontSee('Nothing installed yet')
             ->assertDontSee('0 extensions');
+    }
+
+    public function test_a_manual_catalogue_refresh_hides_the_raw_upstream_error(): void
+    {
+        $this->fetchShouldFail = true;
+
+        $this->page()
+            ->call('refresh')
+            ->assertDispatched('toast-show', function (string $name, array $params): bool {
+                return ($params['slots']['heading'] ?? null) === 'Catalogue not refreshed'
+                    && ($params['slots']['text'] ?? null) === 'Papyrus could not refresh the catalogue. Try again.'
+                    && ($params['dataset']['variant'] ?? null) === 'danger';
+            });
     }
 
     public function test_it_lists_stores_with_the_signing_key_shown_in_full(): void
@@ -1450,7 +1471,7 @@ class SourcesPageTest extends TestCase
 
         $this->assertSame(1, substr_count(
             $html,
-            'The server accepted the fetch and its catalogue holds no extensions yet.',
+            'The catalogue was refreshed, but this store has no extensions to show yet.',
         ));
     }
 
@@ -1473,7 +1494,7 @@ class SourcesPageTest extends TestCase
 
         $this->assertSame(0, substr_count(
             $html,
-            'The server accepted the fetch and its catalogue holds no extensions yet.',
+            'The catalogue was refreshed, but this store has no extensions to show yet.',
         ));
     }
 
@@ -1489,7 +1510,7 @@ class SourcesPageTest extends TestCase
          */
         $this->assertSame(0, substr_count(
             $this->page()->set('autoloadStillEmpty', true)->assertOk()->html(),
-            'The server accepted the fetch and its catalogue holds no extensions yet.',
+            'The catalogue was refreshed, but this store has no extensions to show yet.',
         ));
     }
 
@@ -1505,7 +1526,7 @@ class SourcesPageTest extends TestCase
 
         $this->assertSame(1, substr_count(
             $this->page()->set('autoloadStillEmpty', true)->assertOk()->html(),
-            'The server accepted the fetch and its catalogue holds no extensions yet.',
+            'The catalogue was refreshed, but this store has no extensions to show yet.',
         ));
     }
 
@@ -1523,8 +1544,9 @@ class SourcesPageTest extends TestCase
             ->set('storeUrl', 'https://example.test/index.pb')
             ->call('addStore')
             ->assertOk()
-            ->assertSee('The catalogue did not load itself')
-            ->assertSee('Suwayomi returned HTTP 500');
+            ->assertSee('Papyrus could not load the catalogue.')
+            ->assertSee('Refresh catalogue above to try again.')
+            ->assertDontSee('Suwayomi returned HTTP 500');
 
         $this->assertSame(1, ExtensionStore::query()->count());
     }

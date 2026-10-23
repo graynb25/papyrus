@@ -112,7 +112,7 @@ new #[Title('Licences')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('Licences') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Licences')" :subheading="__('What this install is made of')">
+    <x-pages::settings.layout :heading="__('Licences')" :subheading="__('The software included with this install')">
         {{--
             The two numbers first, because several hundred rows with no shape is a list rather than an
             answer.
@@ -144,7 +144,7 @@ new #[Title('Licences')] class extends Component {
 
                 {{
                     __(
-                        'It is marked in the list below and its licence is named beside it, so you can read it yourself. Papyrus ships it rather than because anything is wrong with it.'
+                        'The list below names it and its licence, so you can read it yourself. Papyrus includes it. It is not a warning that anything is wrong.'
                     )
                 }}
             </flux:callout>
@@ -162,7 +162,7 @@ new #[Title('Licences')] class extends Component {
             <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
                 {{
                     trans_choice(
-                        ':count package records no licence at all, and is listed below as not recorded rather than guessed at. It is a platform specific binary for a platform this does not run on.|:count packages record no licence at all, and are listed below as not recorded rather than guessed at. They are platform specific binaries for platforms this does not run on.',
+                        ':count package has no licence recorded, so the list says that rather than guessing. It is a platform-specific binary for a platform this install does not run on.|:count packages have no licence recorded, so the list says that rather than guessing. They are platform-specific binaries for platforms this install does not run on.',
                         $this->licences()->unrecordedCount(),
                     )
                 }}
@@ -274,7 +274,7 @@ new #[Title('Licences')] class extends Component {
         <p class="mt-8 text-sm text-zinc-500 dark:text-zinc-400">
             {{
                 __(
-                    'Every package above is read from the lock files this build ships, so nothing here is invented and nothing is left out. The two bundled pieces are in neither lock file, so their versions come from the manifests the build checks against.'
+                    'This list comes from the lock files included with this build. The two bundled pieces are not in those files, so their versions come from the manifests the build checks.'
                 )
             }}
         </p>

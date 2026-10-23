@@ -310,7 +310,8 @@ class InsightsPageTest extends TestCase
             ->assertSee('No reading recorded yet')
             // The local-only fact is said on the page, not left to be inferred
             // from the absence of a claim.
-            ->assertSee('rows written on this machine');
+            ->assertSee('These numbers come from reading recorded on this machine.')
+            ->assertSee('Papyrus does not send or request anything to create them.');
     }
 
     public function test_a_window_the_url_cannot_clarify_falls_back_to_the_whole_ledger(): void

@@ -7320,6 +7320,19 @@ Security and two-factor wording was then shortened to name the reader's action d
 unique password and use the six-digit code from an authenticator app. `SecurityTest` and
 `PasswordMarginsTest` passed 13 tests with 54 assertions.
 
+The remaining account settings then received the same pass. Profile and Appearance now lead with
+the reader's action; the deletion modal says both what it removes and that it leaves manga files
+alone; recovery codes say when to use them and that replacement invalidates the old list; and the
+Licences page says where its list comes from without the compliance language. The legal documents
+were reviewed but left unchanged because they are specific, tested statements of fact, not general
+interface copy. The focused Profile, Security and Licences tests hold the reader-facing safety
+claims.
+
+The focused Profile, Security and Licences suites passed 36 tests with 107 assertions. Each new
+copy assertion was then mutated back to its preceding wording and failed: Profile 5 of 6, Security
+6 of 7, and Licences 22 of 23. The restored tree passed the full suite at 2,410 tests and 6,706
+assertions in 642.71 seconds, with one deprecated test and 13 warnings already standing.
+
 ### Trap 335: A restore needs a stage key, not a sentence parser
 
 The backup modal already had a stable stage key beside each reader-facing note. The restore row had

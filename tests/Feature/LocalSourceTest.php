@@ -444,7 +444,8 @@ class LocalSourceTest extends TestCase
 
         Livewire::test('pages::sources')
             ->assertOk()
-            ->assertSee('The local folder is not visible from this machine')
+            ->assertSee('Papyrus cannot read this local folder.')
+            ->assertSee('It may be on another computer or unavailable to this install, so its files are not listed here.')
             ->assertDontSee('Read the folder again');
     }
 
