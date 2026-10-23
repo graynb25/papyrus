@@ -1913,7 +1913,7 @@ new #[Title('Sources')] class extends AdultContentPage
                 {{ __('Sources are Keiyoushi extensions running inside Suwayomi. Nothing is bundled: point Papyrus at a store, read its signing key, then trust it if you recognise the publisher.') }}
             </p>
             <p class="text-zinc-500 dark:text-zinc-400">
-                {{ __('Trust is a gate in this interface, not an enforcement the Suwayomi API offers. It is here so that you read the key before installing, and so the cautious path is the default one.') }}
+                {{ __('Every store signs its extensions with a key. Compare the key above against the one the publisher has published; if they match, trust it, and the store\'s extensions become installable.') }}
             </p>
         </div>
     </flux:callout>
