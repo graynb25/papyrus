@@ -742,8 +742,10 @@ new #[Title('Search')] class extends AdultContentPage
         <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
             <flux:input
                 wire:model.live.debounce.500ms="query"
+                id="search-query"
                 :label="__('Search')"
                 :placeholder="__('Series title')"
+                :aria-label="__('Search')"
                 icon="magnifying-glass"
                 autofocus
                 required

@@ -124,6 +124,15 @@ class SearchPageTest extends TestCase
      * bookmarked link reads as a broken page: the reader asked for these results by saving the
      * link, and making them press Search again is asking twice.
      */
+    public function test_the_search_input_has_a_real_name(): void
+    {
+        $html = $this->actingAs($this->user)->get('/search')->assertOk()->getContent();
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5);
+
+        $this->assertMatchesRegularExpression('/id="search-query"/', $html);
+        $this->assertMatchesRegularExpression('/aria-label="Search"/', $html);
+    }
+
     public function test_arriving_with_a_query_starts_a_run(): void
     {
         $before = SearchRun::query()->count();
