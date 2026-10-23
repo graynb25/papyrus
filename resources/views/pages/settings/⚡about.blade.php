@@ -41,7 +41,7 @@ new #[Title('About this install')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('About this install') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('About')" :subheading="__('What this install is, and what it is running')">
+    <x-pages::settings.layout :heading="__('About')" :subheading="__('Which versions are running')">
         {{--
             The numbers, and the commit under the first.
 
@@ -66,7 +66,7 @@ new #[Title('About this install')] class extends Component {
             <dd>{{ $this->suwayomi() ?? __('not answering') }}</dd>
 
             @if ($this->versions()->compatibility()->isKnown())
-                <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Suwayomi expected by this install') }}</dt>
+                <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Suwayomi this install was tested with') }}</dt>
                 <dd>{{ $this->versions()->compatibility()->tested() }}</dd>
             @endif
         </dl>
@@ -87,14 +87,14 @@ new #[Title('About this install')] class extends Component {
 
                 {{
                     __(
-                        'This install needs Suwayomi '.$this->versions()->compatibility()->minimum().' or newer, and the one running is older. Chapters may be missing, downloads may fail, and searching may return nothing, without any of it saying why. Nothing on this page can fix it: the server itself has to change.'
+                        'This install needs Suwayomi '.$this->versions()->compatibility()->minimum().' or newer, but the one running is older. Chapters may be missing, downloads may fail and searches may return nothing.'
                     )
                 }}
 
                 @if (app()->environment('local'))
-                    {{ __('You are running from source, so update the jar and rebuild. docs/SETUP-SUWAYOMI.md has the steps.') }}
+                    {{ __('You are running from source. Update the jar and rebuild; docs/SETUP-SUWAYOMI.md has the steps.') }}
                 @else
-                    {{ __('This is a packaged install and it ships with its own Suwayomi, so updating Papyrus is what brings a newer one. Until then, downloads and search may not work.') }}
+                    {{ __('This is a packaged install, so updating Papyrus brings a newer Suwayomi. Until then, downloads and search may not work.') }}
                 @endif
             </flux:callout>
         @elseif ($this->verdict() === Versions::UNTESTED)
@@ -103,7 +103,7 @@ new #[Title('About this install')] class extends Component {
 
                 {{
                     __(
-                        'Everything here expects Suwayomi '.$this->versions()->compatibility()->tested().', and a newer one is running. That will very likely work, but it has not been tested here, so mention it in a bug report if something misbehaves.'
+                        'This build was tested with Suwayomi '.$this->versions()->compatibility()->tested().', but a newer one is running. It will probably work, but it has not been tested here. Include both versions if something goes wrong.'
                     )
                 }}
             </flux:callout>
@@ -116,7 +116,7 @@ new #[Title('About this install')] class extends Component {
             otherwise have to go and find, and the first three questions of any report are about them.
         --}}
         <p class="mt-6 text-sm text-zinc-500 dark:text-zinc-400">
-            {{ __('Include these two versions in a bug report. They are the first thing asked for and the last thing usually sent.') }}
+            {{ __('If you report a problem, include the Papyrus and Suwayomi versions shown above.') }}
         </p>
     </x-pages::settings.layout>
 </section>

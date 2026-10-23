@@ -123,7 +123,7 @@ class AboutPageTest extends TestCase
 
         $this->get(route('about.edit'))
             ->assertOk()
-            ->assertSee('Suwayomi expected by this install')
+            ->assertSee('Suwayomi this install was tested with')
             ->assertSee('v2.4.2366');
     }
 
