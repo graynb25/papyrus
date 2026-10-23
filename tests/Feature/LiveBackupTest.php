@@ -187,7 +187,7 @@ class LiveBackupTest extends TestCase
             app(LiveBackup::class)->run(false);
             $this->fail('The run took a pair with no version to name in the manifest.');
         } catch (SuwayomiException $e) {
-            $this->assertStringContainsString('did not answer what version', $e->getMessage());
+            $this->assertStringContainsString('did not report its version', $e->getMessage());
         }
 
         Http::assertNotSent(fn (Request $request): bool => str_contains((string) $request->body(), 'mutation CreateBackup'));
@@ -338,8 +338,8 @@ class LiveBackupTest extends TestCase
             // The deletion leaves the live side at 0 series and 1 chapter while the staged copy
             // still holds 1 and 1. The message names both sets with a side for each, and the
             // two assertions here must not let one slide in for the other.
-            $this->assertStringContainsString('it carries 1 series states and 1 chapter states', $e->getMessage());
-            $this->assertStringContainsString('the live database holds 0 and 1', $e->getMessage());
+            $this->assertStringContainsString('it has 1 series and 1 chapters', $e->getMessage());
+            $this->assertStringContainsString('Papyrus holds 0 series and 1 chapters', $e->getMessage());
         } finally {
             @unlink($target);
         }
@@ -391,8 +391,8 @@ class LiveBackupTest extends TestCase
             app(LiveBackup::class)->run(false);
             $this->fail('The run took a pair whose manga half held no series at all.');
         } catch (SuwayomiException $e) {
-            $this->assertStringContainsString('a real backup, but its library holds no series', $e->getMessage());
-            $this->assertStringContainsString('holds no series', $e->getMessage());
+            $this->assertStringContainsString('the manga server answered, but it has no series to save', strtolower($e->getMessage()));
+            $this->assertStringContainsString('has no series to save', strtolower($e->getMessage()));
         }
 
         $this->assertSame([], (array) glob($directory.DIRECTORY_SEPARATOR.'backup-*.json'), 'a refused run names no pair');
@@ -412,7 +412,7 @@ class LiveBackupTest extends TestCase
             app(LiveBackup::class)->run(false);
             $this->fail('The run took a pair whose manga half was not a backup at all.');
         } catch (SuwayomiException $e) {
-            $this->assertStringContainsString('does not read as a Mihon or Suwayomi backup', $e->getMessage());
+            $this->assertStringContainsString('could not read as manga data', strtolower($e->getMessage()));
             $this->assertStringNotContainsString('a real backup, but its library holds no series', $e->getMessage());
         }
     }

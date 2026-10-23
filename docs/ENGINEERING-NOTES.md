@@ -7292,6 +7292,17 @@ held.
 states, the import ledger at 1,277 rows with 614 server ids, 14 import runs, `reading_sessions`
 rows 1 to 7 all on manga 10, bulk runs 1 to 19 with run 7's seven pending offers standing at ids
 25 to 31 and 78 pending items across all runs, `categories` and `category_series` at 0, and the
-three live run tables with `live_backup_runs` at 1 and the other two at 0. All six gates green on
-the final tree at **2,344 of 2,344 tests with 6,388 assertions**.
+ three live run tables with `live_backup_runs` at 1 and the other two at 0. All six gates green on
+ the final tree at **2,344 of 2,344 tests with 6,388 assertions**.
+
+### Trap 334: Internal names are not reader copy
+
+A backup page can be structurally clear and still sound like a log file. The first humanization pass
+changed the stage keys, but left the nouns that belonged to the implementation in the sentences:
+"reader half", "manga half", "manifest", "pair" and "against Suwayomi". A reader needs the result
+and the consequence, not the storage arrangement. The page now says "your library", "your manga
+data", "backup details" and "what will be replaced", while the code keeps its precise internal names
+for the job and the manifest. The test fixture had to be changed with the production wording: a test
+that injects the old sentence is not evidence that the new sentence is rendered. The broader copy
+review remains open until the owner has read the other settings, empty states and error pages.
 

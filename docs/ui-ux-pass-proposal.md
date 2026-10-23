@@ -1,8 +1,8 @@
 # UI/UX pass proposal
 
 A proposal pass over the whole app, written for the owner to take one item at a
-time. Nothing here is implemented; each block carries its own preview so the
-owner can see the change before deciding.
+time. Completed work is marked in the block that describes it; unfinished blocks
+still carry their preview so the owner can decide what comes next.
 
 Every block is judged on one question: does this surface feel like a person
 designed it for a person, or like a machine executing a spec? The words matter,
@@ -156,6 +156,11 @@ Files it would touch: `resources/views/pages/library.blade.php`,
 `app/Livewire/Sources.php`.
 
 Estimated cost: 90 minutes.
+
+Status (2026-10-23): Built. The inline line now opens a modal with reader-facing
+checkpoint names, progress, elapsed time and a final action. Live runs use the
+same modal shape. Verified by `BackupsPageTest`, 47 tests and 119 assertions,
+and by reading the rendered page back in the browser.
 
 Preview: The current empty library is captured as
 `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg` and the current
@@ -745,6 +750,9 @@ Concrete proposal: Improve, do not change, the existing pairs table. Add a "last
 to each pair row once a restore run exists for it, reading the restore run's own
 row and timestamp.
 
+Status (2026-10-23): Built. Each saved backup now shows its most recent
+completed restore when one exists. Verified by `BackupsPageTest`.
+
 Extends: `resources/views/pages/settings/backups.blade.php` (pairs table).
 
 Files it would touch: `resources/views/pages/settings/backups.blade.php`.
@@ -770,6 +778,10 @@ thing.
 Concrete proposal: Improve, do not change, the existing restore confirm dialog. Name the pair's
 token and the counts it will replace in the confirm dialog, and show the same
 checkpoint timeline the backup modal uses.
+
+Status (2026-10-23): Partly built. The dialog now names the backup, the counts
+it contains, the current library counts, and what will be removed. The shared
+restore progress timeline is still open.
 
 Extends: `resources/views/pages/settings/backups.blade.php` (restore confirm),
 `flux:modal`.
@@ -1072,6 +1084,12 @@ page, the empty states, the error pages.
 
 Estimated cost: 3 hours.
 
+Status (2026-10-23): In progress. The backups page, backup job messages,
+restore messages, backup summaries, and backup FAQ have had a first humanizing
+pass. The broader review of settings, empty states, error pages and the rest of
+the FAQ is still open. Do not mark this block done until the owner has read the
+surfaces and confirmed the wording.
+
 Preview: The before and after is in the "Humanized copy" section below.
 
 ## Mobile-first image sizing
@@ -1330,9 +1348,10 @@ Each line shows the old wording and the new wording.
   main one, and copying only the main file is how you lose the last few chapters
   you read."
 - Backups page, run panel: old "checking_target, copying manga half" new
-  "Checking target", "Copying manga half", and so on, in plain words.
-- Backups page, empty state: old "No backups yet" new "No backups yet. Take one
-  from the button below, or use `papyrus snapshot` from the terminal."
+  "Checking the server", "Saving your manga data", and so on, in plain words.
+- Backups page, empty state: old "No backups yet" new "No backups yet. Use
+  'Back up now' below to save your library while Papyrus stays open, or run
+  `papyrus snapshot` in a terminal when Papyrus is closed."
 - Sources page, store card notice: old "Trust is a gate in this interface, not
   an enforcement the Suwayomi API offers." new "Every store signs its extensions
   with a key. Compare the key above against the one the publisher has published;

@@ -144,7 +144,7 @@ class RunLiveRestoreJobTest extends TestCase
         $this->assertNotNull($run->finished_at);
 
         $this->assertSame(
-            '1 series states and 1 chapter states put back from the pair, and the server restored its manga half',
+            'Restore complete: 1 series and 1 chapter are back, along with your manga data.',
             $run->progress_note,
             'the last note is the run\'s closing sentence, not one of the stages that led there',
         );
@@ -170,7 +170,7 @@ class RunLiveRestoreJobTest extends TestCase
 
         (new RunLiveRestore(1, $token))->handle(app(LiveRestore::class));
 
-        $this->assertOneRefusedRun('does not hold what its manifest says');
+        $this->assertOneRefusedRun('does not match the backup details');
 
         $this->assertImportNeverAsked();
         $this->assertLiveUntouched();
@@ -219,7 +219,7 @@ class RunLiveRestoreJobTest extends TestCase
 
         (new RunLiveRestore(1, $token))->handle(app(LiveRestore::class));
 
-        $this->assertOneRefusedRun('reader half is not on disk');
+        $this->assertOneRefusedRun('Your library is missing from this backup');
 
         $this->assertImportNeverAsked();
     }
@@ -236,7 +236,7 @@ class RunLiveRestoreJobTest extends TestCase
 
         (new RunLiveRestore(1, $token))->handle(app(LiveRestore::class));
 
-        $this->assertOneRefusedRun('manga half is not on disk');
+        $this->assertOneRefusedRun('Your manga data is missing from this backup');
 
         $this->assertImportNeverAsked();
     }

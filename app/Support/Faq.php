@@ -196,18 +196,18 @@ final class Faq
             new FaqEntry(
                 question: __('How do I make a backup?'),
                 answer: [
-                    __('The app takes its own. On the Backups page, "Back up now" writes a pair of files while the app and the manga server keep running, checks both halves, and puts them in the backups folder with the token naming the moment. "Restore" puts a pair back the same way, and "Export for another reader app" writes a .tachibk file another reader can open.'),
-                    __('There is no cloud copy and no sync service, so that folder is the copy. If you want a second one, copy the folder to another disk yourself.'),
-                    __('If you would rather copy the folder by hand, copy the whole folder rather than picking files, and do it while Papyrus is closed. The library database keeps recent changes in a small sidecar file beside it, and copying only the main file is the quiet way to lose the last few chapters you read.'),
+                    __('Open Settings, choose Backups, and press "Back up now". Papyrus saves your library and manga data while it keeps running, checks the copy, and puts it in the backups folder. Restore puts that copy back, and Export for another reader app creates a file Mihon and its forks can open.'),
+                    __('There is no cloud copy. There is no sync service, so the backups folder is your copy. If you want protection from a lost or damaged computer, copy that folder to another drive.'),
+                    __('If you copy it by hand, close Papyrus first and copy the whole folder. The library keeps recent changes in a small file beside the main database, so copying only one file can lose the last few chapters you read.'),
                 ],
             ),
 
             new FaqEntry(
                 question: __('What does a backup cover, and what does it not?'),
                 answer: [
-                    __('A backup is a pair, and the two halves are the two things Papyrus does not keep in one place. The reader half is your library database, copied with a database operation that is safe while the app is running, and it holds your read progress per series and per chapter, your shelves, your settings, your tracking link and your import ledger. The manga half is the manga server\'s own fresh export of its library. Both are staged and checked before they are put away, and the manifest beside them carries their digests and their row counts, so a pair that does not match what it claims is refused rather than restored.'),
-                    __('What it does not promise is worth as much. There is no second copy off this machine: the pair is a file in the folder the Backups page names, and if the machine is lost the backup goes with it. The manga half carries the server\'s library and nothing else, so a series the app has state for but the server does not hold is not in the file, and the export names every series it could not carry and says why. The pages you downloaded are not in the pair unless you ask for them, and the page tells you how big that folder is before you press.'),
-                    __('One thing does happen on its own, and it is half a backup rather than a whole one. The reader half is snapshotted every night at 03:17 and kept for a fortnight, and the manga server backs up its own library daily. That file is named reader-half on purpose, because it is not a pair and cannot be restored as one.'),
+                    __('A backup saves two things: your library and the manga server\'s copy of your manga data. Your library includes read progress, shelves, settings, tracking links and import history. Papyrus checks both parts before it calls the backup ready to restore.'),
+                    __('The backup stays on this computer unless you copy it somewhere else. It does not include anything the manga server does not have, and downloaded pages are included only when you choose the downloads option.'),
+                    __('Papyrus also makes an automatic copy of your library each night and keeps it for two weeks. That automatic copy is only your library, not a complete backup, so it cannot restore the whole app by itself.'),
                 ],
             ),
         ];

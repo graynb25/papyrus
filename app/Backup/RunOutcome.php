@@ -151,7 +151,7 @@ final class RunOutcome
             $stage = $this->failure();
 
             return sprintf(
-                '%s failed at %s. %s',
+                '%s stopped while %s. %s',
                 $what,
                 $this->readable((string) ($stage['stage'] ?? '')),
                 $this->oneline(is_string($stage['message'] ?? null) ? $stage['message'] : null),
@@ -195,7 +195,15 @@ final class RunOutcome
      */
     public function readable(string $stage): string
     {
-        return str_replace('_', ' ', $stage);
+        return match ($stage) {
+            'checking_target' => 'checking the server',
+            'stopping' => 'stopping Papyrus',
+            'copying_manga_half' => 'saving your manga data',
+            'copying_reader_half' => 'saving your library',
+            'writing_manifest' => 'checking the backup details',
+            'restarting' => 'starting Papyrus again',
+            default => str_replace('_', ' ', $stage),
+        };
     }
 
     private function readableTime(string $at): string

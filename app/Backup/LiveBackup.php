@@ -128,13 +128,13 @@ final class LiveBackup
 
             if ($version === null) {
                 throw new SuwayomiException(
-                    'Suwayomi did not answer what version it is, so the manifest cannot be '
-                    .'written and the run was refused with nothing taken.',
+                    'The manga server did not report its version, so the backup could not be '
+                    .'checked and nothing was changed.',
                     FailureKind::Unavailable,
                 );
             }
 
-            $say('version', 'Suwayomi is '.$version);
+            $say('version', 'The manga server is '.$version.'.');
 
             $counts = $this->readerHalf($staged['reader'], $say);
 
@@ -158,7 +158,7 @@ final class LiveBackup
             $this->removeStaging($staging);
 
             $say('done', sprintf(
-                '%d series states and %d chapter states against Suwayomi %s, taken without stopping anything',
+                'Backup complete: %d series and %d chapters saved while Papyrus stayed open. Manga server %s.',
                 $counts['series'],
                 $counts['chapters'],
                 $version,
@@ -194,11 +194,11 @@ final class LiveBackup
      */
     private function readerHalf(string $target, callable $say): array
     {
-        $say('reader_half', basename($target).', one VACUUM INTO statement against the live database, nothing stopped');
+        $say('reader_half', 'Saving your library while Papyrus stays open.');
 
         (new ReaderHalfCapture)->capture($target);
 
-        $say('reader_half', basename($target).' is staged, checking what it held against the live database');
+        $say('reader_half', 'Checking that the saved library matches what Papyrus holds now.');
 
         return $this->verifyReaderHalf($target, $say);
     }
@@ -232,7 +232,7 @@ final class LiveBackup
 
         if ($integrity !== 'ok') {
             throw new RuntimeException(sprintf(
-                'The staged reader half failed its own integrity check, reporting: %s.',
+                'The saved library copy failed its integrity check: %s.',
                 $integrity,
             ));
         }
@@ -256,9 +256,8 @@ final class LiveBackup
 
         if ($staged !== $live) {
             throw new RuntimeException(sprintf(
-                'The staged reader half was not verified: it carries %d series states and %d '
-                .'chapter states, and the live database holds %d and %d, so it is not a copy '
-                .'of this moment.',
+                'The saved library copy was not complete: it has %d series and %d chapters, '
+                .'but Papyrus holds %d series and %d chapters right now.',
                 $staged['series'],
                 $staged['chapters'],
                 $live['series'],
@@ -267,7 +266,7 @@ final class LiveBackup
         }
 
         $say('reader_half', sprintf(
-            '%d series states and %d chapter states, the same counts the live database holds',
+            'Your saved library has %d series and %d chapters, matching what Papyrus holds now.',
             $staged['series'],
             $staged['chapters'],
         ));
@@ -376,15 +375,15 @@ final class LiveBackup
      */
     private function mangaHalf(string $target, callable $say): array
     {
-        $say('manga_half', 'asking Suwayomi to write its own fresh export');
+        $say('manga_half', 'Saving a fresh copy of your manga data.');
 
         $path = $this->manga->createBackup();
 
-        $say('manga_half', sprintf('%s answered, fetching it into staging', basename($path)));
+        $say('manga_half', 'The manga server answered. Downloading the copy.');
 
         $this->manga->download($path, $target);
 
-        $say('manga_half', basename($target).' downloaded from the stream, walking it back');
+        $say('manga_half', 'Checking the downloaded manga data.');
 
         try {
             $summary = (new TachibkReader)->read($target)->summary();
@@ -397,8 +396,7 @@ final class LiveBackup
         }
 
         $say('manga_checked', sprintf(
-            '%s holds %d series, %d chapters, %d of them read',
-            basename($target),
+            'Your manga data contains %d series and %d chapters, with %d already read.',
             $summary['library_series'],
             $summary['chapters'],
             $summary['chapters_read'],
@@ -422,13 +420,12 @@ final class LiveBackup
     private function whyTheMangaHalfIsUnreadable(string $target): string
     {
         if (TachibkFile::isAnEmptyLibraryBackup($target)) {
-            return 'The server answered with a real backup, but its library holds no series, so '
-                .'there is no manga half to pair with the reader half. The run was refused with '
-                .'nothing taken.';
+            return 'The manga server answered, but it has no series to save. The backup was refused '
+                .'and nothing was changed.';
         }
 
-        return 'That file does not read as a Mihon or Suwayomi backup, so it cannot be one '
-            .'half of a pair:';
+        return 'The manga server returned a file Papyrus could not read as manga data, so the '
+            .'backup was refused and nothing was changed:';
     }
 
     /**
@@ -466,12 +463,12 @@ final class LiveBackup
             || $pair->suwayomiVersion !== $version
         ) {
             throw new RuntimeException(
-                'The manifest just written did not read back as the pair just staged, so it '
-                .'cannot be trusted to bind the two halves.',
+                'The backup details did not match the files just saved, so the backup cannot be '
+                .'trusted.',
             );
         }
 
-        $say('manifest', basename($staged['manifest']).' written and read back through BackupPair, naming both halves');
+        $say('manifest', 'The backup details were written and checked.');
     }
 
     /**
@@ -525,7 +522,7 @@ final class LiveBackup
         $say('renamed', implode(', ', array_map(
             static fn (string $which): string => basename($staged[$which]),
             $order,
-        )).' renamed next to their manifest, staging emptied');
+        )).' moved into your backups folder.');
     }
 
     private function removeStaging(string $staging): void

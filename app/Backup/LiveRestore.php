@@ -67,27 +67,28 @@ final class LiveRestore
          * exactly what it was. The route holds the whole flight, so this call returns once
          * the server has already restored, whatever it made of the file.
          */
-        $say('manga', 'sending the manga half to Suwayomi along its import route, which holds until the server is done');
+        $say('manga', 'Sending your manga data to the manga server.');
 
         $restoreSummary = $this->manga->importBackup($pair->pathOf('suwayomi'));
 
         $say('manga', sprintf(
-            'the server finished its side: %d missing sources, %d missing trackers, %d series missing theirs',
+            'Manga data restored. %d sources, %d trackers and %d series were not found.',
             count($restoreSummary['missingSources']),
             count($restoreSummary['missingTrackers']),
             count($restoreSummary['mangasMissingSources']),
         ));
 
-        $say('reader_swap', "the reader half's rows now go in, one committed SQLite point");
+        $say('reader_swap', 'Restoring your library.');
 
         $this->reader->swap($pair->pathOf('papyrus'), static function (string $words) use ($say): void {
             $say('reader_swap', $words);
         });
 
         $say('done', sprintf(
-            '%d series states and %d chapter states put back from the pair, and the server restored its manga half',
+            'Restore complete: %d series and %d %s are back, along with your manga data.',
             $counts['series'],
             $counts['chapters'],
+            $counts['chapters'] === 1 ? 'chapter' : 'chapters',
         ));
 
         return new LiveRestoreResult(
@@ -115,10 +116,10 @@ final class LiveRestore
     private function verifyReaderHalf(string $target, BackupPair $pair, callable $say): array
     {
         if (! is_file($target)) {
-            throw new ReaderHalfRefused("The pair's reader half is not on disk where its manifest names it: {$target}");
+            throw new ReaderHalfRefused("Your library is missing from this backup: {$target}");
         }
 
-        $say('reader_half', 'checking the pair\'s reader half against its own integrity and its own manifest');
+        $say('reader_half', 'Checking your library before restoring it.');
 
         $copy = new PDO('sqlite:'.$target);
         $copy->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -133,7 +134,7 @@ final class LiveRestore
 
         if ($integrity !== 'ok') {
             throw new ReaderHalfRefused(sprintf(
-                "The pair's reader half failed its own integrity check, reporting: %s.",
+                'Your library copy failed its integrity check: %s.',
                 $integrity,
             ));
         }
@@ -147,9 +148,8 @@ final class LiveRestore
             || $staged['chapters'] !== $pair->chapterStates
         ) {
             throw new ReaderHalfRefused(sprintf(
-                "The pair's reader half does not hold what its manifest says: the file carries "
-                .'%d series states and %d chapter states, and the manifest records %d and %d, '
-                .'so this is not the pair it claims to be.',
+                'The library copy does not match the backup details: it has '
+                .'%d series and %d chapters, but the backup says %d and %d.',
                 $staged['series'],
                 $staged['chapters'],
                 $pair->seriesStates,
@@ -158,7 +158,7 @@ final class LiveRestore
         }
 
         $say('reader_half', sprintf(
-            '%d series states and %d chapter states, the counts the manifest records, integrity ok',
+            'Your library has %d series and %d chapters, and the backup checks out.',
             $staged['series'],
             $staged['chapters'],
         ));
@@ -177,7 +177,7 @@ final class LiveRestore
     {
         if (! is_file($target)) {
             throw new SuwayomiException(
-                "The pair's manga half is not on disk where its manifest names it: {$target}",
+                "Your manga data is missing from this backup: {$target}",
                 FailureKind::Unavailable,
             );
         }
@@ -186,15 +186,14 @@ final class LiveRestore
             $summary = (new TachibkReader)->read($target)->summary();
         } catch (ImportRefused $e) {
             throw new SuwayomiException(
-                'The pair\'s manga half does not read as a Mihon or Suwayomi backup, so it '
-                .'cannot be one half of a pair that gets restored: '.$e->getMessage(),
+                'This backup does not contain manga data Papyrus can restore: '.$e->getMessage(),
                 FailureKind::Unavailable,
                 previous: $e,
             );
         }
 
         $say('manga_checked', sprintf(
-            "the pair's manga half holds %d series, %d chapters, %d of them read",
+            'The backup contains %d series and %d chapters, with %d already read.',
             $summary['library_series'],
             $summary['chapters'],
             $summary['chapters_read'],

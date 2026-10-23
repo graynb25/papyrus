@@ -101,7 +101,7 @@ class BackupsPageTest extends TestCase
     {
         $this->get('/settings/backups')
             ->assertSee('No backups yet')
-            ->assertSee('Back up now below')
+            ->assertSee('Back up now')
             ->assertSee('papyrus snapshot');
     }
 
@@ -109,7 +109,7 @@ class BackupsPageTest extends TestCase
     {
         $this->get('/settings/backups')
             ->assertSee('No backups yet')
-            ->assertSee('Nothing has been recorded yet');
+            ->assertSee('Nothing has happened here yet');
     }
 
     /**
@@ -121,13 +121,22 @@ class BackupsPageTest extends TestCase
         $this->writeRun();
 
         $this->get('/settings/backups')
-            ->assertSee('867 series and 21,447 chapter states')
-            ->assertSee('Both halves match')
+            ->assertSee('867 series and 21,447 chapters')
+            ->assertSee('Backup is complete')
             ->assertSee('2.4.2366');
 
         Livewire::test('pages::settings.backups')
             ->call('openRunModal')
             ->assertSee('This backup finished.');
+    }
+
+    public function test_a_backup_says_when_it_was_last_restored(): void
+    {
+        $this->writePair();
+        $this->writeRestoreRun(state: LiveRestoreRun::COMPLETE);
+
+        $this->get('/settings/backups')
+            ->assertSee('Last restored');
     }
 
     /**
@@ -143,7 +152,7 @@ class BackupsPageTest extends TestCase
 
         Livewire::test('pages::settings.backups')
             ->call('openRunModal')
-            ->assertSee('failed at copying manga half')
+            ->assertSee('stopped while saving your manga data')
             ->assertSee('still running after thirty seconds');
     }
 
@@ -189,7 +198,7 @@ class BackupsPageTest extends TestCase
         $this->writeRun();
 
         $this->get('/settings/backups')
-            ->assertSee('Last run:')
+            ->assertSee('Last run was')
             ->assertSee('Show details');
 
         Livewire::test('pages::settings.backups')
@@ -206,7 +215,7 @@ class BackupsPageTest extends TestCase
         );
 
         $this->get('/settings/backups')
-            ->assertSee('Last run:')
+            ->assertSee('Last run was')
             ->assertSee('Finished');
     }
 
@@ -224,12 +233,12 @@ class BackupsPageTest extends TestCase
 
         $page = Livewire::test('pages::settings.backups')->call('openRunModal');
 
-        $page->assertSee('Checking server')
-            ->assertSee('Copying reader half')
-            ->assertSee('Copying manga half')
-            ->assertSee('Checking manga half')
+        $page->assertSee('Checking the server')
+            ->assertSee('Saving your library')
+            ->assertSee('Saving your manga data')
+            ->assertSee('Checking your manga data')
             ->assertSee('2 of 6')
-            ->assertSee('34 seconds elapsed')
+            ->assertSee('34 seconds so far')
             ->assertSee('counting what the library holds')
             ->assertSee('bg-blue-500', false);
 
@@ -251,7 +260,7 @@ class BackupsPageTest extends TestCase
         unlink($pair['manga']);
 
         $this->get('/settings/backups')
-            ->assertSee('Incomplete')
+            ->assertSee('Backup is incomplete')
             ->assertSee('cannot be restored');
     }
 
@@ -264,8 +273,8 @@ class BackupsPageTest extends TestCase
         file_put_contents($pair['manga'], 'TRUNCATED');
 
         $this->get('/settings/backups')
-            ->assertSee('One does not match')
-            ->assertSee('no longer matches the manifest');
+            ->assertSee('One file has changed')
+            ->assertSee('not complete anymore');
     }
 
     /**
@@ -398,7 +407,7 @@ class BackupsPageTest extends TestCase
 
         $page = Livewire::test('pages::settings.backups')->call('start');
 
-        $this->assertStringContainsString('Queued. The pair will appear in a moment.', (string) $page->html());
+        $this->assertStringContainsString('Queued. The backup will appear in a moment.', (string) $page->html());
         $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'the gap between the press and the row is watched');
     }
 
@@ -410,8 +419,20 @@ class BackupsPageTest extends TestCase
         $this->writeLiveRun(state: LiveBackupRun::COMPLETE);
 
         $this->get('/settings/backups')
-            ->assertSee('1 series states and 1 chapter states against Suwayomi v3.4.2366, taken without stopping anything')
+            ->assertSee('1 series and 1 chapters saved while Papyrus stayed open')
             ->assertSee('Finished');
+    }
+
+    public function test_an_old_backup_note_is_read_in_current_words(): void
+    {
+        $this->writeLiveRun(state: LiveBackupRun::COMPLETE);
+        LiveBackupRun::query()->first()->update([
+            'progress_note' => '1 series states and 1 chapter states against Suwayomi v2.4.2366, taken without stopping anything',
+        ]);
+
+        $this->get('/settings/backups')
+            ->assertSee('Backup complete: 1 series and 1 chapter saved while Papyrus stayed open')
+            ->assertDontSee('series states against Suwayomi');
     }
 
     /** A refused run names why, the sentence the run itself refused by. */
@@ -420,7 +441,7 @@ class BackupsPageTest extends TestCase
         $this->writeLiveRun(state: LiveBackupRun::REFUSED);
 
         $this->get('/settings/backups')
-            ->assertSee('Suwayomi did not answer what version it is')
+            ->assertSee('The manga server did not report its version')
             ->assertSee('Refused');
     }
 
@@ -524,12 +545,12 @@ class BackupsPageTest extends TestCase
 
         Livewire::test('pages::settings.backups')
             ->call('openRestoreDialog', '20261014-203857')
-            ->assertSee('What goes over what is there now')
-            ->assertSee('The pair holds')
+            ->assertSee('Restore this backup?')
+            ->assertSee('This backup contains')
             ->assertSee('867 series and 21447 chapters')
-            ->assertSee('The app holds now')
+            ->assertSee('Your library contains now')
             ->assertSee('0 series and 0 chapters')
-            ->assertSee('The manga half could not be read');
+            ->assertSee('The manga data could not be read');
     }
 
     /**
@@ -567,7 +588,7 @@ class BackupsPageTest extends TestCase
 
         $this->assertTrue(stripos($html, 'restart') === false, 'no word of restarting anything');
         $this->assertTrue(stripos($html, 'reboot') === false, 'no word of rebooting anything');
-        $this->assertStringContainsString('whatever the app holds that this pair does not carry is gone from the reader side', $html);
+        $this->assertStringContainsString('Anything currently in your library that this backup does not contain will be removed', $html);
     }
 
     /** The press dispatches the restore for the pair the confirm was opened on. */
@@ -612,7 +633,7 @@ class BackupsPageTest extends TestCase
         $this->fakeSuwayomiWithStatus('RESTORING_MANGA', 4, 8);
 
         $this->get('/settings/backups')
-            ->assertSee('The server says: restoring series')
+            ->assertSee('Manga server: restoring series')
             ->assertSee('4 of 8')
             ->assertSee('aria-valuenow="50"', false);
     }
@@ -623,7 +644,7 @@ class BackupsPageTest extends TestCase
         $this->writeRestoreRun();
         $this->fakeSuwayomiWithStatus('RESTORING_SOMETHING_NEW', 1, 8);
 
-        $this->get('/settings/backups')->assertSee('The server says: RESTORING_SOMETHING_NEW');
+        $this->get('/settings/backups')->assertSee('Manga server: RESTORING_SOMETHING_NEW');
     }
 
     /**
@@ -639,9 +660,9 @@ class BackupsPageTest extends TestCase
         $this->fakeSuwayomiWithStatus(null);
 
         $this->get('/settings/backups')
-            ->assertSee('The server has not said anything yet')
+            ->assertSee('The manga server has not reported a stage yet')
             ->assertSee('A restore is running')
-            ->assertDontSee('The server says:');
+            ->assertDontSee('Manga server:');
     }
 
     /** The run rows read in the restore's own words, finished and refused alike. */
@@ -654,20 +675,20 @@ class BackupsPageTest extends TestCase
         LiveRestoreRun::query()->first()->update([
             'state' => LiveRestoreRun::COMPLETE,
             'token' => '20261014-203857',
-            'progress_note' => '7 series states and 21,447 chapter states put back from the pair, and the server restored its manga half',
+            'progress_note' => 'Restore complete: 7 series and 21,447 chapters are back, along with your manga data.',
         ]);
 
         $this->get('/settings/backups')
-            ->assertSee('7 series states and 21,447 chapter states put back from the pair')
+            ->assertSee('Restore complete: 7 series and 21,447 chapters are back')
             ->assertDontSee('A restore is running');
 
         LiveRestoreRun::query()->first()->update([
             'state' => LiveRestoreRun::REFUSED,
-            'refusal_reason' => 'The pair\'s reader half does not hold what its manifest says.',
+            'refusal_reason' => 'The library copy does not match the backup details.',
         ]);
 
         $this->get('/settings/backups')
-            ->assertSee('does not hold what its manifest says')
+            ->assertSee('does not match the backup details')
             ->assertSee('Refused');
     }
 
@@ -677,7 +698,7 @@ class BackupsPageTest extends TestCase
         $this->writeRestoreRun(stale: true);
 
         $this->get('/settings/backups')
-            ->assertSee('This restore stopped without finishing')
+            ->assertSee('This restore stopped before it finished')
             ->assertDontSee('A restore is running');
     }
 
@@ -695,12 +716,12 @@ class BackupsPageTest extends TestCase
         $page = Livewire::test('pages::settings.backups');
 
         $this->assertStringNotContainsString('wire:poll.3s', (string) $page->html(), 'with nothing pressed and nothing running the page is quiet');
-        $this->assertStringContainsString('Nothing has been put back from here yet', (string) $page->html());
+        $this->assertStringContainsString('Nothing has been restored from this page yet', (string) $page->html());
 
         $page = Livewire::test('pages::settings.backups')->set('restorePolling', true);
 
         $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'the gap between the press and the row is watched');
-        $this->assertStringContainsString('Queued. The run below will appear in a moment.', (string) $page->html());
+        $this->assertStringContainsString('Queued. The restore will appear in a moment.', (string) $page->html());
 
         $this->writeRestoreRun();
 
@@ -766,7 +787,7 @@ class BackupsPageTest extends TestCase
         $page = Livewire::test('pages::settings.backups')->set('exportPolling', true);
 
         $this->assertStringContainsString('wire:poll.3s', (string) $page->html(), 'the gap between the press and the row is watched');
-        $this->assertStringContainsString('Queued. The file will appear in a moment.', (string) $page->html());
+        $this->assertStringContainsString('Queued. The export will appear in a moment.', (string) $page->html());
 
         $this->writeExportRun();
 
@@ -849,12 +870,12 @@ class BackupsPageTest extends TestCase
             },
             'progress_note' => match ($state) {
                 LiveBackupRun::RUNNING => 'counting what the library holds',
-                LiveBackupRun::COMPLETE => '1 series states and 1 chapter states against Suwayomi v3.4.2366, taken without stopping anything',
+                LiveBackupRun::COMPLETE => 'Backup complete: 1 series and 1 chapters saved while Papyrus stayed open. Manga server v3.4.2366.',
                 LiveBackupRun::FAILED => 'This run stopped on an error: the staging disk filled up',
                 default => null,
             },
             'refusal_reason' => match ($state) {
-                LiveBackupRun::REFUSED => 'Suwayomi did not answer what version it is, so the manifest cannot be written and the run was refused with nothing taken.',
+                LiveBackupRun::REFUSED => 'The manga server did not report its version, so the backup could not be checked and nothing was changed.',
                 LiveBackupRun::FAILED => 'the staging disk filled up',
                 default => null,
             },
@@ -920,16 +941,17 @@ class BackupsPageTest extends TestCase
             'state' => $state,
             'progress_note' => match ($state) {
                 LiveRestoreRun::RUNNING => 'Starting the restore',
-                LiveRestoreRun::COMPLETE => '7 series states and 21,447 chapter states put back from the pair, and the server restored its manga half',
+                LiveRestoreRun::COMPLETE => 'Restore complete: 7 series and 21,447 chapters are back, along with your manga data.',
                 default => null,
             },
             'refusal_reason' => match ($state) {
-                LiveRestoreRun::REFUSED => 'The pair\'s reader half does not hold what its manifest says.',
+                LiveRestoreRun::REFUSED => 'The library copy does not match the backup details.',
                 default => null,
             },
             'series_states' => $state === LiveRestoreRun::COMPLETE ? 7 : null,
             'chapter_states' => $state === LiveRestoreRun::COMPLETE ? 21447 : null,
             'started_at' => now(),
+            'finished_at' => $state === LiveRestoreRun::COMPLETE ? now() : null,
         ], static fn (mixed $value): bool => $value !== null));
 
         if ($stale) {

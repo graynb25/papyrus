@@ -158,11 +158,11 @@ final class BackupSummary
     public function describe(): string
     {
         if (! $this->complete) {
-            return 'Incomplete';
+            return 'Backup is incomplete';
         }
 
         return sprintf(
-            '%s series and %s chapter states',
+            '%s series and %s chapters',
             number_format($this->seriesStates),
             number_format($this->chapterStates),
         );
@@ -187,14 +187,14 @@ final class BackupSummary
     {
         if ($missing !== []) {
             return sprintf(
-                'This backup is missing %s, so it cannot be restored. A backup needs both halves, '
-                .'because your library points into the manga database.',
+                'This backup is missing %s, so it cannot be restored. A backup needs both your '
+                .'library and manga data.',
                 implode(' and ', $missing),
             );
         }
 
         if ($checked === 2 && $matched < 2) {
-            return 'A file here no longer matches the manifest, so this is not the backup it claims to be.';
+            return 'One file has changed, so this backup is not complete anymore.';
         }
 
         return null;

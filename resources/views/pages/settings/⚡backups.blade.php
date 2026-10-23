@@ -282,7 +282,7 @@ new #[Title('Backups')] class extends Component {
         $seconds = (int) floor(max(0, $startedAt->diffInSeconds(now())));
 
         return trans_choice(
-            '{0} 0 seconds elapsed|{1} 1 second elapsed|[2,*] :count seconds elapsed',
+            '{0} 0 seconds so far|{1} 1 second so far|[2,*] :count seconds so far',
             $seconds,
             ['count' => $seconds],
         );
@@ -300,19 +300,19 @@ new #[Title('Backups')] class extends Component {
     public function liveBackupTimeline(LiveBackupRun $run): array
     {
         $steps = [
-            ['stage' => 'version', 'title' => __('Checking server')],
-            ['stage' => 'reader_half', 'title' => __('Copying reader half')],
+            ['stage' => 'version', 'title' => __('Checking the server')],
+            ['stage' => 'reader_half', 'title' => __('Saving your library')],
         ];
 
         if ($run->include_downloads) {
-            $steps[] = ['stage' => 'downloads', 'title' => __('Copying downloads')];
+            $steps[] = ['stage' => 'downloads', 'title' => __('Saving your downloads')];
         }
 
         array_push($steps,
-            ['stage' => 'manga_half', 'title' => __('Copying manga half')],
-            ['stage' => 'manga_checked', 'title' => __('Checking manga half')],
-            ['stage' => 'manifest', 'title' => __('Writing manifest')],
-            ['stage' => 'renamed', 'title' => __('Finishing backup')],
+            ['stage' => 'manga_half', 'title' => __('Saving your manga data')],
+            ['stage' => 'manga_checked', 'title' => __('Checking your manga data')],
+            ['stage' => 'manifest', 'title' => __('Checking the backup details')],
+            ['stage' => 'renamed', 'title' => __('Finishing the backup')],
         );
 
         if ($run->state === LiveBackupRun::COMPLETE) {
@@ -374,8 +374,8 @@ new #[Title('Backups')] class extends Component {
 
         if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
             Flux::toast(
-                text: __('A backup is already being taken. Wait for it to finish: two runs sweep the same staging folder, and the first pair cannot be verified under the second.'),
-                heading: __('Already running'),
+                text: __('A backup is already running. Wait for it to finish before starting another one.'),
+                heading: __('Backup in progress'),
                 variant: 'danger',
             );
 
@@ -388,8 +388,8 @@ new #[Title('Backups')] class extends Component {
         );
 
         Flux::toast(
-            text: __('Backup started. Both halves are taken without stopping anything, and the pair appears in the listing here when it is done.'),
-            heading: __('Started'),
+            text: __('Backup started. Your library and manga data are being saved while Papyrus stays open.'),
+            heading: __('Backup started'),
             variant: 'success',
         );
 
@@ -465,14 +465,37 @@ new #[Title('Backups')] class extends Component {
      */
     public function runSummary(LiveBackupRun $run): string
     {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('This run stopped without finishing. A backup takes nothing half way: its staging was swept, and the pair of the moment that survived is the one before it.'),
+        $summary = match (true) {
+            $this->runIsAbandoned($run) => __('This backup stopped before it finished. Nothing from the unfinished copy was kept.'),
             $run->state === LiveBackupRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
             $run->state === LiveBackupRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
             $run->state === LiveBackupRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
-            $run->state === LiveBackupRun::COMPLETE => (string) ($run->progress_note ?? __('The pair is in the backups folder.')),
+            $run->state === LiveBackupRun::COMPLETE => (string) ($run->progress_note ?? __('Your backup is ready to restore.')),
             default => (string) $run->state,
         };
+
+        return $this->humanizeBackupSummary($summary);
+    }
+
+    /** Translate stored notes from before the reader-facing backup vocabulary existed. */
+    public function humanizeBackupSummary(string $summary): string
+    {
+        if (str_contains($summary, 'downloaded manga half is a real backup of a library that holds nothing')) {
+            return __('The manga server answered, but it has no series to save. The backup was refused and nothing was changed. This file is not a Mihon or Suwayomi backup. Use the .tachibk file created from that app\'s backup screen.');
+        }
+
+        if (preg_match('/^([\d,]+) series states and ([\d,]+) chapter states against Suwayomi (.+), taken without stopping anything$/', trim($summary), $matches) === 1) {
+            $chapterWord = (int) str_replace(',', '', $matches[2]) === 1 ? __('chapter') : __('chapters');
+
+            return __('Backup complete: :series series and :chapters :chapter_word saved while Papyrus stayed open. Manga server :version.', [
+                'series' => $matches[1],
+                'chapters' => $matches[2],
+                'chapter_word' => $chapterWord,
+                'version' => $matches[3],
+            ]);
+        }
+
+        return $summary;
     }
 
     /**
@@ -660,8 +683,8 @@ new #[Title('Backups')] class extends Component {
         );
 
         Flux::toast(
-            text: __('Restore started. The run below names each half as it lands, and the pair on disk is only ever read.'),
-            heading: __('Started'),
+            text: __('Restore started. The run below will show what happens, and the backup on disk will not be changed.'),
+            heading: __('Restore started'),
             variant: 'success',
         );
 
@@ -686,6 +709,18 @@ new #[Title('Backups')] class extends Component {
     public function restoreRuns(): \Illuminate\Support\Collection
     {
         return LiveRestoreRun::query()->latest('id')->limit(20)->get();
+    }
+
+    /** The most recent completed restore for this backup, if it has been used. */
+    public function lastRestoredAt(string $token): ?CarbonImmutable
+    {
+        $run = LiveRestoreRun::query()
+            ->where('token', $token)
+            ->where('state', LiveRestoreRun::COMPLETE)
+            ->latest('finished_at')
+            ->first();
+
+        return $run?->finished_at?->toImmutable();
     }
 
     /** Whether the restore side should be asked what is happening, the same shape as shouldPoll(). */
@@ -755,11 +790,11 @@ new #[Title('Backups')] class extends Component {
     public function restoreRunSummary(LiveRestoreRun $run): string
     {
         return match (true) {
-            $this->runIsAbandoned($run) => __('This restore stopped without finishing. The pair on disk is untouched, because its files are only ever read.'),
+            $this->runIsAbandoned($run) => __('This restore stopped before it finished. The backup on disk was left unchanged.'),
             $run->state === LiveRestoreRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
             $run->state === LiveRestoreRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
             $run->state === LiveRestoreRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
-            $run->state === LiveRestoreRun::COMPLETE => (string) ($run->progress_note ?? __('The pair is back.')),
+            $run->state === LiveRestoreRun::COMPLETE => (string) ($run->progress_note ?? __('Your library is back.')),
             default => (string) $run->state,
         };
     }
@@ -917,7 +952,7 @@ new #[Title('Backups')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('Backups') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Backups')" :subheading="__('What you can restore, and what the last one did')">
+    <x-pages::settings.layout :heading="__('Backups')" :subheading="__('Keep a copy of your library, or put one back')">
         {{--
             The last time, read in one place.
 
@@ -928,15 +963,15 @@ new #[Title('Backups')] class extends Component {
             its verdict; a live run keeps its rows on its own card, where its polling lives,
             rather than a second stage table this block has no way to feed.
         --}}
-        <flux:heading level="3" class="mb-3 text-base">{{ __('The last time') }}</flux:heading>
+        <flux:heading level="3" class="mb-3 text-base">{{ __('Most recent activity') }}</flux:heading>
 
         @if (($latest = $this->latestEvent()) === null)
             <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('Nothing has been recorded yet, which is the whole of what has happened: no pair taken or put back with the launcher, and no backup, restore or export run from the cards on this page.') }}
+                {{ __('Nothing has happened here yet. Take a backup, restore one, or export your library to see it here.') }}
             </p>
         @else
             <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('Last run: :verdict :when.', ['verdict' => strtolower($this->lastRunVerdictWord()), 'when' => $latest['at']->diffForHumans()]) }}
+                {{ __('Last run was :verdict :when.', ['verdict' => strtolower($this->lastRunVerdictWord()), 'when' => $latest['at']->diffForHumans()]) }}
 
                 <button
                     type="button"
@@ -970,12 +1005,12 @@ new #[Title('Backups')] class extends Component {
                         $outcome = $latest['outcome'];
                         $stages = $outcome->stages();
                         $titles = [
-                            'checking_target' => __('Checking target'),
-                            'stopping' => __('Stopping'),
-                            'copying_manga_half' => __('Copying manga half'),
-                            'copying_reader_half' => __('Copying reader half'),
-                            'writing_manifest' => __('Writing manifest'),
-                            'restarting' => __('Restarting'),
+                            'checking_target' => __('Checking the server'),
+                            'stopping' => __('Stopping Papyrus'),
+                            'copying_manga_half' => __('Saving your manga data'),
+                            'copying_reader_half' => __('Saving your library'),
+                            'writing_manifest' => __('Checking the backup details'),
+                            'restarting' => __('Starting Papyrus again'),
                         ];
                         $doneCount = 0;
                         foreach ($stages as $stage) {
@@ -1090,7 +1125,7 @@ new #[Title('Backups')] class extends Component {
                                         @if ($status === 'failed' && $message !== '')
                                             <p class="text-xs text-red-700 dark:text-red-300">{{ $message }}</p>
                                         @elseif ($status === 'skipped')
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Not needed for this run.') }}</p>
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Not needed for this backup.') }}</p>
                                         @elseif ($message !== '')
                                             <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $message }}</p>
                                         @endif
@@ -1241,19 +1276,19 @@ new #[Title('Backups')] class extends Component {
             </flux:modal>
         </div>
 
-        <flux:heading level="3" class="mb-3 text-base">{{ __('What you can restore') }}</flux:heading>
+        <flux:heading level="3" class="mb-3 text-base">{{ __('Saved backups') }}</flux:heading>
 
         @if ($this->pairs() === [])
             <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('No backups yet. Two doors take a pair from here: Back up now below, which stages and verifies it while everything keeps running, and papyrus snapshot in a terminal, which stops Papyrus to make the same pair.') }}
+                {{ __('No backups yet. Use “Back up now” below to save your library while Papyrus stays open, or run papyrus snapshot in a terminal when Papyrus is closed.') }}
             </p>
         @else
             <div class="mb-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:text-gray-400">
                         <tr>
-                            <th scope="col" class="px-3 py-2 font-medium">{{ __('Taken') }}</th>
-                            <th scope="col" class="px-3 py-2 font-medium">{{ __('What it holds') }}</th>
+                            <th scope="col" class="px-3 py-2 font-medium">{{ __('Saved') }}</th>
+                            <th scope="col" class="px-3 py-2 font-medium">{{ __('What it contains') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Size') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Files') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Restore') }}</th>
@@ -1265,12 +1300,18 @@ new #[Title('Backups')] class extends Component {
                                 <td class="px-3 py-2">
                                     <span class="font-medium">{{ $pair->ageForHumans() }}</span>
                                     <span class="block font-mono text-xs text-gray-500 dark:text-gray-400">{{ $pair->token }}</span>
+
+                                    @if (($restoredAt = $this->lastRestoredAt($pair->token)) !== null)
+                                        <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                                            {{ __('Last restored :when.', ['when' => $restoredAt->diffForHumans()]) }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-3 py-2 text-gray-700 dark:text-gray-300">
                                     {{ $pair->describe() }}
                                     @if ($pair->serverVersion)
                                         <span class="block text-xs text-gray-500 dark:text-gray-400">
-                                            {{ __('Suwayomi :version', ['version' => $pair->serverVersion]) }}
+                                            {{ __('Manga server :version', ['version' => $pair->serverVersion]) }}
                                         </span>
                                     @endif
                                     @if ($pair->problem)
@@ -1280,11 +1321,11 @@ new #[Title('Backups')] class extends Component {
                                 <td class="px-3 py-2 text-gray-600 dark:text-gray-400">{{ $pair->sizeForHumans() }}</td>
                                 <td class="px-3 py-2">
                                     @if ($pair->intact)
-                                        <span class="text-green-700 dark:text-green-300">{{ __('Both halves match') }}</span>
+                                        <span class="text-green-700 dark:text-green-300">{{ __('Backup is complete') }}</span>
                                     @elseif ($pair->complete)
-                                        <span class="text-amber-700 dark:text-amber-300">{{ __('One does not match') }}</span>
+                                        <span class="text-amber-700 dark:text-amber-300">{{ __('One file has changed') }}</span>
                                     @else
-                                        <span class="text-red-700 dark:text-red-300">{{ __('Incomplete') }}</span>
+                                        <span class="text-red-700 dark:text-red-300">{{ __('Backup is incomplete') }}</span>
                                     @endif
                                 </td>
                                 <td class="px-3 py-2">
@@ -1318,7 +1359,7 @@ new #[Title('Backups')] class extends Component {
         <p class="mb-2 font-mono text-sm break-all text-gray-700 dark:text-gray-300">{{ $this->directory() }}</p>
 
         <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-            {{ __('To put one back, press the Restore button on its row above: the pair goes back while the app keeps running, and the confirm names what it replaces. The terminal way still exists: stop Papyrus and run papyrus restore with the path to its backup file, and both halves are put back together with whatever was there before kept rather than deleted.') }}
+            {{ __('To use one, press Restore on its row. Papyrus keeps running, and the confirmation shows what will be replaced. You can also close Papyrus and run papyrus restore in a terminal with the backup file path.') }}
         </p>
 
         @if ($this->leftovers() !== [])
@@ -1353,7 +1394,7 @@ new #[Title('Backups')] class extends Component {
         <flux:card class="mb-6 space-y-4 p-4">
             <div @if ($this->shouldPoll()) wire:poll.3s @endif>
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <flux:heading level="3" class="text-base">{{ __('Take one now, without stopping anything') }}</flux:heading>
+                    <flux:heading level="3" class="text-base">{{ __('Save a backup now') }}</flux:heading>
 
                     @php($pressing = $this->activeRun())
 
@@ -1365,7 +1406,7 @@ new #[Title('Backups')] class extends Component {
                 </div>
 
                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('The pair is staged and verified while the app keeps running, then lands beside the launcher backups above with the token naming the moment. The app never stops, and closing this page while it runs changes nothing.') }}
+                    {{ __('Save your library and manga data while Papyrus stays open. The backup is checked before it appears above, and you can leave this page while it runs.') }}
                 </p>
 
                 <div class="mt-4">
@@ -1385,9 +1426,9 @@ new #[Title('Backups')] class extends Component {
                     @if ($this->liveRuns()->isEmpty())
                         <p class="text-sm text-zinc-500 dark:text-zinc-400">
                             @if ($this->polling)
-                                {{ __('Queued. The pair will appear in a moment.') }}
+                                {{ __('Queued. The backup will appear in a moment.') }}
                             @else
-                                {{ __('No backups have been taken from here yet. Every pair above was made with the launcher.') }}
+                                {{ __('No backup has been saved from this page yet. The backups above were made another way.') }}
                             @endif
                         </p>
                     @else
@@ -1395,7 +1436,7 @@ new #[Title('Backups')] class extends Component {
                             <div class="border-t border-zinc-200 pt-3 first:border-0 first:pt-0 dark:border-white/10">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                     <span class="truncate text-sm font-medium">
-                                        {{ $run->token !== null ? $run->token : __('being staged now') }}
+                                        {{ $run->token !== null ? $run->token : ($run->state === LiveBackupRun::RUNNING ? __('Saving now') : __('Backup attempt')) }}
                                     </span>
 
                                     <flux:badge size="sm" :color="$this->badgeColour($run)">
@@ -1444,7 +1485,7 @@ new #[Title('Backups')] class extends Component {
                 </div>
 
                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('A restore replaces what the app holds with what the pair holds. The manga half goes to Suwayomi through its own import while it keeps running, and the reader half is swapped in one brief pass on this machine. Nothing is stopped, nothing is sent anywhere, and closing this page while a restore runs changes nothing.') }}
+                    {{ __('Restore replaces your current library and manga data with the contents of this backup. Papyrus stays open while it works, nothing is sent anywhere, and leaving this page does not stop it.') }}
                 </p>
 
                 {{--
@@ -1462,9 +1503,9 @@ new #[Title('Backups')] class extends Component {
                 @if ($listening !== null && ($listening['unreachable'] || $listening['status'] === null))
                     <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                         @if ($listening['unreachable'])
-                            {{ __('The server cannot be reached to say what its restore is doing. The run below owns the truth either way.') }}
+                            {{ __('The manga server cannot report its progress right now. The restore record below is still the source of truth.') }}
                         @else
-                            {{ __('The server has not said anything yet. It names each stage as it happens, and the run below carries the truth with it.') }}
+                            {{ __('The manga server has not reported a stage yet. The restore record below will update as it works.') }}
                         @endif
                     </p>
                 @elseif ($listening !== null)
@@ -1473,7 +1514,7 @@ new #[Title('Backups')] class extends Component {
                     @php($pct = $held ? min(100, (int) round($said['mangaProgress'] * 100 / $said['totalManga'])) : null)
 
                     <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('The server says: :state', ['state' => $this->restoreStateWords($said['state'])]) }}
+                        {{ __('Manga server: :state', ['state' => $this->restoreStateWords($said['state'])]) }}
 
                         @if ($held)
                             <span class="ml-1">{{ $said['mangaProgress'] }} of {{ $said['totalManga'] }}</span>
@@ -1498,9 +1539,9 @@ new #[Title('Backups')] class extends Component {
                     @if ($this->restoreRuns()->isEmpty())
                         <p class="text-sm text-zinc-500 dark:text-zinc-400">
                             @if ($this->restorePolling)
-                                {{ __('Queued. The run below will appear in a moment.') }}
+                                {{ __('Queued. The restore will appear in a moment.') }}
                             @else
-                                {{ __('Nothing has been put back from here yet.') }}
+                                {{ __('Nothing has been restored from this page yet.') }}
                             @endif
                         </p>
                     @else
@@ -1508,7 +1549,7 @@ new #[Title('Backups')] class extends Component {
                             <div class="border-t border-zinc-200 pt-3 first:border-0 first:pt-0 dark:border-white/10">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                     <span class="truncate text-sm font-medium">
-                                        {{ $run->token !== null ? $run->token : __('being put back now') }}
+                                        {{ $run->token !== null ? $run->token : __('Restoring now') }}
                                     </span>
 
                                     <flux:badge size="sm" :color="$this->restoreBadgeColour($run)">
@@ -1545,7 +1586,7 @@ new #[Title('Backups')] class extends Component {
         <flux:card class="mb-6 space-y-4 p-4">
             <div @if ($this->shouldPollExport()) wire:poll.3s @endif>
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <flux:heading level="3" class="text-base">{{ __('Sending one out, without stopping anything') }}</flux:heading>
+                    <flux:heading level="3" class="text-base">{{ __('Export for another reader app') }}</flux:heading>
 
                     @php($exporting = $this->activeExportRun())
 
@@ -1557,7 +1598,7 @@ new #[Title('Backups')] class extends Component {
                 </div>
 
                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('The file is a .tachibk, the format Mihon and its forks read: the library fresh from Suwayomi with your read marks and shelf memberships merged in. The merge only ever adds, so a chapter read anywhere stays read, and a series filed on a shelf stays filed.') }}
+                    {{ __('Make a copy for Mihon or one of its forks. The .tachibk file includes your manga data, read progress and shelves. Export only adds your progress and shelves, so it never marks a read chapter unread or removes a shelf.') }}
                 </p>
 
                 <div class="mt-4">
@@ -1576,7 +1617,7 @@ new #[Title('Backups')] class extends Component {
                     @if ($this->exportRuns()->isEmpty())
                         <p class="text-sm text-zinc-500 dark:text-zinc-400">
                             @if ($this->exportPolling)
-                                {{ __('Queued. The file will appear in a moment.') }}
+                                {{ __('Queued. The export will appear in a moment.') }}
                             @else
                                 {{ __('Nothing has been sent out from here yet.') }}
                             @endif
@@ -1663,11 +1704,11 @@ new #[Title('Backups')] class extends Component {
 
                 <div class="min-w-0">
                     <flux:heading size="lg">
-                        {{ __('What the backup stops') }}
+                        {{ __('What happens while it runs') }}
                     </flux:heading>
 
                     <flux:subheading class="mt-1">
-                        {{ __('Nothing. Both halves are taken while the app keeps running.') }}
+                        {{ __('Nothing stops. Papyrus saves your library and manga data while it stays open.') }}
                     </flux:subheading>
 
                     <div class="mt-4 space-y-3">
@@ -1733,40 +1774,40 @@ new #[Title('Backups')] class extends Component {
 
                 <div class="min-w-0">
                     <flux:heading size="lg">
-                        {{ __('What goes over what is there now') }}
+                        {{ __('Restore this backup?') }}
                     </flux:heading>
 
                     @if ($this->restoreDialogOpen && ($putting = $this->restoreDiff()) !== null)
                         <flux:subheading class="mt-1">
-                            {{ __('The pair is put back over everything the app holds now, and whatever the app holds that this pair does not carry is gone from the reader side. The pair on disk is only ever read.') }}
+                            {{ __('This replaces your current library and manga data with this backup. Anything currently in your library that this backup does not contain will be removed. The backup itself is not changed.') }}
                         </flux:subheading>
 
                         <div class="mt-4 space-y-1.5 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
                             <p class="flex justify-between gap-4">
-                                <span class="font-medium">{{ __('The pair') }}</span>
+                                <span class="font-medium">{{ __('Backup') }}</span>
 
                                 <span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ $this->restoreToken }}</span>
                             </p>
 
                             <p class="flex justify-between gap-4">
-                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('The pair holds') }}</span>
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('This backup contains') }}</span>
 
                                 <span>{{ __(':series series and :chapters chapters', ['series' => $putting['pair']['series'], 'chapters' => $putting['pair']['chapters']]) }}</span>
                             </p>
 
                             <p class="flex justify-between gap-4">
-                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('The app holds now') }}</span>
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ __('Your library contains now') }}</span>
 
                                 <span>{{ __(':series series and :chapters chapters', ['series' => $putting['live']['series'], 'chapters' => $putting['live']['chapters']]) }}</span>
                             </p>
 
                             @if ($putting['mangaProblem'] !== null)
                                 <p class="text-red-700 dark:text-red-300">
-                                    {{ __('The manga half could not be read: :words', ['words' => $putting['mangaProblem']]) }}
+                                    {{ __('The manga data could not be read: :words', ['words' => $putting['mangaProblem']]) }}
                                 </p>
                             @elseif (isset($putting['manga']['library_series']))
                                 <p class="flex justify-between gap-4">
-                                    <span class="text-zinc-500 dark:text-zinc-400">{{ __('The manga file carries') }}</span>
+                                    <span class="text-zinc-500 dark:text-zinc-400">{{ __('Manga data contains') }}</span>
 
                                     <span>{{ __(':series series, :chapters chapters, :read read', ['series' => $putting['manga']['library_series'], 'chapters' => $putting['manga']['chapters'], 'read' => $putting['manga']['chapters_read']]) }}</span>
                                 </p>
@@ -1774,7 +1815,7 @@ new #[Title('Backups')] class extends Component {
                         </div>
 
                         <flux:subheading class="mt-4">
-                            {{ __('Nothing is put back until this is confirmed, and Never mind leaves everything as it is.') }}
+                            {{ __('Nothing changes until you confirm. Choose Never mind to leave your library as it is.') }}
                         </flux:subheading>
 
                         <div class="mt-7 flex justify-end gap-2">
@@ -1788,12 +1829,12 @@ new #[Title('Backups')] class extends Component {
                                 wire:target="restore"
                                 wire:loading.attr="disabled"
                             >
-                                {{ __('Put it back') }}
+                                {{ __('Restore this backup') }}
                             </flux:button>
                         </div>
                     @elseif ($this->restoreDialogOpen)
                         <flux:subheading class="mt-1">
-                            {{ __('The pair this confirm was opened on cannot be read anymore: its manifest is gone or disagrees with its own files. Nothing is being offered for this pair.') }}
+                            {{ __('This backup cannot be read anymore because its details are missing or no longer match its files. Nothing has been changed.') }}
                         </flux:subheading>
 
                         <div class="mt-7 flex justify-end gap-2">

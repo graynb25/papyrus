@@ -88,7 +88,7 @@ class BackupLibraryTest extends TestCase
         $this->assertTrue($pair->complete);
         $this->assertTrue($pair->intact);
         $this->assertNull($pair->problem);
-        $this->assertSame('867 series and 21,447 chapter states', $pair->describe());
+        $this->assertSame('867 series and 21,447 chapters', $pair->describe());
     }
 
     /**
@@ -153,7 +153,7 @@ class BackupLibraryTest extends TestCase
         $summary = $this->library()->pairs()[0];
 
         $this->assertFalse($summary->complete);
-        $this->assertSame('Incomplete', $summary->describe());
+        $this->assertSame('Backup is incomplete', $summary->describe());
         $this->assertContains('suwayomi-20261014-203857.mv.db', $summary->missing);
         $this->assertStringContainsString('cannot be restored', (string) $summary->problem);
     }
@@ -174,7 +174,7 @@ class BackupLibraryTest extends TestCase
 
         $this->assertTrue($summary->complete, 'both files are there');
         $this->assertFalse($summary->intact, 'and one of them is not what the manifest described');
-        $this->assertStringContainsString('no longer matches', (string) $summary->problem);
+        $this->assertStringContainsString('One file has changed', (string) $summary->problem);
     }
 
     public function test_it_reports_a_backup_whose_age_is_readable(): void
@@ -240,7 +240,7 @@ class BackupLibraryTest extends TestCase
 
         $this->assertNotNull($run);
         $this->assertTrue($run->failed());
-        $this->assertStringContainsString('failed at copying manga half', $run->verdict());
+        $this->assertStringContainsString('stopped while saving your manga data', $run->verdict());
         $this->assertStringContainsString('still running after thirty seconds', $run->verdict());
     }
 

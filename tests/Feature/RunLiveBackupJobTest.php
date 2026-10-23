@@ -171,7 +171,7 @@ class RunLiveBackupJobTest extends TestCase
         $this->assertNotNull($run->finished_at);
 
         $this->assertSame(
-            '1 series states and 1 chapter states against Suwayomi v2.4.2366, taken without stopping anything',
+            'Backup complete: 1 series and 1 chapters saved while Papyrus stayed open. Manga server v2.4.2366.',
             $run->progress_note,
             'the last note is the run\'s closing sentence, not the row\'s opening one',
         );
@@ -220,7 +220,7 @@ class RunLiveBackupJobTest extends TestCase
         $run = LiveBackupRun::query()->sole();
 
         $this->assertSame(LiveBackupRun::REFUSED, $run->state);
-        $this->assertStringContainsString('did not answer what version', (string) $run->refusal_reason);
+        $this->assertStringContainsString('did not report its version', (string) $run->refusal_reason);
         $this->assertNull($run->token, 'a refused run has no token, because it renamed nothing');
         $this->assertNull($run->progress_stage, 'the version refusal reached no stage, so the row claims no progress');
         $this->assertNull($run->progress_note, 'a refusal clears the note, which described work that no longer exists');
