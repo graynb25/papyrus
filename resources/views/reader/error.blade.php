@@ -137,9 +137,9 @@
 
         <h1>
             @if ($isTimeout)
-                {{ __('The source took too long') }}
+                {{ __('This chapter took too long to load') }}
             @else
-                {{ __('The source would not serve this chapter') }}
+                {{ __('The source could not provide this chapter') }}
             @endif
         </h1>
 
@@ -147,9 +147,9 @@
 
         <p>
             @if ($isTimeout)
-                {{ __('Suwayomi downloads every page in a chapter before the reader can show it, and this one exceeded the time budget. The images may still arrive on a second attempt.') }}
+                {{ __('The manga server could not download every page before the reader timed out. Try again; the source may respond next time.') }}
             @else
-                {{ __('Suwayomi reached the source and it refused, or returned nothing. This is usually a chapter that has been removed, or a source whose layout has changed.') }}
+                {{ __('The source answered but did not provide this chapter. It may have been removed, or the source site may have changed.') }}
             @endif
         </p>
 

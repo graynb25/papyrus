@@ -1094,7 +1094,9 @@ privacy, account, library storage, network access, offline reading, sources,
 adult content, search scope, blocked sites and missing chapters. The broader
 review of settings, empty states, error pages and the rest of the FAQ is still
 open. Do not mark this block done until the owner has read the surfaces and
-confirmed the wording.
+confirmed the wording. Import recovery messages and the reader's chapter-load
+error page have also had a first pass: both now lead with what happened and
+what the reader can do next.
 
 Preview: The before and after is in the "Humanized copy" section below.
 
