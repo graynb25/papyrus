@@ -7306,3 +7306,13 @@ for the job and the manifest. The test fixture had to be changed with the produc
 that injects the old sentence is not evidence that the new sentence is rendered. The broader copy
 review remains open until the owner has read the other settings, empty states and error pages.
 
+### Trap 335: A restore needs a stage key, not a sentence parser
+
+The backup modal already had a stable stage key beside each reader-facing note. The restore row had
+only the note, even though its page needed the same checkpoint timeline. Reusing the sentence would
+have made the modal depend on wording and would have left old rows impossible to classify. The restore
+job now stores `progress_stage` beside `progress_note`, and the page maps that key to six reader-facing
+checkpoints. The browser proof staged a running row at the manga restore step, read 3 of 6 with the
+first three checkpoints complete and the fourth running, then deleted that row after reloading the
+page. No real restore was pressed.
+

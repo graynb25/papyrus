@@ -779,9 +779,12 @@ Concrete proposal: Improve, do not change, the existing restore confirm dialog. 
 token and the counts it will replace in the confirm dialog, and show the same
 checkpoint timeline the backup modal uses.
 
-Status (2026-10-23): Partly built. The dialog now names the backup, the counts
-it contains, the current library counts, and what will be removed. The shared
-restore progress timeline is still open.
+Status (2026-10-24): Built. The restore run now carries a progress stage and the
+existing last-run modal renders six restore checkpoints with a live count,
+elapsed time, locked close action while running, and a final action when done.
+Verified by `BackupsPageTest`, the restore job tests, and an authenticated browser
+walk using a staged run row. No restore was pressed and the staged row was deleted
+and read back absent.
 
 Extends: `resources/views/pages/settings/backups.blade.php` (restore confirm),
 `flux:modal`.

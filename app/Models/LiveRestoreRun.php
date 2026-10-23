@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $started_by_user_id
  * @property string|null $token
  * @property string $state running|complete|failed|refused
+ * @property string|null $progress_stage
  * @property string|null $progress_note
  * @property string|null $refusal_reason
  * @property string|null $suwayomi_version
@@ -44,6 +45,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'started_by_user_id',
     'token',
     'state',
+    'progress_stage',
     'progress_note',
     'refusal_reason',
     'suwayomi_version',

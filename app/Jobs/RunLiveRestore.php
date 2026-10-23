@@ -121,6 +121,7 @@ class RunLiveRestore implements ShouldQueue
                     'started_by_user_id' => $pressedBy?->id,
                     'state' => LiveRestoreRun::REFUSED,
                     'token' => $this->token,
+                    'progress_stage' => null,
                     'progress_note' => null,
                     'refusal_reason' => $e->getMessage(),
                     'started_at' => now(),
@@ -148,7 +149,7 @@ class RunLiveRestore implements ShouldQueue
                         $mangaHalfIsRestored = true;
                     }
 
-                    $this->note($run, $words);
+                    $this->note($run, $stage, $words);
                 },
             );
 
@@ -161,6 +162,7 @@ class RunLiveRestore implements ShouldQueue
             $this->receipt(static function () use ($run, $e): void {
                 $run->update([
                     'state' => LiveRestoreRun::REFUSED,
+                    'progress_stage' => $run->progress_stage,
                     'progress_note' => null,
                     'refusal_reason' => $e->getMessage(),
                     'finished_at' => now(),
@@ -179,6 +181,7 @@ class RunLiveRestore implements ShouldQueue
                 $this->receipt(static function () use ($run, $e): void {
                     $run->update([
                         'state' => LiveRestoreRun::FAILED,
+                        'progress_stage' => $run->progress_stage,
                         'refusal_reason' => $e->getMessage(),
                         'progress_note' => 'The server\'s manga half is restored. The reader half refused its swap, '
                             .'and the restore run\'s own retry takes it again in a few seconds. '
@@ -197,6 +200,7 @@ class RunLiveRestore implements ShouldQueue
             $this->receipt(static function () use ($run, $e): void {
                 $run->update([
                     'state' => LiveRestoreRun::REFUSED,
+                    'progress_stage' => $run->progress_stage,
                     'progress_note' => null,
                     'refusal_reason' => $e->getMessage(),
                     'finished_at' => now(),
@@ -212,6 +216,7 @@ class RunLiveRestore implements ShouldQueue
             $this->receipt(static function () use ($run, $e): void {
                 $run->update([
                     'state' => LiveRestoreRun::FAILED,
+                    'progress_stage' => $run->progress_stage,
                     'refusal_reason' => $e->getMessage(),
                     'progress_note' => 'This restore stopped on an error: '.$e->getMessage(),
                     'finished_at' => now(),
@@ -237,6 +242,7 @@ class RunLiveRestore implements ShouldQueue
             'started_by_user_id' => $pressedBy,
             'state' => LiveRestoreRun::RUNNING,
             'token' => $token,
+            'progress_stage' => 'starting',
             'progress_note' => 'Starting the restore',
             'started_at' => now(),
         ]);
@@ -245,10 +251,10 @@ class RunLiveRestore implements ShouldQueue
     /**
      * One stage note onto the run row, or a note deferred to the run's own retry.
      */
-    private function note(LiveRestoreRun $run, string $words): void
+    private function note(LiveRestoreRun $run, string $stage, string $words): void
     {
-        $this->receipt(static function () use ($run, $words): void {
-            $run->update(['progress_note' => $words]);
+        $this->receipt(static function () use ($run, $stage, $words): void {
+            $run->update(['progress_stage' => $stage, 'progress_note' => $words]);
         }, "the run's stage note");
     }
 
@@ -294,6 +300,7 @@ class RunLiveRestore implements ShouldQueue
         $this->receipt(static function () use ($run, $result): void {
             $run->update([
                 'state' => LiveRestoreRun::COMPLETE,
+                'progress_stage' => 'done',
                 'token' => $result->token,
                 'series_states' => $result->seriesStates,
                 'chapter_states' => $result->chapterStates,

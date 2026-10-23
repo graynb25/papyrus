@@ -338,6 +338,41 @@ new #[Title('Backups')] class extends Component {
         }, $steps, array_keys($steps));
     }
 
+    /** The restore checkpoints the last-run modal can show without reading prose. */
+    public function liveRestoreTimeline(LiveRestoreRun $run): array
+    {
+        $steps = [
+            ['stage' => 'starting', 'title' => __('Starting the restore')],
+            ['stage' => 'reader_half', 'title' => __('Checking your library')],
+            ['stage' => 'manga_checked', 'title' => __('Checking your manga data')],
+            ['stage' => 'manga', 'title' => __('Restoring your manga data')],
+            ['stage' => 'reader_swap', 'title' => __('Restoring your library')],
+            ['stage' => 'done', 'title' => __('Finishing the restore')],
+        ];
+
+        if ($run->state === LiveRestoreRun::COMPLETE) {
+            return array_map(static fn (array $step): array => [...$step, 'state' => 'done'], $steps);
+        }
+
+        $current = array_search($run->progress_stage, array_column($steps, 'stage'), true);
+
+        return array_map(function (array $step, int $index) use ($current, $run): array {
+            $state = 'pending';
+
+            if (is_int($current) && $index < $current) {
+                $state = 'done';
+            }
+
+            if (is_int($current) && $index === $current) {
+                $state = $run->isRunning() && ! $this->runIsAbandoned($run)
+                    ? 'running'
+                    : 'failed';
+            }
+
+            return [...$step, 'state' => $state];
+        }, $steps, array_keys($steps));
+    }
+
     /** The one word the "Last run" line and the modal header read a run by. */
     public function lastRunVerdictWord(): string
     {
@@ -1174,7 +1209,10 @@ new #[Title('Backups')] class extends Component {
                         $liveTone = $this->runToneOfAny($row);
                         $liveIsRunning = $this->runModalIsRunning();
                         $liveIsBackup = $row instanceof LiveBackupRun;
-                        $liveStages = $liveIsBackup ? $this->liveBackupTimeline($row) : [];
+                        $liveIsRestore = $row instanceof LiveRestoreRun;
+                        $liveStages = $liveIsBackup
+                            ? $this->liveBackupTimeline($row)
+                            : ($liveIsRestore ? $this->liveRestoreTimeline($row) : []);
                         $liveDoneCount = count(array_filter($liveStages, static fn (array $stage): bool => $stage['state'] === 'done'));
                         $liveTotalStages = count($liveStages);
                         $livePct = $liveTotalStages > 0 ? (int) round($liveDoneCount * 100 / $liveTotalStages) : 0;
@@ -1197,14 +1235,14 @@ new #[Title('Backups')] class extends Component {
                         <flux:heading size="lg">{{ $liveLabel }}</flux:heading>
                     </div>
 
-                    @if ($liveIsBackup)
+                    @if ($liveIsBackup || $liveIsRestore)
                         <div
                             class="mt-4 h-1 w-full overflow-hidden rounded-full bg-zinc-800"
                             role="progressbar"
                             aria-valuemin="0"
                             aria-valuemax="100"
                             aria-valuenow="{{ $livePct }}"
-                            aria-label="{{ __('Backup progress') }}"
+                            aria-label="{{ $liveIsBackup ? __('Backup progress') : __('Restore progress') }}"
                         >
                             <div
                                 class="h-full rounded-full bg-accent transition-all duration-300"

@@ -251,6 +251,22 @@ class BackupsPageTest extends TestCase
         $this->assertTrue($page->instance()->runModalIsRunning(), 'the running live row locks the modal like a running launcher record');
     }
 
+    public function test_a_running_live_restore_has_a_polling_timeline_in_the_last_run_modal(): void
+    {
+        $this->writeRestoreRun(progressStage: 'manga');
+
+        $page = Livewire::test('pages::settings.backups')->call('openRunModal');
+
+        $page->assertSee('Checking your library')
+            ->assertSee('Checking your manga data')
+            ->assertSee('Restoring your manga data')
+            ->assertSee('Restoring your library')
+            ->assertSee('3 of 6')
+            ->assertSee('Restore progress');
+
+        $this->assertTrue($page->instance()->runModalIsRunning(), 'the running restore locks the modal like a running backup');
+    }
+
     /**
      * A backup with a half missing is called incomplete, not listed as if it were whole.
      */
@@ -934,11 +950,16 @@ class BackupsPageTest extends TestCase
      * `updated_at` is not fillable on the model, so the row is aged after it is written,
      * straight onto the column the abandonment check reads.
      */
-    private function writeRestoreRun(string $state = LiveRestoreRun::RUNNING, bool $stale = false): void
+    private function writeRestoreRun(string $state = LiveRestoreRun::RUNNING, bool $stale = false, ?string $progressStage = null): void
     {
         $run = LiveRestoreRun::create(array_filter([
             'token' => $state === LiveRestoreRun::COMPLETE ? '20261014-203857' : null,
             'state' => $state,
+            'progress_stage' => $progressStage ?? match ($state) {
+                LiveRestoreRun::RUNNING => 'manga',
+                LiveRestoreRun::COMPLETE => 'done',
+                default => null,
+            },
             'progress_note' => match ($state) {
                 LiveRestoreRun::RUNNING => 'Starting the restore',
                 LiveRestoreRun::COMPLETE => 'Restore complete: 7 series and 21,447 chapters are back, along with your manga data.',
