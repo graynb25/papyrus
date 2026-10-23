@@ -130,7 +130,7 @@ class InsightsPageTest extends TestCase
 
         $this->get('/insights?since='.now()->toDateString())
             ->assertOk()
-            ->assertSee('No reading counted yet');
+            ->assertSee('No reading recorded yet');
     }
 
     public function test_an_all_time_view_counts_every_row_the_ledger_holds(): void
@@ -307,7 +307,7 @@ class InsightsPageTest extends TestCase
     {
         $this->get('/insights')
             ->assertOk()
-            ->assertSee('No reading counted yet')
+            ->assertSee('No reading recorded yet')
             // The local-only fact is said on the page, not left to be inferred
             // from the absence of a claim.
             ->assertSee('rows written on this machine');

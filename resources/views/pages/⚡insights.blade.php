@@ -249,30 +249,35 @@ new #[Title('Insights')] class extends Component {
         @endforeach
     </div>
 
-    <flux:callout variant="secondary" icon="sparkles">
-        <p class="font-display text-base font-semibold">{{ $this->line }}</p>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            {{ __('Counted by when each sitting began, so no window counts the same minutes twice.') }}
-        </p>
-    </flux:callout>
+    @if (! ($this->rows->isEmpty() || $this->totals['seconds'] === 0))
+        <flux:callout variant="secondary" icon="sparkles">
+            <p class="font-display text-base font-semibold">{{ $this->line }}</p>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                {{ __('Counted by when each sitting began, so no window counts the same minutes twice.') }}
+            </p>
+        </flux:callout>
+    @endif
 
-    {{-- Totals ------------------------------------------------------------ --}}
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <flux:card class="card-press gap-1 p-4">
-            <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Reading time') }}</p>
-            <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ $this->formatSeconds($this->totals['seconds']) }}</p>
-        </flux:card>
+    {{-- Totals. Hidden until there is something to show, so an empty ledger does
+         not announce three zero cards. -------------------------------------- --}}
+    @if (! ($this->rows->isEmpty() || $this->totals['seconds'] === 0))
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <flux:card class="card-press gap-1 p-4">
+                <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Reading time') }}</p>
+                <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ $this->formatSeconds($this->totals['seconds']) }}</p>
+            </flux:card>
 
-        <flux:card class="card-press gap-1 p-4">
-            <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Pages turned') }}</p>
-            <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->totals['pages']) }}</p>
-        </flux:card>
+            <flux:card class="card-press gap-1 p-4">
+                <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Pages turned') }}</p>
+                <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->totals['pages']) }}</p>
+            </flux:card>
 
-        <flux:card class="card-press gap-1 p-4">
-            <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Series read') }}</p>
-            <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->totals['series']) }}</p>
-        </flux:card>
-    </div>
+            <flux:card class="card-press gap-1 p-4">
+                <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Series read') }}</p>
+                <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Number::format($this->totals['series']) }}</p>
+            </flux:card>
+        </div>
+    @endif
 
     {{-- Per series, largest first ----------------------------------------- --}}
     <flux:card class="p-0">
@@ -283,9 +288,9 @@ new #[Title('Insights')] class extends Component {
         @if ($this->rows->isEmpty() || $this->totals['seconds'] === 0)
             <div class="p-6 text-center">
                 <flux:icon.clock class="mx-auto size-8 text-zinc-400" aria-hidden="true" />
-                <p class="mt-3 text-sm font-medium">{{ __('No reading counted yet in this window.') }}</p>
+                <p class="mt-3 text-sm font-medium">{{ __('No reading recorded yet. Open a chapter and it will show up here.') }}</p>
                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('Open a chapter and the ledger starts. Series never opened write nothing, so an empty page is the truth and not a failure.') }}
+                    <a href="{{ route('library') }}" class="underline hover:text-zinc-700 dark:hover:text-zinc-200">{{ __('Go to your library') }}</a>
                 </p>
             </div>
         @else
