@@ -187,7 +187,7 @@ new #[Title('Security settings')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('Security settings') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Update password')" :subheading="__('Ensure your account is using a long, random password to stay secure')">
+    <x-pages::settings.layout :heading="__('Update password')" :subheading="__('Choose a long, unique password for your account')">
         <form method="POST" wire:submit="updatePassword" class="mt-6 space-y-6">
             <flux:input
                 wire:model="current_password"
@@ -244,7 +244,7 @@ new #[Title('Security settings')] class extends Component {
                     @if ($twoFactorEnabled)
                         <div class="space-y-4">
                             <flux:text>
-                                {{ __('You will be prompted for a secure, random pin during login, which you can retrieve from the TOTP-supported application on your phone.') }}
+                                {{ __('When you sign in, enter the six-digit code from your authenticator app.') }}
                             </flux:text>
 
                             <div class="flex justify-start">
@@ -261,7 +261,7 @@ new #[Title('Security settings')] class extends Component {
                     @else
                         <div class="space-y-4">
                             <flux:text variant="subtle">
-                                {{ __('When you enable two-factor authentication, you will be prompted for a secure pin during login. This pin can be retrieved from a TOTP-supported application on your phone.') }}
+                                {{ __('After you enable this, sign-in will also ask for a six-digit code from your authenticator app.') }}
                             </flux:text>
 
                             <flux:modal.trigger name="two-factor-setup-modal">
