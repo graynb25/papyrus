@@ -211,6 +211,9 @@ new #[Title('Backups')] class extends Component {
 
     public bool $dialogOpen = false;
 
+    /** Whether the "last run" modal is open. */
+    public bool $runModalOpen = false;
+
     /**
      * Whether to keep watching after a press, in the import page's shape.
      *
@@ -233,6 +236,62 @@ new #[Title('Backups')] class extends Component {
     public function dialogClosed(): void
     {
         $this->dialogOpen = false;
+    }
+
+    public function openRunModal(): void
+    {
+        $this->runModalOpen = true;
+
+        $this->dispatch('open-backup-run');
+    }
+
+    public function closeRunModal(): void
+    {
+        $this->runModalOpen = false;
+    }
+
+    /** Whether the run shown in the modal is still going, so Escape and the close button are locked. */
+    public function runModalIsRunning(): bool
+    {
+        $latest = $this->latestEvent();
+
+        if ($latest === null || $latest['outcome'] === null) {
+            return false;
+        }
+
+        $outcome = $latest['outcome'];
+
+        return ! $outcome->finished() && ! $outcome->failed() && ! $outcome->stalled();
+    }
+
+    /** The one word the "Last run" line and the modal header read a run by. */
+    public function lastRunVerdictWord(): string
+    {
+        $latest = $this->latestEvent();
+
+        if ($latest === null) {
+            return '';
+        }
+
+        if ($latest['outcome'] !== null) {
+            $outcome = $latest['outcome'];
+
+            if ($outcome->stalled() || $outcome->failed()) {
+                return __('Failed');
+            }
+
+            if (! $outcome->finished()) {
+                return __('Running');
+            }
+
+            return __('Finished');
+        }
+
+        if ($latest['row'] !== null) {
+            return $this->runLabelOfAny($latest['row']);
+        }
+
+        return '';
     }
 
     public function start(): void
@@ -802,80 +861,204 @@ new #[Title('Backups')] class extends Component {
                 {{ __('Nothing has been recorded yet, which is the whole of what has happened: no pair taken or put back with the launcher, and no backup, restore or export run from the cards on this page.') }}
             </p>
         @else
-            <div @class([
-                'mb-6 rounded-lg border p-4 text-sm',
-                $this->verdictTone($latest['tone']),
-            ])>
-                <p class="font-medium">{{ $latest['label'] }}</p>
+            <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
+                {{ __('Last run: :verdict :when.', ['verdict' => strtolower($this->lastRunVerdictWord()), 'when' => $latest['at']->diffForHumans()]) }}
 
-                @if ($latest['summary'] !== '')
-                    <p class="mt-1">{{ $latest['summary'] }}</p>
-                @endif
-
-                @if ($latest['outcome'] !== null && $latest['outcome']->retries() !== [])
-                    <p class="mt-1">
-                        {{ trans_choice(
-                            'One step was tried more than once: :stages.|:count steps were tried more than once: :stages.',
-                            count($latest['outcome']->retries()),
-                            ['stages' => implode(', ', array_map($latest['outcome']->readable(...), $latest['outcome']->retries()))],
-                        ) }}
-                    </p>
-                @endif
-
-                <p class="mt-1 opacity-80">{{ __('Started :when.', ['when' => $latest['at']->diffForHumans()]) }}</p>
-            </div>
-
-            @if ($latest['outcome'] !== null)
-                {{--
-                    Every stage, in the order it happened.
-
-                    Not a bar. A bar for something that either finished or did not tells a reader nothing
-                    they can act on, and a bar frozen at 40% is exactly the picture this whole arrangement
-                    exists to avoid. What a reader can act on is which step failed and why, and that is
-                    what is written out. A live run's stages live on its own card instead, where the
-                    polling that fills them is too.
-                --}}
-                <div class="mb-6 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-                    <table class="w-full text-left text-sm">
-                        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
-                            @foreach ($latest['outcome']->stages() as $stage)
-                                @php($state = $stage['state'] ?? 'pending')
-                                <tr>
-                                    <td class="w-8 px-3 py-2 text-center" aria-hidden="true">
-                                        <span @class([
-                                            'inline-block size-2 rounded-full',
-                                            'bg-green-500' => $state === 'done',
-                                            'bg-amber-500' => $state === 'running',
-                                            'bg-red-500' => $state === 'failed',
-                                            'bg-gray-300 dark:bg-gray-700' => ! in_array($state, ['done', 'running', 'failed'], true),
-                                        ])></span>
-                                    </td>
-                                    <td class="px-3 py-2 font-medium">
-                                        {{ $latest['outcome']->readable((string) ($stage['stage'] ?? '')) }}
-                                        @if (($stage['attempts'] ?? 1) > 1)
-                                            <span class="ml-1 text-xs font-normal text-amber-700 dark:text-amber-400">
-                                                {{ __('tried :count times', ['count' => $stage['attempts']]) }}
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td class="px-3 py-2 text-gray-600 dark:text-gray-400">
-                                        @if ($state === 'failed')
-                                            <span class="text-red-700 dark:text-red-300">{{ $stage['message'] }}</span>
-                                        @elseif ($state === 'skipped')
-                                            {{ __('Not needed for this run.') }}
-                                        @elseif (is_string($stage['message'] ?? null) && $stage['message'] !== '')
-                                            {{ $stage['message'] }}
-                                        @else
-                                            {{ $latest['outcome']->readable($state) }}
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
+                <button
+                    type="button"
+                    class="ml-2 font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+                    wire:click="openRunModal"
+                    id="back-up-now-show-details"
+                >
+                    {{ __('Show details') }}
+                </button>
+            </p>
         @endif
+
+        {{--
+            The "last run" modal.
+
+            One modal for the run the single line above names. It polls while it is open and the
+            run is still going, and stops the moment the run reaches a finished state, so the
+            page itself no longer carries the inline stage table that used to jump on every poll.
+        --}}
+        <div x-on:open-backup-run.window="$dispatch('modal-show', { name: 'backup-run' })">
+            <flux:modal
+                name="backup-run"
+                class="max-w-lg"
+                :dismissible="! $this->runModalIsRunning()"
+                :escapable="! $this->runModalIsRunning()"
+                @close="closeRunModal"
+            >
+                @if (($latest = $this->latestEvent()) !== null && $latest['outcome'] !== null)
+                    @php
+                        $outcome = $latest['outcome'];
+                        $stages = $outcome->stages();
+                        $titles = [
+                            'checking_target' => __('Checking target'),
+                            'stopping' => __('Stopping'),
+                            'copying_manga_half' => __('Copying manga half'),
+                            'copying_reader_half' => __('Copying reader half'),
+                            'writing_manifest' => __('Writing manifest'),
+                            'restarting' => __('Restarting'),
+                        ];
+                        $doneCount = 0;
+                        foreach ($stages as $stage) {
+                            if (in_array($stage['state'] ?? '', ['done', 'skipped'], true)) {
+                                $doneCount++;
+                            }
+                        }
+                        $totalStages = count($stages) ?: 6;
+                        $pct = $totalStages > 0 ? (int) round($doneCount * 100 / $totalStages) : 0;
+                        $isRunning = ! $outcome->finished() && ! $outcome->failed() && ! $outcome->stalled();
+                        $isFinished = $outcome->finished() || $outcome->failed() || $outcome->stalled();
+                        $verdictWord = match (true) {
+                            $outcome->stalled() || $outcome->failed() => __('Failed'),
+                            ! $outcome->finished() => __('Running'),
+                            default => __('Finished'),
+                        };
+                        $dotClass = match (true) {
+                            $outcome->stalled() || $outcome->failed() => 'bg-red-500',
+                            ! $outcome->finished() => 'animate-pulse bg-zinc-400',
+                            default => 'bg-green-500',
+                        };
+                        $nextAction = match (true) {
+                            $outcome->stalled() || $outcome->failed() => __('Try again'),
+                            ! $outcome->finished() => __('Show details'),
+                            default => __('Done'),
+                        };
+                    @endphp
+
+                    @if ($this->runModalOpen && $isRunning)
+                        <div wire:poll.3s>
+                    @else
+                        <div>
+                    @endif
+                        <div class="flex items-center gap-2">
+                            <span class="size-2 rounded-full {{ $dotClass }}" aria-hidden="true"></span>
+
+                            <flux:heading size="lg">{{ $verdictWord }}</flux:heading>
+                        </div>
+
+                        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            @if ($latest['outcome'] !== null)
+                                {{ $latest['outcome']->token }}
+                            @elseif ($latest['row'] !== null)
+                                {{ $latest['row']->token ?? $latest['row']->file_name ?? '' }}
+                            @endif
+                        </p>
+
+                        <div
+                            class="mt-4 h-1 w-full overflow-hidden rounded-full bg-zinc-800"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="{{ $pct }}"
+                            aria-label="{{ __('Backup progress') }}"
+                        >
+                            <div
+                                class="h-full rounded-full bg-accent transition-all duration-300"
+                                style="width: {{ $pct }}%"
+                            ></div>
+                        </div>
+
+                        <div class="mt-1 flex justify-between text-xs text-zinc-400">
+                            <span>{{ $doneCount }} of {{ $totalStages }}</span>
+                            <span>{{ $latest['at']->diffInSeconds(now()) }}s</span>
+                        </div>
+
+                        <ol class="mt-4 space-y-2" role="list">
+                            @foreach ($stages as $stage)
+                                @php
+                                    $key = (string) ($stage['stage'] ?? '');
+                                    $state = (string) ($stage['state'] ?? 'pending');
+                                    $status = match ($state) {
+                                        'done', 'skipped' => 'done',
+                                        'running' => 'running',
+                                        'failed' => 'failed',
+                                        default => 'pending',
+                                    };
+                                    $title = $titles[$key] ?? str_replace('_', ' ', $key);
+                                    $message = is_string($stage['message'] ?? null) ? (string) $stage['message'] : '';
+                                    $attempts = (int) ($stage['attempts'] ?? 1);
+                                @endphp
+
+                                <li role="listitem" class="flex items-center gap-3 py-2">
+                                    <span
+                                        class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($status) {
+                                            'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
+                                            'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
+                                            'failed' => 'border-red-500 bg-red-500 text-white',
+                                            default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
+                                        } }}"
+                                        aria-hidden="true"
+                                    >
+                                        @if ($status === 'done')
+                                            &#10003;
+                                        @elseif ($status === 'failed')
+                                            &#10005;
+                                        @elseif ($status === 'running')
+                                            <flux:icon name="loading" class="size-3" />
+                                        @endif
+                                    </span>
+
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium">
+                                            {{ $title }}
+                                            @if ($attempts > 1)
+                                                <span class="ml-1 text-xs font-normal text-amber-700 dark:text-amber-400">
+                                                    {{ __('tried :count times', ['count' => $attempts]) }}
+                                                </span>
+                                            @endif
+                                        </p>
+
+                                        @if ($status === 'failed' && $message !== '')
+                                            <p class="text-xs text-red-700 dark:text-red-300">{{ $message }}</p>
+                                        @elseif ($status === 'skipped')
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Not needed for this run.') }}</p>
+                                        @elseif ($message !== '')
+                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $message }}</p>
+                                        @endif
+                                    </div>
+                                </li>
+                            @endforeach
+                        </ol>
+
+                        @if ($latest['outcome']->retries() !== [])
+                            <p class="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ trans_choice(
+                                    'One step was tried more than once: :stages.|:count steps were tried more than once: :stages.',
+                                    count($latest['outcome']->retries()),
+                                    ['stages' => implode(', ', array_map($latest['outcome']->readable(...), $latest['outcome']->retries()))],
+                                ) }}
+                            </p>
+                        @endif
+
+                        @if ($latest['label'] !== '')
+                            <p class="mt-4 text-sm" aria-live="polite">{{ $latest['label'] }}</p>
+                        @elseif ($latest['summary'] !== '')
+                            <p class="mt-4 text-sm" aria-live="polite">{{ $latest['summary'] }}</p>
+                        @endif
+
+                        <p class="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+                            {{ __('Started :when.', ['when' => $latest['at']->diffForHumans()]) }}
+                        </p>
+
+                        <div class="mt-6 flex justify-end gap-2">
+                            @if ($isFinished)
+                                <flux:modal.close>
+                                    <flux:button variant="primary">{{ $nextAction }}</flux:button>
+                                </flux:modal.close>
+                            @else
+                                <flux:modal.close>
+                                    <flux:button variant="filled" :disabled="true">{{ __('Close') }}</flux:button>
+                                </flux:modal.close>
+                            @endif
+                        </div>
+                    </div>
+                @endif
+            </flux:modal>
+        </div>
 
         <flux:heading level="3" class="mb-3 text-base">{{ __('What you can restore') }}</flux:heading>
 
@@ -1010,6 +1193,7 @@ new #[Title('Backups')] class extends Component {
                         icon="camera"
                         wire:click="openDialog"
                         wire:target="openDialog"
+                        id="back-up-now"
                     >
                         {{ __('Back up now') }}
                     </flux:button>

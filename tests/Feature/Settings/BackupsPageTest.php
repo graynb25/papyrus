@@ -123,7 +123,10 @@ class BackupsPageTest extends TestCase
         $this->get('/settings/backups')
             ->assertSee('867 series and 21,447 chapter states')
             ->assertSee('Both halves match')
-            ->assertSee('2.4.2366')
+            ->assertSee('2.4.2366');
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRunModal')
             ->assertSee('This backup finished.');
     }
 
@@ -138,7 +141,8 @@ class BackupsPageTest extends TestCase
     {
         $this->writeRun(failed: true);
 
-        $this->get('/settings/backups')
+        Livewire::test('pages::settings.backups')
+            ->call('openRunModal')
             ->assertSee('failed at copying manga half')
             ->assertSee('still running after thirty seconds');
     }
@@ -150,7 +154,8 @@ class BackupsPageTest extends TestCase
     {
         $this->writeRun(stalled: true);
 
-        $this->get('/settings/backups')
+        Livewire::test('pages::settings.backups')
+            ->call('openRunModal')
             ->assertSee('did not finish')
             ->assertDontSee('is still running');
     }
@@ -162,7 +167,8 @@ class BackupsPageTest extends TestCase
     {
         $this->writeRun(retried: true);
 
-        $this->get('/settings/backups')
+        Livewire::test('pages::settings.backups')
+            ->call('openRunModal')
             ->assertSee('tried 2 times')
             ->assertSee('was tried more than once');
     }
@@ -183,6 +189,11 @@ class BackupsPageTest extends TestCase
         $this->writeRun();
 
         $this->get('/settings/backups')
+            ->assertSee('Last run:')
+            ->assertSee('Show details');
+
+        Livewire::test('pages::settings.backups')
+            ->call('openRunModal')
             ->assertSee('This backup finished.');
     }
 
@@ -195,8 +206,8 @@ class BackupsPageTest extends TestCase
         );
 
         $this->get('/settings/backups')
-            ->assertSee('The pair is in the backups folder.')
-            ->assertDontSee('This backup finished.');
+            ->assertSee('Last run:')
+            ->assertSee('Finished');
     }
 
     /**
