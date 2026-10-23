@@ -42,7 +42,7 @@
             </div>
 
             {{-- Form panel --}}
-            <div class="relative flex min-w-0 flex-1 items-center justify-center p-6 md:p-10">
+            <div class="relative flex min-w-0 flex-1 items-start justify-center p-6 pt-12 md:p-10 md:pt-16">
                 <div class="w-full max-w-sm animate-rise-in">
                     <div class="mb-8 flex items-center gap-3 lg:hidden">
                         <span class="seal size-10">

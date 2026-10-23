@@ -33,15 +33,21 @@
                 <span class="font-display text-lg font-semibold tracking-tight text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
             </a>
 
-            <div class="flex flex-1 items-center justify-center lg:justify-end">
+            {{--
+                The promise comes first in the reading order, so a reader (and a
+                screen reader) meets it before the card. The card then sits in the
+                upper third of the viewport rather than dead centre, which keeps
+                the footer anchored at the bottom of the room.
+            --}}
+            <div class="flex flex-1 items-start justify-center pt-8 sm:pt-12 lg:pt-16 lg:justify-end">
                 <div class="w-full max-w-sm animate-rise-in">
+                    <p class="serif-italic mb-6 text-center text-sm leading-relaxed text-zinc-200 [text-shadow:0_1px_12px_rgb(0_0_0/0.9)] lg:text-end">
+                        {{ __('Your whole library, every source, one quiet room.') }}
+                    </p>
+
                     <div class="glass glass-strong flex flex-col gap-6 rounded-3xl p-7 sm:p-8">
                         {{ $slot }}
                     </div>
-
-                    <p class="serif-italic mt-6 text-center text-sm leading-relaxed text-zinc-200 [text-shadow:0_1px_12px_rgb(0_0_0/0.9)] lg:text-end">
-                        {{ __('Your whole library, every source, one quiet room.') }}
-                    </p>
                 </div>
             </div>
 

@@ -22,7 +22,7 @@
         <a
             href="{{ route('faq') }}"
             @if (request()->routeIs('faq')) aria-current="page" @endif
-            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+            class="font-normal text-zinc-500 underline underline-offset-4 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >{{ __('FAQ') }}</a>
 
         <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
@@ -38,7 +38,7 @@
         <a
             href="{{ route('privacy') }}"
             @if (request()->routeIs('privacy')) aria-current="page" @endif
-            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+            class="font-normal text-zinc-500 underline underline-offset-4 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >{{ __('Privacy') }}</a>
 
         <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
@@ -46,7 +46,7 @@
         <a
             href="{{ route('terms') }}"
             @if (request()->routeIs('terms')) aria-current="page" @endif
-            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+            class="font-normal text-zinc-500 underline underline-offset-4 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >{{ __('Terms') }}</a>
 
         <span aria-hidden="true" class="text-zinc-400 dark:text-zinc-600">&middot;</span>
@@ -54,7 +54,7 @@
         <a
             href="{{ route('login') }}"
             @if (request()->routeIs('login')) aria-current="page" @endif
-            class="font-medium text-zinc-700 underline underline-offset-4 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+            class="font-normal text-zinc-500 underline underline-offset-4 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >{{ __('Log in') }}</a>
     </nav>
 </footer>
