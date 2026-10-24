@@ -690,6 +690,13 @@ its summary row, using the site's own health state so a dead or failing source i
 visible before the reader opens the health page. Verified by
 `SourcesPageTest` and the dashboard regression.
 
+Follow-up (2026-10-23): Each site card now shows a direct flag link for every
+language variant; choosing one opens that source without expanding the card.
+Seven MangaFire variants are covered by `SourcesPageTest`. The source count
+and health summary remain on the card face; Healthy is a compact green pill with
+white text and a subtle shadow. The mirror-drift notice gives a count and a sync
+action instead of printing every missing extension name into the picker.
+
 Preview: The current sources page is captured as
 `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The mockup shows the
 card with the health line.

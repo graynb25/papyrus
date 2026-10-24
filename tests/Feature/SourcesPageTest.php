@@ -1310,7 +1310,7 @@ class SourcesPageTest extends TestCase
             ->assertDontSee('data-test="mirror-drift"', false);
     }
 
-    public function test_the_picker_names_extensions_the_mirror_has_not_caught_up_with(): void
+    public function test_the_picker_reports_extensions_missing_from_the_mirror(): void
     {
         $this->store();
 
@@ -1326,11 +1326,8 @@ class SourcesPageTest extends TestCase
             ->assertSee('data-test="mirror-drift"', false)
             ->html();
 
-        $this->assertStringContainsString(
-            'Added Scan',
-            $html,
-            'The notice names the extension. "1 source is missing" leaves the reader to guess which.',
-        );
+        $this->assertStringContainsString('1 installed extension is missing from the source list below.', $html);
+        $this->assertStringNotContainsString('Added Scan is installed', $html);
 
         $this->assertStringContainsString('data-test="mirror-drift-sync"', $html);
     }
@@ -1390,6 +1387,11 @@ class SourcesPageTest extends TestCase
          * catalogue in the same request, so the list is waiting when the page
          * paints again.
          */
+        $pkg = 'eu.kanade.tachiyomi.extension.en.catalogue';
+        $this->serveExtensions([$this->extension($pkg, 'Example Catalogue Row', false, true)]);
+        $this->fetchRepliesWith = [$pkg];
+        $this->catalogueArrivesAfterFetch = true;
+
         $this->page()->set('storeUrl', 'https://example.test/index.pb')->call('addStore');
 
         $this->assertSame(1, $this->fetchCount, 'adding a store must fetch the catalogue itself');
@@ -1397,7 +1399,7 @@ class SourcesPageTest extends TestCase
         $this->page()
             ->set('view', 'available')
             ->assertOk()
-            ->assertSee('Example');
+            ->assertSee('Example Catalogue Row');
     }
 
     public function test_trusting_recovers_a_catalogue_the_page_says_is_empty(): void
@@ -2048,63 +2050,36 @@ class SourcesPageTest extends TestCase
             ->assertSee('aria-label="Filter by name"', false);
     }
 
-    /**
-     * A family the reader opened is open again next time.
-     *
-     * Every family starts closed, because a group of sixty-one language
-     * variants pushes the page down by more than a screen. But a reader who
-     * opens MangaDex every time they come here should not have to open it
-     * every time they come here.
-     */
-    public function test_a_family_the_reader_opened_is_remembered(): void
+    public function test_source_family_flags_link_directly_to_each_source(): void
     {
-        $this->cardSource('Example EN', 8513894820944573933);
+        $sources = [];
 
-        $this->page()->call('rememberFamily', 'example.test', true)
-            ->assertSet('openFamilies', ['example.test']);
-    }
-
-    /**
-     * And a family they closed again is closed again.
-     */
-    public function test_a_family_the_reader_closed_is_forgotten(): void
-    {
-        $this->cardSource('Example EN', 8513894820944573933);
-
-        $this->page()->call('rememberFamily', 'example.test', true)
-            ->call('rememberFamily', 'example.test', false)
-            ->assertSet('openFamilies', []);
-    }
-
-    /**
-     * The memory rides in the URL, so a link to the page carries it.
-     *
-     * The catalogue's slice, the content filter and the language choice all
-     * ride in the URL, and this is the reader's own choice about how the page
-     * looks, so it rides with them.
-     */
-    public function test_a_deep_link_carries_the_family_that_was_open(): void
-    {
-        $this->cardSource('Example EN', 8513894820944573933);
-
-        $html = Livewire::withQueryParams(['open' => ['example.test']])
-            ->test('pages::sources')
-            ->assertSet('openFamilies', ['example.test'])
-            ->html();
-
-        $this->assertMatchesRegularExpression('/<details\b[^>]*\bopen\b(?=[\s>])/', $html);
-    }
-
-    /**
-     * And a family nobody opened stays closed.
-     */
-    public function test_a_family_nobody_opened_stays_closed(): void
-    {
-        $this->cardSource('Example EN', 8513894820944573933);
+        foreach ([
+            ['EN', 'en', 'gb'],
+            ['ES', 'es', 'es'],
+            ['ES-419', 'es-419', 'mx'],
+            ['FR', 'fr', 'fr'],
+            ['JA', 'ja', 'jp'],
+            ['PT', 'pt', 'pt'],
+            ['PT-BR', 'pt-BR', 'br'],
+        ] as $index => [$suffix, $language, $flag]) {
+            $sources[] = [
+                'source' => $this->cardSource('MangaFire ('.$suffix.')', 1000 + $index, $language),
+                'flag' => $flag,
+            ];
+        }
 
         $html = $this->page()->html();
 
-        $this->assertDoesNotMatchRegularExpression('/<details\b[^>]*\bopen\b(?=[\s>])/', $html);
+        $this->assertSame(1, preg_match('/<li\b[^>]*data-test="source-family-card"[^>]*>(.*?)<\/li>/s', $html, $match));
+        $card = $match[1];
+        $this->assertStringNotContainsString('<details', $card);
+        $this->assertStringContainsString('7 sources', $card);
+
+        foreach ($sources as $item) {
+            $this->assertStringContainsString('language-flag language-flag-'.$item['flag'], $card);
+            $this->assertStringContainsString(route('browse', ['source' => $item['source']->id]), $card);
+        }
     }
 
     /**
@@ -2158,6 +2133,7 @@ class SourcesPageTest extends TestCase
         $this->store();
 
         $this->page()->set('view', 'available')
+            ->set('showAllLanguages', true)
             ->assertSee('English, 2 sources')
             ->assertSee('Japanese, 2 sources')
             ->assertSee('French, 2 sources');
@@ -2291,10 +2267,6 @@ class SourcesPageTest extends TestCase
 
     /**
      * A long row compacts itself and offers a way to show the whole list.
-     *
-     * The catalogue is a compact helper, not a whole new control, and a row that
-     * wraps across three lines at desktop width is the same information but two
-     * screens of it. The button is a disclosure, not a second filter.
      */
     public function test_the_language_row_compacts_and_can_expand(): void
     {
@@ -2360,14 +2332,14 @@ class SourcesPageTest extends TestCase
     /**
      * One mirrored source row behind a real-shaped site card.
      */
-    private function cardSource(string $name, int $id): Source
+    private function cardSource(string $name, int $id, ?string $lang = null): Source
     {
         return Source::create([
             'suwayomi_source_id' => $id,
             'name' => $name,
             'display_name' => $name,
             'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.example',
-            'lang' => str_contains($name, 'JA') ? 'ja' : 'en',
+            'lang' => $lang ?? (str_contains($name, 'JA') ? 'ja' : 'en'),
             'home_url' => 'https://example.test',
             'content_warning' => Source::SAFE,
             'is_installed' => true,

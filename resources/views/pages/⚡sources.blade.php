@@ -61,30 +61,6 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public bool $showAllLanguages = false;
 
-    /**
-     * The source families the reader has open.
-     *
-     * ## Why a memory and not just a closed page
-     *
-     * Every group starts closed, because a group of sixty-one language
-     * variants pushes the page down by more than a screen and the reader
-     * asked for it that way. But a reader who opens MangaDex every time they
-     * come here should not have to open it every time they come here, and
-     * the choice is the reader's own, so it is remembered.
-     *
-     * It is remembered in the URL, the same way the catalogue's slice, the
-     * content filter and the language choice are, because that is this
-     * page's own seam for state a reader chose. A link to the page carries
-     * the families open, and the reader's own back button carries it too.
-     *
-     * The key is the site's host, the same key the family is grouped by, so
-     * the memory cannot name a family that is not on the page.
-     *
-     * @var array<int, string>
-     */
-    #[Url(as: 'open', except: '')]
-    public array $openFamilies = [];
-
     public string $name = '';
 
     public int $page = 1;
@@ -1480,31 +1456,6 @@ new #[Title('Sources')] class extends AdultContentPage
     }
 
     /**
-     * Remember that a source family is open, or that it is closed again.
-     *
-     * The open state itself is the browser's, and it changes the moment the
-     * reader presses the summary, without a round trip. What the server
-     * cannot see is that it happened, so the page tells it, and the server
-     * owns the memory that renders the family open on the next load.
-     *
-     * The re-render that follows changes nothing on screen: the state the
-     * server holds is the state the browser is already showing, so the
-     * markup that comes back is the markup that is there.
-     */
-    public function rememberFamily(string $host, bool $open): void
-    {
-        $host = trim($host);
-
-        if ($host === '') {
-            return;
-        }
-
-        $this->openFamilies = $open
-            ? array_values(array_unique([...$this->openFamilies, $host]))
-            : array_values(array_diff($this->openFamilies, [$host]));
-    }
-
-    /**
      * Leave every language out.
      *
      * Not a flourish: it is how a reader who reads two languages gets to
@@ -1769,32 +1720,18 @@ new #[Title('Sources')] class extends AdultContentPage
             {{--
                 The picker is about to be wrong, so say so above it rather than in a toast.
 
-                Named extensions rather than a count, because "2 sources are missing" leaves
-                the reader to guess which and a toast has already gone by the time they look
-                for it. The button is the existing sync, not a new action: the difference is
-                that it is now offered where the stale list is, instead of on another tab
-                with a label that has to be understood first.
+                A count rather than a comma-separated name dump: the action is the same for
+                every missing extension, and the full list makes the source picker unreadable.
+                The button is the existing sync, offered beside the notice.
             --}}
             <flux:callout variant="secondary" icon="arrow-path" data-test="mirror-drift">
                 <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-                    @php($driftNames = implode(', ', array_column($this->unmirroredExtensions, 'name')))
-
                     <p class="text-sm">
-                        {{
-                            /*
-                             * One string, pipe separated, then the count.
-                             *
-                             * trans_choice is ($key, $number, $replace), so a second message
-                             * string lands in $replace and fails on an int. The plural form
-                             * is the part after the pipe, which is how the rest of this page
-                             * writes it.
-                             */
-                            trans_choice(
-                                ':name is installed but not in the list below yet.|:names are installed but not in the list below yet.',
-                                count($this->unmirroredExtensions),
-                                ['name' => $driftNames, 'names' => $driftNames],
-                            )
-                        }}
+                        {{ trans_choice(
+                            '{1} :count installed extension is missing from the source list below.|[2,*] :count installed extensions are missing from the source list below.',
+                            count($this->unmirroredExtensions),
+                            ['count' => Number::format(count($this->unmirroredExtensions))],
+                        ) }}
                     </p>
 
                     <flux:button
@@ -1827,112 +1764,67 @@ new #[Title('Sources')] class extends AdultContentPage
             --}}
             <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->browseSites as $group)
-                    <li class="rounded-xl border border-zinc-200 dark:border-white/10">
-                        {{--
-                            Every group starts closed, and the reader's own choice
-                            is remembered.
+                    <li data-test="source-family-card" class="rounded-xl border border-zinc-200 dark:border-white/10">
+                        <article class="flex h-full flex-col p-4">
+                            <div class="flex items-start gap-3">
+                                <x-source.icon :path="$group['icon']" size="size-9 sm:size-11" />
 
-                            The first version opened the largest one, which put MangaDex's 61
-                            language variants on screen as the first thing a reader saw, on top of
-                            a page that already lists 16 extensions and a stores table. The
-                            reader asked for this closed, and they are right twice over: a reader
-                            who wants MangaDex is reaching for a language in the first four pills
-                            anyway, and one who wants all 61 can open it deliberately.
+                                <div class="min-w-0 flex-1">
+                                    <span class="block break-words font-medium leading-snug line-clamp-2">{{ $group['site'] }}</span>
 
-                            The summary row stays the way in, so closing a group costs nothing.
-                            A single-language site already shows its one source as a pill and never
-                            needs expanding at all.
-
-                            And a reader who opens one every time they come here does not
-                            have to open it every time they come here: the group is open
-                            when the reader last left it open, and the page tells the
-                            server so it can say so next time. The browser does the opening
-                            itself, without a round trip, and the server is told after.
-                        --}}
-                        <details
-                            class="group"
-                            @if (in_array($group['host'] ?? 'local', $this->openFamilies, true)) open @endif
-                            x-on:toggle="$wire.rememberFamily({{ Illuminate\Support\Js::from($group['host'] ?? 'local')->toHtml() }}, $el.open)"
-                        >
-                            {{--
-                                The face of the card. Icon, name, host, count.
-
-                                The icon is what this list never had. `icon_url` has been
-                                stored on every source since the catalogue was mirrored and
-                                was never drawn, so fifty tiles of a name and a count had
-                                nothing to tell them apart and read as one long list however
-                                they were arranged.
-
-                                The chevron is not decoration. A summary that only grows when
-                                clicked, and gives nothing else away, is a control the reader
-                                has to try before they trust it, and this page is mostly made
-                                of them.
-                            --}}
-                            <summary class="flex cursor-pointer list-none flex-col gap-3 p-4">
-                                <div class="flex items-start gap-3">
-                                    <x-source.icon :path="$group['icon']" size="size-9 sm:size-11" />
-
-                                    <div class="min-w-0 flex-1">
-                                        <span class="block break-words font-medium leading-snug line-clamp-2">{{ $group['site'] }}</span>
-
-                                        @if ($group['host'] !== null)
-                                            <span class="mt-0.5 block truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                                                {{ $group['host'] }}
-                                            </span>
-                                        @endif
-                                    </div>
-                                </div>
-
-                                <div class="mt-auto flex items-center justify-between gap-2">
-                                    @if ($this->isPinnedSite($group['host'] ?? 'local'))
-                                        <flux:badge size="sm" color="zinc">{{ __('pinned by you') }}</flux:badge>
-                                    @endif
-
-                                    <flux:badge size="sm" color="zinc">
-                                        {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
-                                    </flux:badge>
-
-                                    @if (($group['health']['label'] ?? null) !== null)
-                                        <span @class([
-                                            'text-[0.625rem] font-medium uppercase tracking-[0.12em]',
-                                            'text-emerald-600 dark:text-emerald-400' => ($group['health']['state'] ?? 'healthy') === 'healthy',
-                                            'text-zinc-500 dark:text-zinc-400' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
-                                        ])>
-                                            {{ $group['health']['label'] }}
+                                    @if ($group['host'] !== null)
+                                        <span class="mt-0.5 block truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ $group['host'] }}
                                         </span>
                                     @endif
-
-                                    <flux:icon
-                                        name="chevron-down"
-                                        class="size-4 text-zinc-400 transition group-open:rotate-180 dark:text-zinc-500"
-                                    />
                                 </div>
-                            </summary>
+                            </div>
 
-                            <div class="flex flex-wrap gap-1.5 border-t border-zinc-200 px-4 py-3 dark:border-white/10">
+                            <div class="mt-3 flex flex-wrap items-center gap-2">
+                                <flux:badge size="sm" color="zinc">
+                                    {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
+                                </flux:badge>
+
+                                @if ($this->isPinnedSite($group['host'] ?? 'local'))
+                                    <flux:badge size="sm" color="zinc">{{ __('pinned by you') }}</flux:badge>
+                                @endif
+
+                                @if (($group['health']['label'] ?? null) !== null)
+                                    <span @class([
+                                        'inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium',
+                                        'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') === 'healthy',
+                                        'bg-zinc-500/10 text-zinc-600 dark:bg-white/10 dark:text-zinc-300' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
+                                    ])>
+                                        <span class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]">
+                                            {{ $group['health']['label'] }}
+                                        </span>
+                                    </span>
+                                @endif
+                            </div>
+
+                            <div class="mt-3 flex gap-1.5 @if (count($group['sources']) > 10) flex-nowrap overflow-x-auto @else flex-wrap @endif" role="group" aria-label="{{ __('Browse :site sources', ['site' => $group['site']]) }}">
                                 @foreach ($group['sources'] as $one)
+                                    @php($flagRegion = LanguageName::flagRegion($one['lang']))
+
                                     <a
                                         href="{{ route('browse', ['source' => $one['id']]) }}"
                                         wire:navigate
-                                        class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 transition hover:border-vermilion-400 hover:text-vermilion-700 dark:border-white/15 dark:text-zinc-300 dark:hover:border-vermilion-400 dark:hover:text-vermilion-300"
+                                        data-source-language="{{ $one['lang'] }}"
+                                        @if ($flagRegion !== null) data-source-flag="{{ $flagRegion }}" @endif
+                                        aria-label="{{ __('Browse :source', ['source' => $one['name']]) }}"
+                                        title="{{ $one['name'] }}"
+                                        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 transition hover:border-vermilion-400 hover:bg-vermilion-50 dark:border-white/15 dark:hover:border-vermilion-400 dark:hover:bg-vermilion-950"
                                     >
-                                        {{ $one['name'] }}
-
-                                        @if ($one['latest'])
-                                            <span class="text-[0.625rem] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                                                {{ __('latest') }}
-                                            </span>
+                                        @if ($flagRegion !== null)
+                                            <span aria-hidden="true" class="language-flag language-flag-{{ $flagRegion }}"></span>
+                                        @else
+                                            <flux:icon name="globe-alt" class="size-4 text-zinc-500" aria-hidden="true" />
                                         @endif
                                     </a>
                                 @endforeach
+                            </div>
 
-                                {{--
-                                    The pin lives on the open card, beside the variants it
-                                    would cover, for the same reason the health page's is
-                                    in its drill-down: the count is on the face the reader
-                                    pressed, so a site with 61 variants is pinned by
-                                    someone who saw 61.
-                                --}}
+                            <div class="mt-auto flex flex-wrap items-center gap-2 pt-3">
                                 @if ($this->isPinnedSite($group['host'] ?? 'local'))
                                     <flux:button size="sm" wire:click="unpinSite('{{ $group['host'] ?? 'local' }}')">
                                         {{ __('Search every site again') }}
@@ -1956,7 +1848,7 @@ new #[Title('Sources')] class extends AdultContentPage
                                     </x-confirm>
                                 @endif
                             </div>
-                        </details>
+                        </article>
                     </li>
                 @endforeach
             </ul>

@@ -8,6 +8,76 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+.language-flag {
+    display: inline-block;
+    width: 1.333em;
+    height: 1em;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.language-flag-gb { background-image: url('../../node_modules/flag-icons/flags/4x3/gb.svg'); }
+.language-flag-jp { background-image: url('../../node_modules/flag-icons/flags/4x3/jp.svg'); }
+.language-flag-kr { background-image: url('../../node_modules/flag-icons/flags/4x3/kr.svg'); }
+.language-flag-cn { background-image: url('../../node_modules/flag-icons/flags/4x3/cn.svg'); }
+.language-flag-tw { background-image: url('../../node_modules/flag-icons/flags/4x3/tw.svg'); }
+.language-flag-pt { background-image: url('../../node_modules/flag-icons/flags/4x3/pt.svg'); }
+.language-flag-br { background-image: url('../../node_modules/flag-icons/flags/4x3/br.svg'); }
+.language-flag-es { background-image: url('../../node_modules/flag-icons/flags/4x3/es.svg'); }
+.language-flag-mx { background-image: url('../../node_modules/flag-icons/flags/4x3/mx.svg'); }
+.language-flag-fr { background-image: url('../../node_modules/flag-icons/flags/4x3/fr.svg'); }
+.language-flag-it { background-image: url('../../node_modules/flag-icons/flags/4x3/it.svg'); }
+.language-flag-de { background-image: url('../../node_modules/flag-icons/flags/4x3/de.svg'); }
+.language-flag-nl { background-image: url('../../node_modules/flag-icons/flags/4x3/nl.svg'); }
+.language-flag-ie { background-image: url('../../node_modules/flag-icons/flags/4x3/ie.svg'); }
+.language-flag-ru { background-image: url('../../node_modules/flag-icons/flags/4x3/ru.svg'); }
+.language-flag-ua { background-image: url('../../node_modules/flag-icons/flags/4x3/ua.svg'); }
+.language-flag-by { background-image: url('../../node_modules/flag-icons/flags/4x3/by.svg'); }
+.language-flag-pl { background-image: url('../../node_modules/flag-icons/flags/4x3/pl.svg'); }
+.language-flag-cz { background-image: url('../../node_modules/flag-icons/flags/4x3/cz.svg'); }
+.language-flag-sk { background-image: url('../../node_modules/flag-icons/flags/4x3/sk.svg'); }
+.language-flag-hu { background-image: url('../../node_modules/flag-icons/flags/4x3/hu.svg'); }
+.language-flag-ro { background-image: url('../../node_modules/flag-icons/flags/4x3/ro.svg'); }
+.language-flag-bg { background-image: url('../../node_modules/flag-icons/flags/4x3/bg.svg'); }
+.language-flag-gr { background-image: url('../../node_modules/flag-icons/flags/4x3/gr.svg'); }
+.language-flag-rs { background-image: url('../../node_modules/flag-icons/flags/4x3/rs.svg'); }
+.language-flag-hr { background-image: url('../../node_modules/flag-icons/flags/4x3/hr.svg'); }
+.language-flag-si { background-image: url('../../node_modules/flag-icons/flags/4x3/si.svg'); }
+.language-flag-sa { background-image: url('../../node_modules/flag-icons/flags/4x3/sa.svg'); }
+.language-flag-il { background-image: url('../../node_modules/flag-icons/flags/4x3/il.svg'); }
+.language-flag-tr { background-image: url('../../node_modules/flag-icons/flags/4x3/tr.svg'); }
+.language-flag-ir { background-image: url('../../node_modules/flag-icons/flags/4x3/ir.svg'); }
+.language-flag-pk { background-image: url('../../node_modules/flag-icons/flags/4x3/pk.svg'); }
+.language-flag-in { background-image: url('../../node_modules/flag-icons/flags/4x3/in.svg'); }
+.language-flag-bd { background-image: url('../../node_modules/flag-icons/flags/4x3/bd.svg'); }
+.language-flag-th { background-image: url('../../node_modules/flag-icons/flags/4x3/th.svg'); }
+.language-flag-vn { background-image: url('../../node_modules/flag-icons/flags/4x3/vn.svg'); }
+.language-flag-id { background-image: url('../../node_modules/flag-icons/flags/4x3/id.svg'); }
+.language-flag-my { background-image: url('../../node_modules/flag-icons/flags/4x3/my.svg'); }
+.language-flag-ph { background-image: url('../../node_modules/flag-icons/flags/4x3/ph.svg'); }
+.language-flag-kh { background-image: url('../../node_modules/flag-icons/flags/4x3/kh.svg'); }
+.language-flag-mm { background-image: url('../../node_modules/flag-icons/flags/4x3/mm.svg'); }
+.language-flag-se { background-image: url('../../node_modules/flag-icons/flags/4x3/se.svg'); }
+.language-flag-fi { background-image: url('../../node_modules/flag-icons/flags/4x3/fi.svg'); }
+.language-flag-dk { background-image: url('../../node_modules/flag-icons/flags/4x3/dk.svg'); }
+.language-flag-no { background-image: url('../../node_modules/flag-icons/flags/4x3/no.svg'); }
+.language-flag-is { background-image: url('../../node_modules/flag-icons/flags/4x3/is.svg'); }
+.language-flag-ee { background-image: url('../../node_modules/flag-icons/flags/4x3/ee.svg'); }
+.language-flag-lv { background-image: url('../../node_modules/flag-icons/flags/4x3/lv.svg'); }
+.language-flag-lt { background-image: url('../../node_modules/flag-icons/flags/4x3/lt.svg'); }
+.language-flag-za { background-image: url('../../node_modules/flag-icons/flags/4x3/za.svg'); }
+.language-flag-al { background-image: url('../../node_modules/flag-icons/flags/4x3/al.svg'); }
+.language-flag-az { background-image: url('../../node_modules/flag-icons/flags/4x3/az.svg'); }
+.language-flag-ge { background-image: url('../../node_modules/flag-icons/flags/4x3/ge.svg'); }
+.language-flag-am { background-image: url('../../node_modules/flag-icons/flags/4x3/am.svg'); }
+.language-flag-kz { background-image: url('../../node_modules/flag-icons/flags/4x3/kz.svg'); }
+.language-flag-mn { background-image: url('../../node_modules/flag-icons/flags/4x3/mn.svg'); }
+.language-flag-np { background-image: url('../../node_modules/flag-icons/flags/4x3/np.svg'); }
+.language-flag-lk { background-image: url('../../node_modules/flag-icons/flags/4x3/lk.svg'); }
+.language-flag-tz { background-image: url('../../node_modules/flag-icons/flags/4x3/tz.svg'); }
+.language-flag-xk { background-image: url('../../node_modules/flag-icons/flags/4x3/xk.svg'); }
+
 /*
     Papyrus design language: "Ink & Vermilion".
 

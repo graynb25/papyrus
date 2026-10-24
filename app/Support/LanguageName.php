@@ -114,6 +114,38 @@ final class LanguageName
     ];
 
     /**
+     * The ISO country flag that represents a language, when one is available.
+     */
+    public static function flagRegion(string $code): ?string
+    {
+        $code = trim($code);
+
+        $regions = [
+            'en' => 'gb', 'ja' => 'jp', 'ko' => 'kr', 'zh' => 'cn',
+            'zh-Hans' => 'cn', 'zh-Hant' => 'tw', 'pt' => 'pt', 'pt-BR' => 'br',
+            'es' => 'es', 'es-419' => 'mx', 'fr' => 'fr', 'it' => 'it',
+            'de' => 'de', 'nl' => 'nl', 'ca' => 'es', 'eu' => 'es', 'ga' => 'ie',
+            'ru' => 'ru', 'uk' => 'ua', 'be' => 'by', 'pl' => 'pl', 'cs' => 'cz',
+            'sk' => 'sk', 'hu' => 'hu', 'ro' => 'ro', 'bg' => 'bg', 'el' => 'gr',
+            'sr' => 'rs', 'hr' => 'hr', 'sl' => 'si', 'ar' => 'sa', 'he' => 'il',
+            'tr' => 'tr', 'fa' => 'ir', 'ur' => 'pk', 'hi' => 'in', 'bn' => 'bd',
+            'ta' => 'in', 'te' => 'in', 'ml' => 'in', 'th' => 'th', 'vi' => 'vn',
+            'id' => 'id', 'ms' => 'my', 'jv' => 'id', 'tl' => 'ph', 'fil' => 'ph',
+            'km' => 'kh', 'my' => 'mm', 'sv' => 'se', 'fi' => 'fi', 'da' => 'dk',
+            'no' => 'no', 'nb' => 'no', 'is' => 'is', 'et' => 'ee', 'lv' => 'lv',
+            'lt' => 'lt', 'af' => 'za', 'sq' => 'al', 'az' => 'az', 'ka' => 'ge',
+            'hy' => 'am', 'kk' => 'kz', 'mn' => 'mn', 'ne' => 'np', 'si' => 'lk',
+            'sw' => 'tz', 'cv' => 'ru', 'sh' => 'rs',
+        ];
+
+        if (isset($regions[$code])) {
+            return $regions[$code];
+        }
+
+        return null;
+    }
+
+    /**
      * The display name for a language code, mapped, then intl, then the code.
      */
     public static function name(string $code): string
