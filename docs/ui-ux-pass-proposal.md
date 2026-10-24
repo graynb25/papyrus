@@ -43,16 +43,16 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 23 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 27, 28 |
+| Done | 24 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 27, 28 |
 | Partial | 2 | 1, 26 |
 | Active | 0 | None |
-| Remaining | 4 | 22, 24, 25, 29 |
+| Remaining | 3 | 24, 25, 29 |
 
 ```text
-Done       [#########################] 23 of 29
+Done       [##########################] 24 of 29
 Partial    [##                    ]  2 of 29
 Active     [                      ]  0 of 29
-Remaining  [####                  ]  4 of 29
+Remaining  [###                   ]  3 of 29
 ```
 
 | Surface | Visual review board |
@@ -63,7 +63,7 @@ Remaining  [####                  ]  4 of 29
 | Search and browse | ✓ 11  ✓ 12 |
 | Sources and health | ✓ 13  ✓ 14  ✓ 15  ✓ 16 |
 | Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
-| Connections and insights | ○ 22  ✓ 23 |
+| Connections and insights | ✓ 22  ✓ 23 |
 | Series, reader, settings and FAQ | ○ 24  ○ 25  ◐ 26  ✓ 27 |
 | Copy and image sizing | ✓ 28  ○ 29 |
 
@@ -934,6 +934,11 @@ Files it would touch: `resources/views/pages/settings/connections.blade.php`,
 `app/Livewire/Connections.php`.
 
 Estimated cost: 25 minutes.
+
+Status (2026-10-23): Done. The connected AniList card now has a "Test
+connection" button that calls the same viewer check the app already uses and
+shows a success or failure toast instead of a silent save. Verified by
+`ConnectionsTest`.
 
 Preview: Captured as `uxpass-connections-desktop-...jpg`.
 

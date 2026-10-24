@@ -87,6 +87,24 @@ class ConnectionsTest extends TestCase
         $this->assertNull(AniListAccount::forUser($this->user->id)->first());
     }
 
+    public function test_a_connected_reader_can_test_the_connection(): void
+    {
+        app(Tracking::class)->connect($this->user, 'secret-token-value', 4242, 'Reader', null);
+
+        Http::fake([
+            'https://graphql.anilist.co*' => Http::response([
+                'data' => ['Viewer' => ['id' => 4242, 'name' => 'Reader']],
+            ], 200),
+        ]);
+
+        Livewire::test('pages::settings.connections')
+            ->call('testConnection')
+            ->assertDispatched('toast-show', function (string $name, array $params): bool {
+                return ($params['slots']['heading'] ?? null) === 'Connection looks good'
+                    && ($params['slots']['text'] ?? null) === 'AniList accepted the saved token for Reader.';
+            });
+    }
+
     public function test_a_connected_reader_sees_who_they_are_and_not_their_token(): void
     {
         app(Tracking::class)->connect($this->user, 'secret-token-value', 4242, 'Reader', null);

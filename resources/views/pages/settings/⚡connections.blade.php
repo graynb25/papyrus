@@ -1,5 +1,7 @@
 <?php
 
+use App\AniList\AniListRefusedException;
+use App\AniList\AniListTokenRejected;
 use App\AniList\OAuth;
 use App\AniList\Tracking;
 use Flux\Flux;
@@ -53,6 +55,48 @@ new #[Title('Connection settings')] class extends Component {
             heading: __('Disconnected'),
             variant: 'info',
         );
+    }
+
+    /**
+     * Check whether the saved AniList token still works.
+     */
+    public function testConnection(): void
+    {
+        $account = $this->account;
+
+        if ($account === null) {
+            Flux::toast(
+                text: __('There is no AniList connection to test.'),
+                heading: __('No connection'),
+                variant: 'info',
+            );
+
+            return;
+        }
+
+        try {
+            $viewer = app(OAuth::class)->viewer($account->access_token);
+
+            Flux::toast(
+                text: __('AniList accepted the saved token for :name.', ['name' => $viewer['name'] !== '' ? $viewer['name'] : ($account->anilist_user_name ?? __('this account'))]),
+                heading: __('Connection looks good'),
+                variant: 'success',
+            );
+        } catch (AniListTokenRejected) {
+            app(Tracking::class)->disconnect(auth()->user());
+
+            Flux::toast(
+                text: __('The saved token was rejected. Connect again to keep AniList synced.'),
+                heading: __('Connection failed'),
+                variant: 'danger',
+            );
+        } catch (AniListRefusedException) {
+            Flux::toast(
+                text: __('AniList did not answer the connection check. Try again in a moment.'),
+                heading: __('Connection check failed'),
+                variant: 'danger',
+            );
+        }
     }
 
     /**
@@ -154,6 +198,10 @@ new #[Title('Connection settings')] class extends Component {
 
                     <div class="flex shrink-0 items-center gap-2">
                         @if ($this->account !== null)
+                            <flux:button variant="outline" wire:click="testConnection">
+                                {{ __('Test connection') }}
+                            </flux:button>
+
                             <flux:button wire:click="disconnect">
                                 {{ __('Disconnect') }}
                             </flux:button>
