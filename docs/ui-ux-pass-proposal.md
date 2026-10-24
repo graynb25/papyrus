@@ -43,16 +43,16 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 21 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 21, 23, 27, 28 |
+| Done | 23 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 27, 28 |
 | Partial | 2 | 1, 26 |
 | Active | 0 | None |
-| Remaining | 6 | 15, 16, 22, 24, 25, 29 |
+| Remaining | 4 | 22, 24, 25, 29 |
 
 ```text
-Done       [###################### ] 21 of 29
+Done       [#########################] 23 of 29
 Partial    [##                    ]  2 of 29
 Active     [                      ]  0 of 29
-Remaining  [######               ]  6 of 29
+Remaining  [####                  ]  4 of 29
 ```
 
 | Surface | Visual review board |
@@ -61,7 +61,7 @@ Remaining  [######               ]  6 of 29
 | Login and public shell | ✓ 5  ✓ 6 |
 | Library | ✓ 7  ✓ 8  ✓ 9  ✓ 10 |
 | Search and browse | ✓ 11  ✓ 12 |
-| Sources and health | ✓ 13  ✓ 14  ○ 15  ○ 16 |
+| Sources and health | ✓ 13  ✓ 14  ✓ 15  ✓ 16 |
 | Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
 | Connections and insights | ○ 22  ✓ 23 |
 | Series, reader, settings and FAQ | ○ 24  ○ 25  ◐ 26  ✓ 27 |
@@ -686,6 +686,11 @@ Files it would touch: `resources/views/pages/settings/sources.blade.php`,
 
 Estimated cost: 20 minutes.
 
+Status (2026-10-23): Done. The site card now renders a compact health label in
+its summary row, using the site's own health state so a dead or failing source is
+visible before the reader opens the health page. Verified by
+`SourcesPageTest` and the dashboard regression.
+
 Preview: The current sources page is captured as
 `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The mockup shows the
 card with the health line.
@@ -715,6 +720,10 @@ Extends: `resources/views/pages/settings/health.blade.php`.
 Files it would touch: `resources/views/pages/settings/health.blade.php`.
 
 Estimated cost: 15 minutes.
+
+Status (2026-10-23): Done. Each site row now includes a compact summary line,
+showing the total variants and any dead, failing or quiet variants without
+opening the drill-down. Verified by `HealthDashboardTest`.
 
 Preview: Captured as `p9-health-desktop.jpg` and `p9-health-named-desktop.jpg`.
 

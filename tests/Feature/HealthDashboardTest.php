@@ -187,6 +187,19 @@ class HealthDashboardTest extends TestCase
         $this->assertStringContainsString('mangafire.to', $html);
     }
 
+    public function test_a_site_row_shows_a_compact_summary_of_its_broken_variants(): void
+    {
+        $good = $this->source('https://mangadex.org', 'en', 'MangaDex EN');
+        $bad = $this->source('https://mangadex.org', 'ja', 'MangaDex JA');
+
+        $this->health($good, ['total_successes' => 10]);
+        $this->health($bad, ['consecutive_failures' => 3, 'is_dead' => false]);
+
+        $this->page()
+            ->assertSee('2 variants')
+            ->assertSee('1 failing');
+    }
+
     /**
      * Without grouping this row would be MangaDex five times over, and the page
      * would show 7 sites where there are 2.

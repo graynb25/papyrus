@@ -7,6 +7,7 @@ use App\Search\HealthDashboard;
 use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Number;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -122,6 +123,48 @@ new #[Title('Health')] class extends Component {
     public function toggleSite(string $site): void
     {
         $this->openSite = $this->openSite === $site ? '' : $site;
+    }
+
+    public function siteSummary(string $site): string
+    {
+        $variants = app(HealthDashboard::class)->variantsOf($site);
+        $counts = [
+            'dead' => 0,
+            'failing' => 0,
+            'silent' => 0,
+        ];
+
+        foreach ($variants as $variant) {
+            if ((bool) $variant->is_dead) {
+                $counts['dead']++;
+
+                continue;
+            }
+
+            if ((int) $variant->consecutive_failures >= 2) {
+                $counts['failing']++;
+
+                continue;
+            }
+
+            if ((int) $variant->consecutive_failures === 0 && (int) $variant->consecutive_empty >= 20) {
+                $counts['silent']++;
+            }
+        }
+
+        $parts = [];
+
+        foreach (['dead' => __('dead'), 'failing' => __('failing'), 'silent' => __('going quiet')] as $key => $label) {
+            $count = $counts[$key] ?? 0;
+
+            if ($count > 0) {
+                $parts[] = trans_choice('{1} :count '.$label.'|[2,*] :count '.$label, $count, ['count' => Number::format($count)]);
+            }
+        }
+
+        $total = trans_choice('{1} :count variant|[2,*] :count variants', $variants->count(), ['count' => Number::format($variants->count())]);
+
+        return $parts === [] ? $total : $total.', '.implode(', ', $parts);
     }
 
     public function setState(string $state): void
@@ -528,6 +571,10 @@ new #[Title('Health')] class extends Component {
 
                             <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
                                 {{ $row->site === 'unknown' ? __('no home URL published') : $row->site }}
+                            </p>
+
+                            <p class="mt-1 text-[0.7rem] font-medium uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                                {{ $this->siteSummary($row->site) }}
                             </p>
                         </div>
 
