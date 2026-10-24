@@ -1193,6 +1193,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
             $sites[$key]['sources'][] = [
                 'id' => (int) $source->id,
+                'source_id' => (int) $source->suwayomi_source_id,
                 'name' => (string) $source->display_name,
                 'lang' => (string) $source->lang,
                 'latest' => (bool) $source->supports_latest,
@@ -1202,7 +1203,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
         foreach ($sites as $key => $site) {
             $ids = array_values(array_unique(array_map(
-                fn (array $row): int => (int) ($row['id'] ?? 0),
+                fn (array $row): int => (int) ($row['source_id'] ?? 0),
                 $site['sources'],
             )));
 
