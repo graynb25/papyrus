@@ -37,6 +37,12 @@ class ImageUrlTest extends TestCase
         $this->assertStringEndsWith('?format=avif', ImageUrl::thumbnail(76, 'avif'));
     }
 
+    public function test_it_appends_a_width_for_responsive_images(): void
+    {
+        $this->assertStringContainsString('width=320', ImageUrl::thumbnail(76, 'webp', 320));
+        $this->assertStringContainsString('width=640', ImageUrl::page(76, 1, 0, 'webp', 640));
+    }
+
     public function test_no_format_means_no_query_string(): void
     {
         $this->assertStringNotContainsString('?', ImageUrl::page(76, 1, 0, null));

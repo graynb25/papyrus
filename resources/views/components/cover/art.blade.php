@@ -13,7 +13,12 @@
     // Set on grid cards so a click morphs the artwork into the series hero.
     'vt' => false,
     'placeholderIcon' => 'photo',
+    'sizes' => '(min-width: 1280px) 20vw, (min-width: 768px) 25vw, 50vw',
 ])
+
+@php
+    $srcset = $src === null ? null : \App\Support\ImageUrl::responsiveSet($src);
+@endphp
 
 {{--
     The cover atom. One copy of the frame/scrim/progress treatment the grid
@@ -47,6 +52,7 @@
         @if ($src !== null)
             <img
                 src="{{ $src }}"
+                @if ($srcset !== null) srcset="{{ $srcset }}" sizes="{{ $sizes }}" @endif
                 alt="{{ $alt }}"
                 loading="lazy"
                 decoding="async"

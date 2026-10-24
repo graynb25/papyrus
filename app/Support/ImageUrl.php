@@ -30,7 +30,7 @@ final class ImageUrl
      * negative index is a bug somewhere upstream and silently showing page 0
      * would hide it.
      */
-    public static function page(int $mangaId, int $chapterId, int $page, ?string $format = null): ?string
+    public static function page(int $mangaId, int $chapterId, int $page, ?string $format = null, ?int $width = null, ?int $height = null): ?string
     {
         if ($mangaId <= 0 || $chapterId <= 0 || $page < 0) {
             return null;
@@ -39,6 +39,8 @@ final class ImageUrl
         return self::proxy(
             sprintf('manga/%d/chapter/%d/page/%d', $mangaId, $chapterId, $page),
             $format,
+            $width,
+            $height,
         );
     }
 
@@ -49,13 +51,13 @@ final class ImageUrl
      * means "no series" rather than "the first series", and the allowlist's \d+
      * would happily build a URL for it.
      */
-    public static function thumbnail(int $mangaId, ?string $format = null): ?string
+    public static function thumbnail(int $mangaId, ?string $format = null, ?int $width = null, ?int $height = null): ?string
     {
         if ($mangaId <= 0) {
             return null;
         }
 
-        return self::proxy("manga/{$mangaId}/thumbnail", $format);
+        return self::proxy("manga/{$mangaId}/thumbnail", $format, $width, $height);
     }
 
     /**
@@ -65,7 +67,7 @@ final class ImageUrl
      * an absolute URL to the server, or already an app URL, and returns null for
      * anything outside the allowlist.
      */
-    public static function fromServerValue(mixed $value, ?string $format = null): ?string
+    public static function fromServerValue(mixed $value, ?string $format = null, ?int $width = null, ?int $height = null): ?string
     {
         if (! is_string($value) || $value === '') {
             return null;
@@ -76,7 +78,7 @@ final class ImageUrl
         $path = preg_replace('#^https?://[^/]+#', '', $value) ?? $value;
         $path = preg_replace('#^.*?/api/v1/#', '', $path) ?? $path;
 
-        return self::proxy(ltrim($path, '/'), $format);
+        return self::proxy(ltrim($path, '/'), $format, $width, $height);
     }
 
     /**
@@ -90,9 +92,20 @@ final class ImageUrl
     }
 
     /**
+     * Build a responsive srcset from the same URL at a handful of widths.
+     */
+    public static function responsiveSet(string $url, array $widths = [320, 480, 640, 960, 1200]): string
+    {
+        return implode(', ', array_map(
+            static fn (int $width): string => $url.(str_contains($url, '?') ? '&' : '?').'width='.$width.' '.$width.'w',
+            $widths,
+        ));
+    }
+
+    /**
      * Build the proxy URL, or null when the path is not one we forward.
      */
-    private static function proxy(string $path, ?string $format = null): ?string
+    private static function proxy(string $path, ?string $format = null, ?int $width = null, ?int $height = null): ?string
     {
         // The same allowlist the controller enforces, so a URL that renders is a
         // URL that can be fetched. Duplicated deliberately rather than shared: the
@@ -102,9 +115,22 @@ final class ImageUrl
         }
 
         $url = route('suwayomi.proxy', ['path' => $path]);
+        $query = [];
 
         if ($format !== null && $format !== '') {
-            $url .= '?format='.urlencode($format);
+            $query['format'] = $format;
+        }
+
+        if ($width !== null && $width > 0) {
+            $query['width'] = $width;
+        }
+
+        if ($height !== null && $height > 0) {
+            $query['height'] = $height;
+        }
+
+        if ($query !== []) {
+            $url .= '?'.http_build_query($query);
         }
 
         return $url;

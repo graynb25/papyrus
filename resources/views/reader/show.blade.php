@@ -896,8 +896,12 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
     --}}
     <div id="pages" @class(['zoomed' => $settings['zoom'] > 1.0])>
         @for ($index = 0; $index < count($pages); $index++)
+            @php($pageSrc = $pages[$index])
+            @php($pageSrcset = \App\Support\ImageUrl::responsiveSet($pageSrc, [320, 480, 720, 960, 1200]))
             <img
-                src="{{ $pages[$index] }}"
+                src="{{ $pageSrc }}"
+                srcset="{{ $pageSrcset }}"
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 60vw"
                 alt="{{ __('Page :number', ['number' => $index + 1]) }}"
                 loading="{{ $index < 3 ? 'eager' : 'lazy' }}"
                 decoding="{{ $index < 2 ? 'sync' : 'async' }}"
@@ -912,8 +916,11 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
     <div id="paged" aria-hidden="true">
         <div id="paged-track">
             @foreach ($pages as $page)
+                @php($srcset = \App\Support\ImageUrl::responsiveSet($page, [320, 480, 720, 960, 1200]))
                 <img
                     src="{{ $page }}"
+                    srcset="{{ $srcset }}"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 60vw"
                     alt="{{ __('Page :number', ['number' => $loop->iteration]) }}"
                     loading="{{ $loop->index < 3 ? 'eager' : 'lazy' }}"
                     decoding="async"

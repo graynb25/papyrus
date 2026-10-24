@@ -43,16 +43,16 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 24 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 27, 28 |
+| Done | 25 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 27, 28, 29 |
 | Partial | 2 | 1, 26 |
 | Active | 0 | None |
-| Remaining | 3 | 24, 25, 29 |
+| Remaining | 2 | 24, 25 |
 
 ```text
-Done       [##########################] 24 of 29
+Done       [##########################] 25 of 29
 Partial    [##                    ]  2 of 29
 Active     [                      ]  0 of 29
-Remaining  [###                   ]  3 of 29
+Remaining  [##                    ]  2 of 29
 ```
 
 | Surface | Visual review board |
@@ -65,7 +65,7 @@ Remaining  [###                   ]  3 of 29
 | Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
 | Connections and insights | ✓ 22  ✓ 23 |
 | Series, reader, settings and FAQ | ○ 24  ○ 25  ◐ 26  ✓ 27 |
-| Copy and image sizing | ✓ 28  ○ 29 |
+| Copy and image sizing | ✓ 28  ✓ 29 |
 
 Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 1 stays
 partial until a clean-machine reader can add a source and read through the

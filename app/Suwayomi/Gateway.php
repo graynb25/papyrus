@@ -114,11 +114,11 @@ class Gateway
      * @param  array<int, string>  $paths
      * @return array<int, string>
      */
-    public function resolvePageUrls(array $paths, ?string $format = null): array
+    public function resolvePageUrls(array $paths, ?string $format = null, ?int $width = null): array
     {
         $prefix = rtrim((string) config('papyrus.suwayomi.public_path_prefix', '/suwayomi'), '/');
 
-        return array_map(function (string $path) use ($prefix, $format): string {
+        return array_map(function (string $path) use ($prefix, $format, $width): string {
             // Strip any origin the server believed it was mounted at, then
             // reduce the path to its /api/v1-relative remainder so we can
             // re-attach it under the prefix nginx actually serves from.
@@ -126,7 +126,19 @@ class Gateway
             $path = ltrim($path, '/');
             $path = preg_replace('#^api/v1/#', '', $path) ?? $path;
 
-            return $prefix.'/api/v1/'.$path.($format !== null ? '?format='.urlencode($format) : '');
+            $query = [];
+
+            if ($format !== null && $format !== '') {
+                $query['format'] = $format;
+            }
+
+            if ($width !== null && $width > 0) {
+                $query['width'] = $width;
+            }
+
+            $suffix = $query === [] ? '' : '?'.http_build_query($query);
+
+            return $prefix.'/api/v1/'.$path.$suffix;
         }, $paths);
     }
 

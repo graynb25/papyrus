@@ -54,7 +54,7 @@ class SuwayomiProxyController extends Controller
      * format      - MIME transcode, e.g. webp or avif (Suwayomi serveConversions)
      * updateProgress - lets a bare <img> advance read state with no JS at all
      */
-    private const ALLOWED_QUERY = ['format', 'updateProgress'];
+    private const ALLOWED_QUERY = ['format', 'updateProgress', 'width', 'height'];
 
     public function __invoke(Request $request, string $path, AuthManager $auth): StreamedResponse|Response
     {
