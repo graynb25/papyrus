@@ -93,6 +93,8 @@ final class ImageUrl
 
     /**
      * Build a responsive srcset from the same URL at a handful of widths.
+     *
+     * @param  list<int>  $widths
      */
     public static function responsiveSet(string $url, array $widths = [320, 480, 640, 960, 1200]): string
     {

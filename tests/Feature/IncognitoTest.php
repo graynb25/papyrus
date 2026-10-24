@@ -248,15 +248,19 @@ class IncognitoTest extends TestCase
         $response->assertOk();
         $response->assertSee('/suwayomi/api/v1/manga/76/chapter/1/page/0', escape: false);
 
-        // Counted on the image URL rather than on `data-page`, because the reader's own script
-        // contains `data-page` selectors and the first attempt counted those too: 10 against
-        // an expected 6, and the number was about the assertion rather than about the page.
-        //
-        // Six rather than three because the reader renders every page twice, once for vertical
-        // and once for paged, and the modes share the URLs rather than re-fetching them.
+        // Counted on the actual image `src` URLs rather than on `srcset`, because the responsive
+        // widths repeat the same URLs in the srcset list and would otherwise count the same page
+        // several times. The reader renders every page twice, once for vertical and once for paged,
+        // and the modes share the URLs rather than re-fetching them.
+        preg_match_all(
+            '/src="[^"]*?\/suwayomi\/api\/v1\/manga\/76\/chapter\/1\/page\/\d+(?:\?[^\"]*)?"/',
+            (string) $response->getContent(),
+            $matches,
+        );
+
         $this->assertSame(
             6,
-            substr_count((string) $response->getContent(), 'suwayomi/api/v1/manga/76/chapter/1/page/'),
+            count($matches[0]),
             'A reader who asked for no history still gets every page: three pages, rendered once per mode.'
         );
 
