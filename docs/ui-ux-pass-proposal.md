@@ -697,6 +697,14 @@ and health summary remain on the card face; Healthy is a compact green pill with
 white text and a subtle shadow. The mirror-drift notice gives a count and a sync
 action instead of printing every missing extension name into the picker.
 
+Live walk (2026-10-23): After syncing the source mirror, the checkout rendered
+50 site cards and 223 direct source links. All seven MangaFire flags loaded;
+the Japanese and Portuguese (Brazil) links opened their matching MangaFire
+catalogues. Installed, Available, Updates, All and Migrate all opened without
+browser errors. At a 390px viewport the MangaFire card fit its 164px grid
+column. The page still has horizontal overflow from the header glow and the
+catalogue tabs; the source cards themselves stay within the viewport.
+
 Preview: The current sources page is captured as
 `onboarding-sources-current-2026-10-22T21-41-28-933.jpg`. The mockup shows the
 card with the health line.
