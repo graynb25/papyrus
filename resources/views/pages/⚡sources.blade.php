@@ -4,6 +4,7 @@ use App\Local\LocalLibrary;
 use App\Livewire\AdultContentPage;
 use App\Models\ExtensionStore;
 use App\Models\Source;
+use App\Models\SourceHealth;
 use App\Models\UserSource;
 use App\Support\LanguageName;
 use App\Support\Library;
@@ -57,6 +58,8 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     #[Url(as: 'lang', except: '')]
     public array $lang = [];
+
+    public bool $showAllLanguages = false;
 
     /**
      * The source families the reader has open.
@@ -1197,6 +1200,36 @@ new #[Title('Sources')] class extends AdultContentPage
             ];
         }
 
+        foreach ($sites as $key => $site) {
+            $ids = array_values(array_unique(array_map(
+                fn (array $row): int => (int) ($row['id'] ?? 0),
+                $site['sources'],
+            )));
+
+            $healthRows = SourceHealth::query()->whereIn('source_id', $ids)->get();
+
+            if ($healthRows->isEmpty()) {
+                $sites[$key]['health'] = null;
+
+                continue;
+            }
+
+            $state = 'healthy';
+
+            foreach ($healthRows as $row) {
+                if ((bool) $row->is_dead || (int) $row->consecutive_failures >= 2) {
+                    $state = 'not-answering';
+
+                    break;
+                }
+            }
+
+            $sites[$key]['health'] = [
+                'state' => $state,
+                'label' => $state === 'healthy' ? __('Healthy') : __('Not answering'),
+            ];
+        }
+
         // Biggest first, so MangaDex's 61 languages sit last rather than filling the
         // first screen a reader sees.
         usort($sites, static fn (array $a, array $b): int => count($b['sources']) <=> count($a['sources']));
@@ -1422,6 +1455,7 @@ new #[Title('Sources')] class extends AdultContentPage
             ? array_values(array_diff($this->lang, [$code]))
             : [...$this->lang, $code];
 
+        $this->showAllLanguages = false;
         $this->reset(['page', 'selected']);
     }
 
@@ -1434,8 +1468,14 @@ new #[Title('Sources')] class extends AdultContentPage
     public function showEveryLanguage(): void
     {
         $this->lang = [];
+        $this->showAllLanguages = false;
 
         $this->reset(['page', 'selected']);
+    }
+
+    public function toggleLanguageRow(): void
+    {
+        $this->showAllLanguages = ! $this->showAllLanguages;
     }
 
     /**
@@ -1483,6 +1523,7 @@ new #[Title('Sources')] class extends AdultContentPage
             ...$this->lang,
             ...array_map(fn (array $language): string => $language['code'], $this->catalogueLanguages),
         ]));
+        $this->showAllLanguages = false;
 
         $this->reset(['page', 'selected']);
     }
@@ -1849,6 +1890,16 @@ new #[Title('Sources')] class extends AdultContentPage
                                     <flux:badge size="sm" color="zinc">
                                         {{ trans_choice('{1} :count source|[2,*] :count sources', count($group['sources']), ['count' => count($group['sources'])]) }}
                                     </flux:badge>
+
+                                    @if (($group['health']['label'] ?? null) !== null)
+                                        <span @class([
+                                            'text-[0.625rem] font-medium uppercase tracking-[0.12em]',
+                                            'text-emerald-600 dark:text-emerald-400' => ($group['health']['state'] ?? 'healthy') === 'healthy',
+                                            'text-zinc-500 dark:text-zinc-400' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
+                                        ])>
+                                            {{ $group['health']['label'] }}
+                                        </span>
+                                    @endif
 
                                     <flux:icon
                                         name="chevron-down"
@@ -2407,21 +2458,18 @@ new #[Title('Sources')] class extends AdultContentPage
         --}}
         @if ($view !== 'migrate' && $this->catalogueLanguages !== [])
             @php($stillOn = array_values(array_diff(array_column($this->catalogueLanguages, 'code'), $this->lang)))
+            @php($languageLimit = 2)
+            @php($visibleLanguages = count($this->catalogueLanguages) > $languageLimit && ! $this->showAllLanguages
+                ? array_slice($this->catalogueLanguages, 0, $languageLimit)
+                : $this->catalogueLanguages)
 
             <div class="flex flex-wrap items-center gap-3">
                 <flux:label>{{ __('Language') }}</flux:label>
 
-                {{--
-                    A wrapping row of pills rather than a button group.
-
-                    A Flux button group is one row by design: it welds its
-                    buttons into a single strip, which is right for four tabs
-                    and wrong for twenty-three languages. The Content filter
-                    above already solved this shape with a wrapping flex row,
-                    and this is the same answer.
-                --}}
-                <div class="flex flex-wrap items-center gap-2">
-                    @foreach ($this->catalogueLanguages as $language)
+                <div class="w-full max-w-full">
+                    <div class="@if (count($this->catalogueLanguages) > $languageLimit) overflow-x-auto pb-1 @endif">
+                        <div class="flex min-w-max items-center gap-2">
+                    @foreach ($visibleLanguages as $language)
                         <flux:button
                             size="sm"
                             :variant="$language['on'] ? 'outline' : 'ghost'"
@@ -2445,8 +2493,18 @@ new #[Title('Sources')] class extends AdultContentPage
                             </span>
                         </flux:button>
                     @endforeach
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            @if (count($this->catalogueLanguages) > $languageLimit)
+                <div class="flex flex-wrap items-center gap-3">
+                    <flux:button size="sm" variant="ghost" wire:click="toggleLanguageRow">
+                        {{ $this->showAllLanguages ? __('Show fewer languages') : __('Show all languages') }}
+                    </flux:button>
+                </div>
+            @endif
 
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">

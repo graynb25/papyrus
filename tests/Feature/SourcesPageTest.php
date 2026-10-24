@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ExtensionStore;
 use App\Models\SeriesState;
 use App\Models\Source;
+use App\Models\SourceHealth;
 use App\Models\User;
 use App\Models\UserSource;
 use App\Support\AdultContent;
@@ -2286,6 +2287,48 @@ class SourcesPageTest extends TestCase
             ->assertSee('6 extensions')
             ->call('toggleLanguage', 'fr')
             ->assertSee('4 extensions');
+    }
+
+    /**
+     * A long row compacts itself and offers a way to show the whole list.
+     *
+     * The catalogue is a compact helper, not a whole new control, and a row that
+     * wraps across three lines at desktop width is the same information but two
+     * screens of it. The button is a disclosure, not a second filter.
+     */
+    public function test_the_language_row_compacts_and_can_expand(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $this->page()->set('view', 'available')
+            ->assertSee('Show all languages')
+            ->assertSee('overflow-x-auto')
+            ->call('toggleLanguageRow')
+            ->assertSet('showAllLanguages', true)
+            ->assertSee('Show fewer languages');
+    }
+
+    /**
+     * A site card carries a quick health read so a dead source is obvious before
+     * the reader opens the health page.
+     */
+    public function test_the_site_cards_report_source_health(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573933);
+
+        SourceHealth::query()->create([
+            'source_id' => 8513894820944573933,
+            'name' => 'Example EN',
+            'lang' => 'en',
+            'consecutive_failures' => 5,
+            'total_successes' => 0,
+            'total_failures' => 5,
+            'is_dead' => true,
+        ]);
+
+        $this->page()->set('view', 'available')
+            ->assertSee('Not answering');
     }
 
     /**
