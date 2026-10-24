@@ -43,14 +43,14 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 27 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29 |
-| Partial | 2 | 1, 26 |
+| Done | 28 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 |
+| Partial | 1 | 1 |
 | Active | 0 | None |
 | Remaining | 0 | None |
 
 ```text
-Done       [##########################] 27 of 29
-Partial    [##                    ]  2 of 29
+Done       [############################] 28 of 29
+Partial    [#                     ]  1 of 29
 Active     [                      ]  0 of 29
 Remaining  [                      ]  0 of 29
 ```
@@ -64,14 +64,13 @@ Remaining  [                      ]  0 of 29
 | Sources and health | ✓ 13  ✓ 14  ✓ 15  ✓ 16 |
 | Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
 | Connections and insights | ✓ 22  ✓ 23 |
-| Series, reader, settings and FAQ | ✓ 24  ✓ 25  ◐ 26  ✓ 27 |
+| Series, reader, settings and FAQ | ✓ 24  ✓ 25  ✓ 26  ✓ 27 |
 | Copy and image sizing | ✓ 28  ✓ 29 |
 
 Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 1 stays
 partial until a clean-machine reader can add a source and read through the
-actual shortcut path. Block 26 stays partial until the existing read and
-download indicators have a visual review against the proposal. The block-level
-status notes below carry the supporting test and gate details.
+actual shortcut path. The block-level status notes below carry the supporting
+test and gate details.
 
 ## Audit (2026-10-22, against the standing UI/UX rule)
 
@@ -1084,6 +1083,11 @@ Extends: `resources/views/pages/series.blade.php`.
 Files it would touch: `resources/views/pages/series.blade.php`.
 
 Estimated cost: 30 minutes.
+
+Status (2026-10-24): Done. Verified live in the browser on
+`http://papyrus.test/series/11204`: the chapter list shows the read marker,
+add-note affordance, and the download state for each row, with the queued and
+ready states matching the proposal.
 
 Preview: The series page is captured in the walk set. The mockup shows the list
 with read marks and download indicators.
