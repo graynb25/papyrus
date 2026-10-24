@@ -43,16 +43,16 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 28 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 |
-| Partial | 1 | 1 |
+| Done | 26 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28 |
+| Partial | 3 | 1, 19, 29 |
 | Active | 0 | None |
 | Remaining | 0 | None |
 
 ```text
-Done       [############################] 28 of 29
-Partial    [#                     ]  1 of 29
-Active     [                      ]  0 of 29
-Remaining  [                      ]  0 of 29
+Done       [##########################   ] 26 of 29
+Partial    [###                          ]  3 of 29
+Active     [                             ]  0 of 29
+Remaining  [                             ]  0 of 29
 ```
 
 | Surface | Visual review board |
@@ -62,14 +62,19 @@ Remaining  [                      ]  0 of 29
 | Library | ✓ 7  ✓ 8  ✓ 9  ✓ 10 |
 | Search and browse | ✓ 11  ✓ 12 |
 | Sources and health | ✓ 13  ✓ 14  ✓ 15  ✓ 16 |
-| Backups, migrate, import | ✓ 17  ✓ 18  ✓ 19  ✓ 20  ✓ 21 |
+| Backups, migrate, import | ✓ 17  ✓ 18  ◐ 19  ✓ 20  ✓ 21 |
 | Connections and insights | ✓ 22  ✓ 23 |
 | Series, reader, settings and FAQ | ✓ 24  ✓ 25  ✓ 26  ✓ 27 |
-| Copy and image sizing | ✓ 28  ✓ 29 |
+| Copy and image sizing | ✓ 28  ◐ 29 |
 
 Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 1 stays
 partial until a clean-machine reader can add a source and read through the
-actual shortcut path. The block-level status notes below carry the supporting
+actual shortcut path. Block 19 is partial because its confirm names the pair's
+token and both counts, but the six-checkpoint timeline is in the run modal after
+the restore starts, not in the confirm dialog the block names. Block 29 is
+partial because `srcset`, `sizes` and lazy loading are present on cover art and
+reader pages, but the cover `sizes` is wide-first and no phone or desktop
+measurement was taken. The block-level status notes below carry the supporting
 test and gate details.
 
 ## Audit (2026-10-22, against the standing UI/UX rule)
@@ -234,6 +239,13 @@ Files it would touch: `app/Livewire/Sources.php`,
 `resources/views/pages/settings/sources.blade.php`.
 
 Estimated cost: 30 minutes.
+
+Status (2026-10-24): Done. The Available tab renders "Loading the catalogue..."
+in its empty slot while the automatic load runs. The count is not invented during
+the load; the tab's own "N extensions available" toast appears when the catalogue
+arrives. Verified by `SourcesPageTest` (101 tests, 278 assertions) and a live walk
+on 2026-10-24. The loading state is at
+`resources/views/pages/⚡sources.blade.php` around line 2606.
 
 Preview: Current sources page captured as `onboarding-sources-current-...jpg`.
 
@@ -454,6 +466,10 @@ Files it would touch: the cover component, `resources/views/pages/library.blade.
 
 Estimated cost: 30 minutes.
 
+Status (2026-10-24): Done. Unread sits top-start in vermilion, and new-since-check
+moved to top-end. Verified by `LibraryTest` (89 tests, 215 assertions). The badge
+seat is at `resources/views/pages/⚡library.blade.php` around line 1631.
+
 Preview: The current library grid is captured as `p9-library-desktop.jpg`. The
 mockup shows the badge and the continue affordance on a row of covers.
 
@@ -498,6 +514,10 @@ Files it would touch: `resources/views/pages/library.blade.php`,
 
 Estimated cost: 45 minutes.
 
+Status (2026-10-24): Done. `ContinueReading::feed()` defaults to five, and the
+rail comments say five. Verified by `ContinueReadingTest` (30 tests, 52
+assertions). The default is at `app/Library/ContinueReading.php` line 125.
+
 Preview: The current library is captured as `p9-library-desktop.jpg`. The mockup
 shows the rail above the grid.
 
@@ -529,6 +549,13 @@ Files it would touch: the empty-library toast component,
 `resources/views/components/behaviors.blade.php`.
 
 Estimated cost: 10 minutes.
+
+Status (2026-10-24): Done. The local Flux 2.20.1 toast view names its close button
+on first paint, and the post-hoc JavaScript naming in
+`resources/views/partials/behaviors.blade.php` is gone. Verified by
+`AccessibleNamesTest` (2 tests, 7 assertions). The name is on the button in
+`resources/views/flux/toast/index.blade.php`; the local copy exists only for this
+name.
 
 Preview: Captured as `p9-library-toast-desktop.jpg`.
 
@@ -629,6 +656,12 @@ Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 
 Estimated cost: 25 minutes.
 
+Status (2026-10-24): Done. All languages are in the DOM. Below `lg`, two show and
+the rest wait behind "Show all languages"; at `lg`, the full row wraps. Verified by
+`SourcesPageTest` (99 tests, 271 assertions) and `SearchPageTest` (33 tests, 95
+assertions) from the B1 walk. The row is at
+`resources/views/pages/⚡sources.blade.php` lines 2374-2436.
+
 Preview: Captured as `p9-sources-languages-desktop.jpg`.
 
 ### 14. The sources Available tab shows the adult content badge and button as two actions
@@ -653,6 +686,10 @@ badge and button).
 Files it would touch: `resources/views/pages/settings/sources.blade.php`.
 
 Estimated cost: 10 minutes.
+
+Status (2026-10-24): Done. The adult content state is plain text; the button and
+its confirm dialog remain the only action. Verified in the B1 live walk and in
+`resources/views/components/adult-content/gate.blade.php`.
 
 Preview: Captured as `p9u2-nsfw-gate-shut-available.jpg`.
 
@@ -687,13 +724,15 @@ Estimated cost: 20 minutes.
 
 Status (2026-10-23): Done. The site card now renders a compact health label in
 its summary row, using the site's own health state so a dead or failing source is
-visible before the reader opens the health page. Verified by
-`SourcesPageTest` and the dashboard regression.
+visible before the reader opens the health page. Healthy uses `bg-moss-600` in
+light and `dark:bg-moss-500` in dark, so the state reads in moss rather than a
+second green, at `resources/views/pages/⚡sources.blade.php` around line 1804.
+Verified by `SourcesPageTest` and the dashboard regression.
 
 Follow-up (2026-10-23): Each site card now shows a direct flag link for every
 language variant; choosing one opens that source without expanding the card.
 Seven MangaFire variants are covered by `SourcesPageTest`. The source count
-and health summary remain on the card face; Healthy is a compact green pill with
+and health summary remain on the card face; Healthy is a compact moss pill with
 white text and a subtle shadow. The mirror-drift notice gives a count and a sync
 action instead of printing every missing extension name into the picker.
 
@@ -789,10 +828,13 @@ Files it would touch: `resources/views/pages/settings/backups.blade.php`.
 
 Estimated cost: 90 minutes.
 
-Status (2026-10-23): Done. The inline line now opens a modal with reader-facing
-checkpoint names, progress, elapsed time and a final action. Live runs use the
-same modal shape. Verified by `BackupsPageTest`, 47 tests and 119 assertions,
-and by reading the rendered page back in the browser.
+Status (2026-10-24): Done. The inline line opens a modal with reader-facing
+checkpoint names, progress, elapsed time and a final action, and live runs use the
+same modal. Refusal copy is split by cause, elapsed time renders only while a run
+is going, a refused run shows an orange dot, and a refusal that started no stage
+hides both the checklist and the "0 of 6" counter. Verified by `BackupsPageTest`
+(53 tests, 154 assertions) and the `fix-a-*` and `fix-a2-*` screenshots. The panel
+is in `resources/views/pages/settings/⚡backups.blade.php`.
 
 Preview: The current page is captured as `uxpass-backups-desktop-...jpg` and
 `p7-step5-backups-populated-desktop-...jpg`. The mockup shows the modal shape
@@ -846,12 +888,16 @@ Concrete proposal: Improve, do not change, the existing restore confirm dialog. 
 token and the counts it will replace in the confirm dialog, and show the same
 checkpoint timeline the backup modal uses.
 
-Status (2026-10-24): Built. The restore run now carries a progress stage and the
-existing last-run modal renders six restore checkpoints with a live count,
-elapsed time, locked close action while running, and a final action when done.
-Verified by `BackupsPageTest`, the restore job tests, and an authenticated browser
-walk using a staged run row. No restore was pressed and the staged row was deleted
-and read back absent.
+Status (2026-10-24): Partial. The confirm names the pair's token and both counts,
+but the six-checkpoint timeline is in the run modal after the restore starts, not
+in the confirm dialog the block names. The restore run does carry a progress stage
+and the last-run modal renders six restore checkpoints with a live count, elapsed
+time, a locked close action while running, and a final action when done; that is
+not the confirm this block asks for, so the block is not met. Verified by
+`BackupsPageTest`, the restore job tests, and an authenticated browser walk using a
+staged run row. No restore was pressed and the staged row was deleted and read
+back absent. The confirm is at
+`resources/views/pages/settings/⚡backups.blade.php`.
 
 Extends: `resources/views/pages/settings/backups.blade.php` (restore confirm),
 `flux:modal`.
@@ -1034,8 +1080,11 @@ Files it would touch: `resources/views/pages/series.blade.php`.
 
 Estimated cost: 15 minutes.
 
-Status (2026-10-24): Done. The no-chapters callout now carries the migration cue
-and names the likely upstream causes without guessing which one it is.
+Status (2026-10-24): Done. The no-chapters body no longer says "upstream
+condition"; it names the three causes in plain words (the series moved, the source
+changed its layout, the source is broken) and keeps the migration cue. Verified by
+`ReadPathTest` (54 tests, 146 assertions); the body is at
+`resources/views/pages/⚡series.blade.php` line 1055.
 
 Preview: No capture of an empty series; the proposal carries the mockup only.
 
@@ -1207,6 +1256,12 @@ copy pass against the assembled interface. It must review copy introduced by
 the remaining blocks and may open follow-up work, but it does not keep this
 completed pass open.
 
+Follow-up (2026-10-24, Batch D): Done. Batch D replaced the last cited machine
+phrase, "This is an upstream condition", in the series empty reason. The Health
+page's "Suwayomi does not report a live status" is a truthful caveat about what
+the server reports, not the cited phrase. The backups refusal copy was already
+fixed in Batch A. Verified by `ReadPathTest` and `BackupsPageTest`.
+
 Preview: The before and after is in the "Humanized copy" section below.
 
 ## Mobile-first image sizing
@@ -1240,6 +1295,12 @@ search cards.
 
 Estimated cost: 2 hours.
 
+Status (2026-10-24): Partial. `srcset`, `sizes` and `loading="lazy"` are present
+on cover art and on reader pages. The cover `sizes` at
+`resources/views/components/cover/art.blade.php` line 16 is wide-first
+(`(min-width: 1280px) 20vw, (min-width: 768px) 25vw, 50vw`), and no phone or
+desktop measurement was taken. The block is not met.
+
 Preview: The research notes cite the sources this borrows from.
 
 ## What this pass does not touch
@@ -1259,10 +1320,10 @@ Preview: The research notes cite the sources this borrows from.
   unit 2.
 - The NSFW gate's already-built shape (Phase 9 unit 2), which is held as is.
 - The clean-machine gate's premise checks, which are not re-run here.
-- No application code is changed by this pass. The proposal is the only
-  artifact.
-- Block 15 (licences row height) is already shipped in 1.3.0 and needs no
-  change.
+- The proposal pass changed no application code; the proposal was its only
+  artifact. The later fix pass changes code, and each block's status records its
+  evidence.
+- The Licences row height is already shipped in 1.3.0 and needs no change.
 
 ## How each improvement is verified
 
@@ -1334,7 +1395,9 @@ captures.
 - Block 27 (FAQ accordion): current `uxpass-faq-desktop-...jpg`, proposed
   mockup.
 - Block 28 (humanized copy): before and after in the Humanized copy section.
-- Block 29 (mobile-first images): measured on a phone and a desktop.
+- Block 29 (mobile-first images): `srcset`, `sizes` and `loading="lazy"` are
+  present on cover art and reader pages, but the cover `sizes` is wide-first and
+  no phone or desktop measurement was taken.
 
 ## Ranked order by reader value
 
@@ -1344,7 +1407,7 @@ captures.
 4. Block 5, the login rhythm (M)
 5. Block 8, the cover grid (M)
 6. Block 9, the continue rail (M)
-7. Block 10, the search input label (M)
+7. Block 11, the search input label (M)
 8. Block 16, the health chevrons (M)
 9. Block 18, last restored per pair (M)
 10. Block 19, restore confirm naming (M)
@@ -1359,15 +1422,14 @@ captures.
 19. Block 28, humanized copy (M)
 20. Block 29, mobile-first images (M)
 21. Block 7, empty library notice (L)
-22. Block 11, browse picker grouping (L)
-23. Block 12, language row compaction (L)
-24. Block 13, adult content badge (L)
-25. Block 14, source health summary (M)
-26. Block 2, signing key and trust (M)
-27. Block 3, catalogue auto-load (M)
+22. Block 12, browse picker grouping (L)
+23. Block 13, language row compaction (L)
+24. Block 14, adult content badge (L)
+25. Block 15, source health summary (M)
+26. Block 3, signing key and trust (M)
+27. Block 2, catalogue auto-load (M)
 28. Block 6, register 404 honesty (L)
 29. Block 10, notice dismiss name (M)
-30. Block 15, language row (already revised above)
 
 ## Research notes
 

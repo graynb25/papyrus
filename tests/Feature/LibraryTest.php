@@ -780,6 +780,33 @@ class LibraryTest extends TestCase
         $this->page()->assertSee('38');
     }
 
+    /**
+     * Unread holds the start corner in the accent the app already uses for it.
+     *
+     * New-since-check moved to the end corner so the two facts cannot collide,
+     * and unread is the one that leads. The tag is read rather than the class
+     * string alone so a badge elsewhere on the page cannot satisfy the test.
+     */
+    public function test_the_unread_badge_holds_the_start_corner_in_vermilion(): void
+    {
+        $this->addToLibrary(76, ['chapters' => 41]);
+        $this->markRead(76, 3);
+
+        $html = $this->page()->html();
+
+        $matched = preg_match('/<span\b[^>]*\btitle="38 chapters waiting"[^>]*>/', $html, $badge);
+
+        $this->assertSame(1, $matched, 'The unread badge is on the card.');
+
+        $tag = $badge[0];
+
+        $this->assertStringContainsString('start-1.5', $tag);
+        $this->assertStringNotContainsString('end-1.5', $tag, 'The end corner belongs to new-since-check.');
+        $this->assertStringContainsString('bg-vermilion-500', $tag);
+        $this->assertStringContainsString('text-zinc-950', $tag);
+        $this->assertStringNotContainsString('on-art', $tag, 'The neutral style belongs to new-since-check.');
+    }
+
     public function test_the_page_filters_to_one_shelf(): void
     {
         $shelf = $this->library()->createCategory($this->user, 'Soon');

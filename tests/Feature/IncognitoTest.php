@@ -145,6 +145,8 @@ class IncognitoTest extends TestCase
      */
     private function fakeSuwayomi(): void
     {
+        Http::preventStrayRequests();
+
         Http::fake(function (Request $request) {
             $body = (string) $request->body();
 

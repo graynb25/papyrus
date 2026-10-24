@@ -7,19 +7,40 @@ use App\Models\SourceHealth;
 use App\Models\User;
 use App\Models\UserSource;
 use App\Search\HealthDashboard;
+use App\Search\HealthProbe;
 use App\Search\SearchFanout;
+use App\Suwayomi\AuthManager;
+use App\Suwayomi\Gateway;
+use App\Suwayomi\Transport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Tests\Support\MintsTokens;
+use Tests\Support\RecordingHealthGateway;
 use Tests\TestCase;
 
 class HealthDashboardTest extends TestCase
 {
-    use RefreshDatabase;
+    use MintsTokens, RefreshDatabase;
 
     private User $user;
 
     private int $nextId = 8000000000000000001;
+
+    /**
+     * What the fake says when the health probe asks for a source count.
+     *
+     * A property rather than a second Http::fake(), because a later fake does
+     * not replace the first: the earliest matching stub stays in charge.
+     */
+    private bool $probeUnreachable = false;
+
+    /**
+     * How many liveness probes the fake has answered, not counting login.
+     */
+    private int $probeRequests = 0;
 
     protected function setUp(): void
     {
@@ -27,6 +48,47 @@ class HealthDashboardTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->actingAs($this->user);
+
+        $this->fakeSuwayomi();
+    }
+
+    /**
+     * The one fake behind every request this page can make.
+     *
+     * The health page now asks Suwayomi whether it is answering before it
+     * draws its counts. A test that mounted the page without this would either
+     * reach the configured server or fail on its absence, and a suite that
+     * passes only while the developer's Suwayomi happens to be up is not a
+     * suite. `preventStrayRequests` is the belt to the fake's braces.
+     */
+    private function fakeSuwayomi(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(function (Request $request) {
+            $query = (string) ($request->data()['query'] ?? '');
+
+            if (str_contains($query, 'mutation Login')) {
+                return Http::response([
+                    'data' => ['login' => [
+                        'accessToken' => $this->accessToken(),
+                        'refreshToken' => $this->refreshToken(),
+                    ]],
+                ]);
+            }
+
+            if (str_contains($query, 'HealthProbe')) {
+                $this->probeRequests++;
+
+                if ($this->probeUnreachable) {
+                    return Http::response('The server is not answering.', 503);
+                }
+
+                return Http::response(['data' => ['sources' => ['totalCount' => 108]]]);
+            }
+
+            return Http::response(['data' => []]);
+        });
     }
 
     /**
@@ -527,5 +589,207 @@ class HealthDashboardTest extends TestCase
         $this->health($this->source('https://mangadex.org', 'ja'), ['avg_latency_ms' => 4100]);
 
         $this->assertSame(4100, (int) app(HealthDashboard::class)->sites()->first()->worst_latency_ms);
+    }
+
+    /**
+     * The probe asks the one question the page needs, inside a budget short
+     * enough that a click cannot wait out the default 28 second one.
+     *
+     * HTTP faking cannot see a client timeout, so this one test swaps the
+     * gateway for a double and reads the argument the probe actually passed.
+     */
+    public function test_the_liveness_probe_asks_for_a_source_count_with_a_two_second_budget(): void
+    {
+        $gateway = new RecordingHealthGateway(app(Transport::class), app(AuthManager::class));
+        $this->app->instance(Gateway::class, $gateway);
+
+        $this->assertTrue(app(HealthProbe::class)->reachable());
+
+        $this->assertCount(1, $gateway->documents);
+        $this->assertStringContainsString('sources { totalCount }', $gateway->documents[0]);
+        $this->assertSame([2], $gateway->timeouts);
+    }
+
+    /**
+     * A reachable answer is one request for a minute, then asked again.
+     *
+     * The page draws the answer on every render, so a miss on each one would
+     * make every click pay for a round trip the reader did not ask for.
+     */
+    public function test_a_reachable_answer_is_one_request_for_the_minute(): void
+    {
+        $probe = app(HealthProbe::class);
+
+        $this->assertTrue($probe->reachable());
+        $this->assertTrue($probe->reachable());
+        $this->assertSame(1, $this->probeRequests);
+
+        $this->travel(59)->seconds();
+
+        $this->assertTrue($probe->reachable());
+        $this->assertSame(1, $this->probeRequests, '59 seconds still fits the minute');
+
+        $this->travel(2)->seconds();
+
+        $this->assertTrue($probe->reachable());
+        $this->assertSame(2, $this->probeRequests, 'the minute has passed, so the answer is asked again');
+    }
+
+    /**
+     * A failure is cached as a failure, not as an absent answer.
+     *
+     * Cache::remember treats null as a miss, and false is not null. Without
+     * that, an unreachable server would be asked once per render, which is the
+     * one moment the page must stay cheap.
+     */
+    public function test_an_unreachable_answer_is_cached_too(): void
+    {
+        $this->probeUnreachable = true;
+
+        $probe = app(HealthProbe::class);
+
+        $this->assertFalse($probe->reachable());
+        $this->assertSame(1, $this->probeRequests);
+
+        $this->probeUnreachable = false;
+
+        $this->assertFalse($probe->reachable(), 'the false answer is a cached fact, not a missing one');
+        $this->assertSame(1, $this->probeRequests);
+
+        $this->travel(61)->seconds();
+
+        $this->assertTrue($probe->reachable());
+        $this->assertSame(2, $this->probeRequests);
+    }
+
+    /**
+     * The counts are a ledger of observations, so they survive a dead server.
+     *
+     * What must not survive is the implication that they are current. The line
+     * says exactly which fact changed, and it sits above the counts it is
+     * qualifying.
+     */
+    public function test_the_page_names_the_counts_as_old_observations_when_suwayomi_is_unreachable(): void
+    {
+        $this->probeUnreachable = true;
+        $this->health($this->source('https://a.test'));
+
+        $page = $this->page()
+            ->assertSee('Not checked now, Suwayomi is unreachable. The counts below are the last observations.')
+            ->assertSee('https://a.test');
+
+        $this->assertMatchesRegularExpression(
+            '/Not checked now, Suwayomi is unreachable\..*grid grid-cols-2/s',
+            $page->html(),
+            'the line sits above the counts it qualifies',
+        );
+    }
+
+    public function test_the_page_says_nothing_new_when_suwayomi_answers(): void
+    {
+        $this->health($this->source('https://a.test'));
+
+        $this->page()->assertDontSee('Not checked now, Suwayomi is unreachable.');
+    }
+
+    /**
+     * A link to a site must open that site, not a page it happens to be on.
+     *
+     * The list is ordered trouble first and then by site, and the live
+     * MangaDot entry sits on page two of the healthy rows. A filter that did
+     * not also ask for page one would set openSite on a row the reader cannot
+     * see, which is how the chip looked broken.
+     */
+    public function test_a_linked_site_is_shown_on_the_first_page_even_when_the_list_would_have_paged_it_away(): void
+    {
+        for ($index = 1; $index <= 30; $index++) {
+            $this->health($this->source(
+                sprintf('https://site%02d.test', $index),
+                'en',
+                sprintf('Site %02d', $index),
+            ));
+        }
+
+        $this->health($this->source('https://zz-target.test', 'en', 'Target EN'));
+
+        $this->assertNotContains(
+            'https://zz-target.test',
+            app(HealthDashboard::class)->sites()->pluck('site')->all(),
+            'the fixture really did fall on page two',
+        );
+
+        Livewire::withQueryParams(['site' => 'https://zz-target.test', 'page' => 2])
+            ->test('pages::health')
+            ->assertSet('openSite', 'https://zz-target.test')
+            ->assertSee('Target EN')
+            ->assertDontSee('https://site01.test');
+    }
+
+    /**
+     * Closing the open site returns the reader to the list they came from.
+     *
+     * The filter exists because openSite is set. Clearing it has to clear the
+     * filter with it, or the collapse leaves the page showing one row and no
+     * way back.
+     */
+    public function test_collapsing_a_linked_site_restores_the_list(): void
+    {
+        for ($index = 1; $index <= 30; $index++) {
+            $this->health($this->source(
+                sprintf('https://site%02d.test', $index),
+                'en',
+                sprintf('Site %02d', $index),
+            ));
+        }
+
+        $this->health($this->source('https://zz-target.test', 'en', 'Target EN'));
+
+        $this->page()->set('openSite', 'https://zz-target.test')
+            ->assertDontSee('https://site01.test')
+            ->call('toggleSite', 'https://zz-target.test')
+            ->assertSet('openSite', '')
+            ->assertSee('https://site01.test');
+    }
+
+    /**
+     * A site the ledger does not hold is not an empty search.
+     *
+     * The generic empty state tells a reader to run a search, which is the
+     * wrong instruction for someone who followed a link to a site that has
+     * since left the catalogue. Naming the site, and offering the full list
+     * back, is the truthful answer to the address they arrived with.
+     */
+    public function test_a_linked_site_the_ledger_does_not_have_is_named_rather_than_called_an_empty_search(): void
+    {
+        $this->health($this->source('https://known.test'));
+
+        Livewire::withQueryParams(['site' => 'https://gone.test'])
+            ->test('pages::health')
+            ->assertSee('No site in the health ledger matches https://gone.test.')
+            ->assertSee('Clear the site filter to see every site.')
+            ->assertSee('Show every site')
+            ->assertDontSee('Run a search');
+    }
+
+    /**
+     * A linked site longer than the column it would match is dropped.
+     *
+     * `sources.home_url` is a varchar(255), so a longer address cannot name a
+     * row. Printing it back as though it were a site would turn a truncated
+     * link into a claim about a site that does not exist.
+     */
+    public function test_a_linked_site_longer_than_the_home_url_column_is_dropped_on_mount(): void
+    {
+        $this->health($this->source('https://known.test'));
+
+        $long = 'https://'.str_repeat('a', 250).'.test';
+
+        $this->assertGreaterThan(255, mb_strlen($long));
+
+        Livewire::withQueryParams(['site' => $long])
+            ->test('pages::health')
+            ->assertSet('openSite', '')
+            ->assertSee('https://known.test')
+            ->assertDontSee($long);
     }
 }

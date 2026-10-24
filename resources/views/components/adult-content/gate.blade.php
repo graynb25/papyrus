@@ -17,10 +17,13 @@
     carries the 18+ statement in its body. The action it runs is
     `confirmAdultContent`, which the `AdultContentGate` concern gives both
     pages, so the control and the action cannot drift apart.
+
+    The state is plain text and not a badge: a badge beside the button read as
+    a second thing to press for one decision, and the button is the only action.
 --}}
 <div class="flex flex-wrap items-center gap-2">
     @if ($enabled)
-        <flux:badge size="sm" color="red" icon="exclamation-triangle">{{ __('Adult content on') }}</flux:badge>
+        <span class="text-sm font-medium text-zinc-800 dark:text-zinc-100">{{ __('Adult content on') }}</span>
 
         <span class="text-xs text-zinc-500 dark:text-zinc-400">
             {{ __('The NSFW rating is in scope. The filter above decides what is shown of it.') }}
@@ -30,7 +33,7 @@
             {{ __('Turn it off') }}
         </flux:button>
     @else
-        <flux:badge size="sm" color="zinc" icon="lock-closed">{{ __('Adult content off') }}</flux:badge>
+        <span class="text-sm font-medium text-zinc-800 dark:text-zinc-100">{{ __('Adult content off') }}</span>
 
         <span class="text-xs text-zinc-500 dark:text-zinc-400">
             {{ __('Nothing marked NSFW is listed or searched.') }}

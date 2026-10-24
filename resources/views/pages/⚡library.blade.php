@@ -670,7 +670,7 @@ new #[Title('Library')] class extends Component
      * renders the cards returns 575 chapter ids for 14 series in 539ms, and the read
      * set is local, so this is a join over rows already in hand.
      *
-     * Six cards, not more, because the feed answers "what was I reading" and a reader
+     * Five cards, not more, because the feed answers "what was I reading" and a reader
      * who wants the rest of their library is looking at the shelves below it.
      *
      * @return Collection<int, array<string, mixed>>
@@ -1298,7 +1298,7 @@ new #[Title('Library')] class extends Component
         everything read is absent rather than offered chapter one, which would be the
         one answer that is certainly wrong.
 
-        Six cards, and no heading when there is nothing to continue, because an empty
+        Five cards, and no heading when there is nothing to continue, because an empty
         section with a title above it is worse than no section.
     --}}
     @if ($this->hasContinueFeed)
@@ -1628,13 +1628,14 @@ new #[Title('Library')] class extends Component
                         is invisible. A control floating over artwork needs a
                         background chosen for that, not inherited from one.
 
-                        Unread lives top-end, new top-start, stale bottom-start:
-                        three facts that can all be true at once and must never
-                        fight for one corner.
+                        Unread lives top-start in vermilion, new-since-check
+                        top-end in the neutral on-art style, and stale
+                        bottom-start in amber: three facts that can all be true
+                        at once and must never fight for one corner.
                     --}}
                     @if ($entry['unread_chapters'] !== null && $entry['unread_chapters'] > 0)
                         <span
-                            class="absolute end-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art"
+                            class="absolute start-1.5 top-1.5 rounded-md bg-vermilion-500 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-zinc-950 shadow-sm"
                             title="{{ trans_choice(':count chapter waiting|:count chapters waiting', $entry['unread_chapters'], ['count' => $entry['unread_chapters']]) }}"
                         >{{ $entry['unread_chapters'] }}</span>
                     @endif
@@ -1652,7 +1653,7 @@ new #[Title('Library')] class extends Component
                             ) }}"
                         >
                             <span
-                                class="absolute start-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-md bg-vermilion-500 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-zinc-950 shadow-sm"
+                                class="absolute end-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums on-art"
                             >
                                 +{{ $found }}
                             </span>

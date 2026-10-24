@@ -1071,7 +1071,7 @@ new #[Title('Sources')] class extends AdultContentPage
      * Only installed sources appear. A browse page 404s on an uninstalled one, so listing
      * it would offer a link that cannot work.
      *
-     * @return array<int, array{site: string, host: string|null, sources: array<int, array<string, mixed>>}>
+     * @return array<int, array{site: string, host: string|null, health_site: string, sources: array<int, array<string, mixed>>}>
      */
     /**
      * The host to group a source under, or null when it has none worth grouping by.
@@ -1148,6 +1148,15 @@ new #[Title('Sources')] class extends AdultContentPage
                         ? (string) __('On this machine')
                         : $this->siteName($rows, $key),
                     'host' => $key === 'local' ? null : $key,
+                    /*
+                     * The health page's own key for this site: the raw
+                     * `home_url`, or `unknown` for a source that publishes
+                     * none. It groups on that value rather than on the host,
+                     * so sending the host lands on nothing.
+                     */
+                    'health_site' => $source->home_url === null || $source->home_url === ''
+                        ? 'unknown'
+                        : (string) $source->home_url,
                     /*
                      * One icon for the site, taken from a variant that has one.
                      *
@@ -1792,7 +1801,7 @@ new #[Title('Sources')] class extends AdultContentPage
                                 @if (($group['health']['label'] ?? null) !== null)
                                     <span @class([
                                         'inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium',
-                                        'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') === 'healthy',
+                                        'bg-moss-600 text-white dark:bg-moss-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') === 'healthy',
                                         'bg-zinc-500/10 text-zinc-600 dark:bg-white/10 dark:text-zinc-300' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
                                     ])>
                                         <span class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]">
@@ -1802,8 +1811,15 @@ new #[Title('Sources')] class extends AdultContentPage
                                 @endif
                             </div>
 
-                            <div class="mt-3 flex gap-1.5 @if (count($group['sources']) > 10) flex-nowrap overflow-x-auto @else flex-wrap @endif" role="group" aria-label="{{ __('Browse :site sources', ['site' => $group['site']]) }}">
-                                @foreach ($group['sources'] as $one)
+                            {{--
+                                Twelve flags are what the card holds. MangaDot
+                                has 108, so the rest are counted and the count
+                                opens the health page's own site drilldown
+                                rather than pretending the card holds every
+                                flag.
+                            --}}
+                            <div class="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="{{ __('Browse :site sources', ['site' => $group['site']]) }}">
+                                @foreach (array_slice($group['sources'], 0, 12) as $one)
                                     @php($flagRegion = LanguageName::flagRegion($one['lang']))
 
                                     <a
@@ -1822,6 +1838,16 @@ new #[Title('Sources')] class extends AdultContentPage
                                         @endif
                                     </a>
                                 @endforeach
+
+                                @if (count($group['sources']) > 12)
+                                    <a
+                                        href="{{ route('health', ['site' => $group['health_site']]) }}"
+                                        wire:navigate
+                                        aria-label="{{ __('Open source health for :site', ['site' => $group['site']]) }}"
+                                        title="{{ __('Open source health for :site', ['site' => $group['site']]) }}"
+                                        class="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 px-2 text-xs font-medium tabular-nums text-zinc-600 transition hover:border-vermilion-400 hover:bg-vermilion-50 dark:border-white/15 dark:text-zinc-300 dark:hover:border-vermilion-400 dark:hover:bg-vermilion-950"
+                                    >+{{ count($group['sources']) - 12 }}</a>
+                                @endif
                             </div>
 
                             <div class="mt-auto flex flex-wrap items-center gap-2 pt-3">
@@ -2343,6 +2369,12 @@ new #[Title('Sources')] class extends AdultContentPage
             source they know by hand needs the code, not the name of the
             language.
 
+            Every language is in the page. At desktop width the row wraps and
+            shows all of them, because there is room. Below the lg breakpoint
+            the first two are the strip, the rest wait behind Show all, and
+            the toggle itself is hidden at desktop width where there is nothing
+            left to reveal.
+
             "Show none" is not a flourish. Switching twenty-two languages off
             one at a time is twenty-two round trips and twenty-two renders of a
             list of a thousand rows, and a reader who reads two languages
@@ -2352,21 +2384,28 @@ new #[Title('Sources')] class extends AdultContentPage
         @if ($view !== 'migrate' && $this->catalogueLanguages !== [])
             @php($stillOn = array_values(array_diff(array_column($this->catalogueLanguages, 'code'), $this->lang)))
             @php($languageLimit = 2)
-            @php($visibleLanguages = count($this->catalogueLanguages) > $languageLimit && ! $this->showAllLanguages
-                ? array_slice($this->catalogueLanguages, 0, $languageLimit)
-                : $this->catalogueLanguages)
+            @php($collapsedLanguages = count($this->catalogueLanguages) > $languageLimit && ! $this->showAllLanguages)
 
             <div class="flex flex-wrap items-center gap-3">
                 <flux:label>{{ __('Language') }}</flux:label>
 
                 <div class="w-full max-w-full">
-                    <div class="@if (count($this->catalogueLanguages) > $languageLimit) overflow-x-auto pb-1 @endif">
-                        <div class="flex min-w-max items-center gap-2">
-                    @foreach ($visibleLanguages as $language)
+                    <div @class([
+                        'overflow-x-auto pb-1' => $collapsedLanguages,
+                        '[mask-image:linear-gradient(to_right,black_90%,transparent)]' => $collapsedLanguages,
+                        'lg:overflow-visible lg:pb-0 lg:[mask-image:none]' => $collapsedLanguages,
+                    ])>
+                        <div @class([
+                            'flex items-center gap-2',
+                            'min-w-max' => $collapsedLanguages,
+                            'flex-wrap' => ! $collapsedLanguages,
+                            'lg:min-w-0 lg:flex-wrap' => $collapsedLanguages,
+                        ])>
+                    @foreach ($this->catalogueLanguages as $index => $language)
                         <flux:button
                             size="sm"
                             :variant="$language['on'] ? 'outline' : 'ghost'"
-                            class="rounded-full!"
+                            class="{{ $index >= $languageLimit && ! $this->showAllLanguages ? 'rounded-full! max-lg:hidden' : 'rounded-full!' }}"
                             wire:click="toggleLanguage({{ Illuminate\Support\Js::from($language['code'])->toHtml() }})"
                             aria-pressed="{{ $language['on'] ? 'true' : 'false' }}"
                             title="{{ $language['code'] }}"
@@ -2392,7 +2431,7 @@ new #[Title('Sources')] class extends AdultContentPage
             </div>
 
             @if (count($this->catalogueLanguages) > $languageLimit)
-                <div class="flex flex-wrap items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3 lg:hidden">
                     <flux:button size="sm" variant="ghost" wire:click="toggleLanguageRow">
                         {{ $this->showAllLanguages ? __('Show fewer languages') : __('Show all languages') }}
                     </flux:button>
@@ -2524,34 +2563,52 @@ new #[Title('Sources')] class extends AdultContentPage
                 <p class="text-sm">{{ __('Refresh catalogue above to try again.') }}</p>
             </flux:callout>
         @elseif ($this->extensions->isEmpty())
-            <flux:callout variant="secondary" icon="magnifying-glass">
-                @if ($this->stores->isEmpty())
-                    {{ __('Add a store first, then refresh the catalogue.') }}
-                @elseif ($view === 'installed')
-                    @if ($this->catalogue['hidden'] > 0)
-                        {{--
-                            Not "nothing installed". What is installed is there and
-                            the gate is holding it back, and saying the wrong one
-                            of those sends the reader off to install a source they
-                            already have.
-                        --}}
-                        {{ trans_choice(
-                            '{1} The :count extension installed is marked NSFW and is hidden until you turn adult content on.|[2,*] The :count extensions installed are marked NSFW and are hidden until you turn adult content on.',
-                            $this->catalogue['hidden'],
-                            ['count' => Number::format($this->catalogue['hidden'])],
-                        ) }}
+            {{--
+                The automatic load runs inside addStore or trust, so the request
+                that fetches the catalogue is also the request that fills this
+                slot. Livewire's own loading state is therefore the only honest
+                progress there is: it is shown for as long as the request is in
+                flight, and the result arrives in the same response. A count in
+                the middle of it would be invented.
+            --}}
+            <div wire:loading.remove wire:target="addStore,trust,refresh">
+                <flux:callout variant="secondary" icon="magnifying-glass">
+                    @if ($this->stores->isEmpty())
+                        {{ __('Add a store first, then refresh the catalogue.') }}
+                    @elseif ($view === 'installed')
+                        @if ($this->catalogue['hidden'] > 0)
+                            {{--
+                                Not "nothing installed". What is installed is there and
+                                the gate is holding it back, and saying the wrong one
+                                of those sends the reader off to install a source they
+                                already have.
+                            --}}
+                            {{ trans_choice(
+                                '{1} The :count extension installed is marked NSFW and is hidden until you turn adult content on.|[2,*] The :count extensions installed are marked NSFW and are hidden until you turn adult content on.',
+                                $this->catalogue['hidden'],
+                                ['count' => Number::format($this->catalogue['hidden'])],
+                            ) }}
+                        @else
+                            {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
+                        @endif
+                    @elseif ($view === 'updates')
+                        {{ __('Nothing to update. Every installed extension is on the version its store ships.') }}
+                    @elseif ($this->lang !== [])
+                        {{-- The reader's own choice, named as their own choice. --}}
+                        {{ __('Every language is switched off, so there is nothing to list. Switch one on, or put them all back.') }}
                     @else
-                        {{ __('Nothing installed yet. Open the Available tab and install a source to get started.') }}
+                        {{ __('Nothing matches. Try a shorter name or widen the content filter.') }}
                     @endif
-                @elseif ($view === 'updates')
-                    {{ __('Nothing to update. Every installed extension is on the version its store ships.') }}
-                @elseif ($this->lang !== [])
-                    {{-- The reader's own choice, named as their own choice. --}}
-                    {{ __('Every language is switched off, so there is nothing to list. Switch one on, or put them all back.') }}
-                @else
-                    {{ __('Nothing matches. Try a shorter name or widen the content filter.') }}
-                @endif
-            </flux:callout>
+                </flux:callout>
+            </div>
+
+            @if ($view === 'available')
+                <div wire:loading wire:target="addStore,trust,refresh">
+                    <flux:callout variant="secondary" icon="arrow-path">
+                        {{ __('Loading the catalogue...') }}
+                    </flux:callout>
+                </div>
+            @endif
         @else
             @if ($view === 'available')
                 <p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">

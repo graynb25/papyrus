@@ -4,6 +4,7 @@ use App\Models\Source;
 use App\Models\UserSource;
 use App\Support\Incognito;
 use App\Search\HealthDashboard;
+use App\Search\HealthProbe;
 use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -38,6 +39,20 @@ new #[Title('Health')] class extends Component {
      * ones.
      */
     public const DRILLDOWN_LIMIT = 30;
+
+    /**
+     * Clamp the linked site before it is used as a key.
+     *
+     * `sources.home_url` is a 255 character column, so a longer value cannot
+     * name a site the ledger holds. Left in the address it would be printed
+     * back as though it were one; clearing it returns the reader to the list.
+     */
+    public function mount(): void
+    {
+        if (mb_strlen($this->openSite) > 255) {
+            $this->openSite = '';
+        }
+    }
 
     /**
      * Skip every variant of a site in this user's searches.
@@ -180,10 +195,36 @@ new #[Title('Health')] class extends Component {
     #[Computed]
     public function sites(): LengthAwarePaginator
     {
-        return app(HealthDashboard::class)->sites([
+        $options = [
             'state' => $this->state !== '' ? $this->state : null,
             'query' => trim($this->search),
-        ]);
+        ];
+
+        /*
+         * A linked site is shown on its own rather than at the page it would
+         * otherwise have fallen on. MangaDot is on page two of the healthy
+         * sites, so a link that only set openSite expanded a row the reader
+         * could not see. Asking for the site and page one is one filtered
+         * query, not a second list.
+         */
+        if ($this->openSite !== '') {
+            $options['site'] = $this->openSite;
+            $options['page'] = 1;
+        }
+
+        return app(HealthDashboard::class)->sites($options);
+    }
+
+    /**
+     * Whether Suwayomi answered the last short probe.
+     *
+     * The cached probe is the seam that keeps a page render from becoming a
+     * two second wait on every click.
+     */
+    #[Computed]
+    public function suwayomiReachable(): bool
+    {
+        return app(HealthProbe::class)->reachable();
     }
 
     /**
@@ -429,6 +470,12 @@ new #[Title('Health')] class extends Component {
         <x-slot:title>{{ __('Source health') }}</x-slot:title>
     </x-page.header>
 
+    @if (! $this->suwayomiReachable)
+        <flux:callout variant="danger" icon="exclamation-triangle">
+            {{ __('Not checked now, Suwayomi is unreachable. The counts below are the last observations.') }}
+        </flux:callout>
+    @endif
+
     {{-- Summary tiles ---------------------------------------------------- --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <flux:card class="card-press gap-1 p-4">
@@ -520,9 +567,25 @@ new #[Title('Health')] class extends Component {
 
     {{-- Sites ------------------------------------------------------------- --}}
     @if ($this->sites->isEmpty())
-        <flux:callout variant="secondary" icon="magnifying-glass">
-            {{ __('No sites match. Run a search to start filling the ledger.') }}
-        </flux:callout>
+        @if ($openSite !== '')
+            {{--
+                A linked site that is no longer in the ledger is not an empty
+                search. Naming it and offering the list back is the truth the
+                reader followed the link for.
+            --}}
+            <flux:callout variant="secondary" icon="magnifying-glass">
+                <p class="text-sm">{{ __('No site in the health ledger matches :site.', ['site' => $openSite]) }}</p>
+                <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Clear the site filter to see every site.') }}</p>
+
+                <flux:button class="mt-3" size="sm" :href="route('health')" wire:navigate icon="arrow-uturn-left">
+                    {{ __('Show every site') }}
+                </flux:button>
+            </flux:callout>
+        @else
+            <flux:callout variant="secondary" icon="magnifying-glass">
+                {{ __('No sites match. Run a search to start filling the ledger.') }}
+            </flux:callout>
+        @endif
     @else
         <ul class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-white/10 dark:border-white/10">
             @foreach ($this->sites as $row)

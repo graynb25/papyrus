@@ -13,6 +13,7 @@ use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -2083,6 +2084,40 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * A site with more variants than a card can hold shows the rest as one way in.
+     *
+     * MangaDot has 108 language variants, and a card that rendered every flag on one
+     * line clipped the row and left the last ones invisible. Twelve flags are what the
+     * card holds, and the count of the rest points at the health page's own site
+     * drilldown instead of implying that the card holds every flag.
+     */
+    public function test_a_site_with_many_variants_shows_twelve_flags_and_a_health_link(): void
+    {
+        $variants = [];
+
+        for ($index = 0; $index < 108; $index++) {
+            $name = $index === 0
+                ? 'MangaDot (EN)'
+                : 'MangaDot (EN) '.str_pad((string) $index, 3, '0', STR_PAD_LEFT);
+
+            $variants[] = $this->cardSource($name, 7000 + $index);
+        }
+
+        $html = $this->page()->html();
+
+        $this->assertSame(1, preg_match('/<li\b[^>]*data-test="source-family-card"[^>]*>(.*?)<\/li>/s', $html, $match));
+
+        $card = $match[1];
+
+        $this->assertSame(12, substr_count($card, 'data-source-language='));
+        $this->assertSame(1, substr_count($card, '+96'));
+        $this->assertStringContainsString(route('health', ['site' => 'https://example.test']), $card);
+        $this->assertStringContainsString('aria-label="Open source health for MangaDot"', $card);
+        $this->assertStringContainsString(route('browse', ['source' => $variants[11]->id]), $card);
+        $this->assertStringNotContainsString(route('browse', ['source' => $variants[12]->id]), $card);
+    }
+
+    /**
      * The tick that selects an extension for a bulk install is named.
      *
      * One tick per card, so a card that carried no name was a screen reader
@@ -2282,6 +2317,39 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * The whole language list is in the page, and the toggle is only for narrow widths.
+     *
+     * The row used to slice itself to two languages in PHP, so desktop lost the rest
+     * and the toggle was the only way back. CSS now decides where the list is clipped:
+     * every language is rendered, the first two are the only ones shown below the lg
+     * breakpoint until Show all is pressed, and the toggle that reveals the rest is
+     * hidden at desktop width.
+     */
+    public function test_every_language_is_rendered_and_the_show_all_control_is_mobile_only(): void
+    {
+        $this->serveExtensions($this->languageNodes());
+        $this->store();
+
+        $html = $this->page()->set('view', 'available')->html();
+
+        $this->assertStringContainsString('aria-label="English, 2 sources"', $html);
+        $this->assertStringContainsString('aria-label="Japanese, 2 sources"', $html);
+        $this->assertStringContainsString('aria-label="French, 2 sources"', $html);
+        $this->assertMatchesRegularExpression(
+            '/<button[^>]*class="[^"]*\bmax-lg:hidden\b[^"]*"[^>]*aria-label="Japanese, 2 sources"/s',
+            $html,
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/<button[^>]*class="[^"]*\bmax-lg:hidden\b[^"]*"[^>]*aria-label="French, 2 sources"/s',
+            $html,
+        );
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>\s*<button[^>]*wire:click="toggleLanguageRow"/s',
+            $html,
+        );
+    }
+
+    /**
      * A site card carries a quick health read so a dead source is obvious before
      * the reader opens the health page.
      */
@@ -2301,6 +2369,40 @@ class SourcesPageTest extends TestCase
 
         $this->page()->set('view', 'available')
             ->assertSee('Not answering');
+    }
+
+    /**
+     * The healthy pill uses the same moss token as the Health page.
+     *
+     * The card said Healthy in emerald while the Health page's own healthy state is
+     * moss, so the same state carried two different greens on two pages. The token is
+     * the one place that colour is defined, so the card names it rather than carrying
+     * a second green of its own.
+     */
+    public function test_the_healthy_site_pill_uses_the_moss_token(): void
+    {
+        $this->cardSource('Example EN', 8513894820944573934);
+
+        SourceHealth::query()->create([
+            'source_id' => 8513894820944573934,
+            'name' => 'Example EN',
+            'lang' => 'en',
+            'consecutive_failures' => 0,
+            'total_successes' => 1,
+            'total_failures' => 0,
+            'is_dead' => false,
+        ]);
+
+        $html = $this->page()->set('view', 'available')->html();
+
+        $this->assertSame(1, preg_match('/<li\b[^>]*data-test="source-family-card"[^>]*>(.*?)<\/li>/s', $html, $match));
+
+        $card = $match[1];
+
+        $this->assertStringContainsString('Healthy', $card);
+        $this->assertStringContainsString('bg-moss-600', $card);
+        $this->assertStringContainsString('dark:bg-moss-500', $card);
+        $this->assertStringNotContainsString('bg-emerald-600', $card);
     }
 
     /**
@@ -2330,9 +2432,66 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * A site without a home_url lands on the health page's own bucket for it.
+     *
+     * The health page keys a site by the raw `home_url` string and spells the
+     * no-URL bucket `unknown`, while the sources cards key on the bare host and
+     * spell the same rows `local`. Sending the card's key therefore reached a
+     * site the ledger does not have, and the link opened nothing.
+     */
+    public function test_a_source_without_a_home_url_links_to_the_unknown_health_bucket(): void
+    {
+        for ($index = 0; $index < 13; $index++) {
+            $this->cardSource(
+                'Local '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+                7100 + $index,
+                'en',
+                $index % 2 === 0 ? null : '',
+            );
+        }
+
+        $html = $this->page()->html();
+
+        $this->assertSame(1, preg_match('/<li\b[^>]*data-test="source-family-card"[^>]*>(.*?)<\/li>/s', $html, $match));
+
+        $card = $match[1];
+
+        $this->assertStringContainsString(route('health', ['site' => 'unknown']), $card);
+        $this->assertStringNotContainsString(route('health', ['site' => 'local']), $card);
+    }
+
+    /**
+     * The empty Available slot says a load is in flight, and nothing else.
+     *
+     * The automatic load runs inside the action that starts it, so the response
+     * that carries the progress text is also the response that carries the
+     * catalogue. The string therefore rides Livewire's own loading state for
+     * the same actions rather than a timer, a second request, or a number the
+     * page cannot know yet. The filled catalogue has no empty slot for it.
+     */
+    public function test_the_available_empty_state_reports_an_in_flight_catalogue_load(): void
+    {
+        $this->store();
+        $this->nodes = [];
+
+        $html = $this->page()->set('view', 'available')->html();
+
+        $this->assertStringContainsString('Loading the catalogue...', $html);
+        $this->assertStringContainsString('wire:target="addStore,trust,refresh"', $html);
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*wire:loading(?:\s|>)[^>]*wire:target="addStore,trust,refresh"/s',
+            $html,
+        );
+
+        $this->serveExtensions($this->defaultNodes());
+
+        $this->page()->set('view', 'available')->assertDontSee('Loading the catalogue...');
+    }
+
+    /**
      * One mirrored source row behind a real-shaped site card.
      */
-    private function cardSource(string $name, int $id, ?string $lang = null): Source
+    private function cardSource(string $name, int $id, ?string $lang = null, ?string $homeUrl = 'https://example.test'): Source
     {
         return Source::create([
             'suwayomi_source_id' => $id,
@@ -2340,7 +2499,7 @@ class SourcesPageTest extends TestCase
             'display_name' => $name,
             'extension_pkg_name' => 'eu.kanade.tachiyomi.extension.en.example',
             'lang' => $lang ?? (str_contains($name, 'JA') ? 'ja' : 'en'),
-            'home_url' => 'https://example.test',
+            'home_url' => $homeUrl,
             'content_warning' => Source::SAFE,
             'is_installed' => true,
             'supports_latest' => true,
@@ -2430,6 +2589,30 @@ class SourcesPageTest extends TestCase
             ->assertSee('Turn on adult content?')
             ->assertSee('18 or older')
             ->assertSee('I am 18 or older, turn it on');
+    }
+
+    /**
+     * The gate's state is a label, and the button is the only action.
+     *
+     * Both states used to be a badge sitting beside the button, so one decision read
+     * as two things to press. The component is rendered on its own because the page
+     * carries other badges for source counts, and this asserts on the gate alone.
+     */
+    public function test_the_adult_gate_status_is_a_label_and_not_a_second_action(): void
+    {
+        $off = Blade::render('<x-adult-content.gate :enabled="false" />');
+
+        $this->assertStringContainsString('Adult content off', $off);
+        $this->assertStringNotContainsString('data-flux-badge', $off);
+        $this->assertStringContainsString('Turn it on', $off);
+        $this->assertStringContainsString('Turn on adult content?', $off);
+        $this->assertStringContainsString('18 or older', $off);
+
+        $on = Blade::render('<x-adult-content.gate :enabled="true" />');
+
+        $this->assertStringContainsString('Adult content on', $on);
+        $this->assertStringNotContainsString('data-flux-badge', $on);
+        $this->assertStringContainsString('Turn it off', $on);
     }
 
     public function test_confirming_the_gate_opens_the_adult_rated_extensions(): void

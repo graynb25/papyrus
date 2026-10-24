@@ -443,7 +443,7 @@ class ContinueReadingTest extends TestCase
 
         $feed = app(ContinueReading::class)->feed($rows, $resolutions);
 
-        $this->assertCount(6, $feed, 'Six, because the shelves below hold the rest.');
+        $this->assertCount(5, $feed, 'Five, because the shelves below hold the rest.');
         $this->assertSame(1, $feed->first()['manga_id'], 'Most recent first.');
     }
 

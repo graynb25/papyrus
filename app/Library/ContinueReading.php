@@ -122,7 +122,7 @@ class ContinueReading
      * @param  array<int, array<string, mixed>>  $resolutions  from {@see forLibrary()}
      * @return Collection<int, array<string, mixed>>
      */
-    public function feed(array $entries, array $resolutions, int $limit = 6): Collection
+    public function feed(array $entries, array $resolutions, int $limit = 5): Collection
     {
         /*
          * Collected through an array rather than chained off `collect()`.

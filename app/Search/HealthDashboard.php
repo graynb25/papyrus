@@ -78,7 +78,7 @@ class HealthDashboard
      * sites work for me", over the answer the ledger can give, which is per
      * language variant.
      *
-     * @param  array{state?: string|null, lang?: string|null, query?: string|null}  $options
+     * @param  array{state?: string|null, lang?: string|null, query?: string|null, site?: string|null, page?: int|null}  $options
      * @return LengthAwarePaginator<int, object>
      */
     public function sites(array $options = [], int $perPage = 25): LengthAwarePaginator
@@ -86,6 +86,8 @@ class HealthDashboard
         $state = $options['state'] ?? null;
         $lang = $options['lang'] ?? null;
         $needle = trim((string) ($options['query'] ?? ''));
+        $site = $options['site'] ?? null;
+        $page = $options['page'] ?? null;
 
         /*
          * Two layers, because the filters split cleanly between them.
@@ -115,10 +117,11 @@ class HealthDashboard
         return DB::query()
             ->fromSub($perSite, 'per_site')
             ->when($needle !== '', fn ($q) => $q->where('site', 'like', '%'.$needle.'%'))
+            ->when($site !== null && $site !== '', fn ($q) => $q->where('site', $site))
             ->when($state !== null && $state !== '', fn ($q) => $q->where('state', $state))
             ->orderByDesc('rank')
             ->orderBy('site')
-            ->paginate($perPage)
+            ->paginate($perPage, ['*'], 'page', $page)
             ->withQueryString();
     }
 

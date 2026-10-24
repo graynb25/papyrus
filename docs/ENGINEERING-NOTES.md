@@ -975,9 +975,9 @@ Each of these cost real time. Do not repeat them.
     verification that only counts rows cannot tell them apart.
 
 138. **A verification that cannot reach its subject reports success.** The finished download a
-     reader was looking at belongs to `papyrus@localhost.test`, not to the account the browser
-     checks sign in as. A check signed in, found the downloads page empty, printed "no download
-     rows on this account" and exited cleanly.
+     reader was looking at belongs to one local account, not to the account the browser checks
+     sign in as. A check signed in, found the downloads page empty, printed "no download rows
+     on this account" and exited cleanly.
 
      That is the dangerous shape: **an empty result from a check that could not run is
      indistinguishable from a pass.** The count it printed was true and the conclusion it drew
@@ -2062,7 +2062,8 @@ the default `60` kills it, because a job's own `timeout` does not raise the work
 `failOnTimeout` defaults to false, so the job vanishes with no record (trap 70). Raise it, and
 keep `failOnTimeout = true` on the job so a run that does exceed it says so.
 
-Then `http://papyrus.test`, signed in as `reader@example.test` / `secret1234`.
+Then `http://papyrus.test`, signed in with the checkout's current local account or a
+throwaway.
 
 Session cookies are per hostname, so a rename to the Herd site name logs you out of
 every existing tab. That is expected, not a fault.
@@ -2430,13 +2431,16 @@ Three things are honest gaps rather than fixes:
   Briefly: a held lock is not observable through a second `get()` on this cache store, and
   holding the lock from the test blocks for the full 300 seconds the real path waits.
 
-The AniList import **was** browser-verified, and that is how the 404 was found. It needed an
-account, which is a setup fact rather than a code one and is worth stating because it cost
-time: the connection had been made against `papyrus@localhost.test`, whose library is empty,
-while the series live under `reader@example.test`. An import that walks an empty queue
-correctly marks nothing, so the page showed a zero tally that looked like a failure. It was
-not until the two accounts were compared that the mismatch showed, and not until the
-connection was moved that the real bug could be reproduced at all.
+The AniList import **was** browser-verified, and that is how the 404 was found. It needed
+an account, which is a setup fact rather than a code one and is worth stating because it cost
+time: the connection had been made against an account whose library was empty, while the
+series lived under a different account. An import that walks an empty queue correctly marks
+nothing, so the page showed a zero tally that looked like a failure. The mismatch only showed
+when the two accounts were compared, and the connection had to be moved before the real bug
+could be reproduced at all.
+
+Those accounts were scratch state from that walk, not logins to reuse. A new walk uses the
+checkout's current local account or a throwaway.
 
 A related trap, smaller but the same shape: **a report of "it does not work" is a claim about
 the setup until the account, the data and the code have each been checked separately.** Two of

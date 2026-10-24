@@ -492,6 +492,19 @@ new #[Title('Backups')] class extends Component {
     }
 
     /**
+     * Whether a refusal landed before the run reached its first checkpoint.
+     *
+     * The Refused badge reads the run's own REFUSED state, and `progress_stage` is the row's
+     * own record of the stage it reached. A refusal with no stage behind it has no timeline to
+     * draw; one that did reach a stage keeps the progress it earned.
+     */
+    public function runWasRefusedBeforeStarting(LiveBackupRun|LiveRestoreRun $run): bool
+    {
+        return ($run->state === LiveBackupRun::REFUSED || $run->state === LiveRestoreRun::REFUSED)
+            && $run->progress_stage === null;
+    }
+
+    /**
      * What a run is saying, in the row's own sentences.
      *
      * The notes are written full by the job for exactly this surface, so this computes less and
@@ -516,7 +529,7 @@ new #[Title('Backups')] class extends Component {
     public function humanizeBackupSummary(string $summary): string
     {
         if (str_contains($summary, 'downloaded manga half is a real backup of a library that holds nothing')) {
-            return __('The manga server answered, but it has no series to save. The backup was refused and nothing was changed. This file is not a Mihon or Suwayomi backup. Use the .tachibk file created from that app\'s backup screen.');
+            return __('The manga server answered, but it has no series to save. The backup was refused and nothing was changed.');
         }
 
         if (preg_match('/^([\d,]+) series states and ([\d,]+) chapter states against Suwayomi (.+), taken without stopping anything$/', trim($summary), $matches) === 1) {
@@ -1064,8 +1077,8 @@ new #[Title('Backups')] class extends Component {
                         };
                         $dotClass = match (true) {
                             $outcome->stalled() || $outcome->failed() => 'bg-red-500',
-                            ! $outcome->finished() => 'animate-pulse bg-zinc-400',
-                            default => 'bg-green-500',
+                            $outcome->finished() => 'bg-green-500',
+                            default => 'animate-pulse bg-zinc-400',
                         };
                         $nextAction = match (true) {
                             $outcome->stalled() || $outcome->failed() => __('Try again'),
@@ -1109,7 +1122,10 @@ new #[Title('Backups')] class extends Component {
 
                         <div class="mt-1 flex justify-between text-xs text-zinc-400">
                             <span>{{ $doneCount }} of {{ $totalStages }}</span>
-                            <span>{{ $this->elapsedTime($latest['at']) }}</span>
+
+                            @if ($isRunning)
+                                <span>{{ $this->elapsedTime($latest['at']) }}</span>
+                            @endif
                         </div>
 
                         <ol class="mt-4 space-y-2" role="list">
@@ -1218,10 +1234,14 @@ new #[Title('Backups')] class extends Component {
                         $livePct = $liveTotalStages > 0 ? (int) round($liveDoneCount * 100 / $liveTotalStages) : 0;
                         $liveDotClass = match ($liveTone) {
                             'red' => 'bg-red-500',
+                            'orange' => 'bg-orange-500',
                             'amber' => 'animate-pulse bg-amber-400',
                             'blue' => 'animate-pulse bg-blue-500',
-                            default => 'bg-green-500',
+                            'green' => 'bg-green-500',
+                            default => 'bg-zinc-400',
                         };
+                        $liveShowsCheckpoints = ($liveIsBackup || $liveIsRestore)
+                            && ! $this->runWasRefusedBeforeStarting($row);
                     @endphp
 
                     @if ($this->runModalOpen && $liveIsRunning)
@@ -1250,36 +1270,41 @@ new #[Title('Backups')] class extends Component {
                             ></div>
                         </div>
 
-                        <div class="mt-1 flex justify-between text-xs text-zinc-400">
-                            <span>{{ $liveDoneCount }} of {{ $liveTotalStages }}</span>
-                            <span>{{ $this->elapsedTime($latest['at']) }}</span>
-                        </div>
+                        @if ($liveShowsCheckpoints)
+                            <div class="mt-1 flex justify-between text-xs text-zinc-400">
+                                <span>{{ $liveDoneCount }} of {{ $liveTotalStages }}</span>
 
-                        <ol class="mt-4 space-y-2" role="list">
-                            @foreach ($liveStages as $stage)
-                                <li role="listitem" class="flex items-center gap-3 py-2">
-                                    <span
-                                        class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($stage['state']) {
-                                            'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
-                                            'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
-                                            'failed' => 'border-red-500 bg-red-500 text-white',
-                                            default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
-                                        } }}"
-                                        aria-hidden="true"
-                                    >
-                                        @if ($stage['state'] === 'done')
-                                            &#10003;
-                                        @elseif ($stage['state'] === 'failed')
-                                            &#10005;
-                                        @elseif ($stage['state'] === 'running')
-                                            <flux:icon name="loading" class="size-3" />
-                                        @endif
-                                    </span>
+                                @if ($liveIsRunning)
+                                    <span>{{ $this->elapsedTime($latest['at']) }}</span>
+                                @endif
+                            </div>
 
-                                    <p class="text-sm font-medium">{{ $stage['title'] }}</p>
-                                </li>
-                            @endforeach
-                        </ol>
+                            <ol class="mt-4 space-y-2" role="list">
+                                @foreach ($liveStages as $stage)
+                                    <li role="listitem" class="flex items-center gap-3 py-2">
+                                        <span
+                                            class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($stage['state']) {
+                                                'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
+                                                'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
+                                                'failed' => 'border-red-500 bg-red-500 text-white',
+                                                default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
+                                            } }}"
+                                            aria-hidden="true"
+                                        >
+                                            @if ($stage['state'] === 'done')
+                                                &#10003;
+                                            @elseif ($stage['state'] === 'failed')
+                                                &#10005;
+                                            @elseif ($stage['state'] === 'running')
+                                                <flux:icon name="loading" class="size-3" />
+                                            @endif
+                                        </span>
+
+                                        <p class="text-sm font-medium">{{ $stage['title'] }}</p>
+                                    </li>
+                                @endforeach
+                            </ol>
+                        @endif
                     @endif
 
                     @if ($liveSummary !== '')

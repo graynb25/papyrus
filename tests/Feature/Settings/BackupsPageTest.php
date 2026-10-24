@@ -461,6 +461,105 @@ class BackupsPageTest extends TestCase
             ->assertSee('Refused');
     }
 
+    /**
+     * Each refusal cause keeps its own sentence, and only its own.
+     *
+     * The checkout's refused run stores a sentence from before the copy was split: it names an
+     * empty server, then appends the wrong-file advice about a .tachibk. Read back through the
+     * page, the empty-server cause must stop at "nothing was changed." and the wrong-file cause
+     * must keep the Mihon or Suwayomi sentence it already had. A reader who never opened an
+     * import is never told to use one.
+     */
+    public function test_each_refusal_cause_keeps_its_own_sentence(): void
+    {
+        $this->writeLiveRun(state: LiveBackupRun::REFUSED);
+
+        LiveBackupRun::query()->firstOrFail()->update([
+            'refusal_reason' => 'The downloaded manga half is a real backup of a library that holds nothing: the server answered with a file that carries its own shelves and no series at all, so there is no manga half to pair with the reader half. The run was refused with nothing taken. That file is not a Mihon or Suwayomi backup. It has to be the .tachibk that one of those apps writes from its own backup screen.',
+        ]);
+
+        $page = Livewire::test('pages::settings.backups');
+        $summary = $page->instance()->runSummary(LiveBackupRun::query()->firstOrFail());
+
+        $this->assertStringContainsString('has no series to save', $summary);
+        $this->assertStringEndsWith('nothing was changed.', $summary);
+        $this->assertStringNotContainsString('tachibk', $summary);
+        $this->assertStringNotContainsString('import', $summary);
+        $this->assertStringNotContainsString('Mihon', $summary);
+
+        $wrongFile = $page->instance()->humanizeBackupSummary(
+            'The downloaded manga half does not read as a Mihon or Suwayomi backup, so it cannot be one half of a pair: the bytes did not parse.',
+        );
+
+        $this->assertStringContainsString('not read as a Mihon or Suwayomi backup', $wrongFile);
+
+        $this->get('/settings/backups')
+            ->assertSee('The manga server answered, but it has no series to save.')
+            ->assertDontSee('This file is not a Mihon or Suwayomi backup');
+    }
+
+    /**
+     * A refused run is over, so its modal counts no live seconds and does not wear the green dot.
+     *
+     * The dot reads in the same orange as the row's Refused badge, and the elapsed clock belongs
+     * only to a run that is still going. Before this, a refusal from days ago read "164261 seconds
+     * so far" under a green dot, as if it were still working.
+     */
+    public function test_a_refused_run_shows_no_elapsed_time_and_no_green_dot(): void
+    {
+        $this->writeLiveRun(state: LiveBackupRun::REFUSED);
+
+        $this->travel(120)->seconds();
+
+        $page = Livewire::test('pages::settings.backups')->call('openRunModal');
+
+        $html = (string) $page->html();
+        $modal = substr($html, (int) strpos($html, 'data-modal="backup-run"'));
+        $modal = substr($modal, 0, (int) strpos($modal, '</dialog>'));
+
+        $this->assertStringContainsString('Refused', $modal);
+        $this->assertStringNotContainsString('seconds so far', $modal);
+        $this->assertStringNotContainsString('bg-green-500', $modal);
+        $this->assertStringContainsString('bg-orange-500', $modal);
+    }
+
+    /**
+     * A refused run that started no stage has no timeline to show.
+     *
+     * The refusal is written before any checkpoint runs, so six pending rows and "0 of 6"
+     * read as work still waiting when nothing did. The refusal sentence is the verdict and
+     * stays, with the run's timestamp and the close action.
+     */
+    public function test_a_refused_run_that_started_nothing_hides_the_checkpoint_timeline(): void
+    {
+        $this->writeLiveRun(state: LiveBackupRun::REFUSED);
+
+        $page = Livewire::test('pages::settings.backups')->call('openRunModal');
+
+        $html = (string) $page->html();
+        $modal = substr($html, (int) strpos($html, 'data-modal="backup-run"'));
+        $modal = substr($modal, 0, (int) strpos($modal, '</dialog>'));
+
+        $this->assertStringContainsString('The manga server did not report its version', $modal);
+        $this->assertStringContainsString('Started', $modal);
+        $this->assertStringContainsString('Done', $modal);
+        $this->assertStringNotContainsString('0 of 6', $modal);
+        $this->assertStringNotContainsString('of 6', $modal);
+
+        foreach ([
+            'Checking the server',
+            'Stopping Papyrus',
+            'Saving your manga data',
+            'Saving your library',
+            'Checking the backup details',
+            'Starting Papyrus again',
+            'Checking your manga data',
+            'Finishing the backup',
+        ] as $stage) {
+            $this->assertStringNotContainsString($stage, $modal, "the refused run has no {$stage} checkpoint");
+        }
+    }
+
     /** A failed run names what stopped it, said by the job that stopped. */
     public function test_a_failed_run_names_what_stopped_it(): void
     {

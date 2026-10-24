@@ -979,6 +979,39 @@ class LibraryCheckTest extends TestCase
             ->assertSee('+4');
     }
 
+    /**
+     * New-since-check is the secondary fact: the end corner, in the neutral
+     * on-art style, while unread keeps the start corner in vermilion.
+     */
+    public function test_the_new_chapter_badge_sits_at_the_end_in_the_neutral_style(): void
+    {
+        $this->addToLibrary(76);
+        $this->refreshShapes[76] = ['chapters' => 10];
+
+        $this->ledger()->checkDue($this->user, 30, 10, force: true);
+
+        $this->refreshShapes[76] = ['chapters' => 14];
+
+        $this->ledger()->checkDue($this->user, 30, 10, force: true);
+
+        $html = Livewire::test('pages::library')
+            ->assertOk()
+            ->assertSee('+4')
+            ->html();
+
+        $matched = preg_match('/<span\b[^>]*>\s*\+4\s*<\/span>/', $html, $badge);
+
+        $this->assertSame(1, $matched, 'The new-chapter badge is on the card.');
+
+        $tag = $badge[0];
+
+        $this->assertStringContainsString('end-1.5', $tag);
+        $this->assertStringNotContainsString('start-1.5', $tag, 'The start corner belongs to unread.');
+        $this->assertStringContainsString('on-art', $tag);
+        $this->assertStringNotContainsString('bg-vermilion-500', $tag);
+        $this->assertStringNotContainsString('text-zinc-950', $tag);
+    }
+
     public function test_the_card_shows_no_badge_for_nothing_new(): void
     {
         $this->addToLibrary(76);

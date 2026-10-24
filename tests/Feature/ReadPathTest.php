@@ -276,7 +276,10 @@ class ReadPathTest extends TestCase
         $this->series()
             ->call('refresh')
             ->assertSee('The source returned no chapters')
-            ->assertSee('If the series moved, you can move it to another source from here.');
+            ->assertSee('The source answered, but it listed no chapters.')
+            ->assertSee('If the series moved, you can move it to another source from here.')
+            ->assertSee('The source may have changed its layout or it may be broken.')
+            ->assertDontSee('upstream condition');
     }
 
     public function test_an_unknown_manga_is_explained_rather_than_a_blank_page(): void
