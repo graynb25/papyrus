@@ -17,13 +17,17 @@ checkable: each carries the commit that made the change.
 
 ## Unreleased
 
-The portable zip is not built yet, so the two shapes a reader can get are still "installer" and
-"checkout". See [the roadmap](ROADMAP.md) for what is coming and [docs/PORTABLE.md](docs/PORTABLE.md)
-for what the portable shape will do when it ships.
+The portable builder exists, but a portable archive is not published and its clean-machine first
+launch is not proven. The latest distributable release remains the Windows installer. See the
+[roadmap](ROADMAP.md) and [portable status](docs/PORTABLE.md) for details.
 
 ### Added
 
-**A safer source list, and the pages that explain the app.** Settings > Sources can now filter the installable extensions by language: every card carries its language, and the languages you switch off stay off across a reload. The source families also remember which ones you had open. Controls that had no accessible name now have one. Adult content stays off until you confirm that you are 18 or older; while it is off, the catalogue and search refuse the rating at the source and the Installed tab says how many extensions it is holding back. The bulk migration page has a way back to Sources, and the app now carries a privacy page and a terms of service page in plain language, naming the laws without their articles. `b4794cc` `a51bee7` `f43b021` `bae1a3d`
+**Sources are easier to choose.** The Sources page keeps its language filter for the extension catalogue. Installed site cards show a direct flag link for every language variant, along with the site count and health status; choosing a flag opens that source without expanding a long card. The mirror-drift notice gives a count and a sync action rather than a wall of extension names. `b4794cc` `73f8c8e` `942e544`
+
+**The reading path is clearer.** The library points new readers to Sources, an empty chapter list explains the next step, and the reader has a visible return link to its series. Covers and pages use responsive image sizes through the same-origin proxy. `c0e0a2b` `ebde5b2` `0ae5053`
+
+**The app explains recovery in reader-facing language.** Import, backup, security and source guidance now describe what happened and what the reader can do next. Adult content remains off until the reader confirms they are 18 or older. `6e0d77a` `fb2b8de` `7581156` `d1ed794` `bae1a3d`
 
 **The questions the app can now answer.** The FAQ gained six answers written from the code that
 does the work: what a search asks once you pin a site, what a block does and how long the wait is,

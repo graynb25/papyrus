@@ -1,9 +1,11 @@
 # Packaging Papyrus for Windows
 
-Status: **phase 0 complete and verified.** A 622.8MB install builds from one command and was run
-end to end in a Windows Sandbox on a machine with no PHP, no Java and no C++ runtime. Thirteen
-defects were found and fixed getting there; the last three existed only off the development
-machine. Item 0.9, the unified logging that makes any of this diagnosable, is designed in
+Status: **the 1.3.0 Windows installer builds; clean-machine reader verification is incomplete.** The
+latest Sandbox attempt started Papyrus on port 8402 and Suwayomi answered, but the guest produced no
+final report and did not prove a clean reader can browse and read from a source. Do not treat startup
+as end-to-end reader verification. Earlier completed runs found thirteen defects, including three
+visible only off the development machine. Item 0.9, the unified logging that makes any of this
+diagnosable, is designed in
 [`LOGGING.md`](LOGGING.md). Distribution, signing, platforms, backup and publishing are in
 [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
 and the upstream projects it would ship.
@@ -11,11 +13,19 @@ and the upstream projects it would ship.
 The shipped configs live in `packaging/`, and the build steps are:
 
 ```
+php packaging/runtime/stage-frankenphp.php the pinned web server
 php packaging/runtime/stage-runtime.php      the pinned JRE and the CA bundle
 php packaging/runtime/build-install.php --frankenphp=<zip> --jar=<jar> --into=<absolute path>
-php packaging/installer/build-installer.php  the .exe, signed
+php packaging/installer/build-installer.php --unsigned  the local unsigned .exe
 php packaging/installer/build-portable.php   the zip, hashed
 ```
+
+Local validation on 2026-10-23 used a detached worktree and output under the adjacent tools
+directory, not the checkout's `build/install` or `build/dist`. The install payload passed its
+built-in checks at 625.1MB. The unsigned 1.3.0 installer compiled at 261.8MB, and the portable
+archive compiled at 305.6MB with 12,944 entries and a matching sidecar hash. These are validation
+artifacts, not a new release. The clean-machine reader path remains unproven because the latest
+Sandbox run did not produce a final report or verify source reads.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

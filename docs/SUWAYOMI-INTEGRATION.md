@@ -1,6 +1,11 @@
-# Suwayomi integration: why a clean install cannot start
+# Suwayomi integration: historical startup investigation
 
-Research and plan. Nothing here is implemented yet.
+This file records the investigation that led to the launcher integration. Its original port and
+data-root failures are fixed: the launcher sets Suwayomi's JVM data-root property, writes the
+configured port and loopback address into `server.conf`, and checks authenticated source access.
+Current setup instructions are in [SETUP-SUWAYOMI.md](SETUP-SUWAYOMI.md). The sections below
+describe the pre-fix state and the plan that was implemented; do not read their old present-tense
+claims as current behavior.
 
 ## The symptom
 

@@ -5,20 +5,22 @@ rights.
 
 ---
 
-## Status: not shipped yet
+## Status: locally built, clean-machine read not verified
 
-**There is no portable zip.** The code supports the shape and the layout logic is tested, but no
-archive is produced and, as of this writing, the shape has **not** been run end to end on a real
-machine. See [What is not proven yet](#what-is-not-proven-yet), which is honest about why.
+The portable builder produced a 1.3.0 validation zip and matching SHA256 sidecar on 2026-10-23.
+The archive has 12,944 entries, includes the launcher and bundled runtimes, and contains no `.env`
+or reader databases. It is not published, and it has not been launched on a clean machine. The
+latest Sandbox attempt showed startup but wrote no final report and did not prove source access.
+See [What is not proven yet](#what-is-not-proven-yet).
 
 What is true today:
 
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The folder runs | yes, if you assemble it yourself |
+| The archive builder | built and content/hash verified on 2026-10-23 |
 | An archive anyone can download | **no** |
-| A first launch from a clean folder | **never run** |
+| A clean first launch with source reading | **not proven** |
 
 Do not promise a reader this works yet.
 
@@ -54,19 +56,28 @@ program and the reader expects their data in one predictable place.
 
 ## Running the portable shape today
 
-You can assemble one from a build. This is a developer route, not a reader route.
+You can assemble one from a build. This is a developer route, not a reader route. Run the steps in
+order; the install build deletes and recreates its output directory.
 
 ```
+php packaging/runtime/stage-frankenphp.php
+php packaging/runtime/stage-runtime.php
 php packaging/runtime/build-install.php ^
     --frankenphp=<frankenphp-windows-x86_64.zip> ^
     --jar=<Suwayomi-Server-v2.4.2366.jar>
+php packaging/installer/build-portable.php
 ```
 
-That produces `build/install`, which is the portable payload: 12,672 files, 623.3 MB, and a
-`Papyrus.cmd` in the root. Copy it anywhere and run `Papyrus.cmd`.
+That produces `build/install`, the common install tree used by the installer and portable builder.
+It is not itself a verified portable download. The portable builder writes a zip and hash sidecar to
+`build/dist`. For a safe validation build, pass an isolated absolute `--into` directory to
+`build-install.php`, then pass that same directory as `--install` to both packaging scripts and use a
+separate `--out` directory. Never use the active installation or a reader data directory as a build
+target.
 
-On first run it creates `papyrus-data` beside the folder, generates its own `.env`, applies
-migrations and starts. It is a complete install, not a subset.
+The launcher is designed to create `papyrus-data` beside the folder, generate its own `.env`, apply
+migrations and start. The clean-machine path still needs proof that it can browse a source and read
+through to manga pages.
 
 ---
 
@@ -74,17 +85,17 @@ migrations and starts. It is a complete install, not a subset.
 
 Three things, in the order they would bite.
 
-**1. A first launch from a clean folder has never been run.** Three defects have been found only by
-installing from nothing, and every one was invisible from a working install. A portable first launch
-is a fourth such path.
+**1. A portable first launch from a clean folder has not been proven.** The validation archive was
+inspected but not launched in a clean guest. Three defects have been found only by installing from
+nothing, and every one was invisible from a working install. A portable first launch is another
+such path.
 
-**2. A second Papyrus on one machine reports the first one's processes as its own.** Measured, not
-theorised. Running `status` and `health` from a copy of the install in a different folder reported
-**all four of the installed app's processes as healthy and running**, while failing on its own
-database. The two share fixed ports, so only one can actually serve, and the loser reports the
-winner's health. That is a real defect and it is not written up as one yet. It is the same mistake as
-lesson 223 in [ENGINEERING-NOTES.md](ENGINEERING-NOTES.md), one level up: a process that exists is
-not a process doing this install's work.
+**2. Fixed ports still limit side-by-side copies.** The queue and scheduler lookups now match the
+data directory and role, so one copy no longer claims another copy's workers. The web and Suwayomi
+health lines are port probes: a second copy can adopt the Suwayomi already on 4567 and a responding
+web server on 8000. Those lines do not prove the responding server belongs to that copy. See the
+current distinction in [ROADMAP.md](../ROADMAP.md) and the investigation in
+[ENGINEERING-NOTES.md](ENGINEERING-NOTES.md).
 
 **3. The ports are fixed.** Port 8000 for the app and 4567 for the manga server, with no way to
 change them. Two Windows accounts on one machine collide, and a portable copy alongside an installed

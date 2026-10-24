@@ -7,6 +7,16 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
+## Current delivery status, 2026-10-23
+
+Release metadata identifies 1.3.0 and lists an unsigned Windows installer. No portable archive is
+published. An isolated validation build on 2026-10-23 produced an unsigned 261.8MB installer and a
+305.6MB portable zip with 12,944 entries; required files, privacy exclusions and the sidecar SHA256
+were verified. These are local validation artifacts, not a release. The old file in the checkout's
+`build/dist` remains a 921-byte stub. The latest Sandbox attempt produced no final report and did not
+prove fresh-install source access. macOS and Linux packaging below remain proposals, not available
+downloads.
+
 ## What we ship, and what we refuse to ship
 
 The rule is simple and it is already how the application behaves: **Papyrus ships code, never
@@ -31,9 +41,9 @@ Each of these would convert a code distributor into a content distributor:
 
 1. **Seed a store at install time.** Do not write an `extension_stores` row. Not as a default,
    not as a suggestion in a setup wizard, not as a commented-out example in a generated config.
-2. **Bundle extensions.** The 1,379 Kotlin APK-shaped jars are Suwayomi's to fetch, at the
-   reader's request, from a store they chose.
-3. **Ship a database.** Yours is a reader's library with 867 series in it. The build must run
+2. **Bundle extensions.** Extension packages are Suwayomi's to fetch, at the reader's request,
+   from a store they chose.
+3. **Ship a database.** A reader database contains their library and history. The build must run
    `migrate` on a fresh file, never export one.
 
 Documentation naming Keiyoushi is fine and should stay. What creates exposure is a shipped

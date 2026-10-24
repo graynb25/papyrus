@@ -57,8 +57,8 @@ If you are self-hosting for yourself, that is you.
 
 ## Adding a store
 
-1. **Settings, then Connections.** This is where external services are connected.
-2. Find the **Extension stores** section.
+1. Open **Sources** in the main navigation.
+2. Find the **Add a store** form beneath the registered stores.
 3. Paste the store's **index URL**.
 4. Papyrus fetches the store and shows its name and badge.
 5. **Read the signing key before trusting it.** It is shown, not hidden. That is deliberate.
@@ -80,7 +80,9 @@ transcribed with a typo rather than a network problem.
 
 - **Search** searches across every installed source at once.
 - **Browse** lets you look at a source directly.
-- **Sources** shows what is installed, which source a series came from, and lets you remove one.
+- **Sources** groups installed variants by site. Each flag opens that language variant directly;
+  the card also shows the source count, health and search pin.
+- **Extensions**, on the Sources page, is where you install or uninstall extension packages.
 
 ### Choosing between sources for the same series
 

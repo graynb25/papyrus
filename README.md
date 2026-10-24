@@ -14,8 +14,8 @@ flow.
 This started as an attempt to find out how much of a manga reader could be rebuilt on top
 of Suwayomi without touching it. That turned out to be most of it.
 
-Keiyoushi extensions are Kotlin Android apps. PHP cannot run one, and rewriting 1,379 of
-them is not a project. So the parsing problem is delegated entirely to Suwayomi, and
+Keiyoushi extensions are Kotlin Android apps. PHP cannot run one, and rewriting the extension
+ecosystem is not a project. So the parsing problem is delegated entirely to Suwayomi, and
 everything a reader actually touches is rebuilt: the library, the shelves, the read state,
 the progress, the notes, the settings, the search, the whole reading experience.
 
@@ -39,20 +39,21 @@ many sources a filter term excluded, because a filter that quietly emptied a thi
 sources looks identical to one that found nothing. Unread counts mark themselves stale when
 a source renumbers chapters, rather than asserting a figure that is no longer true.
 
-It is a portfolio and a learning project, not a product. There is no changelog cadence and
-no support promise. Tachiyomi, which this architecture descends from, was taken down. That is
-not immunity, and this is not something to monetise.
+It is a portfolio and a learning project, not a product. There is no support promise.
+Tachiyomi, which this architecture descends from, was taken down. That is not immunity, and
+this is not something to monetise.
 
 ## Status
 
-Discovery and the read path are both done, verified against a live Suwayomi. Search,
-source management, health, downloads, migration between sources, the series page, the
-reader and settings all work.
+Discovery and the read path work in the checkout and have been walked against live Suwayomi.
+The packaged application starts, but a clean-install read from a manga source is not yet
+proven. Search, source management, health, downloads, migration between sources, the series
+page, the reader and settings are implemented.
 
 | Screen | Route | What it does |
 |---|---|---|
 | Search | `/search` | Fans one query out across every eligible source, deduplicates, shows per-source outcomes. Results carry a library toggle, so keeping a series is one click from the card |
-| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the extension catalogue, 1,396 at the last sync. The Updates view offers per-extension and update-all actions |
+| Sources | `/sources` | Extension stores, signing keys, trust decisions, and the extension catalogue, 1,427 available extensions in a live check on 2026-10-23. Installed site cards link directly to each language variant. The Updates view offers per-extension and update-all actions |
 | Health | `/health` | Per-site health, grouped because 82 sources are really 15 sites (counted 2026-10-01) |
 | Library | `/library` | Everything you added, filed into shelves, with unread counts |
 | Downloads | `/downloads` | What is queued, downloading or finished, reconciled in two calls a pass |
@@ -765,7 +766,7 @@ something to monetise.
 | **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. Not shipped yet, and this says honestly what is unproven |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The archive builder works; publication and clean-machine source access remain unproven |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

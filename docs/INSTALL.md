@@ -98,6 +98,9 @@ Then:
    search returns nothing and that is not a fault. See **[SOURCES.md](SOURCES.md)**, which is the
    one page you cannot skip.
 
+   Add an extension store from the **Add a store** form on the Sources page. Settings > Connections
+   is for external services such as AniList, not extension stores.
+
 That is the whole onboarding. After that, **Search**, add a series, and read.
 
 ---

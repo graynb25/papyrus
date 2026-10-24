@@ -5,6 +5,19 @@ No commit hashes, no file names, no jargon.
 
 ---
 
+## Version 1.3.0, 19 October 2026
+
+This release adds guided moves between sources, source pins for search, reading insights, and a
+licences page. You can also import a library from another reader app and back up or restore your
+Papyrus data while the app is running.
+
+## Changes since 1.3.0
+
+The Sources page now shows a flag for each installed language variant. Clicking it opens that
+source directly. Site cards keep their source count and health status without expanding into a long
+list. The catalogue still has a separate language filter. The reading path and error messages have
+also been clarified, and manga images now use responsive sizes.
+
 ## Version 1.2.0, 12 October 2026
 
 This is the first version of Papyrus you can install on a computer and just use. Before this you had
@@ -76,10 +89,10 @@ and you point it at a list you have chosen to trust. There is a guide to this in
 
 ---
 
-## Not in this version yet
+## Still being verified
 
-- **The portable version.** A folder you can copy to a USB stick and run without installing anything.
-  The code supports it and it is being tested now. [docs/PORTABLE.md](docs/PORTABLE.md)
+- **A portable download.** The archive builder exists, but no package is published and a
+  clean-machine first launch that reads from a source is not proven. [docs/PORTABLE.md](docs/PORTABLE.md)
 - **A Mac version.** On hold.
 - **In-app updates.** Papyrus will tell you a new version exists. It will not download and install
   it for you without asking.

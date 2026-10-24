@@ -23,9 +23,9 @@ Severity is the project's existing scale:
 ## Shipped
 
 Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what exists: a Windows
-installer, a portable payload, a library of 867 series and 21,447 chapter states on a real install,
-daily backups, a diagnostics bundle, a health check that asks real questions, and a Suwayomi version
-check.
+installer, a portable archive builder, daily backups, a diagnostics bundle, a health check that asks
+real questions, and a Suwayomi version check. A portable package is not published, and clean-machine
+source access is not proven.
 
 ---
 
@@ -133,13 +133,17 @@ Papyrus.
 
 **Also done, and the reason this was findable:** a port held by something else now says who holds it.
 
-### 5. A portable zip
+### 5. A verified portable download
 
-**Planned. Not started.**
+**In progress.** An isolated 1.3.0 validation build on 2026-10-23 produced a 305.6MB zip with
+12,944 entries; required files, privacy exclusions and the SHA256 sidecar were checked. No portable
+archive is published. The old file still in the checkout's `build/dist` is a 921-byte stub and is
+not the validation artifact.
 
-`build/install` is the payload and it runs. What is missing is an archive and a first launch from a
-clean folder. Three defects in this project's history were found only by installing from nothing, so
-this is expected to find more.
+The latest Sandbox run started Papyrus and Suwayomi but produced no final report and did not prove
+source access. The installer verifier also refuses to run while the reader's installed program or
+data directory already exists. A clean-machine reader path remains open until those gates can run
+safely and prove source access.
 
 ---
 
