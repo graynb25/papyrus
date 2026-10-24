@@ -1020,6 +1020,9 @@ Files it would touch: `resources/views/pages/series.blade.php`.
 
 Estimated cost: 15 minutes.
 
+Status (2026-10-24): Done. The no-chapters callout now carries the migration cue
+and names the likely upstream causes without guessing which one it is.
+
 Preview: No capture of an empty series; the proposal carries the mockup only.
 
 ### 25. The reader has no way back to the chapter list from the page
@@ -1047,6 +1050,10 @@ Files it would touch: `resources/views/pages/reader.blade.php` or
 `app/Http/Controllers/ReaderController.php`.
 
 Estimated cost: 15 minutes.
+
+Status (2026-10-24): Done. The reader now shows a visible back link to the
+series, keeping the destination in-app and reachable without depending on the
+browser back button.
 
 Preview: No capture of the reader in this pass; the proposal carries the mockup
 only.

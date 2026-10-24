@@ -332,7 +332,23 @@
             transition: background .2s var(--ease-swift), transform .2s var(--ease-swift), border-color .2s;
         }
 
-        .reader-back { inset-inline-end: 1rem; }
+        .reader-back {
+            inset-inline-end: 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            width: auto;
+            min-width: 2.5rem;
+            padding: .5rem .75rem;
+            border-radius: 9999px;
+            text-decoration: none;
+            white-space: nowrap;
+            font-size: .75rem;
+            font-weight: 500;
+            color: var(--ink-200);
+        }
+
+        .reader-back svg { flex-shrink: 0; }
         .reader-toggle { inset-inline-end: 4rem; }
         .reader-settings-toggle { inset-inline-end: 7rem; }
 
@@ -1261,10 +1277,12 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
 
     <a href="{{ route('series', ['manga' => $mangaId]) }}"
        class="reader-back"
-       aria-label="{{ __('Back to chapter list') }}">
-        <svg class="size-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+       aria-label="{{ __('Back to the series') }}"
+       title="{{ __('Back to the series') }}">
+        <svg class="size-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
         </svg>
+        <span>{{ __('Back to the series') }}</span>
     </a>
 
 

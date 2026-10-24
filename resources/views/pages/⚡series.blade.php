@@ -1052,7 +1052,7 @@ new #[Title('Series')] class extends Component
             if (str_contains(strtolower((string) $this->loadError), 'no chapters')) {
                 return [
                     __('The source returned no chapters'),
-                    __('This is an upstream condition: the source answered, and its chapter listing was empty. The series may have moved, or the source may have changed its layout.'),
+                    __('This is an upstream condition: the source answered, and its chapter listing was empty. If the series moved, you can move it to another source from here. The source may have changed its layout or it may be broken.'),
                 ];
             }
 

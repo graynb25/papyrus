@@ -273,7 +273,10 @@ class ReadPathTest extends TestCase
             'message' => 'Exception while fetching data (/fetchChapters) : No chapters found',
         ]]];
 
-        $this->series()->call('refresh')->assertSee('The source returned no chapters');
+        $this->series()
+            ->call('refresh')
+            ->assertSee('The source returned no chapters')
+            ->assertSee('If the series moved, you can move it to another source from here.');
     }
 
     public function test_an_unknown_manga_is_explained_rather_than_a_blank_page(): void
@@ -406,6 +409,14 @@ class ReadPathTest extends TestCase
         $response->assertOk();
         $response->assertSee('/suwayomi/api/v1/manga/76/chapter/1/page/0', false);
         $response->assertSee('/suwayomi/api/v1/manga/76/chapter/1/page/2', false);
+    }
+
+    public function test_the_reader_shows_a_visible_back_to_series_link(): void
+    {
+        $html = $this->get('/read/76/1')->assertOk()->getContent();
+
+        $this->assertStringContainsString('Back to the series', $html);
+        $this->assertStringContainsString('/series/76', $html);
     }
 
     /**
