@@ -297,6 +297,52 @@ class LauncherPhpConfigTest extends TestCase
     }
 
     /**
+     * The packaged runtime has to accept a real backup, not a fixture-sized one.
+     *
+     * A measured Tachimanga backup is 41MB and grows with the library it came from. The
+     * 64M/68M pair this replaces was close enough that a larger library would hit it.
+     * `post_max_size` must stay above `upload_max_filesize`, or the multipart request is
+     * truncated before PHP ever compares the file against its own limit.
+     */
+    public function test_the_shipped_ini_leaves_room_for_a_real_library_backup(): void
+    {
+        $this->installShippedIni();
+
+        $settings = [];
+        foreach ($this->activeLines($this->resolveIni($this->supervisor())) as $line) {
+            if (preg_match('/^\s*(memory_limit|upload_max_filesize|post_max_size)\s*=\s*([0-9]+[KMG]?)\s*$/i', $line, $match)) {
+                $settings[strtolower($match[1])] = strtoupper($match[2]);
+            }
+        }
+
+        $this->assertSame('512M', $settings['memory_limit'] ?? null);
+        $this->assertSame('256M', $settings['upload_max_filesize'] ?? null);
+        $this->assertSame('260M', $settings['post_max_size'] ?? null);
+
+        $bytes = static function (string $value): int {
+            $unit = strtoupper(substr($value, -1));
+
+            return (int) $value * match ($unit) {
+                'G' => 1024 ** 3,
+                'M' => 1024 ** 2,
+                'K' => 1024,
+                default => 1,
+            };
+        };
+
+        $this->assertGreaterThan(
+            $bytes($settings['upload_max_filesize']),
+            $bytes($settings['post_max_size']),
+            'post_max_size has to carry the file plus multipart framing, or the upload is silently truncated',
+        );
+        $this->assertGreaterThan(
+            41_272_047,
+            $bytes($settings['upload_max_filesize']),
+            'the measured real backup is 41MB and has to fit with room for a larger library',
+        );
+    }
+
+    /**
      * A comment naming the token syntax is documentation, not a fault.
      *
      * The shipped ini explains its own templating in a comment that names `{{TOKEN}}` outright.

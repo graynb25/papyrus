@@ -30,11 +30,12 @@ use Illuminate\Support\Facades\Storage;
  *
  * ## Why the pixel ceiling is the guard that matters
  *
- * `memory_limit` is 128M and a decoded image costs roughly four bytes a pixel, so a 12
- * megapixel phone photo is already 48MB before anything else is allocated. A byte limit
- * does not protect that: two megabytes of PNG can be 20000 by 20000. So the dimensions
- * are read with `getimagesizefromstring`, which parses the header without decoding, and
- * an absurd one is refused before gd is involved at all.
+ * The checkout's `memory_limit` is 128M (the packaged install ships 512M), and a
+ * decoded image costs roughly four bytes a pixel, so a 12 megapixel phone photo is
+ * already 48MB before anything else is allocated. A byte limit does not protect that:
+ * two megabytes of PNG can be 20000 by 20000. So the dimensions are read with
+ * `getimagesizefromstring`, which parses the header without decoding, and an absurd one
+ * is refused before gd is involved at all.
  */
 class CoverStore
 {

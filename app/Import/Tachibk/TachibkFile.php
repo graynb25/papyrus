@@ -47,28 +47,50 @@ final class TachibkFile
             return $empty;
         }
 
-        $bytes = @file_get_contents($path);
+        /*
+         * The file may have just been written by a download or an upload, and PHP's stat
+         * cache can answer with the size it had before that write. The stream walk below
+         * is the real proof, but this number is reported to the reader and has to be the
+         * one on disk now.
+         */
+        clearstatcache(true, $path);
+
+        $bytes = @filesize($path);
 
         if ($bytes === false) {
             return $empty;
         }
 
-        $empty['bytes'] = strlen($bytes);
+        $empty['bytes'] = $bytes;
 
-        if (substr($bytes, 0, 2) !== TachibkSchema::GZIP_MAGIC) {
+        $magic = @file_get_contents($path, false, null, 0, 2);
+
+        if ($magic !== TachibkSchema::GZIP_MAGIC) {
             return $empty;
         }
 
         $empty['gzip'] = true;
 
-        $payload = @gzdecode($bytes);
+        $stream = TachibkStream::open($path);
 
-        if ($payload === false) {
+        if ($stream === null) {
             return $empty;
         }
 
         try {
-            foreach (ProtoBuffer::spans($payload) as [$number, $wire]) {
+            /*
+             * Only the three record numbers the counts need are returned. A backup also
+             * carries application state and, in newer writers, fields with no name here;
+             * skipping them at the stream is the difference between counting a large
+             * library and allocating it.
+             */
+            $wanted = [
+                TachibkSchema::BACKUP_SERIES,
+                TachibkSchema::BACKUP_CATEGORIES,
+                TachibkSchema::BACKUP_SOURCE,
+            ];
+
+            foreach ($stream->fields($wanted) as $number => [$wire]) {
                 if ($wire !== ProtoBuffer::WIRE_BYTES) {
                     continue;
                 }
@@ -82,8 +104,19 @@ final class TachibkFile
                 }
             }
         } catch (MalformedProto) {
-            // A payload that does not walk is not a backup, and the counts stay at zero.
+            /*
+             * A payload that stops mid-field is not a backup, and reporting the records
+             * that happened to come before the break would let a truncated file with a
+             * shelf record read as a genuine backup of an empty library. The whole-file
+             * path answered zero for the same bytes, so this does too.
+             */
+            $empty['series'] = 0;
+            $empty['categories'] = 0;
+            $empty['sources'] = 0;
+
             return $empty;
+        } finally {
+            $stream->close();
         }
 
         return $empty;

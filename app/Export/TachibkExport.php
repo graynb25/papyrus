@@ -7,6 +7,7 @@ use App\Import\Tachibk\MangaMerge;
 use App\Import\Tachibk\ProtoBuffer;
 use App\Import\Tachibk\TachibkMerger;
 use App\Import\Tachibk\TachibkSchema;
+use App\Import\Tachibk\TachibkStream;
 use App\Models\User;
 use App\Support\Library;
 use App\Support\ReadingState;
@@ -71,13 +72,14 @@ final class TachibkExport
         $path = $this->backup->createBackup();
 
         $this->backup->download($path, $sink);
-        $bytes = file_get_contents($sink);
 
-        if ($bytes === false) {
-            throw new \RuntimeException("The fresh export could not be read back from the sink: {$sink}");
-        }
-
-        $payload = gzdecode($bytes);
+        /*
+         * The stream decompresses the sink without also holding its compressed bytes,
+         * which is the difference between one copy of a large export in memory and two.
+         * The merger still needs the payload as one string because it rewrites a record
+         * and hands back a new message; the saving here is the file that carried it.
+         */
+        $payload = TachibkStream::payload($sink);
 
         if ($payload === false) {
             throw new \RuntimeException("The server's fresh export is not decodable gzip: {$sink}");
@@ -221,17 +223,31 @@ final class TachibkExport
             }
         }
 
-        $product = gzencode($merged['payload']);
-
-        if ($product === false) {
+        /*
+         * Written through zlib rather than encoded into a string first, so the merged
+         * message and its compressed copy never both exist in memory. The waterfall
+         * compressed the record and then wrote it with `file_put_contents`, which is
+         * what made a large export need room for both halves at the peak.
+         */
+        if (! TachibkStream::write($sink, $merged['payload'])) {
             throw new \RuntimeException('The merged export could not be encoded as gzip.');
         }
 
-        file_put_contents($sink, $product);
+        /*
+         * `gzopen()` writes outside PHP's stat cache, and the sink already existed as the
+         * server's downloaded export. Without this clear, `filesize()` can answer with the
+         * size of the file that was replaced rather than the one just written.
+         */
+        clearstatcache(true, $sink);
+        $bytes = @filesize($sink);
+
+        if ($bytes === false) {
+            throw new \RuntimeException("The merged export could not be read back from the sink: {$sink}");
+        }
 
         return new TachibkExportResult(
             file: $sink,
-            fileBytes: strlen($product),
+            fileBytes: $bytes,
             seriesInFile: $file['series'],
             // Planned names every stateful series, whether or not the server could
             // name one: matched plus skipped equals planned only with it counted

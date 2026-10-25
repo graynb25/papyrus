@@ -15,13 +15,14 @@ use Illuminate\Console\Command;
 /**
  * Import another reader app's library backup into this one.
  *
- * ## Why a command and not an upload form
+ * ## Why a command as well as an upload form
  *
- * The file does not fit through this server: `post_max_size` is 8M and `upload_max_filesize`
- * is 2M against a measured backup of **39.36MB**, and `post_max_size` binds first. Neither is
- * raisable at runtime, `upload_max_filesize` being `PHP_INI_PERDIR`. So for a backup of any
- * real size this command is not the convenient route, it is the only one that works today.
- * That is also why {@see InspectBackup} exists and why both take a path.
+ * The packaged runtime accepts a backup much larger than the measured 39.36MB one, but a
+ * development PHP can bind first: `post_max_size` is often 8M and `upload_max_filesize`
+ * 2M, and neither is raisable at runtime; both are `PHP_INI_PERDIR`. The command takes a
+ * path, so a reader whose PHP is smaller than their backup can still import it, and it is
+ * the route for a file already on the server. {@see InspectBackup} exists for the same
+ * reason and both take a path.
  *
  * ## Why it is one command and not a queue of jobs
  *

@@ -68,6 +68,16 @@ trait BuildsTachibkBackups
     /** Add field numbers this reader does not map, which a newer writer would send. */
     protected bool $withUnknownFields = false;
 
+    /**
+     * Write a single application-state field of this many bytes.
+     *
+     * A real server's application state can be large, and the streaming walk is only an
+     * improvement if it discards a field it was not asked for rather than making a string
+     * of it. The size is a knob so a test can look for that allocation instead of trusting
+     * the implementation to avoid one.
+     */
+    protected int $largeStateFieldBytes = 0;
+
     /** Add a series carrying neither a title nor a url. */
     protected bool $withUnnameableSeries = false;
 
@@ -222,6 +232,15 @@ trait BuildsTachibkBackups
              */
             $payload .= $this->bytes(9000, $this->bytes(1, 'webUI_migration').$this->bytes(2, '9'));
             $payload .= $this->bytes(9001, $this->bytes(1, '10mb'));
+        }
+
+        if ($this->largeStateFieldBytes > 0) {
+            /*
+             * A field the top level walk is never asked for, filled with bytes that cannot
+             * be compressed away. A stream that skips it holds one read buffer; a string
+             * walk holds the whole thing, and the memory test can tell the difference.
+             */
+            $payload .= $this->bytes(9001, str_repeat("\x5a", $this->largeStateFieldBytes));
         }
 
         if ($this->withGroupWireType) {

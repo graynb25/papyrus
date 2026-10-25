@@ -14,15 +14,15 @@ use Illuminate\Support\Collection;
  *
  * Two reasons, and the second is the real one.
  *
- * First, the file does not fit through this server. `upload_max_filesize` is 2M and
- * `post_max_size` is 8M against a measured backup of 39.36MB, and `post_max_size` binds
- * first. `upload_max_filesize` is `PHP_INI_PERDIR`, so it cannot be raised at runtime. So
- * this command is not a convenience, it is the only way a large backup reaches the reader
- * at all today.
+ * First, an upload depends on the PHP that receives it. The packaged install ships room
+ * for a measured 39.36MB backup, but a development PHP can still cap `post_max_size` at
+ * 8M and `upload_max_filesize` at 2M, and neither is raisable at runtime; both are
+ * `PHP_INI_PERDIR`. A command that takes a path works on both, and it is the route for a
+ * backup already sitting on the server.
  *
- * Second, this is phase 1 of an import and phase 1 writes nothing. Making the only way to
- * reach the reader a dry run means the first thing anybody can do with a backup is look at
- * it safely, before a route and a Livewire component exist.
+ * Second, this is phase 1 of an import and phase 1 writes nothing. Looking at a file
+ * safely, before a route and a Livewire component exist, is the first thing anybody
+ * should be able to do with a backup.
  *
  * ## What the output is for
  *

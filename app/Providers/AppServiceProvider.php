@@ -13,6 +13,7 @@ use App\Support\Deployment;
 use App\Support\Library;
 use App\Support\LocalReaderAccount;
 use App\Support\Suwayomi\Timestamps;
+use App\Support\UploadLimit;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\Gateway;
 use App\Suwayomi\Transport;
@@ -122,7 +123,39 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->allowTemporaryUploadsToTheServerCeiling();
         $this->rememberTheLocalReader();
+    }
+
+    /**
+     * Let Livewire receive a file as large as PHP itself will take.
+     *
+     * ## Why the framework default is the wrong ceiling here
+     *
+     * Livewire validates every temporary upload against `max:12288` kilobytes unless the
+     * application names rules, and that is 12MB. A measured real backup is 41MB, so a
+     * file the import page would accept was refused by the upload endpoint before the
+     * page's own check ever saw it. The page reports the server's ceiling and the
+     * endpoint that receives the file has to enforce the same number, or the two
+     * disagree in the one place a reader can reach.
+     *
+     * ## Why an unlimited server drops the rule rather than capping at zero
+     *
+     * `post_max_size = 0` or `upload_max_filesize = 0` means no limit, which
+     * {@see UploadLimit::bytes()} reports as zero. A `max:0` rule would read as "nothing
+     * may be uploaded", the opposite. Without a max rule PHP's own ini still decides
+     * what arrives, which is what "no limit" was asking for.
+     */
+    private function allowTemporaryUploadsToTheServerCeiling(): void
+    {
+        $ceiling = UploadLimit::bytes();
+        $rules = ['required', 'file'];
+
+        if ($ceiling > 0) {
+            $rules[] = 'max:'.intdiv($ceiling, 1024);
+        }
+
+        config(['livewire.temporary_file_upload.rules' => $rules]);
     }
 
     /**

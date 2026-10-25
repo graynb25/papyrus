@@ -335,9 +335,10 @@ return [
     | slot on this app can show.
     |
     | The pixel ceiling is the memory guard, not the byte ceiling, and it is the one
-    | that matters. memory_limit is 128M and a gd truecolor image costs four bytes a
-    | pixel, so the ceiling has to come from what memory can actually hold rather than
-    | from what a phone can photograph.
+    | that matters. The smallest memory limit Papyrus runs under is the checkout's
+    | 128M (the packaged install ships 512M), and a gd truecolor image costs four bytes
+    | a pixel, so the ceiling has to come from what memory can actually hold rather
+    | than from what a phone can photograph.
     |
     | 12 megapixels, which is four bytes for 48MB. That is 4000 by 3000, still a good
     | cover photo, and it leaves room inside 128M for the decoded original, the resized
@@ -349,10 +350,11 @@ return [
     | Two megabytes of PNG can also be 20000 by 20000, so a byte limit alone would not
     | stop any of this.
     |
-    | The byte ceiling matches this server's own upload_max_filesize, which is 2M in
-    | php.ini. Raising it is an ini change outside this project and affects every site
-    | on the machine, so the number is read to agree with reality rather than to wish
-    | it were larger, and the validation message says which limit was hit.
+    | The two megabyte byte ceiling is a product limit, not the server's upload ceiling.
+    | It sits well above the largest source cover measured (193KB) and still keeps a
+    | reader from handing cover handling a file the size of a library backup. The server's
+    | own upload ceiling is read at runtime on the import page; this number does not move
+    | with it, because a 256M cover is not a cover.
     |
     */
 

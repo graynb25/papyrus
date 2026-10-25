@@ -912,15 +912,15 @@ new #[Title('Series')] class extends Component
                 'mimes:jpg,jpeg,png,webp',
 
                 /*
-                 * The byte ceiling is this server's own upload_max_filesize, which is 2M
-                 * in php.ini, so the number matches reality rather than a wish. A reader
-                 * who hits it is being stopped by the server, not by a rule they cannot
-                 * see, and the message says which.
+                 * The byte ceiling is the config's product limit, not this server's
+                 * upload_max_filesize: a packaged install takes a 256M backup, and a
+                 * cover is not a backup. The number is printed in the message so a
+                 * reader knows which rule stopped them.
                  */
                 'max:'.(int) config('papyrus.covers.max_kilobytes'),
             ],
         ], [
-            'coverUpload.max' => 'A cover has to be under :max KB, which is this server\'s upload limit. Resize it and try again.',
+            'coverUpload.max' => 'A cover has to be under :max KB. Resize it and try again.',
             'coverUpload.mimes' => 'A cover has to be a JPEG, PNG or WebP.',
         ]);
 

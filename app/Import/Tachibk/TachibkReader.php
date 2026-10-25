@@ -63,29 +63,23 @@ final class TachibkReader implements BackupReader
      */
     public function recognises(string $path): bool
     {
-        if (! is_file($path) || ! is_readable($path)) {
-            return false;
-        }
+        $stream = TachibkStream::open($path);
 
-        $magic = @file_get_contents($path, false, null, 0, 2);
-
-        if ($magic !== TachibkSchema::GZIP_MAGIC) {
+        if ($stream === null) {
             return false;
         }
 
         try {
             /*
-             * `@`, because a file cut short is one of the things this has to answer rather
-             * than complain about. gzdecode emits a warning before it returns false, and a
-             * refusal printed above a stack trace is worse than the refusal.
+             * Only top level series records are returned. The file also carries sources,
+             * shelves and application state, and none of them can make it a backup, so
+             * the walk does not allocate them while looking for the first title.
              */
-            $payload = @gzdecode((string) @file_get_contents($path));
+            foreach ($stream->fields([TachibkSchema::BACKUP_SERIES]) as [$wire, $series]) {
+                if ($wire !== ProtoBuffer::WIRE_BYTES || ! is_string($series)) {
+                    continue;
+                }
 
-            if ($payload === false) {
-                return false;
-            }
-
-            foreach (ProtoBuffer::messages($payload, TachibkSchema::BACKUP_SERIES) as $series) {
                 if (ProtoBuffer::text($series, TachibkSchema::SERIES_TITLE) !== null) {
                     return true;
                 }
@@ -94,6 +88,8 @@ final class TachibkReader implements BackupReader
             return false;
         } catch (MalformedProto) {
             return false;
+        } finally {
+            $stream->close();
         }
     }
 
@@ -107,32 +103,94 @@ final class TachibkReader implements BackupReader
      */
     public function read(string $path): ImportedBackup
     {
-        if (! $this->recognises($path)) {
+        $stream = TachibkStream::open($path);
+
+        if ($stream === null) {
             throw new ImportRefused(
                 'That file is not a Mihon or Suwayomi backup. It has to be the .tachibk that one '
                 .'of those apps writes from its own backup screen.'
             );
         }
 
-        $payload = @gzdecode((string) @file_get_contents($path));
-
-        if ($payload === false) {
-            throw new ImportRefused(
-                'That backup could not be decompressed. It may be damaged, so export it again '
-                .'and nothing needs to change on this server.'
-            );
-        }
+        $series = [];
+        $names = [];
+        $total = 0;
+        $titled = false;
 
         try {
-            $names = $this->sourceNames($payload);
-            [$series, $total] = $this->series($payload);
+            /*
+             * One walking pass, where the string reader made two.
+             *
+             * It called `recognises()` and then decompressed the file again to read it.
+             * The stream is opened once, and the title check that makes a file this
+             * format travels with the walk that builds the series.
+             */
+            $wanted = [TachibkSchema::BACKUP_SERIES, TachibkSchema::BACKUP_SOURCE];
+
+            foreach ($stream->fields($wanted) as $number => [$wire, $value]) {
+                if ($wire !== ProtoBuffer::WIRE_BYTES || ! is_string($value)) {
+                    continue;
+                }
+
+                if ($number === TachibkSchema::BACKUP_SOURCE) {
+                    $id = ProtoBuffer::integer($value, 2);
+                    $name = ProtoBuffer::text($value, 1);
+
+                    if ($id !== null && $name !== null) {
+                        $names[$id] = $name;
+                    }
+
+                    continue;
+                }
+
+                $total++;
+
+                $title = ProtoBuffer::text($value, TachibkSchema::SERIES_TITLE);
+                $url = ProtoBuffer::text($value, TachibkSchema::SERIES_URL);
+
+                if ($title !== null) {
+                    $titled = true;
+                }
+
+                if ($title === null && $url === null) {
+                    continue;
+                }
+
+                $series[] = new ImportedSeries(
+                    /*
+                     * There is no local series id in this format to borrow, so this is the position
+                     * in the file. It exists only so a caller can hold a reference while inside
+                     * this one backup, exactly as it does for the Tachimanga reader, and the
+                     * pipeline pairs a series by url and never by this.
+                     */
+                    backupId: $total,
+                    sourceId: ProtoBuffer::integer($value, TachibkSchema::SERIES_SOURCE) ?? 0,
+                    url: $url ?? '',
+                    title: $title ?? '',
+                    chapters: $this->chapters($value),
+                );
+            }
         } catch (MalformedProto $e) {
             /*
-             * `recognises()` stops at the first series that looks right, so it can return true
-             * on a file that goes wrong further in. This is where that second walk happens and
-             * where such a file is actually turned away, rather than halfway through writing.
+             * Any walk failure refuses the whole file, rather than importing as far as it
+             * got. Half a library is worse than none, because it looks like a shelf and is
+             * missing read state on everything it dropped.
              */
             throw new ImportRefused($e->getMessage());
+        } finally {
+            $stream->close();
+        }
+
+        /*
+         * The same gate `recognises()` applies. Parsing as protobuf is not the same as
+         * being this format: a file of title-less records walks cleanly and is something
+         * else entirely.
+         */
+        if (! $titled) {
+            throw new ImportRefused(
+                'That file is not a Mihon or Suwayomi backup. It has to be the .tachibk that one '
+                .'of those apps writes from its own backup screen.'
+            );
         }
 
         return new ImportedBackup(
@@ -147,81 +205,6 @@ final class TachibkReader implements BackupReader
             totalInFile: $total,
             sources: $this->sources($series, $names),
         );
-    }
-
-    /**
-     * Source id to source name, from the top level list of sources.
-     *
-     * A series only ever carries the source's id, which is a number a reader has never seen
-     * and would not recognise. The name is what turns "2327480808438768017" into "Atsumaru",
-     * and it travels in the one top level field that carries one.
-     *
-     * @return array<int, string>
-     *
-     * @throws MalformedProto
-     */
-    private function sourceNames(string $payload): array
-    {
-        $names = [];
-
-        foreach (ProtoBuffer::messages($payload, TachibkSchema::BACKUP_SOURCE) as $source) {
-            $id = ProtoBuffer::integer($source, 2);
-            $name = ProtoBuffer::text($source, 1);
-
-            if ($id !== null && $name !== null) {
-                $names[$id] = $name;
-            }
-        }
-
-        return $names;
-    }
-
-    /**
-     * Every series the backup holds, which for this format is the reader's whole library.
-     *
-     * There is no in_library flag here to forget, which is the mistake the Tachimanga reader
-     * has to be careful about. A `.tachibk` only ever holds what the reader chose to keep.
-     *
-     * Returns the count of series the file held alongside the ones worth importing, because
-     * they are different numbers. A series with nothing to show and nothing to match on is
-     * skipped rather than imported as a blank row, and reporting only the survivors would
-     * quietly claim the file never held it.
-     *
-     * @return array{list<ImportedSeries>, int}
-     *
-     * @throws MalformedProto
-     */
-    private function series(string $payload): array
-    {
-        $series = [];
-        $position = 0;
-
-        foreach (ProtoBuffer::messages($payload, TachibkSchema::BACKUP_SERIES) as $value) {
-            $position++;
-
-            $title = ProtoBuffer::text($value, TachibkSchema::SERIES_TITLE);
-            $url = ProtoBuffer::text($value, TachibkSchema::SERIES_URL);
-
-            if ($title === null && $url === null) {
-                continue;
-            }
-
-            $series[] = new ImportedSeries(
-                /*
-                 * There is no local series id in this format to borrow, so this is the position
-                 * in the file. It exists only so a caller can hold a reference while inside
-                 * this one backup, exactly as it does for the Tachimanga reader, and the
-                 * pipeline pairs a series by url and never by this.
-                 */
-                backupId: $position,
-                sourceId: ProtoBuffer::integer($value, TachibkSchema::SERIES_SOURCE) ?? 0,
-                url: $url ?? '',
-                title: $title ?? '',
-                chapters: $this->chapters($value),
-            );
-        }
-
-        return [$series, $position];
     }
 
     /**

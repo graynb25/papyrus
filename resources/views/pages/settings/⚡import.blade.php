@@ -2,6 +2,8 @@
 
 use App\Jobs\RunBackupImport;
 use App\Models\ImportRun;
+use App\Support\Duration;
+use App\Support\UploadLimit;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -19,11 +21,11 @@ new #[Title('Import a backup')] class extends Component
     /**
      * A backup dropped onto the page, or null.
      *
-     * An upload only works when the file fits the server, and a real backup does not:
-     * `upload_max_filesize` is 2M against a measured 39.36MB file. The upload field is still
-     * here because a small library produces a small backup and 2M is enough for that, and
-     * {@see uploadCeiling()} tells the reader which side of the line their file is on rather
-     * than letting them find out by watching a request fail.
+     * Whether an upload works depends on the server receiving it. The packaged install
+     * ships 256M, which takes a measured 41MB Tachimanga backup, but a development PHP
+     * can be much smaller and the reader cannot see an ini from here. {@see uploadCeiling()}
+     * reports the real number, and {@see uploadCeilingSentence()} says what to do with a
+     * file that passes it rather than letting the reader find out from a failed request.
      */
     public ?TemporaryUploadedFile $backup = null;
 
@@ -410,15 +412,35 @@ new #[Title('Import a backup')] class extends Component
     }
 
     /**
+     * How long the run took, or has taken so far.
+     *
+     * The line used to measure to `now()` on every render, so a finished run's
+     * clock kept climbing for as long as the modal stayed open. A run that
+     * finished in ten minutes read twenty-six an hour later, which is exactly
+     * the kind of number a reader would report as the import being slow. A
+     * finished run is measured to `finished_at` instead.
+     */
+    public function elapsed(ImportRun $run): string
+    {
+        if ($run->started_at === null) {
+            return Duration::forHumans(0);
+        }
+
+        return Duration::forHumans((int) $run->started_at->diffInSeconds($run->finished_at ?? now()));
+    }
+
+    /**
      * The largest file this server will accept, in bytes, or null when it will not accept any.
      *
      * `post_max_size` binds before `upload_max_filesize`, so it is the one that decides whether
-     * a request arrives at all. Reading both and taking the smaller is the only answer that
-     * matches what a reader experiences: the error they get is about the smaller one.
+     * a request arrives at all. {@see UploadLimit} takes the smaller of the two, which is the
+     * only answer that matches what a reader experiences: the error they get is about the
+     * smaller one. The same class feeds Livewire's temporary upload rule, so the number this
+     * page prints and the number that lets the file through cannot drift apart.
      */
     public function uploadCeiling(): ?int
     {
-        $smallest = min(array_filter([$this->iniBytes('post_max_size'), $this->iniBytes('upload_max_filesize')]));
+        $smallest = UploadLimit::bytes();
 
         return $smallest > 0 ? $smallest : null;
     }
@@ -433,7 +455,7 @@ new #[Title('Import a backup')] class extends Component
     private function uploadCeilingSentence(): string
     {
         return __(
-            'This server accepts uploads up to :size. A library backup is usually larger than that, so leave the file on the server and give its path below instead.',
+            'This server accepts uploads up to :size. A larger backup can stay on the server and be given by its path below.',
             ['size' => $this->humanBytes($this->uploadCeiling())],
         );
     }
@@ -454,31 +476,6 @@ new #[Title('Import a backup')] class extends Component
         }
 
         return round($value, $value < 10 && $unit > 0 ? 1 : 0).' '.$units[$unit];
-    }
-
-    /**
-     * An ini size such as `8M` or `2G` into bytes.
-     *
-     * A bare `0` means unlimited, which is why this returns 0 rather than 0 bytes: `0M` in a
-     * config file is not a file too small to exist, it is no limit, and treating it as zero
-     * would make the page tell a reader their upload cannot work on a server that allows it.
-     */
-    private function iniBytes(string $key): int
-    {
-        $value = trim((string) ini_get($key));
-
-        if ($value === '') {
-            return 0;
-        }
-
-        $multiply = match (strtolower(substr($value, -1))) {
-            'g' => 1024 ** 3,
-            'm' => 1024 ** 2,
-            'k' => 1024,
-            default => 1,
-        };
-
-        return (int) $value * $multiply;
     }
 
     /**
@@ -646,24 +643,30 @@ public function wasInspection(ImportRun $run): bool
                 the importer existed, on the grounds that a link to a guide for a feature
                 that does not work is worse than nothing. It works now.
 
-                The steps are Tachimanga's own, not remembered: Settings -> Backup & Restore
-                -> Create Backup, and the file lands in Files -> On My iPhone ->
+                Two families are read, and they do not carry the same thing. Tachimanga's
+                .tmb holds reading time, so the import keeps it. The .tachibk written by
+                Mihon, Tachiyomi and Suwayomi holds series and read marks but no duration
+                at all, so its copy has to say reading time does not cross.
+
+                The Tachimanga steps are its own, not remembered: Settings -> Backup &
+                Restore -> Create Backup, and the file lands in Files -> On My iPhone ->
                 Tachimanga -> backups.
 
                 That last line is the reason this section earns its place. Tachimanga is an
                 iOS app, and `On My iPhone` is hidden from the Files browser until it is
                 revealed, so a reader who did the right thing can still be told they could
                 not store a backup, and believe it.
-
-                Only Tachimanga is claimed. The Mihon reader is not built, and saying so is
-                the same reasoning as building the section late.
             --}}
             <flux:callout variant="secondary" icon="question-mark-circle">
                 <x-slot name="heading">{{ __('Making the backup') }}</x-slot>
 
                 <div class="space-y-3 text-sm">
                     <p>
-                        {{ __('Papyrus reads a backup made by Tachimanga. In Tachimanga, open Settings, then Backup & Restore, then Create Backup.') }}
+                        {{ __('Papyrus reads a Tachimanga backup (.tmb), or one from Mihon, Tachiyomi or Suwayomi (.tachibk).') }}
+                    </p>
+
+                    <p>
+                        {{ __('In Tachimanga, open Settings, then Backup & Restore, then Create Backup.') }}
                     </p>
 
                     <p>
@@ -679,12 +682,14 @@ public function wasInspection(ImportRun $run): bool
                     </p>
 
                     <p>
+                        {{ __('A .tachibk brings your library and the chapters you have read, but that file does not include how long you read, so reading time stays behind in the app that made it. A Tachimanga .tmb does carry reading time, and Papyrus keeps it beside the reading it records here.') }}
+                    </p>
+
+                    <p>
                         {{ __('Then send that file here: pick it above, or if it is too big to upload, copy it onto the server and give its path below.') }}
                     </p>
 
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('Only Tachimanga backups import today. Backups from Mihon, Tachiyomi or their forks are not read yet.') }}
-
                         <a
                             href="https://tachimanga.app/help/guides/backups.html"
                             target="_blank"
@@ -705,7 +710,7 @@ public function wasInspection(ImportRun $run): bool
 
                 <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                     @if ($this->uploadCeiling() !== null)
-                        {{ __('This server accepts uploads up to :size. Most library backups are larger than that.', ['size' => $this->humanBytes($this->uploadCeiling())]) }}
+                        {{ __('This server accepts uploads up to :size. A larger backup can be left on the server and given by path below.', ['size' => $this->humanBytes($this->uploadCeiling())]) }}
                     @else
                         {{ __('This server does not limit upload size.') }}
                     @endif
@@ -918,7 +923,7 @@ public function wasInspection(ImportRun $run): bool
 
                                 <div class="mt-1 flex justify-between text-xs text-zinc-400">
                                     <span>{{ number_format($run->series_processed ?? 0) }} {{ __('of') }} {{ number_format($run->library_series) }} {{ __('series') }}</span>
-                                    <span>{{ $run->started_at !== null ? $run->started_at->diffInSeconds(now()) : 0 }}s</span>
+                                    <span>{{ $this->elapsed($run) }}@if ($isRunning) {{ __('so far') }}@endif</span>
                                 </div>
                             @endif
 

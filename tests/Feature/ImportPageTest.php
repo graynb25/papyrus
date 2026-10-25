@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\RunBackupImport;
 use App\Models\ImportRun;
 use App\Models\User;
+use App\Support\UploadLimit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -20,9 +21,10 @@ use Tests\TestCase;
  * The importer itself is covered end to end by {@see BackupImporterTest}, and the command by
  * {@see ImportBackupCommandTest}. What exists nowhere else is the two things this page adds:
  *
- * 1. **A file gets here at all.** The importer has always taken a path, because a 39.36MB
- *    backup does not fit through `post_max_size`. Deciding how it arrives is new work, and it
- *    has a real failure mode: silently dispatching an import that can never run.
+ * 1. **A file gets here at all.** The packaged install now accepts a measured 41MB
+ *    backup, but a development PHP can still cap uploads well below that. The page has
+ *    to offer both an upload and a path without claiming the upload will always work,
+ *    and must not dispatch an import that can never receive its file.
  * 2. **Somebody is told when nothing is processing the queue.** A dispatch to a queue nobody
  *    serves leaves a run reading `running` forever. That is not a hypothetical on this
  *    project: it is why "Check 867 series" reported success and did nothing. The page is the
@@ -80,19 +82,62 @@ class ImportPageTest extends TestCase
     }
 
     /**
-     * Only Tachimanga is claimed, because only Tachimanga is read.
+     * Both formats are named, and the one that cannot carry reading time says so.
      *
-     * The Mihon reader is not built. Saying so is the whole reason the section was held
-     * back until now, and leaving it out again would hand a reader a `.tachibk` and a wait
-     * for nothing.
+     * The Mihon/Tachiyomi/Suwayomi reader is built now, so the old "only Tachimanga"
+     * warning would turn away a valid backup. The formats do not carry the same thing,
+     * though: `.tmb` holds reading time and `.tachibk` does not, and a reader comparing
+     * Insights after an import has to know which one they gave the app.
      */
-    public function test_it_says_which_apps_are_read_and_which_are_not(): void
+    public function test_it_names_the_backup_formats_it_reads_and_what_they_carry(): void
     {
         $this->page()
             ->assertOk()
-            ->assertSee('Only Tachimanga backups import today')
+            ->assertSee('Tachimanga')
+            ->assertSee('.tmb')
+            ->assertSee('.tachibk')
             ->assertSee('Mihon')
+            ->assertSee('Tachiyomi')
+            ->assertSee('Suwayomi')
+            ->assertSee('reading time stays behind in the app that made it')
+            ->assertDontSee('Only Tachimanga backups import today')
             ->assertSee('https://tachimanga.app/help/guides/backups.html', escape: false);
+    }
+
+    /**
+     * The number on the page and the number the upload endpoint enforces are one number.
+     *
+     * Livewire's own default is 12MB, and raising PHP's ceiling without raising that
+     * would let the page promise room for a 41MB backup while the receiving endpoint
+     * refused it. Both come from {@see UploadLimit}, so this checks the seam rather than
+     * a literal size that only holds on one machine.
+     */
+    public function test_the_upload_endpoint_accepts_the_size_the_page_reports(): void
+    {
+        $ceiling = UploadLimit::bytes();
+        $rules = (array) config('livewire.temporary_file_upload.rules');
+
+        $this->assertContains('required', $rules);
+        $this->assertContains('file', $rules);
+
+        $maximum = null;
+        foreach ($rules as $rule) {
+            if (is_string($rule) && str_starts_with($rule, 'max:')) {
+                $maximum = (int) substr($rule, 4);
+            }
+        }
+
+        if ($ceiling === 0) {
+            $this->assertNull($maximum, 'an unlimited server must not carry a max rule at all');
+
+            return;
+        }
+
+        $this->assertSame(intdiv($ceiling, 1024), $maximum);
+
+        $page = $this->page();
+        $page->assertOk();
+        $this->assertSame($ceiling, $page->instance()->uploadCeiling());
     }
 
     private function page(): Testable
@@ -637,6 +682,34 @@ class ImportPageTest extends TestCase
             ->assertSee('1,082')
             ->assertSee('195')
             ->assertSee(__('Finished'));
+    }
+
+    /**
+     * A finished run keeps the time it took.
+     *
+     * The elapsed line measured from `started_at` to `now()` on every render,
+     * so a five minute run read "2 hours 10 minutes" two hours after it ended.
+     * A finished run is measured to `finished_at`; only a live one keeps
+     * counting, and only a live one says "so far".
+     */
+    public function test_a_finished_run_keeps_the_time_it_took(): void
+    {
+        $run = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'library.tmb',
+            'library_series' => 10,
+            'started_at' => now()->subMinutes(10),
+            'finished_at' => now()->subMinutes(5),
+        ]);
+
+        $this->travel(2)->hours();
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee('5 minutes')
+            ->assertDontSee('2 hours 10 minutes')
+            ->assertDontSee(__('so far'));
     }
 
     public function test_the_history_is_newest_first(): void
