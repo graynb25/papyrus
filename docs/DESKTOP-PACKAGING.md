@@ -20,12 +20,10 @@ php packaging/installer/build-installer.php --unsigned  the local unsigned .exe
 php packaging/installer/build-portable.php   the zip, hashed
 ```
 
-Local validation on 2026-10-23 used a detached worktree and output under the adjacent tools
-directory, not the checkout's `build/install` or `build/dist`. The install payload passed its
-built-in checks at 625.1MB. The unsigned 1.3.0 installer compiled at 261.8MB, and the portable
-archive compiled at 305.6MB with 12,944 entries and a matching sidecar hash. These are validation
-artifacts, not a new release. The clean-machine reader path remains unproven because the latest
-Sandbox run did not produce a final report or verify source reads.
+The 1.4.0 build on 2026-10-25 ran in the checkout. The install payload passed its built-in checks
+at 625.4MB. The unsigned installer compiled at 262.0MB, and the portable archive compiled at
+305.9MB with 12,957 entries and a matching sidecar hash. The clean-machine reader path remains
+unproven because the latest Sandbox run did not produce a final report or verify source reads.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

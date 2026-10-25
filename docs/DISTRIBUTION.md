@@ -7,15 +7,14 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-10-23
+## Current delivery status, 2026-10-25
 
-Release metadata identifies 1.3.0 and lists an unsigned Windows installer. No portable archive is
-published. An isolated validation build on 2026-10-23 produced an unsigned 261.8MB installer and a
-305.6MB portable zip with 12,944 entries; required files, privacy exclusions and the sidecar SHA256
-were verified. These are local validation artifacts, not a release. The old file in the checkout's
-`build/dist` remains a 921-byte stub. The latest Sandbox attempt produced no final report and did not
-prove fresh-install source access. macOS and Linux packaging below remain proposals, not available
-downloads.
+Release metadata identifies 1.4.0 and lists an unsigned Windows installer. No portable archive is
+published. The 1.4.0 build on 2026-10-25 produced an unsigned 262.0MB installer and a 305.9MB
+portable zip with 12,957 entries; required files, privacy exclusions and the sidecar SHA256 were
+verified. These are local build artifacts. The latest Sandbox attempt produced no final report and
+did not prove fresh-install source access. macOS and Linux packaging below remain proposals, not
+available downloads.
 
 ## What we ship, and what we refuse to ship
 

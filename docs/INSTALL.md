@@ -18,7 +18,7 @@ below, because it is the single most common reason a first launch does nothing.
 
 ## Installing
 
-1. Download **`Papyrus-1.3.0-setup.exe`** (261.5 MB).
+1. Download **`Papyrus-1.4.0-setup.exe`** (262.0 MB).
 2. Run it. You do **not** need administrator rights and it will not ask for any: Papyrus installs
    per user, into your own Windows profile.
 3. Accept the defaults. Papyrus goes to:

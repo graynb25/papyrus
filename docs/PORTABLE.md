@@ -7,18 +7,22 @@ rights.
 
 ## Status: locally built, clean-machine read not verified
 
-The portable builder produced a 1.3.0 validation zip and matching SHA256 sidecar on 2026-10-23.
-The archive has 12,944 entries, includes the launcher and bundled runtimes, and contains no `.env`
-or reader databases. It is not published, and it has not been launched on a clean machine. The
-latest Sandbox attempt showed startup but wrote no final report and did not prove source access.
-See [What is not proven yet](#what-is-not-proven-yet).
+The portable builder produced a 1.4.0 zip and matching SHA256 sidecar on 2026-10-25. The archive
+has 12,957 entries, includes the launcher and bundled runtimes, and contains no `.env` or reader
+databases. It is not published, and it has not been launched on a clean machine. The latest Sandbox
+attempt showed startup but wrote no final report and did not prove source access. See
+[What is not proven yet](#what-is-not-proven-yet).
+
+```text
+sha256  8a2c604ab03ceb617767b121fcfac2c7acad24a9e7b18d87d424ad19963a3a2e
+```
 
 What is true today:
 
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The archive builder | built and content/hash verified on 2026-10-23 |
+| The archive builder | built and content/hash verified on 2026-10-25 |
 | An archive anyone can download | **no** |
 | A clean first launch with source reading | **not proven** |
 
