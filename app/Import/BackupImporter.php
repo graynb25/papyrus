@@ -66,13 +66,14 @@ final class BackupImporter
      * Import one backup file for one reader.
      *
      * @param  int  $limit  Stop after this many series. Zero means all of them.
+     * @param  string|null  $fileName  The name the reader chose, when it differs from the path's.
      */
-    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true, bool $force = false): ImportResult
+    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true, bool $force = false, ?string $fileName = null): ImportResult
     {
         $run = ImportRun::createFor($user, [
             'format' => 'unknown',
             'state' => ImportRun::RUNNING,
-            'file_name' => basename($path),
+            'file_name' => $fileName ?? basename($path),
             'started_at' => now(),
         ]);
 

@@ -72,6 +72,12 @@ class RunBackupImport implements ShouldQueue
         public readonly bool $installExtensions = true,
         public readonly bool $inspectOnly = false,
         public readonly bool $force = false,
+        /**
+         * The name the reader saw in the file picker, when the file came through one.
+         *
+         * Null for a server-side path, where the path's own name is the honest label.
+         */
+        public readonly ?string $originalName = null,
     ) {}
 
     public function handle(BackupImporter $importer): void
@@ -124,6 +130,7 @@ class RunBackupImport implements ShouldQueue
                 limit: $this->limit,
                 installExtensions: $this->installExtensions,
                 force: $this->force,
+                fileName: $this->fileLabel(),
             );
         } catch (ImportRefused $e) {
             /*
@@ -171,7 +178,7 @@ class RunBackupImport implements ShouldQueue
             'format' => $backup->format,
             'schema_version' => $backup->schemaVersion,
             'state' => ImportRun::COMPLETE,
-            'file_name' => basename($this->path),
+            'file_name' => $this->fileLabel(),
             'series_in_file' => $backup->totalInFile,
             'library_series' => $series,
             'chapters' => $chapters,
@@ -196,11 +203,34 @@ class RunBackupImport implements ShouldQueue
         ImportRun::createFor($this->userId, [
             'format' => 'unknown',
             'state' => ImportRun::REFUSED,
-            'file_name' => basename($this->path),
+            'file_name' => $this->fileLabel(),
             'refusal_reason' => $reason,
             'started_at' => now(),
             'finished_at' => now(),
         ]);
+    }
+
+    /**
+     * The name a reader recognises, rather than the key the file was stored under.
+     *
+     * Laravel names an upload after its guessed MIME type, so a Tachimanga `.tmb` (a ZIP)
+     * became a random `.zip` name. That name is only ever written to `file_name` and
+     * rendered; it never becomes a filesystem path. The path's own name is the fallback
+     * for the server-path route and for any caller that has no client name.
+     *
+     * Not `displayName()`: that is a public method on Laravel's queue contract, and a
+     * private override of it fataled every queued run with "Call to private method
+     * RunBackupImport::displayName() from scope Illuminate\Queue\Queue".
+     */
+    private function fileLabel(): string
+    {
+        $name = $this->originalName;
+
+        if ($name !== null && trim($name) !== '') {
+            return basename(str_replace('\\', '/', $name));
+        }
+
+        return basename($this->path);
     }
 
     /**

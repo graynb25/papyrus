@@ -7,8 +7,10 @@ use App\Models\ImportRun;
 use App\Models\User;
 use App\Support\UploadLimit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -318,6 +320,54 @@ class ImportPageTest extends TestCase
             ->assertSet('path', '');
     }
 
+    /**
+     * The file the job is told about is the file the page actually stored.
+     *
+     * Measured on the installed app: the page stored the upload on the `local` disk,
+     * whose root is `storage/app/private`, and then handed the job
+     * `storage/app/imports/<hash>.zip`. That path does not exist, so the job recorded
+     * a refusal before reading a single byte. The names and the bytes were fine; the
+     * path was not.
+     */
+    public function test_an_uploaded_backup_is_dispatched_from_the_disk_it_was_stored_on(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $this->page()
+            ->set('backup', UploadedFile::fake()->create('Tachimanga_backup.tmb', 16, 'application/zip'))
+            ->assertHasNoErrors()
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
+            $imports = str_replace('\\', '/', Storage::disk('local')->path('imports'));
+
+            return is_file($job->path)
+                && str_starts_with(str_replace('\\', '/', $job->path), $imports.'/');
+        });
+    }
+
+    /**
+     * The history names the file the reader chose, not the hash it was stored under.
+     *
+     * Laravel names an uploaded backup after its guessed MIME type, so the real
+     * Tachimanga file became `FHK....zip` in `import_runs.file_name`. Recognition is
+     * by bytes, so that label was only misleading, not fatal. A reader looking for
+     * the backup they picked should see the name they know.
+     */
+    public function test_an_uploaded_backup_keeps_the_name_the_reader_chose(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $this->page()
+            ->set('backup', UploadedFile::fake()->create('Tachimanga_backup.tmb', 16, 'application/zip'))
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class, fn (RunBackupImport $job): bool => property_exists($job, 'originalName')
+            && $job->originalName === 'Tachimanga_backup.tmb');
+    }
+
     /*
      * ---------------------------------------------------------------------------
      * Watching a run that does not exist yet.
@@ -339,6 +389,59 @@ class ImportPageTest extends TestCase
         $this->assertTrue($component->instance()->polling);
         $this->assertTrue($component->instance()->shouldPoll());
         $component->assertSee(__('Queued. The file will be read in a moment.'));
+    }
+
+    /**
+     * The answer belongs in front of the reader, not in a row below the fold.
+     *
+     * Measured on the installed app: choosing the 41MB backup and pressing Inspect
+     * produced no modal, no checkpoint, and no visible result. The run was created and
+     * refused, but the page only listed it under "Your imports" and nothing opened it.
+     * The modal therefore has to open on the button press, before the run row exists.
+     */
+    public function test_pressing_the_button_opens_the_modal_on_a_queued_run(): void
+    {
+        Queue::fake();
+
+        $this->page()
+            ->set('path', (string) $this->file)
+            ->call('start')
+            ->assertSet('modalOpen', true)
+            ->assertSet('modalRunId', null)
+            ->assertSee(__('The file will be read in a moment.'))
+            ->assertSee(__('Reading the file'))
+            ->assertSee(__('Bringing your series across'));
+    }
+
+    /**
+     * An older finished run must not be mistaken for the one just dispatched.
+     *
+     * The page used to ask `activeRun()` whether anything was running. With history on
+     * the page, that is the previous run until a worker picks the new job up, so the
+     * first poll would say "finished" and stop watching before the new row existed.
+     */
+    public function test_an_older_finished_run_does_not_end_the_wait_for_the_new_one(): void
+    {
+        Queue::fake();
+
+        ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'older.tmb',
+            'started_at' => now()->subDay(),
+            'finished_at' => now()->subDay(),
+        ]);
+
+        $component = $this->page()->set('path', (string) $this->file)->call('start');
+
+        $this->assertTrue($component->instance()->shouldPoll(), 'the new job is still queued');
+        $component->assertSee(__('The file will be read in a moment.'));
+
+        $new = $this->runningRun();
+        $component->call('$refresh');
+
+        $this->assertSame($new->id, $component->instance()->modalRun()?->id);
+        $this->assertTrue($component->instance()->shouldPoll(), 'and now watches the new run');
     }
 
     public function test_it_keeps_polling_until_a_run_finishes(): void

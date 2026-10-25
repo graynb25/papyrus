@@ -8,6 +8,7 @@ use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -84,6 +85,21 @@ new #[Title('Import a backup')] class extends Component
     public bool $polling = false;
 
     /**
+     * The newest run id before this dispatch, so the new run can be told apart from history.
+     *
+     * The job creates its run row when a worker picks it up, which is after the page has
+     * already re-rendered. Without this floor the page would look at the newest row, find the
+     * previous finished run, and stop watching before the new one existed. Measured: choosing
+     * a backup and pressing Inspect showed no modal and no result at all.
+     */
+    public ?int $runFloorId = null;
+
+    /**
+     * The name of the file just chosen, shown while its run row does not exist yet.
+     */
+    public ?string $startedFileName = null;
+
+    /**
      * How long a job may sit before the page says nobody is running the queue.
      *
      * Short enough that a reader watching a button that did nothing gets an answer, long
@@ -102,11 +118,18 @@ new #[Title('Import a backup')] class extends Component
 
     public function start(): void
     {
+        $originalName = $this->backup?->getClientOriginalName();
         $path = $this->resolvePath();
 
         if ($path === null) {
             return;
         }
+
+        /*
+         * The run row is created by the worker, not by this request. Remember the newest id
+         * before dispatch, or the first poll finds the previous run and stops watching.
+         */
+        $floor = (int) (ImportRun::query()->forUser(auth()->id())->max('id') ?? 0);
 
         RunBackupImport::dispatch(
             userId: (int) auth()->id(),
@@ -115,7 +138,16 @@ new #[Title('Import a backup')] class extends Component
             installExtensions: $this->installExtensions,
             inspectOnly: $this->inspectOnly,
             force: $this->force,
+            originalName: $originalName,
         );
+
+        $this->runFloorId = $floor;
+        $this->startedFileName = $originalName !== null && trim($originalName) !== ''
+            ? basename(str_replace('\\', '/', $originalName))
+            : basename($path);
+        $this->modalRunId = null;
+        $this->modalOpen = true;
+        $this->polling = true;
 
         Flux::toast(
             text: $this->inspectOnly
@@ -133,7 +165,7 @@ new #[Title('Import a backup')] class extends Component
          */
         $this->reset('backup', 'path');
 
-        $this->polling = true;
+        $this->dispatch('open-import-run');
     }
 
     /**
@@ -149,7 +181,7 @@ new #[Title('Import a backup')] class extends Component
             return false;
         }
 
-        $run = $this->activeRun();
+        $run = $this->modalRun();
 
         // No run yet. The job is queued and has not been picked up, which is the gap that
         // hid the inspect result, and on a server with no worker it is permanent.
@@ -157,7 +189,7 @@ new #[Title('Import a backup')] class extends Component
             return true;
         }
 
-        return $run->state === ImportRun::RUNNING;
+        return $run->state === ImportRun::RUNNING && ! $this->abandoned($run);
     }
 
     /**
@@ -203,7 +235,7 @@ new #[Title('Import a backup')] class extends Component
          * young. The check for "this run is alive and has been heard from recently" is the
          * only honest evidence that somebody is doing the work.
          */
-        $run = $this->activeRun();
+        $run = $this->modalRun();
 
         if ($run !== null && $run->state === ImportRun::RUNNING && ! $this->abandoned($run)) {
             return false;
@@ -248,7 +280,7 @@ new #[Title('Import a backup')] class extends Component
                 return null;
             }
 
-            $stored = $this->backup->store('imports');
+            $stored = $this->backup->store('imports', 'local');
 
             if ($stored === false) {
                 Flux::toast(
@@ -262,11 +294,12 @@ new #[Title('Import a backup')] class extends Component
 
             /*
              * An absolute path, because the importer is handed one and the job holds it for
-             * eleven minutes. A relative path would depend on the working directory of whatever
-             * ran the job, which is not the web root and is not the same between a queue worker
-             * and `queue:work` elsewhere.
+             * eleven minutes. The disk resolves it, rather than this page guessing the
+             * directory: the `local` disk's root is `storage/app/private`, not `storage/app`,
+             * and a path built from the wrong one made every uploaded backup a refusal before
+             * a byte was read. Measured on the installed app.
              */
-            return storage_path('app/'.$stored);
+            return Storage::disk('local')->path($stored);
         }
 
         $given = trim($this->path);
@@ -322,6 +355,11 @@ new #[Title('Import a backup')] class extends Component
         $this->modalRunId = $runId;
         $this->modalOpen = true;
 
+        $run = ImportRun::query()->forUser(auth()->id())->find($runId);
+        $this->polling = $run !== null
+            && $run->state === ImportRun::RUNNING
+            && ! $this->abandoned($run);
+
         $this->dispatch('open-import-run');
     }
 
@@ -334,6 +372,9 @@ new #[Title('Import a backup')] class extends Component
     {
         $this->modalOpen = false;
         $this->modalRunId = null;
+        $this->polling = false;
+        $this->runFloorId = null;
+        $this->startedFileName = null;
     }
 
     public function closeImportRunModal(): void
@@ -341,14 +382,34 @@ new #[Title('Import a backup')] class extends Component
         $this->closeRunModal();
     }
 
+    /**
+     * The run the open modal is showing.
+     *
+     * A run id when the reader opened one from the list. No id yet when the modal was
+     * opened by the button: the worker has not created the row, so the first run newer
+     * than the floor recorded at dispatch is the one being watched. Falling back to the
+     * newest run instead would show the previous import and stop polling too early.
+     */
     #[Computed]
     public function modalRun(): ?ImportRun
     {
-        if ($this->modalRunId === null) {
+        if (! $this->modalOpen) {
             return null;
         }
 
-        return ImportRun::query()->forUser(auth()->id())->find($this->modalRunId);
+        if ($this->modalRunId !== null) {
+            return ImportRun::query()->forUser(auth()->id())->find($this->modalRunId);
+        }
+
+        if ($this->runFloorId === null) {
+            return null;
+        }
+
+        return ImportRun::query()
+            ->forUser(auth()->id())
+            ->where('id', '>', $this->runFloorId)
+            ->latest('id')
+            ->first();
     }
 
     public function modalRunIsRunning(): bool
@@ -702,11 +763,41 @@ public function wasInspection(ImportRun $run): bool
 
             {{-- The form. Two routes in, because no single one works for every backup. --}}
             <flux:card class="space-y-4 p-4">
-                <flux:input
-                    label="{{ __('Backup file') }}"
-                    type="file"
-                    wire:model="backup"
-                />
+                <div
+                    x-data="{ uploading: false, progress: 0 }"
+                    x-on:livewire-upload-start="uploading = true; progress = 0"
+                    x-on:livewire-upload-finish="uploading = false"
+                    x-on:livewire-upload-error="uploading = false"
+                    x-on:livewire-upload-progress="progress = $event.detail.progress"
+                >
+                    <flux:input
+                        label="{{ __('Backup file') }}"
+                        type="file"
+                        wire:model="backup"
+                    />
+
+                    {{--
+                        Selection is a 41MB transfer on a real library. Without a line here the
+                        page looks identical before and after the file is chosen, which is what
+                        a reader saw on the installed app. The second line names the file once
+                        Livewire has it.
+                    --}}
+                    <p
+                        class="mt-1 hidden text-xs text-zinc-500 dark:text-zinc-400"
+                        x-bind:class="{ hidden: ! uploading }"
+                        aria-live="polite"
+                    >
+                        {{ __('Sending the file') }}
+                        <span x-text="progress + '%'"></span>
+                    </p>
+
+                    @if ($backup !== null)
+                        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('Ready to inspect') }}:
+                            <span class="font-medium">{{ $backup->getClientOriginalName() }}</span>
+                        </p>
+                    @endif
+                </div>
 
                 <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                     @if ($this->uploadCeiling() !== null)
@@ -809,11 +900,15 @@ public function wasInspection(ImportRun $run): bool
             </div>
 
             {{--
-                One modal per run, opened from a single line above.
+                One modal per run, opened from the list or by the button that starts a run.
 
-                It polls while it is open and the run is running, and stops the moment the run
-                reaches a finished state. The page itself no longer polls: the list carries
-                nothing that changes during a run, so nothing on it moves.
+                It opens before the run row exists, so the first thing a reader sees is
+                "Queued" and the four checkpoints. It polls until a worker creates the row,
+                then follows it to the verdict. The list on the page stays still.
+
+                The run floor is what makes the queued state watchable: the worker creates the
+                row after this page has rendered, and history may already hold the previous
+                finished run. `modalRun()` only returns a run newer than the floor.
             --}}
             <div x-on:open-import-run.window="$dispatch('modal-show', { name: 'import-run' })">
                 <flux:modal
@@ -823,8 +918,24 @@ public function wasInspection(ImportRun $run): bool
                     :escapable="! $this->modalRunIsRunning()"
                     @close="closeRunModal"
                 >
-                    @if ($run = $this->modalRun())
-                        @php
+                    @php
+                        $run = $this->modalRun();
+                        $isQueued = $run === null && $this->modalOpen;
+
+                        $phaseOrder = ['reading', 'extensions', 'series', 'categories'];
+                        $phaseTitles = [
+                            'reading' => __('Reading the file'),
+                            'extensions' => __('Installing what it needs'),
+                            'series' => __('Bringing your series across'),
+                            'categories' => __('Filing your shelves'),
+                        ];
+
+                        if ($run === null) {
+                            $isAbandoned = false;
+                            $isFinished = false;
+                            $isRunning = false;
+                            $statuses = array_fill_keys($phaseOrder, 'pending');
+                        } else {
                             $note = (string) ($run->progress_note ?? '');
                             $isAbandoned = $this->abandoned($run);
                             $isFinished = in_array($run->state, [ImportRun::COMPLETE, ImportRun::FAILED, ImportRun::REFUSED], true) || $isAbandoned;
@@ -842,18 +953,10 @@ public function wasInspection(ImportRun $run): bool
                                 $phaseKey = 'finished';
                             }
 
-                            $phaseOrder = ['reading', 'extensions', 'series', 'categories'];
                             $phaseIndex = array_search($phaseKey, $phaseOrder, true);
                             if ($phaseIndex === false) {
                                 $phaseIndex = 4;
                             }
-
-                            $phaseTitles = [
-                                'reading' => __('Reading the file'),
-                                'extensions' => __('Installing what it needs'),
-                                'series' => __('Bringing your series across'),
-                                'categories' => __('Filing your shelves'),
-                            ];
 
                             $statuses = [];
                             foreach ($phaseOrder as $index => $key) {
@@ -869,66 +972,88 @@ public function wasInspection(ImportRun $run): bool
                                     $statuses[$key] = 'pending';
                                 }
                             }
-                        @endphp
+                        }
+                    @endphp
 
-                        @if ($this->modalOpen && $isRunning)
-                            <div wire:poll.3s>
-                        @else
-                            <div>
-                        @endif
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="size-2 rounded-full {{ match (true) {
-                                        $isAbandoned => 'bg-red-500',
-                                        $run->state === ImportRun::COMPLETE => 'bg-green-500',
-                                        $run->state === ImportRun::RUNNING => 'animate-pulse bg-zinc-400',
-                                        $run->state === ImportRun::FAILED => 'bg-red-500',
-                                        $run->state === ImportRun::REFUSED => 'bg-amber-500',
-                                        default => 'bg-zinc-400',
-                                    } }}"
-                                    aria-hidden="true"
-                                ></span>
+                    @if ($isQueued || $run !== null)
+                        <div @if ($this->shouldPoll()) wire:poll.3s @endif>
+                            @if ($isQueued)
+                                <div class="flex items-center gap-2">
+                                    <span class="size-2 rounded-full bg-zinc-400" aria-hidden="true"></span>
 
-                                <flux:heading size="lg">
-                                    {{ $this->stateLabel($run) }}
-                                </flux:heading>
-                            </div>
+                                    <flux:heading size="lg">{{ __('Queued') }}</flux:heading>
+                                </div>
 
-                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                {{ $run->file_name ?? __('unnamed file') }}
-                                @if ($run->format !== null || $run->schema_version !== null)
-                                    , {{ $run->format ?? __('unknown') }} {{ __('format') }}
-                                    @if ($run->schema_version !== null)
-                                        {{ __('version') }} {{ number_format($run->schema_version) }}
-                                    @endif
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ $this->startedFileName ?? __('the file you chose') }}
+                                </p>
+
+                                <p class="mt-4 text-sm" aria-live="polite">
+                                    {{ __('The file will be read in a moment.') }}
+                                </p>
+
+                                @if ($this->queueStalled())
+                                    <flux:callout variant="danger" icon="exclamation-triangle" class="mt-4">
+                                        {{ __('It is waiting in the queue because no worker has picked it up yet.') }}
+
+                                        <code class="mt-2 block font-mono text-sm">php artisan queue:work</code>
+                                    </flux:callout>
                                 @endif
-                            </p>
+                            @else
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="size-2 rounded-full {{ match (true) {
+                                            $isAbandoned => 'bg-red-500',
+                                            $run->state === ImportRun::COMPLETE => 'bg-green-500',
+                                            $run->state === ImportRun::RUNNING => 'animate-pulse bg-zinc-400',
+                                            $run->state === ImportRun::FAILED => 'bg-red-500',
+                                            $run->state === ImportRun::REFUSED => 'bg-amber-500',
+                                            default => 'bg-zinc-400',
+                                        } }}"
+                                        aria-hidden="true"
+                                    ></span>
 
-                            @if (! $this->wasInspection($run) && $run->library_series !== null)
-                                @php($pct = $this->percent($run) ?? 0)
+                                    <flux:heading size="lg">
+                                        {{ $this->stateLabel($run) }}
+                                    </flux:heading>
+                                </div>
 
-                                <div
-                                    class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
-                                    role="progressbar"
-                                    aria-valuemin="0"
-                                    aria-valuemax="100"
-                                    aria-valuenow="{{ $pct }}"
-                                    aria-label="{{ __('Import progress') }}"
-                                >
+                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ $run->file_name ?? __('unnamed file') }}
+                                    @if ($run->format !== null || $run->schema_version !== null)
+                                        , {{ $run->format ?? __('unknown') }} {{ __('format') }}
+                                        @if ($run->schema_version !== null)
+                                            {{ __('version') }} {{ number_format($run->schema_version) }}
+                                        @endif
+                                    @endif
+                                </p>
+
+                                @if (! $this->wasInspection($run) && $run->library_series !== null)
+                                    @php($pct = $this->percent($run) ?? 0)
+
                                     <div
-                                        class="h-full rounded-full bg-zinc-900 transition-all duration-300 dark:bg-zinc-100"
-                                        style="width: {{ $pct }}%"
-                                    ></div>
-                                </div>
+                                        class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
+                                        role="progressbar"
+                                        aria-valuemin="0"
+                                        aria-valuemax="100"
+                                        aria-valuenow="{{ $pct }}"
+                                        aria-label="{{ __('Import progress') }}"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-zinc-900 transition-all duration-300 dark:bg-zinc-100"
+                                            style="width: {{ $pct }}%"
+                                        ></div>
+                                    </div>
 
-                                <div class="mt-1 flex justify-between text-xs text-zinc-400">
-                                    <span>{{ number_format($run->series_processed ?? 0) }} {{ __('of') }} {{ number_format($run->library_series) }} {{ __('series') }}</span>
-                                    <span>{{ $this->elapsed($run) }}@if ($isRunning) {{ __('so far') }}@endif</span>
-                                </div>
+                                    <div class="mt-1 flex justify-between text-xs text-zinc-400">
+                                        <span>{{ number_format($run->series_processed ?? 0) }} {{ __('of') }} {{ number_format($run->library_series) }} {{ __('series') }}</span>
+                                        <span>{{ $this->elapsed($run) }}@if ($isRunning) {{ __('so far') }}@endif</span>
+                                    </div>
+                                @endif
                             @endif
 
                             <ol class="mt-4 space-y-2" role="list">
-                                @foreach (['reading', 'extensions', 'series', 'categories'] as $key)
+                                @foreach ($phaseOrder as $key)
                                     @php($status = $statuses[$key] ?? 'pending')
 
                                     <li role="listitem" class="flex items-center gap-3 py-2">
@@ -957,34 +1082,42 @@ public function wasInspection(ImportRun $run): bool
                                 @endforeach
                             </ol>
 
-                            <p
-                                class="mt-4 text-sm"
-                                aria-live="polite"
-                            >
-                                {{ $this->summary($run) }}
-                            </p>
+                            @if ($run !== null)
+                                <p
+                                    class="mt-4 text-sm"
+                                    aria-live="polite"
+                                >
+                                    {{ $this->summary($run) }}
+                                </p>
 
-                            <div class="mt-6 flex justify-end gap-2">
-                                @if ($isFinished)
-                                    @if ($run->state === ImportRun::COMPLETE)
-                                        <flux:modal.close>
-                                            <flux:button variant="primary">{{ __('Done') }}</flux:button>
-                                        </flux:modal.close>
-                                    @elseif ($run->state === ImportRun::REFUSED)
-                                        <flux:modal.close>
-                                            <flux:button variant="primary">{{ __('Try again') }}</flux:button>
-                                        </flux:modal.close>
+                                <div class="mt-6 flex justify-end gap-2">
+                                    @if ($isFinished)
+                                        @if ($run->state === ImportRun::COMPLETE)
+                                            <flux:modal.close>
+                                                <flux:button variant="primary">{{ __('Done') }}</flux:button>
+                                            </flux:modal.close>
+                                        @elseif ($run->state === ImportRun::REFUSED)
+                                            <flux:modal.close>
+                                                <flux:button variant="primary">{{ __('Try again') }}</flux:button>
+                                            </flux:modal.close>
+                                        @else
+                                            <flux:modal.close>
+                                                <flux:button variant="primary">{{ __('Show details') }}</flux:button>
+                                            </flux:modal.close>
+                                        @endif
                                     @else
                                         <flux:modal.close>
-                                            <flux:button variant="primary">{{ __('Show details') }}</flux:button>
+                                            <flux:button variant="filled" :disabled="true">{{ __('Close') }}</flux:button>
                                         </flux:modal.close>
                                     @endif
-                                @else
+                                </div>
+                            @else
+                                <div class="mt-6 flex justify-end">
                                     <flux:modal.close>
-                                        <flux:button variant="filled" :disabled="true">{{ __('Close') }}</flux:button>
+                                        <flux:button variant="filled">{{ __('Close') }}</flux:button>
                                     </flux:modal.close>
-                                @endif
-                            </div>
+                                </div>
+                            @endif
                         </div>
                     @endif
                 </flux:modal>

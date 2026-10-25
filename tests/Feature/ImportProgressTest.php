@@ -156,6 +156,29 @@ class ImportProgressTest extends TestCase
         $this->assertSame('tachimanga', $run->format, 'and the run now says what it read');
     }
 
+    /**
+     * An uploaded file keeps the name the reader picked.
+     *
+     * Laravel stores the upload under a random hash named after the guessed MIME type,
+     * so the real Tachimanga backup became `FHK....zip`. The history and the modal read
+     * `file_name`, which must be the name the reader recognises, not the storage key.
+     */
+    public function test_an_uploaded_files_run_keeps_the_name_the_reader_chose(): void
+    {
+        $job = new RunBackupImport(
+            $this->user->id,
+            $this->backup(),
+            inspectOnly: true,
+            originalName: 'Tachimanga_backup_2026-10-08_18-31-01-290.tmb',
+        );
+
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame('Tachimanga_backup_2026-10-08_18-31-01-290.tmb', $run->file_name);
+    }
+
     public function test_an_inspect_of_something_unreadable_is_a_refusal_not_a_crash(): void
     {
         /*
