@@ -249,7 +249,7 @@ final class Licences
     }
 
     /**
-     * The large packaged pieces, which no lockfile mentions.
+     * The pieces the build bundles, which no lockfile mentions.
      *
      * @return list<LicensedPackage>
      */
@@ -281,11 +281,21 @@ final class Licences
                 kind: 'bundled',
                 upstream: 'https://adoptium.net',
             ),
+            LicensedPackage::make(
+                'Heroicons',
+                'bundled',
+                'MIT',
+                'The open book in the Papyrus seal. It is artwork from the Heroicons outline set, not '
+                    .'a runtime dependency.',
+                textKey: 'bundled:heroicons',
+                kind: 'bundled',
+                upstream: 'https://heroicons.com',
+            ),
         ];
     }
 
     /**
-     * Everything the install is made of, in the order a reader wants it: the two large pieces first,
+     * Everything the install is made of, in the order a reader wants it: the bundled pieces first,
      * then the languages, each sorted by name.
      *
      * @return list<LicensedPackage>

@@ -3,373 +3,520 @@
 declare(strict_types=1);
 
 /**
- * Draw the Papyrus mark and render every size the app and the installer need.
+ * Draw the Papyrus seal and write every icon the application and Windows need.
  *
- * ## Parking note, read this before running it
+ * ## What the mark is
  *
- * Not part of the build. Nothing calls it, `build-install.php` does not invoke it, and the icons it
- * writes are not the ones the application serves: those are still the stock Laravel favicon committed
- * to the repository, because the icon is an open decision and shipping a generated one would be
- * answering that decision without being asked.
+ * Two pieces that already existed, put on one canvas: the `.seal` tile from
+ * `resources/css/app.css` (vermilion gradient, three degree lean, 96 unit radius on a 448 unit
+ * tile) and the Heroicons `book-open` outline the empty library already uses. No new drawing and
+ * no new colour. The generated files are the ones the application serves and the installer reads,
+ * so the mark cannot drift between the tab, the taskbar and the installed shortcut.
  *
- * What it is for is that the icon will have to be generated rather than hand drawn, for a reason that
- * is not obvious until it has gone wrong once. The same source has to produce a sixteen pixel favicon
- * and a two hundred and fifty six pixel installer icon, and every consumer rasterises SVG differently
- * and at whatever quality it happens to manage. It also computes its colours from the vermilion ramp in
- * `resources/css/app.css`, so a second palette cannot appear.
+ * ## Why a browser rasterises it
  *
- * To use it: change the mark, run it, look at `public/icon-512.png`, then decide.
+ * Because the same source has to produce a sixteen pixel favicon and a two hundred and fifty six
+ * pixel installer frame, and GD cannot consume SVG. Chrome or Edge renders each size from the same
+ * vector geometry, so the drawing exists once. GD is used to inspect the result, not to draw it:
+ * every frame is decoded and checked for size, ink coverage and a transparent corner before the
+ * script claims it wrote anything.
  *
- * ## Why it refuses to write an icon carrying less than five percent ink
+ * ## Why the small frames are not a straight reduction
  *
- * Because the first version produced entirely transparent sixteen and thirty two pixel files of 96 and
- * 104 bytes, with no error and no warning, while the five hundred and twelve pixel one was perfect.
+ * At 48 pixels and above the book keeps the seal's exact 42.86 percent proportion and 1.5 unit
+ * stroke. At 32, 24 and 16 the line is made heavier and the book a little larger, because a
+ * faithful reduction of a 1.5 unit outline at sixteen pixels is a red tile with a grey smudge. The
+ * treatments are measurements from the delivered set, not preferences.
  *
- * The cause was one line. The downscale loop tracked the *target* size rather than the canvas size, so
- * it never halved, and the final resample was told the source was 64 by 64 when it really was 2048 by
- * 2048. It read the empty top left corner. Nothing above this comment says that, so it is repeated
- * where the code is: see `render()`.
+ * ## Why the ICO directory uses 32 bit fields
  *
- * The large icon is the one anybody looks at, which is exactly why this would have shipped, and it is
- * why the guard is a hard refusal rather than a warning.
+ * The previous writer packed the byte length and offset as sixteen bit fields. The ICO directory
+ * has been sixteen bytes per frame with two 32 bit fields since Windows 95, and a frame above
+ * 64 KiB cannot be described by the old width. It produced a file Windows could read as a header
+ * and not as an image. This writer packs the documented layout and then reads every frame back.
  *
- * ## Why the colours are computed rather than picked
+ * ## Usage
  *
- * Because the design already has an answer. `resources/css/app.css` defines exactly one saturated
- * accent, a vermilion ramp, and a comment in it says the ramp is built so `vermilion-600` holds up. An
- * icon written in "a red-orange I thought matched" is a second palette that goes stale the first time
- * the ramp is adjusted.
+ *     php packaging/make-icon.php
  *
- * OKLCH is the only reason that conversion exists: GD cannot consume it, and the design uses it.
+ * Writes `public/favicon.svg`, `public/favicon.ico`, `public/apple-touch-icon.png`,
+ * `public/icon-256.png` and `public/icon-512.png`. Requires PHP 8.4 with GD, and Chrome or Edge.
+ * Set `PAPYRUS_CHROME` to an executable path if neither is in its usual place.
  */
-
-/** The vermilion ramp, from resources/css/app.css, as OKLCH. Only the stops this mark spends. */
-const VERMILION = [
-    400 => [0.778, 0.132, 34],
-    600 => [0.643, 0.188, 32],
-    700 => [0.562, 0.178, 31],
-    900 => [0.412, 0.122, 30],
-];
+const CANVAS = 512;
+const TILE = 448;
+const TILE_RADIUS = 96;
+const VERMILION_500 = '#F97459';
+const VERMILION_700 = '#C83E2B';
+const PAPER = '#FAF9F6';
 
 /**
- * OKLCH to sRGB hex, through OKLab and the linear-sRGB transfer.
+ * Heroicons book-open, outline, 24 unit viewBox.
  *
- * The transfer is not optional: skipping it gives a colour of recognisably the right hue and visibly
- * the wrong value, which is worse than being obviously wrong.
+ * Upstream: https://heroicons.com, MIT, Copyright (c) Tailwind Labs, Inc. The same path is in the
+ * Flux icon stub the empty library uses, byte for byte; no Flux artwork is involved.
  */
-function oklchToHex(float $lightness, float $chroma, float $hue): string
+const BOOK_PATH = 'M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25';
+
+/** The 48 pixel and larger treatment is the seal's exact 42.86 percent glyph. */
+const EXACT_FRACTION = 192 / TILE;
+
+$root = dirname(__DIR__);
+$public = $root.'/public';
+$temp = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-icon-'.getmypid();
+
+if (! is_dir($public)) {
+    fail("no public directory at {$public}");
+}
+
+if (is_dir($temp)) {
+    removeTree($temp);
+}
+
+if (! mkdir($temp, 0777, true) && ! is_dir($temp)) {
+    fail("could not create {$temp}");
+}
+
+$browser = findBrowser();
+
+say('browser', $browser);
+
+/**
+ * The optical treatment for one output size.
+ *
+ * @return array{0: float, 1: float} the glyph box as a fraction of the tile, and the stroke width
+ */
+function treatment(int $px): array
 {
-    $radians = deg2rad($hue);
-
-    $a = $chroma * cos($radians);
-    $b = $chroma * sin($radians);
-
-    $l = ($lightness + (0.3963377774 * $a) + (0.2158037573 * $b)) ** 3;
-    $m = ($lightness - (0.1055613458 * $a) - (0.0638541728 * $b)) ** 3;
-    $s = ($lightness - (0.0894841775 * $a) - (1.2914855480 * $b)) ** 3;
-
-    $red = (4.0767416621 * $l) - (3.3077115913 * $m) + (0.2309699292 * $s);
-    $green = (-1.2684380046 * $l) + (2.6097574011 * $m) - (0.3413193965 * $s);
-    $blue = (-0.0041960863 * $l) - (0.7034186147 * $m) + (1.7076147010 * $s);
-
-    $encode = static function (float $channel): int {
-        $channel = max(0.0, min(1.0, $channel));
-
-        $value = $channel <= 0.0031308
-            ? $channel * 12.92
-            : (1.055 * ($channel ** (1 / 2.4))) - 0.055;
-
-        return (int) round($value * 255);
+    return match (true) {
+        $px <= 16 => [0.68, 2.6],
+        $px <= 24 => [0.62, 2.1],
+        $px <= 32 => [0.56, 1.8],
+        default => [EXACT_FRACTION, 1.5],
     };
-
-    return sprintf('#%02X%02X%02X', $encode($red), $encode($green), $encode($blue));
 }
 
 /**
- * Hex to the RGB triple GD's drawing functions take, bounded to a byte.
+ * The seal as a standalone SVG at one target size.
  *
- * Clamped rather than asserted, because `imagecolorallocate` wants `int<0, 255>` and an unbounded
- * `int` is a genuine way to be wrong here: over 255 is not a brighter colour, it is undefined
- * behaviour in a function with no return value to check.
- *
- * @return array{0: int<0, 255>, 1: int<0, 255>, 2: int<0, 255>}
+ * The width and height are the intended pixels while the viewBox stays at 512, so the same
+ * geometry can be rasterised at 16 and at 512 without a separate drawing for each.
  */
-function rgb(string $hex): array
+function markSvg(int $px, bool $paperBackground = false): string
 {
-    $channel = static fn (string $part): int => max(0, min(255, (int) hexdec($part)));
+    [$fraction, $stroke] = treatment($px);
 
-    return [$channel(substr($hex, 1, 2)), $channel(substr($hex, 3, 2)), $channel(substr($hex, 5, 2))];
+    $box = TILE * $fraction;
+    $scale = $box / 24;
+    $offset = (CANVAS - $box) / 2;
+
+    $offsetText = number($offset);
+    $scaleText = number($scale);
+    $v500 = VERMILION_500;
+    $v700 = VERMILION_700;
+    $book = BOOK_PATH;
+
+    $background = $paperBackground
+        ? '<rect width="512" height="512" fill="'.PAPER.'"/>'
+        : '';
+
+    // The CSS inset highlight is one CSS pixel on a 56 pixel seal. At 512 that is eight units.
+    // The line runs past the top corners and is clipped by the tile, and is omitted below 48
+    // because at those sizes it is less than a third of a pixel.
+    $highlight = $px >= 48
+        ? '<path d="M32 36H480" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="8" stroke-linecap="butt" clip-path="url(#tile-clip)"/>'
+        : '';
+
+    return <<<SVG
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Papyrus seal icon. Generated by packaging/make-icon.php; do not hand edit.
+    Tile: Papyrus .seal from resources/css/app.css.
+    Book: Heroicons book-open, MIT, Copyright (c) Tailwind Labs, Inc.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="{$px}" height="{$px}" viewBox="0 0 512 512" role="img" aria-label="Papyrus">
+  <title>Papyrus</title>
+  <defs>
+    <linearGradient id="seal" x1="0.213217" y1="0.090404" x2="0.786783" y2="0.909596">
+      <stop offset="0" stop-color="{$v500}"/>
+      <stop offset="1" stop-color="{$v700}"/>
+    </linearGradient>
+    <clipPath id="tile-clip">
+      <rect x="32" y="32" width="448" height="448" rx="96"/>
+    </clipPath>
+  </defs>
+  {$background}
+  <g transform="rotate(-3 256 256)">
+    <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#seal)"/>
+    {$highlight}
+    <g transform="translate({$offsetText} {$offsetText}) scale({$scaleText})">
+      <path d="{$book}" fill="none" stroke="#FFFFFF" stroke-width="{$stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
+
+SVG;
 }
 
 /**
- * One stop of the ramp as a hex, refusing a stop that is not in it.
+ * The 32 unit favicon drawing, tuned for the 16 pixel tab first.
  *
- * Named rather than indexed inline, because reading `$palette[600]` straight off a constant leaves
- * the analyser unable to tell that the key exists. A guard says so honestly; a suppression would not.
+ * At a doubled tab it reads as a slightly heavier 24 pixel treatment, which is still clear. The
+ * ICO carries the separate 16, 24 and 32 pixel frames for Windows.
  */
-function hexFor(int $stop): string
+function faviconSvg(): string
 {
-    $value = VERMILION[$stop] ?? null;
+    $fraction = 0.68;
+    $stroke = 2.6;
+    $tile = 28.0;
+    $box = $tile * $fraction;
+    $scale = $box / 24;
+    $offset = (32 - $box) / 2;
+    $offsetText = number($offset);
+    $scaleText = number($scale);
+    $v500 = VERMILION_500;
+    $v700 = VERMILION_700;
+    $book = BOOK_PATH;
 
-    if ($value === null) {
-        fwrite(STDERR, "  the vermilion ramp has no stop {$stop}\n");
-        exit(1);
-    }
+    return <<<SVG
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Papyrus favicon. Generated by packaging/make-icon.php; do not hand edit.
+    Tile: Papyrus .seal. Book: Heroicons book-open, MIT, Copyright (c) Tailwind Labs, Inc.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Papyrus">
+  <title>Papyrus</title>
+  <defs>
+    <linearGradient id="seal" x1="0.213217" y1="0.090404" x2="0.786783" y2="0.909596">
+      <stop offset="0" stop-color="{$v500}"/>
+      <stop offset="1" stop-color="{$v700}"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-3 16 16)">
+    <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#seal)"/>
+    <g transform="translate({$offsetText} {$offsetText}) scale({$scaleText})">
+      <path d="{$book}" fill="none" stroke="#FFFFFF" stroke-width="{$stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
 
-    return oklchToHex($value[0], $value[1], $value[2]);
+SVG;
 }
 
-/**
- * A fully transparent colour, guarded the same way as the opaque ones.
- */
-function transparent(GdImage $canvas): int
+function number(float $value): string
 {
-    $colour = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
-
-    if ($colour === false) {
-        fwrite(STDERR, "  could not allocate a transparent colour\n");
-        exit(1);
-    }
-
-    return $colour;
+    return rtrim(rtrim(number_format($value, 5, '.', ''), '0'), '.');
 }
 
-/**
- * A colour GD will accept, or nothing.
- *
- * `imagecolorallocate` is typed `int|false` and every drawing call wants a plain `int`, which is not
- * a complaint about this code: it is true that a failure is possible. Resolving it here means one
- * guard rather than a cast at eight call sites, and a cast would have hidden a real allocation
- * failure instead of refusing to draw with it.
- */
-function allocate(GdImage $canvas, string $hex): int
+function findBrowser(): string
 {
-    $colour = imagecolorallocate($canvas, ...rgb($hex));
+    $local = getenv('LOCALAPPDATA') ?: null;
 
-    if ($colour === false) {
-        fwrite(STDERR, "  could not allocate {$hex}\n");
-        exit(1);
-    }
+    $candidates = [
+        getenv('PAPYRUS_CHROME') ?: null,
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        $local === null ? null : $local.'\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        $local === null ? null : $local.'\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
 
-    return $colour;
-}
-
-/**
- * A truecolour image of at least one pixel, because GD rejects zero in both directions.
- */
-function surface(int $width, int $height): GdImage
-{
-    $image = imagecreatetruecolor(max(1, $width), max(1, $height));
-    imagesavealpha($image, true);
-    imagealphablending($image, false);
-
-    return $image;
-}
-
-/** A filled rounded rectangle, in unscaled 512 space. */
-function roundedRect(GdImage $canvas, int $x, int $y, int $w, int $h, int $r, int $colour, int $scale): void
-{
-    imagefilledrectangle($canvas, ($x + $r) * $scale, $y * $scale, ($x + $w - $r) * $scale, ($y + $h) * $scale, $colour);
-    imagefilledrectangle($canvas, $x * $scale, ($y + $r) * $scale, ($x + $w) * $scale, ($y + $h - $r) * $scale, $colour);
-
-    $d = $r * 2;
-    imagefilledellipse($canvas, ($x + $r) * $scale, ($y + $r) * $scale, $d * $scale, $d * $scale, $colour);
-    imagefilledellipse($canvas, ($x + $w - $r) * $scale, ($y + $r) * $scale, $d * $scale, $d * $scale, $colour);
-    imagefilledellipse($canvas, ($x + $r) * $scale, ($y + $h - $r) * $scale, $d * $scale, $d * $scale, $colour);
-    imagefilledellipse($canvas, ($x + $w - $r) * $scale, ($y + $h - $r) * $scale, $d * $scale, $d * $scale, $colour);
-}
-
-/**
- * Downsample to a size, which is where the antialiasing happens.
- *
- * ## The line in here that is the whole bug, commented because it will otherwise be tidied
- *
- * `$currentSize` is the size of `$current`, which begins as the full canvas. It is emphatically not
- * the target size. When it held `$size * $scale` the halving loop never ran at all, because the
- * condition was already false, and the final resample was then told its source was 64 by 64 while
- * the source really was 2048 by 2048. It read the empty top left corner and wrote a fully transparent
- * sixteen pixel file. No error. No warning. And a perfect five hundred and twelve pixel file beside it,
- * because at that size the corner it happened to read contained the mark.
- */
-function render(GdImage $canvas, int $size, int $scale): GdImage
-{
-    $current = $canvas;
-    $currentSize = imagesx($canvas);
-
-    while ($currentSize > ($size * 4)) {
-        $half = max($size, intdiv($currentSize, 2));
-        $next = surface($half, $half);
-        imagecopyresampled($next, $current, 0, 0, 0, 0, $half, $half, $currentSize, $currentSize);
-        imagealphablending($next, true);
-
-        if ($current !== $canvas) {
-            imagedestroy($current);
+    foreach ($candidates as $candidate) {
+        if (is_string($candidate) && is_file($candidate)) {
+            return $candidate;
         }
-
-        $current = $next;
-        $currentSize = $half;
     }
 
-    $out = surface($size, $size);
-    imagecopyresampled($out, $current, 0, 0, 0, 0, $size, $size, $currentSize, $currentSize);
-    imagealphablending($out, true);
-
-    if ($current !== $canvas) {
-        imagedestroy($current);
-    }
-
-    return $out;
+    fail('no Chrome or Edge executable found; set PAPYRUS_CHROME to one');
 }
 
 /**
- * How much of a frame is actually ink, which is the thing that has to be checked rather than assumed.
+ * Render one SVG through headless Chrome at exactly the requested viewport.
  */
-function inkCoverage(GdImage $img): float
-{
-    $w = imagesx($img);
-    $h = imagesy($img);
-    $inked = 0;
+function rasterise(
+    string $svg,
+    int $width,
+    int $height,
+    string $destination,
+    string $browser,
+    string $temp,
+    string $name,
+): void {
+    $source = "{$temp}/{$name}.svg";
+    file_put_contents($source, $svg);
 
-    for ($y = 0; $y < $h; $y++) {
-        for ($x = 0; $x < $w; $x++) {
-            // GD alpha is 0 for opaque and 127 for fully transparent, the reverse of every other
-            // library, which is why "the icon has no alpha" and "the icon is invisible" are one file.
-            if (((imagecolorat($img, $x, $y) >> 24) & 0x7F) < 119) {
+    if (is_file($destination)) {
+        unlink($destination);
+    }
+
+    $url = 'file:///'.str_replace('\\', '/', $source);
+    $command = escapeshellarg($browser)
+        .' --headless --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check'
+        .' --force-device-scale-factor=1 --default-background-color=00000000'
+        .' --window-size='.$width.','.$height
+        .' --screenshot='.escapeshellarg($destination)
+        .' '.escapeshellarg($url)
+        .' 2>&1';
+
+    $output = [];
+    $status = 0;
+    exec($command, $output, $status);
+
+    if ($status !== 0 || ! is_file($destination)) {
+        fail("rendering {$name} failed (exit {$status}):\n".implode("\n", $output));
+    }
+
+    $size = getimagesize($destination);
+
+    if ($size === false || $size[0] !== $width || $size[1] !== $height) {
+        fail("rendering {$name} produced the wrong dimensions");
+    }
+
+    say('rendered', sprintf('%-20s %4d x %-4d', $name, $width, $height));
+}
+
+/**
+ * Inspect a PNG and report what is actually in it.
+ *
+ * GD uses 7 bit alpha where 127 is transparent, the opposite of the usual convention. Both the
+ * tile coverage and the book's white ink are measured from the decoded pixels rather than assumed
+ * from the file size.
+ *
+ * @return array{width: int, height: int, corner_alpha: int, coverage: float, white: float}
+ */
+function inspectPng(string $path): array
+{
+    $image = imagecreatefrompng($path);
+
+    if (! $image instanceof GdImage) {
+        fail("could not decode {$path}");
+    }
+
+    $width = imagesx($image);
+    $height = imagesy($image);
+    $inked = 0;
+    $white = 0;
+
+    for ($y = 0; $y < $height; $y++) {
+        for ($x = 0; $x < $width; $x++) {
+            $rgba = (int) imagecolorat($image, $x, $y);
+            $alpha = ($rgba >> 24) & 0x7F;
+
+            if ($alpha < 119) {
                 $inked++;
+
+                $red = ($rgba >> 16) & 0xFF;
+                $green = ($rgba >> 8) & 0xFF;
+                $blue = $rgba & 0xFF;
+
+                if ($alpha < 10 && $red > 232 && $green > 232 && $blue > 232) {
+                    $white++;
+                }
             }
         }
     }
 
-    return $inked / max(1, $w * $h);
-}
+    $corner = (int) imagecolorat($image, 0, 0);
+    $cornerAlpha = ($corner >> 24) & 0x7F;
+    imagedestroy($image);
 
-$palette = [];
-foreach (VERMILION as $stop => [$lightness, $chroma, $hue]) {
-    $palette[$stop] = oklchToHex($lightness, $chroma, $hue);
-}
-
-echo "  the vermilion ramp, converted from the design tokens:\n";
-foreach ($palette as $stop => $hex) {
-    echo "    vermilion-{$stop}: {$hex}\n";
-}
-
-$fibre = hexFor(400);
-$ink = hexFor(600);
-$deep = hexFor(700);
-$shade = hexFor(900);
-
-$scale = 4;
-
-$canvas = surface(512 * $scale, 512 * $scale);
-imagefill($canvas, 0, 0, transparent($canvas));
-
-$cInk = allocate($canvas, $ink);
-$cDeep = allocate($canvas, $deep);
-$cFibre = allocate($canvas, $fibre);
-$cShade = allocate($canvas, $shade);
-
-// The sheet: wide, upright, and clear of the edges so it survives being reduced to sixteen pixels.
-roundedRect($canvas, 140, 88, 232, 300, 18, $cInk, $scale);
-
-// The fibre. Three lines rather than a texture, because a texture is noise at favicon size, and
-// vermilion-400 rather than something lighter, because vermilion-200 on this ground measured as
-// almost white and read as a rendering fault rather than as a material.
-foreach ([136, 180, 224] as $y) {
-    imagefilledrectangle($canvas, 172 * $scale, $y * $scale, 340 * $scale, ($y + 14) * $scale, $cFibre);
-}
-
-// The rolled edge, sitting proud of the sheet so the silhouette reads as a scroll.
-roundedRect($canvas, 104, 336, 304, 92, 44, $cDeep, $scale);
-roundedRect($canvas, 132, 356, 248, 34, 17, $cFibre, $scale);
-
-// A dark lip under the roll, so the roll has a direction and is not a lozenge.
-roundedRect($canvas, 128, 398, 256, 22, 11, $cShade, $scale);
-
-imagealphablending($canvas, true);
-
-$public = dirname(__DIR__).'/public';
-
-if (! is_dir($public)) {
-    fwrite(STDERR, "  no public directory at {$public}\n");
-    exit(1);
-}
-
-foreach ([16 => 'favicon-16.png', 32 => 'favicon-32.png', 180 => 'apple-touch-icon.png', 512 => 'icon-512.png'] as $px => $name) {
-    $img = render($canvas, $px, $scale);
-    $coverage = inkCoverage($img);
-
-    if ($coverage < 0.05) {
-        fwrite(STDERR, "  {$name} rendered empty ({$coverage} ink). Refusing to write it.\n");
-        exit(1);
-    }
-
-    imagepng($img, "{$public}/{$name}");
-    imagedestroy($img);
-
-    printf("  wrote public/%-22s %4dpx  ink %5.1f%%\n", $name, $px, $coverage * 100);
+    return [
+        'width' => $width,
+        'height' => $height,
+        'corner_alpha' => $cornerAlpha,
+        'coverage' => $inked / max(1, $width * $height),
+        'white' => $white / max(1, $width * $height),
+    ];
 }
 
 /**
- * A multi resolution ICO, hand rolled.
+ * Write a multi resolution ICO from PNG frames.
  *
- * GD has no ICO writer and the alternative is shipping a tool for one file format. The layout is a six
- * byte header, one sixteen byte directory entry per frame, then the images, which modern Windows reads
- * happily out of PNG frames.
- *
- * A dimension of 256 does not fit in a byte and is stored as zero, which is the documented way to say
- * 256. Getting that wrong renders as a blank square in Windows.
+ * @param  array<int, string>  $frames  frame size in pixels to the PNG file on disk
  */
-$frames = [16, 24, 32, 48, 64, 128, 256];
+function writeIco(array $frames, string $destination): void
+{
+    $pngs = [];
 
-$pngs = [];
-foreach ($frames as $px) {
-    $img = render($canvas, $px, $scale);
+    foreach ($frames as $px => $source) {
+        if (! is_file($source)) {
+            fail("missing source for the {$px} px ICO frame");
+        }
 
-    if (inkCoverage($img) < 0.05) {
-        fwrite(STDERR, "  ICO frame at {$px}px rendered empty. Refusing to write it.\n");
-        exit(1);
+        $pngs[$px] = (string) file_get_contents($source);
     }
 
-    ob_start();
-    imagepng($img);
-    $pngs[$px] = (string) ob_get_clean();
-    imagedestroy($img);
+    $count = count($frames);
+    $offset = 6 + (16 * $count);
+    $directory = '';
+    $payload = '';
+
+    foreach ($pngs as $px => $png) {
+        $stored = $px >= 256 ? 0 : $px;
+        $directory .= pack('CCCCvvVV', $stored, $stored, 0, 0, 1, 32, strlen($png), $offset);
+        $payload .= $png;
+        $offset += strlen($png);
+    }
+
+    file_put_contents($destination, pack('vvv', 0, 1, $count).$directory.$payload);
 }
 
-$offset = 6 + (16 * count($frames));
-$directory = '';
+/**
+ * Read the ICO back the way Windows does, rather than trusting the writer.
+ *
+ * @return list<int>
+ */
+function verifyIco(string $path): array
+{
+    $bytes = (string) file_get_contents($path);
 
-foreach ($frames as $px) {
-    $stored = $px >= 256 ? 0 : $px;
-    $directory .= pack('CCCCvvvv', $stored, $stored, 0, 0, 1, 32, strlen($pngs[$px]), $offset);
-    $offset += strlen($pngs[$px]);
+    if (strlen($bytes) < 6) {
+        fail("{$path} is too short to be an ICO");
+    }
+
+    $header = unpack('vreserved/vtype/vcount', substr($bytes, 0, 6));
+
+    if ($header === false || $header['reserved'] !== 0 || $header['type'] !== 1) {
+        fail("{$path} has a bad ICO header");
+    }
+
+    $count = (int) $header['count'];
+    $sizes = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $entry = substr($bytes, 6 + ($index * 16), 16);
+
+        if (strlen($entry) !== 16) {
+            fail("{$path} has a truncated directory");
+        }
+
+        $fields = unpack('Cwidth/Cheight/Ccolours/Creserved/vplanes/vbits/Vlength/Voffset', $entry);
+
+        if ($fields === false) {
+            fail("{$path} has an unreadable directory entry");
+        }
+
+        $px = (int) $fields['width'] === 0 ? 256 : (int) $fields['width'];
+        $sizes[] = $px;
+        $png = substr($bytes, (int) $fields['offset'], (int) $fields['length']);
+        $image = getimagesizefromstring($png);
+
+        if ($image === false || $image[2] !== IMAGETYPE_PNG || $image[0] !== $px || $image[1] !== $px) {
+            fail("{$path} frame {$index} is not a {$px} px PNG");
+        }
+    }
+
+    return $sizes;
 }
 
-file_put_contents("{$public}/favicon.ico", pack('vvv', 0, 1, count($frames)).$directory.implode('', $pngs));
-printf("  wrote public/%-22s %s\n", 'favicon.ico', implode('/', $frames).'px');
+function removeTree(string $directory): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
 
-$svg = <<<SVG
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-    Generated by packaging/make-icon.php. Do not hand edit. The raster and this file come from the same
-    coordinates, and editing one without the other is how the two start to disagree.
+    foreach ($iterator as $entry) {
+        if ($entry->isDir()) {
+            rmdir($entry->getPathname());
+        } else {
+            unlink($entry->getPathname());
+        }
+    }
 
-    Colours are the vermilion ramp from resources/css/app.css, converted from OKLCH to sRGB. The design
-    spends exactly one saturated accent and this mark spends it on one value.
--->
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Papyrus">
-    <rect x="140" y="88" width="232" height="300" rx="18" fill="{$ink}"/>
-    <rect x="172" y="136" width="168" height="14" fill="{$fibre}"/>
-    <rect x="172" y="180" width="168" height="14" fill="{$fibre}"/>
-    <rect x="172" y="224" width="168" height="14" fill="{$fibre}"/>
-    <rect x="104" y="336" width="304" height="92" rx="44" fill="{$deep}"/>
-    <rect x="132" y="356" width="248" height="34" rx="17" fill="{$fibre}"/>
-    <rect x="128" y="398" width="256" height="22" rx="11" fill="{$shade}"/>
-</svg>
+    rmdir($directory);
+}
 
-SVG;
+function say(string $label, string $message): void
+{
+    printf("  %-10s %s\n", $label, $message);
+}
 
-file_put_contents("{$public}/favicon.svg", $svg);
-echo "  wrote public/favicon.svg\n";
+function fail(string $message): never
+{
+    fwrite(STDERR, "\n  FAILED: {$message}\n");
+    exit(1);
+}
 
-imagedestroy($canvas);
+$sizes = [512, 256, 128, 64, 48, 32, 24, 16];
+$raster = [];
+
+foreach ($sizes as $px) {
+    $destination = "{$temp}/icon-{$px}.png";
+    rasterise(markSvg($px), $px, $px, $destination, $browser, $temp, "icon-{$px}");
+    $raster[$px] = $destination;
+}
+
+file_put_contents("{$public}/favicon.svg", faviconSvg());
+say('wrote', 'public/favicon.svg');
+
+rasterise(faviconSvg(), 32, 32, "{$temp}/favicon-32.png", $browser, $temp, 'favicon-32');
+
+// The Apple touch icon must be opaque: iOS composites transparency onto black.
+rasterise(markSvg(180, true), 180, 180, "{$temp}/apple-touch.png", $browser, $temp, 'apple-touch');
+
+copy($raster[512], "{$public}/icon-512.png");
+copy($raster[256], "{$public}/icon-256.png");
+say('wrote', 'public/icon-512.png, public/icon-256.png');
+
+$faviconFrames = [
+    16 => $raster[16],
+    24 => $raster[24],
+    32 => $raster[32],
+    48 => $raster[48],
+    64 => $raster[64],
+    128 => $raster[128],
+    256 => $raster[256],
+];
+
+writeIco($faviconFrames, "{$public}/favicon.ico");
+say('wrote', 'public/favicon.ico');
+
+copy("{$temp}/apple-touch.png", "{$public}/apple-touch-icon.png");
+say('wrote', 'public/apple-touch-icon.png');
+
+// Inspect the real pixels before calling any of this done.
+foreach ([16, 24, 32, 48, 64, 128, 256, 512] as $px) {
+    $report = inspectPng($raster[$px]);
+
+    if ($report['width'] !== $px || $report['height'] !== $px) {
+        fail("the {$px} px raster has the wrong dimensions");
+    }
+
+    if ($report['corner_alpha'] < 120) {
+        fail("the {$px} px raster does not have a transparent corner");
+    }
+
+    if ($report['coverage'] < 0.55) {
+        fail(sprintf('the %d px raster is only %.1f%% ink', $px, $report['coverage'] * 100));
+    }
+
+    if ($px <= 32 && $report['white'] < 0.014) {
+        fail(sprintf('the %d px raster has almost no book: %.2f%% white', $px, $report['white'] * 100));
+    }
+
+    say('checked', sprintf('%-10s ink %5.1f%%  book %5.1f%%  corner alpha %d', "{$px}px", $report['coverage'] * 100, $report['white'] * 100, $report['corner_alpha']));
+}
+
+$touch = inspectPng("{$temp}/apple-touch.png");
+
+if ($touch['width'] !== 180 || $touch['height'] !== 180 || $touch['corner_alpha'] !== 0) {
+    fail('the Apple touch icon is not opaque 180 px');
+}
+
+say('checked', 'apple-touch 180px opaque');
+
+$favicon32 = inspectPng("{$temp}/favicon-32.png");
+say('checked', sprintf('favicon 32px ink %.1f%% book %.1f%%', $favicon32['coverage'] * 100, $favicon32['white'] * 100));
+
+$frames = verifyIco("{$public}/favicon.ico");
+
+if ($frames !== [16, 24, 32, 48, 64, 128, 256]) {
+    fail('public/favicon.ico has the wrong frame order: '.implode('/', $frames));
+}
+
+say('checked', 'public/favicon.ico 16/24/32/48/64/128/256');
+
+removeTree($temp);
+say('done', 'temporary render files removed');

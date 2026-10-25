@@ -28,7 +28,7 @@
             {{-- Brand, over the wall --}}
             <a href="{{ route('home') }}" class="flex w-fit items-center gap-3" tabindex="-1" aria-hidden="true">
                 <span class="seal size-11">
-                    <x-app-logo-icon class="size-5 fill-current" />
+                    <x-app-logo-icon class="size-[19px]" />
                 </span>
                 <span class="font-display text-lg font-semibold tracking-tight text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
             </a>

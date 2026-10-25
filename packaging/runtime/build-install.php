@@ -193,14 +193,15 @@ const REQUIRED_AFTER_BUILD = [
      * What the licences page is fed, checked here where an omission is still a build fault.
      *
      * The manifest carries the npm tree's own declarations, so npm rows exist in an install that
-     * no longer holds the lock files they were derived from. The two packaged texts are this
-     * project's bundled licences at rest and LICENSE is the project's own text. Miss any of them
-     * and the page ships a section that is simply absent, with nothing on the page saying why.
+     * no longer holds the lock files they were derived from. The packaged texts are this project's
+     * bundled licences at rest and LICENSE is the project's own text. Miss any of them and the page
+     * ships a section that is simply absent, with nothing on the page saying why.
      */
     'LICENSE',
     'licences/node/manifest.json',
     'licences/suwayomi-server.txt',
     'licences/java-runtime.txt',
+    'licences/heroicons.txt',
 ];
 
 /**

@@ -64,7 +64,7 @@ page, the reader and settings are implemented.
 | Settings | `/settings/profile`, `/settings/connections`, `/settings/appearance`, `/settings/security` | Profile, AniList tracking, reader appearance, and password, two-factor and passkeys |
 | About | `/settings/about` | The two version numbers a bug report starts with, and whether the Suwayomi in front of it is one this build can work with |
 | Questions | `/faq` | Public. What this install collects, where it lives, and the three things that do reach the internet, each with who started it |
-| Licences | `/settings/licences` | Every package this install is made of, generated from the lock files the build ships from, so it cannot claim coverage it does not have. 448 of them as of writing, and exactly one that names itself proprietary: `livewire/flux`, which is the component library every page here is built from |
+| Licences | `/settings/licences` | Every package this install is made of, generated from the lock files the build ships from, so it cannot claim coverage it does not have. 450 of them as of writing, and exactly one that names itself proprietary: `livewire/flux`, which is the component library every page here is built from |
 
 `/` and `/dashboard` redirect to `/library` when you are signed in, and `/` lands on the login screen when you are not.
 
@@ -215,39 +215,23 @@ by accident is not a recoverable mistake. Removing the portable folder does not 
 
 ### The Windows warning, and what to do about it
 
-Papyrus is signed with a **self-signed certificate**, and Windows will warn you about that. This is
-expected and it is not a sign the file is unsafe.
+The installer is **unsigned**. Windows SmartScreen will warn you about that, usually as "Windows
+protected your PC". This is expected. It means Windows has no publisher to name, not that it found
+something wrong with the file.
 
-Measured on both sides, so this is not a reassurance:
-
-| Certificate | What Windows reports |
-| --- | --- |
-| Not installed on your machine | `UnknownError`, and a "Windows protected your PC" prompt |
-| Installed on your machine | `Valid`, no prompt |
-
-A self-signed certificate terminates in a root that Windows has never been told to trust, so the
-signature proves the file has not been tampered with but cannot prove *who* signed it. Only a
-certificate from a recognised authority can do that, and Papyrus does not have one.
-
-If you would rather not see the warning on this machine, trust the certificate yourself. You are then
-deciding to trust whoever made it, which is a decision you are entitled to make but should make
-knowingly:
+There is no certificate to trust, so the check that means something is the hash. `releases/1.4.0.json`
+records the SHA-256 and size of the installer that was built:
 
 ```powershell
-Import-Certificate -FilePath papyrus.crt -CertStoreLocation Cert:\CurrentUser\Root
+Get-FileHash .\Papyrus-1.4.0-setup.exe -Algorithm SHA256
 ```
 
-The `.crt` is published beside the download, and its SHA-1 thumbprint is in the build manifest so you
-can check that you have the file somebody published rather than one you were handed.
+Compare it with the `sha256` field in that file. A zip cannot carry an Authenticode signature at all,
+so the portable builder writes a `.sha256` sidecar beside the archive for the same check.
 
-For the portable zip, check the SHA-256 instead. A zip cannot carry this kind of signature at all, so
-the published digest is the only verification available:
+If the hash matches what the release record says, the file is the one that was built. Whether to run
+an unsigned program is still your decision, and Windows will ask you to confirm it.
 
-```powershell
-Get-FileHash .\Papyrus-1.2.0-portable.zip -Algorithm SHA256
-```
-
-and compare it with the `.sha256` file published beside the download.
 ## Running it
 
 Suwayomi first. It needs to be a normal process, not a Windows Service, because its
@@ -749,6 +733,22 @@ wrong path entirely.
 ## Licence and posture
 
 MIT, see [`LICENSE`](LICENSE).
+
+### The mark
+
+The seal is Papyrus's own `.seal` tile, with the Heroicons `book-open` outline inside it. Heroicons is
+MIT, Copyright (c) Tailwind Labs, Inc.; the text travels in
+[`packaging/licences/heroicons.txt`](packaging/licences/heroicons.txt) and is shown on the licences
+page with the bundled pieces. The tab icon, the Windows icon, the shortcuts and the uninstaller all
+come from one vector, regenerated with:
+
+```bash
+php packaging/make-icon.php
+```
+
+That needs PHP 8.4 with GD and Chrome or Edge. The 16, 24 and 32 pixel frames are drawn for those
+sizes rather than reduced from the 512, because a straight reduction of the book's 1.5 unit outline
+is a red tile with a grey smudge at tab size.
 
 Ship no content, no bundled source list, no hosted index. Users supply their own store URLs.
 

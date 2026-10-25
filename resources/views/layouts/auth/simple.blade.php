@@ -22,7 +22,7 @@
             <div class="relative hidden w-[46%] flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
                 <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-3" tabindex="-1" aria-hidden="true">
                     <span class="seal size-10">
-                        <x-app-logo-icon class="size-5 fill-current" />
+                        <x-app-logo-icon class="size-[17px]" />
                     </span>
                     <span class="font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
                 </a>
@@ -46,7 +46,7 @@
                 <div class="w-full max-w-sm animate-rise-in">
                     <div class="mb-8 flex items-center gap-3 lg:hidden">
                         <span class="seal size-10">
-                            <x-app-logo-icon class="size-5 fill-current" />
+                            <x-app-logo-icon class="size-[17px]" />
                         </span>
                         <span class="font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{{ config('app.name', 'Papyrus') }}</span>
                     </div>

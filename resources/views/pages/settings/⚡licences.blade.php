@@ -171,8 +171,7 @@ new #[Title('Licences')] class extends Component {
 
         {{--
             Grouped so a reader looking for one thing is not reading several hundred rows to find it.
-            The bundled pieces come first because they are the largest and the least likely to be in a
-            lock file at all.
+            The bundled pieces come first because no lock file mentions them at all.
         --}}
         <div class="mt-8 space-y-8">
             @foreach ($this->groups() as $group)
@@ -274,7 +273,7 @@ new #[Title('Licences')] class extends Component {
         <p class="mt-8 text-sm text-zinc-500 dark:text-zinc-400">
             {{
                 __(
-                    'This list comes from the lock files included with this build. The two bundled pieces are not in those files, so their versions come from the manifests the build checks.'
+                    'This list comes from the lock files included with this build. The bundled pieces are not in those files, so their versions come from the manifests the build checks. The Heroicons book in the seal is artwork and has no release version.'
                 )
             }}
         </p>

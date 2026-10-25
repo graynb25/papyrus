@@ -95,6 +95,11 @@ AllowNoIcons=yes
 OutputDir=..\..\build\dist
 OutputBaseFilename={#MyAppName}-{#MyAppVersion}-setup
 
+; The setup executable carries the same mark as the shortcuts and the uninstaller. SourceRoot is
+; the built install, which already holds the generated favicon, so all three read one file rather
+; than a second copy kept in this directory.
+SetupIconFile={#SourceRoot}\public\favicon.ico
+
 ; See the header for why this payload is not solid compressed.
 Compression=lzma2/max
 SolidCompression=no

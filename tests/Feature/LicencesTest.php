@@ -20,11 +20,13 @@ use Tests\TestCase;
  * and is not evidence of anything. So the tests here are mostly about coverage rather than about
  * correctness of any single row.
  *
- * ## Why the two large packaged pieces are asserted by name
+ * ## Why the bundled pieces are asserted by name
  *
- * Because they are 57% of the install and neither lockfile mentions them. A generator that read only
- * `composer.lock` would produce a perfectly accurate page that omitted the single largest piece of
- * third party code in the product, and nothing about the output would look wrong.
+ * Because neither lockfile mentions them, and one of them is most of the install. A generator that
+ * read only `composer.lock` would produce a perfectly accurate page that omitted the single largest
+ * piece of third party code in the product, and nothing about the output would look wrong. The
+ * Heroicons book in the seal is here for the same reason: it is third party artwork the install
+ * draws, and no package manifest accounts for it.
  */
 class LicencesTest extends TestCase
 {
@@ -44,7 +46,7 @@ class LicencesTest extends TestCase
     }
 
     /**
-     * The two big pieces are named explicitly, because nothing else would notice them going missing.
+     * The bundled pieces are named explicitly, because nothing else would notice them going missing.
      */
     public function test_it_names_the_bundled_pieces_no_lockfile_knows_about(): void
     {
@@ -52,6 +54,7 @@ class LicencesTest extends TestCase
 
         $this->assertContains('Suwayomi Server', $names, 'the manga server is most of the install and is in no lockfile');
         $this->assertContains('Eclipse Temurin JRE', $names, 'the Java runtime is most of the install and is in no lockfile');
+        $this->assertContains('Heroicons', $names, 'the book in the seal is third party artwork no manifest accounts for');
     }
 
     public function test_the_bundled_suwayomi_version_comes_from_the_file_the_build_verifies(): void
@@ -312,7 +315,7 @@ class LicencesTest extends TestCase
 
     public function test_the_bundled_texts_are_read_from_the_files_this_repository_tracks_for_exactly_this(): void
     {
-        [$suwayomi, $jre] = $this->licences()->bundled();
+        [$suwayomi, $jre, $heroicons] = $this->licences()->bundled();
 
         $this->assertSame(
             (string) file_get_contents(base_path('packaging/licences/suwayomi-server.txt')),
@@ -322,6 +325,11 @@ class LicencesTest extends TestCase
         $this->assertSame(
             (string) file_get_contents(base_path('packaging/licences/java-runtime.txt')),
             $this->licences()->textFor($jre),
+        );
+
+        $this->assertSame(
+            (string) file_get_contents(base_path('packaging/licences/heroicons.txt')),
+            $this->licences()->textFor($heroicons),
         );
     }
 

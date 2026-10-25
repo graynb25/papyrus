@@ -15,7 +15,7 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## 1.4.0 - 2026-10-24
+## 1.4.0 - 2026-10-25
 
 The release after 1.3.0: the last UI/UX audit findings, time and navigation in plainer words, a
 library check that can be stopped, reading time carried in from a backup, and backup uploads as
@@ -26,6 +26,12 @@ launch is not proven. The distributable release remains the Windows installer. S
 [roadmap](ROADMAP.md) and [portable status](docs/PORTABLE.md) for details.
 
 ### Added
+
+**Papyrus has its own mark.** The seal the empty library already used is now the application's mark:
+the sidebar and the auth screens, the browser tab, the Windows shortcut, the installer and the
+uninstaller all read one vector. The book is the Heroicons `book-open` outline, MIT. The 16, 24 and
+32 pixel frames are drawn for those sizes rather than reduced from the 512, because a faithful
+reduction of the outline at tab size is a red tile with a grey smudge.
 
 **Reading time carried in from a backup now counts.** A Tachimanga `.tmb` backup carries daily
 reading time, and it is now kept in its own ledger keyed by the file's sha256, so re-importing the

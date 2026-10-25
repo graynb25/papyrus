@@ -1,6 +1,6 @@
 # Packaging Papyrus for Windows
 
-Status: **the 1.3.0 Windows installer builds; clean-machine reader verification is incomplete.** The
+Status: **the 1.4.0 Windows installer builds; clean-machine reader verification is incomplete.** The
 latest Sandbox attempt started Papyrus on port 8402 and Suwayomi answered, but the guest produced no
 final report and did not prove a clean reader can browse and read from a source. Do not treat startup
 as end-to-end reader verification. Earlier completed runs found thirteen defects, including three
@@ -957,6 +957,35 @@ First run, no Suwayomi detected on 4567
 | 2.4 | Single instance guard | H | Lockfile owned by the launcher. Recover stale locks by checking whether the pid is alive. Never by process name. |
 | 2.5 | Firewall prompt | L | Binding to `127.0.0.1` only should avoid it. Worth verifying, because a prompt on first run is a bad first impression. |
 | 2.6 | Auto-update | M | One artifact containing all three runtimes, not three update channels. See bite 6. |
+
+### The application icon
+
+The mark is the `.seal` tile from `resources/css/app.css` with the Heroicons `book-open` outline
+inside it. `packaging/make-icon.php` puts those two existing pieces on a 512 canvas and writes the
+five files the app and Windows read:
+
+| File | Used by |
+| --- | --- |
+| `public/favicon.svg` | The browser tab, tuned for 16 pixels first |
+| `public/favicon.ico` | The tab fallback, shortcuts, the uninstaller and the setup executable |
+| `public/apple-touch-icon.png` | Opaque 180 pixel icon, because iOS composites transparency onto black |
+| `public/icon-256.png`, `public/icon-512.png` | The larger mark, for anything that asks for one |
+
+The setup executable, the Start Menu entry, the desktop shortcut and the uninstaller all read
+`public/favicon.ico`, and `SetupIconFile={#SourceRoot}\public\favicon.ico` makes the compiler take
+the setup icon from the built install rather than a second copy kept beside the `.iss`. A rebuild
+is `php packaging/make-icon.php`, which needs GD and Chrome or Edge; the rasteriser is the browser
+so every size comes from the same vector.
+
+The ICO carries 16, 24, 32, 48, 64, 128 and 256 pixel frames in that order. At 48 and above the
+book keeps the seal's exact 42.86 percent proportion and 1.5 unit stroke; below that the line is
+heavier and the book slightly larger. The delivered 16 pixel frame measured 82.4 percent ink and
+7.0 percent white book, so the shape survives the size rather than being assumed to.
+
+The portable shape has no shell icon to set: a `.cmd` cannot carry one. Its mark is the browser tab
+and the favicon the server answers with. The CSS grain and outer cast shadow are deliberately not
+baked into the icon, because a shadow on a transparent canvas is a dark halo at small sizes and
+the grain is noise at 16 pixels.
 
 ### 2.1 done: the installer
 
