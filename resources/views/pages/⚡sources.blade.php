@@ -1675,7 +1675,7 @@ new #[Title('Sources')] class extends AdultContentPage
 }; ?>
 
 <div class="w-full space-y-8" x-on:open-install-warning.window="$dispatch('modal-show', { name: 'install-warning' })" x-on:close-install-warning.window="$dispatch('modal-close', { name: 'install-warning' })">
-    <x-page.header>
+    <x-page.header back="{{ route('library') }}" :back-label="__('Back to your library')">
         <x-slot:eyebrow>{{ __('Keiyoushi, on your terms.') }}</x-slot:eyebrow>
         <x-slot:title>{{ __('Sources') }}</x-slot:title>
     </x-page.header>

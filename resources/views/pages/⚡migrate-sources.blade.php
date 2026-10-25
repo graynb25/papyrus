@@ -772,17 +772,8 @@ new #[Title('Move a whole source')] class extends Component
         it, the page is a dead end: the sidebar's Sources entry is a different
         place, and a reader who came here to look at the shelf they were
         holding has to go and find it again.
-
-        The same shape the single series wizard carries, which is the house's
-        way of saying a page knows where it was reached from.
     --}}
-    <div class="flex items-center gap-2 text-sm">
-        <a href="{{ route('sources') }}" wire:navigate class="text-zinc-500 hover:underline dark:text-zinc-400">
-            &larr; {{ __('Back to sources') }}
-        </a>
-    </div>
-
-    <x-page.header>
+    <x-page.header back="{{ route('sources') }}" :back-label="__('Back to sources')">
         <x-slot:eyebrow>
             @if ($compose !== null)
                 {{ __('Move series off :name.', ['name' => $this->composeName]) }}

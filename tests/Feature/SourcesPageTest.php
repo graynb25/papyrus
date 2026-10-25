@@ -549,6 +549,18 @@ class SourcesPageTest extends TestCase
     }
 
     /**
+     * Sources is reached from the library and is not a dead end of its own.
+     *
+     * The sidebar keeps the same destination, but the sidebar is a different
+     * gesture: a reader who followed a source from a series page wants the
+     * shelf they came from, not a menu.
+     */
+    public function test_the_page_says_where_its_back_arrow_goes(): void
+    {
+        $this->page()->assertSee('Back to your library');
+    }
+
+    /**
      * F26. The sandbox run of 2026-10-15 passed all 58 checks while the guest's
      * Suwayomi was up and answering and this page showed the app's 500: the list
      * and the count both threw and nothing caught either.

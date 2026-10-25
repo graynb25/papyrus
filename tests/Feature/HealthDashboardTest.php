@@ -231,6 +231,11 @@ class HealthDashboardTest extends TestCase
             ->assertSee('Suwayomi does not report a live status for each source.');
     }
 
+    public function test_the_page_has_a_way_back_to_sources(): void
+    {
+        $this->page()->assertSee('Back to sources');
+    }
+
     public function test_it_lists_one_row_per_site_not_per_source(): void
     {
         // The shape that matters: MangaDex arrives as 61 language variants.

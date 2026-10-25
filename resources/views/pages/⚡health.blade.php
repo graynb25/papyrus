@@ -465,7 +465,7 @@ new #[Title('Health')] class extends Component {
 }; ?>
 
 <div class="w-full space-y-6">
-    <x-page.header>
+    <x-page.header back="{{ route('sources') }}" :back-label="__('Back to sources')">
         <x-slot:eyebrow>{{ __('Every source, watched.') }}</x-slot:eyebrow>
         <x-slot:title>{{ __('Source health') }}</x-slot:title>
     </x-page.header>
