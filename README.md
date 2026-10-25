@@ -395,7 +395,7 @@ php artisan users:create --email=you@example.com --name="Your Name"
 ```
 
 It generates a password, prints it **once**, and marks the address verified. Add `--admin`
-for an administrator, and `--no-email` on a box with no mail transport. Use
+for an administrator. Use
 `--password=` only for an unattended install, and note that it lands in your shell history;
 the command says so when you do.
 

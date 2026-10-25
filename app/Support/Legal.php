@@ -24,9 +24,10 @@ namespace App\Support;
  * no error reporting service anywhere in the application.** The mailers are all
  * driven by the environment and the default one writes to a local log file.
  *
- * The three exceptions below are therefore the whole of the network side, and
- * the mail is the fourth thing that can leave, and it is named separately
- * because it leaves under different conditions.
+ * The three exceptions below are therefore the whole of the network side. Mail
+ * is the fourth thing that can leave, and only on a shared or public install
+ * whose operator has configured a transport; it is named separately because it
+ * leaves under different conditions.
  *
  * ## What these pages do not claim
  *
@@ -76,10 +77,10 @@ final class Legal
                 ),
 
                 new LegalSection(
-                    heading: __('Mail to you, and only to you'),
+                    heading: __('Mail, and when it is sent'),
                     paragraphs: [
-                        __('Papyrus can send three messages: a verification link when you sign up (only on shared or public installs, where registration is open), a password reset link when you ask for one, and a welcome note if your account was made from the command line. On a default install none of them leave your machine, because registration is closed and the mailer writes to a local log file.'),
-                        __('Point it at a real mail server and that is your choice, and the address goes to whoever runs that server. In a shared or public install the sign-up verification is not skipped, because those installs are reachable by people you have never met, so that message does go out.'),
+                        __('A default install sends no mail. Registration is closed, the address is only a name to sign in with, and the mailer writes to a local log file if anything ever asks it to send. There is no welcome message and no notification of any kind.'),
+                        __('A shared or public install is different, and only because its operator made it so. When registration is open there, one message is sent: a verification link to the address used to sign up, and a reset link if that reader asks for one. Those messages go through the mail server the operator configured, so that server and its operator see the address. Papyrus itself runs no mail service and has no account anywhere to send from.'),
                     ],
                 ),
 

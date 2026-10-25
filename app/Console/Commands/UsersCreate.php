@@ -5,10 +5,8 @@ namespace App\Console\Commands;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
-use Throwable;
 
 /**
  * Creates an account without going through the browser.
@@ -40,8 +38,7 @@ class UsersCreate extends Command
                             {--email= : The account address. Required.}
                             {--name= : Display name. Defaults to the part of the address before the @.}
                             {--password= : Use this instead of a generated one. Visible in shell history.}
-                            {--admin : Create as an administrator.}
-                            {--no-email : Skip sending the welcome message, for an offline box.}';
+                            {--admin : Create as an administrator.}';
 
     protected $description = 'Create a reader account without the browser, for a single-user install';
 
@@ -132,38 +129,14 @@ class UsersCreate extends Command
         }
 
         /*
-         * Verification is set above, with the role and status, because the address has
-         * just been invented and an unverified account cannot sign in. Sending a message
-         * to an address nobody has confirmed is how the first mail ends up in a spam
-         * folder, and this box may have no mail transport at all.
+         * No message follows.
+         *
+         * The address on a command line is invented as often as it is real, and
+         * the password this command just printed is the only thing the reader
+         * needs to sign in. A welcome note would be mail to somebody who may not
+         * exist. The account is marked verified above for the same reason: there
+         * is no address to prove control of, and no reader waiting on a link.
          */
-        if ($this->option('no-email')) {
-            return self::SUCCESS;
-        }
-
-        if (! $this->sendWelcome($user)) {
-            $this->line('');
-            $this->components->warn('The welcome message could not be sent. The account exists regardless.');
-        }
-
         return self::SUCCESS;
-    }
-
-    /**
-     * Best effort. A mail failure must not read as a failed account, because the row is
-     * already written and re-running the command would then refuse on a duplicate address.
-     */
-    private function sendWelcome(User $user): bool
-    {
-        try {
-            Mail::raw(
-                "Your Papyrus account is ready.\n\n{$user->email}\n",
-                fn ($message) => $message->to($user->email)->subject('Your Papyrus account'),
-            );
-
-            return true;
-        } catch (Throwable) {
-            return false;
-        }
     }
 }

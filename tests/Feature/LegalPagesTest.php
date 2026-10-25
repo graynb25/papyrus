@@ -127,9 +127,11 @@ class LegalPagesTest extends TestCase
     public function test_the_privacy_page_is_honest_about_mail(): void
     {
         $this->get('/privacy')
-            ->assertSee('Mail to you, and only to you')
-            ->assertSee('a password reset link when you ask for one')
-            ->assertSee('none of them leave your machine');
+            ->assertSee('Mail, and when it is sent')
+            ->assertSee('A default install sends no mail')
+            ->assertSee('There is no welcome message')
+            ->assertSee('Papyrus itself runs no mail service')
+            ->assertDontSee('a welcome note if your account was made from the command line');
     }
 
     public function test_the_public_pages_carry_no_dashes(): void

@@ -23,7 +23,6 @@ class UsersCreateCommandTest extends TestCase
     {
         $this->artisan('users:create', [
             '--email' => 'first@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $user = User::query()->where('email', 'first@example.test')->firstOrFail();
@@ -36,7 +35,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'second@example.test',
             '--password' => 'correct-horse-battery',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $second = User::query()->where('email', 'second@example.test')->firstOrFail();
@@ -53,7 +51,6 @@ class UsersCreateCommandTest extends TestCase
          */
         $this->artisan('users:create', [
             '--email' => 'first@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->assertNotNull(User::query()->where('email', 'first@example.test')->firstOrFail()->email_verified_at);
@@ -64,7 +61,6 @@ class UsersCreateCommandTest extends TestCase
         // The whole address wraps in the header, so the local part is the better default.
         $this->artisan('users:create', [
             '--email' => 'someone@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->assertSame('someone', User::query()->where('email', 'someone@example.test')->firstOrFail()->name);
@@ -75,7 +71,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'someone@example.test',
             '--name' => 'Actual Name',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->assertSame('Actual Name', User::query()->where('email', 'someone@example.test')->firstOrFail()->name);
@@ -88,7 +83,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'first@example.test',
             '--password' => 'correct-horse-battery',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $stored = User::query()->where('email', 'first@example.test')->firstOrFail()->password;
@@ -107,7 +101,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'boss@example.test',
             '--admin' => true,
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->assertSame('admin', User::query()->where('email', 'boss@example.test')->firstOrFail()->role);
@@ -117,7 +110,6 @@ class UsersCreateCommandTest extends TestCase
     {
         $this->artisan('users:create', [
             '--email' => 'reader@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->assertSame('user', User::query()->where('email', 'reader@example.test')->firstOrFail()->role);
@@ -127,7 +119,7 @@ class UsersCreateCommandTest extends TestCase
 
     public function test_it_refuses_without_an_email(): void
     {
-        $this->artisan('users:create', ['--no-email' => true])->assertFailed();
+        $this->artisan('users:create')->assertFailed();
 
         $this->assertSame(0, User::query()->count());
     }
@@ -139,15 +131,15 @@ class UsersCreateCommandTest extends TestCase
          * Suwayomi username and it is not an address, so it has to be refused here rather
          * than becoming an account nobody can reach.
          */
-        $this->artisan('users:create', ['--email' => 'papyrus', '--no-email' => true])->assertFailed();
+        $this->artisan('users:create', ['--email' => 'papyrus'])->assertFailed();
 
         $this->assertSame(0, User::query()->count());
     }
 
     public function test_it_refuses_a_duplicate_address(): void
     {
-        $this->artisan('users:create', ['--email' => 'first@example.test', '--no-email' => true])->assertSuccessful();
-        $this->artisan('users:create', ['--email' => 'first@example.test', '--no-email' => true])->assertFailed();
+        $this->artisan('users:create', ['--email' => 'first@example.test'])->assertSuccessful();
+        $this->artisan('users:create', ['--email' => 'first@example.test'])->assertFailed();
 
         $this->assertSame(1, User::query()->where('email', 'first@example.test')->count());
     }
@@ -161,7 +153,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'first@example.test',
             '--password' => 'short',
-            '--no-email' => true,
         ])->assertFailed();
 
         $this->assertSame(0, User::query()->count());
@@ -172,7 +163,6 @@ class UsersCreateCommandTest extends TestCase
         $this->artisan('users:create', [
             '--email' => 'first@example.test',
             '--password' => 'correct-horse-battery',
-            '--no-email' => true,
         ])
             ->expectsOutputToContain('shell history')
             ->assertSuccessful();
@@ -180,7 +170,7 @@ class UsersCreateCommandTest extends TestCase
 
     public function test_the_generated_password_is_shown_once_and_long_enough(): void
     {
-        $this->artisan('users:create', ['--email' => 'first@example.test', '--no-email' => true])
+        $this->artisan('users:create', ['--email' => 'first@example.test'])
             ->expectsOutputToContain('shown once')
             ->assertSuccessful();
     }

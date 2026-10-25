@@ -264,7 +264,6 @@ class LocalReaderAccountTest extends TestCase
     {
         $this->artisan('users:create', [
             '--email' => 'made@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $user = User::query()->where('email', 'made@example.test')->firstOrFail();
@@ -279,7 +278,6 @@ class LocalReaderAccountTest extends TestCase
     {
         $this->artisan('users:create', [
             '--email' => 'made@example.test',
-            '--no-email' => true,
         ])->assertSuccessful();
 
         $this->get(route('register'))->assertNotFound();
