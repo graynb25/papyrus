@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Import\BackupImporter;
 use App\Jobs\RunBackupImport;
 use App\Models\ImportRun;
 use App\Models\User;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Tests\Support\BuildsTachimangaBackups;
 use Tests\TestCase;
 
 /**
@@ -34,6 +36,7 @@ use Tests\TestCase;
  */
 class ImportPageTest extends TestCase
 {
+    use BuildsTachimangaBackups;
     use RefreshDatabase;
 
     private User $user;
@@ -236,10 +239,14 @@ class ImportPageTest extends TestCase
     {
         Queue::fake();
 
-        $this->page()
+        $component = $this->page()
             ->set('path', (string) $this->file)
             ->set('inspectOnly', false)
             ->call('start');
+
+        $component
+            ->assertSee(__('Reading the file'))
+            ->assertSee(__('Bringing your series across'));
 
         Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
             return $job->userId === (int) $this->user->id
@@ -410,7 +417,7 @@ class ImportPageTest extends TestCase
             ->assertSet('modalRunId', null)
             ->assertSee(__('The file will be read in a moment.'))
             ->assertSee(__('Reading the file'))
-            ->assertSee(__('Bringing your series across'));
+            ->assertDontSee(__('Bringing your series across'));
     }
 
     /**
@@ -802,6 +809,7 @@ class ImportPageTest extends TestCase
             'state' => ImportRun::COMPLETE,
             'file_name' => 'library.tmb',
             'library_series' => 10,
+            'applied' => 10,
             'started_at' => now()->subMinutes(10),
             'finished_at' => now()->subMinutes(5),
         ]);
@@ -869,6 +877,42 @@ class ImportPageTest extends TestCase
         $this->page()
             ->call('openRunModal', $run->id)
             ->assertSee('1277 series on the shelf')
+            ->assertDontSee(__('0 series imported'));
+    }
+
+    public function test_a_real_inspect_is_not_shown_as_an_import_that_found_nothing(): void
+    {
+        /*
+         * Measured on the installed app with the real 41MB backup. The inspect job stored
+         * `library_series = 1277`, so the old "null means inspect" test called it an import:
+         * the modal ticked all four import checkpoints and said "0 series imported" about a
+         * file holding 40,160 read chapters. The hand-built run above could not catch this
+         * because it used the shape the job no longer writes.
+         */
+        $backup = $this->buildTachimangaBackup();
+
+        $job = new RunBackupImport(
+            $this->user->id,
+            $backup,
+            inspectOnly: true,
+            originalName: 'Tachimanga_backup_2026-10-08_18-31-01-290.tmb',
+        );
+
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame(2, $run->library_series, 'the real inspect writes a library count');
+        $this->assertSame(0, $run->series_processed);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee('series in your library')
+            ->assertSee('marked read')
+            ->assertSee(__('Reading the file'))
+            ->assertDontSee(__('Installing what it needs'))
+            ->assertDontSee(__('Bringing your series across'))
+            ->assertDontSee(__('Filing your shelves'))
             ->assertDontSee(__('0 series imported'));
     }
 

@@ -557,19 +557,35 @@ new #[Title('Import a backup')] class extends Component
     }
 
     /**
- * Whether a run only read the file rather than importing it.
- *
- * `library_series` is the discriminator, and it is a good one because the importer writes it
- * the moment it has read the file, before anything is resolved. So a null total means the run
- * never got past reading, which is exactly what an inspect is, and the report is sitting in
- * `progress_note` instead of in the counters.
- *
- * The alternative was a column saying which it was. This needs no migration, and it cannot
- * disagree with itself the way a second flag can.
- */
-public function wasInspection(ImportRun $run): bool
+     * Whether a run only read the file rather than importing it.
+     *
+     * `library_series` alone was the discriminator, and it stopped being one when inspect
+     * began storing the library count it had just measured. Measured on the installed app:
+     * an inspect of the real 41MB file wrote `library_series = 1277`, so the page called it an
+     * import, ticked all four import checkpoints, and said "0 series imported" about a file
+     * holding 40,160 read chapters.
+     *
+     * An inspect never processes or applies a series, so every one of those counters stays at
+     * zero. A real import always leaves at least one of them non-zero: a written series, an
+     * unchanged one, one filed without a source, one not found, or a missing source. The null
+     * case is the older inspect shape, which never reached a library count at all.
+     */
+    public function wasInspection(ImportRun $run): bool
     {
-        return $run->state === ImportRun::COMPLETE && $run->library_series === null;
+        if ($run->state !== ImportRun::COMPLETE) {
+            return false;
+        }
+
+        if ($run->library_series === null) {
+            return true;
+        }
+
+        return $run->series_processed === 0
+            && $run->applied === 0
+            && $run->unchanged === 0
+            && $run->filed_without_source === 0
+            && $run->not_found === 0
+            && $run->sources_missing === 0;
     }
 
     /**
@@ -903,8 +919,9 @@ public function wasInspection(ImportRun $run): bool
                 One modal per run, opened from the list or by the button that starts a run.
 
                 It opens before the run row exists, so the first thing a reader sees is
-                "Queued" and the four checkpoints. It polls until a worker creates the row,
-                then follows it to the verdict. The list on the page stays still.
+                "Queued" and the checkpoints its action will pass. It polls until a worker
+                creates the row, then follows it to the verdict. The list on the page stays
+                still.
 
                 The run floor is what makes the queued state watchable: the worker creates the
                 row after this page has rendered, and history may already hold the previous
@@ -929,6 +946,8 @@ public function wasInspection(ImportRun $run): bool
                             'series' => __('Bringing your series across'),
                             'categories' => __('Filing your shelves'),
                         ];
+
+                        $isInspection = $run !== null && $this->wasInspection($run);
 
                         if ($run === null) {
                             $isAbandoned = false;
@@ -959,20 +978,40 @@ public function wasInspection(ImportRun $run): bool
                             }
 
                             $statuses = [];
-                            foreach ($phaseOrder as $index => $key) {
-                                if ($isFinished) {
-                                    if ($isAbandoned || in_array($run->state, [ImportRun::FAILED, ImportRun::REFUSED], true)) {
-                                        $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'failed' : 'pending');
+
+                            if ($isInspection) {
+                                /*
+                                 * An inspection reads the file and stops. Measured on the real
+                                 * 41MB backup: the modal ticked "Installing what it needs",
+                                 * "Bringing your series across" and "Filing your shelves",
+                                 * none of which an inspect performs.
+                                 */
+                                $statuses = ['reading' => 'done'];
+                            } else {
+                                foreach ($phaseOrder as $index => $key) {
+                                    if ($isFinished) {
+                                        if ($isAbandoned || in_array($run->state, [ImportRun::FAILED, ImportRun::REFUSED], true)) {
+                                            $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'failed' : 'pending');
+                                        } else {
+                                            $statuses[$key] = 'done';
+                                        }
+                                    } elseif ($isRunning) {
+                                        $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'running' : 'pending');
                                     } else {
-                                        $statuses[$key] = 'done';
+                                        $statuses[$key] = 'pending';
                                     }
-                                } elseif ($isRunning) {
-                                    $statuses[$key] = $index < $phaseIndex ? 'done' : ($index === $phaseIndex ? 'running' : 'pending');
-                                } else {
-                                    $statuses[$key] = 'pending';
                                 }
                             }
                         }
+
+                        /*
+                         * Only the checkpoints the chosen action will actually pass. A queued
+                         * run has no row yet, so its mode comes from the page; a finished one
+                         * is recognised from its counters.
+                         */
+                        $visiblePhases = ($isQueued ? $this->inspectOnly : $isInspection)
+                            ? ['reading']
+                            : $phaseOrder;
                     @endphp
 
                     @if ($isQueued || $run !== null)
@@ -1053,7 +1092,7 @@ public function wasInspection(ImportRun $run): bool
                             @endif
 
                             <ol class="mt-4 space-y-2" role="list">
-                                @foreach ($phaseOrder as $key)
+                                @foreach ($visiblePhases as $key)
                                     @php($status = $statuses[$key] ?? 'pending')
 
                                     <li role="listitem" class="flex items-center gap-3 py-2">
