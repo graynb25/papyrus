@@ -55,9 +55,17 @@ class ShowcaseTest extends TestCase
         $covers = $response->json('covers');
 
         $this->assertCount(2, $covers);
-        $this->assertSame(116, $covers[0]['manga']);
-        $this->assertSame('One Piece', $covers[0]['title']);
-        $this->assertStringContainsString('/showcase/cover/116', $covers[0]['url']);
+
+        /*
+         * Looked up by manga id rather than by position. `added_at` is a second-precision
+         * timestamp, so two rows created inside one second tie and SQLite is free to return
+         * them in either order. This test is about the payload, and ordering has its own
+         * test below.
+         */
+        $byManga = collect($covers)->keyBy('manga');
+
+        $this->assertSame('One Piece', $byManga[116]['title']);
+        $this->assertStringContainsString('/showcase/cover/116', $byManga[116]['url']);
 
         /*
          * The payload must never carry a raw server URL: the guest browser has
