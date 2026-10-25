@@ -5,6 +5,7 @@ use App\Models\ImportRun;
 use App\Support\Duration;
 use App\Support\UploadLimit;
 use Flux\Flux;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -610,16 +611,84 @@ new #[Title('Import a backup')] class extends Component
              * away, unused.
              */
             $this->wasInspection($run) => (string) ($run->progress_note ?? __('The file was read and nothing needed reporting.')),
-            default => trans_choice(
-                ':count series imported, :unchanged already up to date, :filed with no source.|:count series imported, :unchanged already up to date, :filed with no source.',
-                $run->applied,
-                [
-                    'count' => number_format($run->applied),
-                    'unchanged' => number_format($run->unchanged),
-                    'filed' => number_format($run->filed_without_source),
-                ],
-            ),
+            default => $this->resultSentence($run),
         };
+    }
+
+    /**
+     * The run's result, with every series accounted for.
+     *
+     * Measured on the installed app with the real 41MB backup: the run walked 1,277 series
+     * and the sentence said "667 series imported, 0 already up to date, 55 with no source".
+     * The 55 was the number filed without an installed source, not the number that could not
+     * be imported, and the 555 series that were not found, sat on missing sources, could not
+     * be reached, or failed were absent from the sentence. A result that adds up to less than
+     * the library is how a reader concludes the rest was dropped.
+     *
+     * The last group is derived rather than stored: the run row has no column for sources it
+     * could not reach or for series that raised, and an older row still has to add up.
+     */
+    private function resultSentence(ImportRun $run): string
+    {
+        $imported = (int) $run->applied;
+        $unchanged = (int) $run->unchanged;
+        $notFound = (int) $run->not_found;
+        $missingSources = (int) $run->series_on_missing_sources;
+        $ambiguous = (int) $run->ambiguous;
+
+        /*
+         * `series_processed` is the number walked, which is smaller than the library when a
+         * reader asked for a trial run. Rows written before that column existed carry 0, so
+         * fall back to the library count they do carry.
+         */
+        $total = (int) $run->series_processed;
+
+        if ($total === 0) {
+            $total = (int) ($run->library_series ?? 0);
+        }
+
+        $didNotComeAcross = max(0, $total - $imported - $unchanged);
+        $unexplained = max(0, $didNotComeAcross - $notFound - $missingSources - $ambiguous);
+
+        $sentence = __(':count series imported, :unchanged already up to date.', [
+            'count' => number_format($imported),
+            'unchanged' => number_format($unchanged),
+        ]);
+
+        $reasons = [];
+
+        if ($notFound > 0) {
+            $reasons[] = __(':count not found', ['count' => number_format($notFound)]);
+        }
+
+        if ($missingSources > 0) {
+            $reasons[] = __(':count on sources this server does not have installed', ['count' => number_format($missingSources)]);
+        }
+
+        if ($ambiguous > 0) {
+            $reasons[] = __(':count matched more than one series', ['count' => number_format($ambiguous)]);
+        }
+
+        if ($unexplained > 0) {
+            $reasons[] = __(':count because of an error', ['count' => number_format($unexplained)]);
+        }
+
+        if ($didNotComeAcross > 0 && $reasons !== []) {
+            $sentence .= ' '.__('The other :count did not come across: :reasons.', [
+                'count' => number_format($didNotComeAcross),
+                'reasons' => Arr::join($reasons, ', ', ' and '),
+            ]);
+        }
+
+        if ((int) $run->filed_without_source > 0) {
+            $sentence .= ' '.trans_choice(
+                ':count title was added to your library without its source, so you can find it later.|:count titles were added to your library without their source, so you can find them later.',
+                (int) $run->filed_without_source,
+                ['count' => number_format((int) $run->filed_without_source)],
+            );
+        }
+
+        return $sentence;
     }
 
     public function badgeColour(ImportRun $run): string

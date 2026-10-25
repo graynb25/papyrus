@@ -916,27 +916,63 @@ class ImportPageTest extends TestCase
             ->assertDontSee(__('0 series imported'));
     }
 
-    public function test_a_real_import_still_reports_counts(): void
+    public function test_a_real_import_accounts_for_every_series_it_walked(): void
+    {
+        /*
+         * Measured on the installed app with the real 41MB backup: 1,277 series were
+         * walked, 667 imported, 294 not found, 250 on sources this server did not have
+         * installed, 64 on sources it could not reach, and 2 failed. The sentence named
+         * only the 667 imported and the 55 filed, so 555 series were unaccounted for and
+         * a reader could not tell what happened to them.
+         */
+        ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'Tachimanga_backup_2026-10-08_18-31-01-290.tmb',
+            'library_series' => 1277,
+            'series_processed' => 1277,
+            'applied' => 667,
+            'unchanged' => 0,
+            'not_found' => 294,
+            'series_on_missing_sources' => 250,
+            'filed_without_source' => 55,
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee('667 series imported, 0 already up to date.')
+            ->assertSee('The other 610 did not come across')
+            ->assertSee('294 not found')
+            ->assertSee('250 on sources this server does not have installed')
+            ->assertSee('66 because of an error')
+            ->assertSee('55 titles were added to your library without their source')
+            ->assertDontSee('55 with no source');
+    }
+
+    public function test_an_import_that_left_nothing_behind_does_not_invent_failures(): void
     {
         ImportRun::createFor($this->user, [
             'format' => 'tachimanga',
             'state' => ImportRun::COMPLETE,
             'file_name' => 'library.tmb',
             'library_series' => 1277,
-            'progress_note' => '  1277 of 1277 series, 1082 written, 0 unchanged, 195 not found',
-            'applied' => 1082,
-            'unchanged' => 0,
-            'filed_without_source' => 195,
+            'series_processed' => 1277,
+            'applied' => 0,
+            'unchanged' => 1277,
             'started_at' => now(),
             'finished_at' => now(),
         ]);
 
-        $run = ImportRun::query()->latest('id')->first();
+        $run = ImportRun::query()->latest('id')->firstOrFail();
 
         $this->page()
             ->call('openRunModal', $run->id)
-            ->assertSee('1,082')
-            ->assertSee('195');
+            ->assertSee('0 series imported, 1,277 already up to date.')
+            ->assertDontSee('did not come across');
     }
 
     /*
