@@ -2,6 +2,7 @@
 
 namespace App\Library;
 
+use App\Models\CheckRun;
 use App\Models\LibraryCheck;
 use App\Models\SeriesState;
 use App\Models\User;
@@ -63,6 +64,19 @@ use Throwable;
  */
 class CheckLedger
 {
+    /**
+     * How long one series may take inside a pass.
+     *
+     * Measured refreshes run from 361ms to 1617ms. Fifteen seconds is about
+     * nine times the worst measured call, so a healthy source is never cut off,
+     * while one unresponsive source costs a third of a slice instead of all of
+     * it. Without a per-series ceiling, `refresh()`'s forty second default is
+     * long enough for a single dead source to consume the whole
+     * forty five second budget, and the next slice begins with the same series
+     * first in line because its clock has not moved yet.
+     */
+    public const PER_SERIES_TIMEOUT_SECONDS = 15;
+
     public function __construct(
         private readonly SeriesGateway $gateway,
         private readonly Library $library,
@@ -74,8 +88,12 @@ class CheckLedger
      * Never throws. A reader pressing a button should get a row saying what happened,
      * not an error page, and one unreachable source must not stop the other
      * thirteen in a pass.
+     *
+     * `$timeout` is the bulk pass's per-series ceiling. The single card leaves it
+     * null and keeps the gateway's longer default, because a reader waiting on
+     * one card asked for that one answer.
      */
-    public function check(User|int $user, int $mangaId, bool $force = false): LibraryCheck
+    public function check(User|int $user, int $mangaId, bool $force = false, ?int $timeout = null): LibraryCheck
     {
         $userId = $user instanceof User ? (int) $user->getKey() : $user;
 
@@ -101,7 +119,7 @@ class CheckLedger
             ->value('chapter_count');
 
         try {
-            $result = $this->gateway->refresh($mangaId);
+            $result = $this->gateway->refresh($mangaId, $timeout);
         } catch (SuwayomiException $e) {
             return $this->record($userId, $mangaId, LibraryCheck::ERROR, [
                 'error' => $this->describe($e),
@@ -163,20 +181,37 @@ class CheckLedger
     }
 
     /**
-     * Check a slice of what is due, stopping on the time budget.
+     * Check a slice of what is due, stopping on the time budget or on Stop.
      *
      * The budget rather than a count, because the cost per series is 361ms to 1617ms
      * and a fixed count overruns the worker on a slow day. Measured against the
      * same rule in the AniList resolver, where a title count could not respect a time
      * limit and the budget was the thing that fixed it.
      *
-     * @return array{checked: int, chapters: int, new: int, failed: int, no_chapters: int, budget_out: bool}
+     * ## The per-series ceiling is what makes a dead source skippable
+     *
+     * The budget alone only bounds the pass, not one request. A source that never
+     * answers held the pass for the gateway's forty second default, moved no
+     * clock because no outcome was recorded yet, and came back first in the next
+     * slice. Each series now gets at most {@see self::PER_SERIES_TIMEOUT_SECONDS}
+     * and whatever is left of the slice, so a dead source is recorded as failed,
+     * its clock moves, and the pass reaches the series behind it.
+     *
+     * ## A run, when there is one
+     *
+     * The counters and the Stop flag live on {@see CheckRun}. The ledger touches
+     * them after every series rather than once at the end, because a polled page
+     * should see a number that reflects completed work, and a Stop pressed while
+     * a source is answering should take effect before the next series starts.
+     *
+     * @return array{checked: int, chapters: int, new: int, failed: int, no_chapters: int, budget_out: bool, cancelled: bool}
      */
     public function checkDue(
         User|int $user,
         int $budgetSeconds = 45,
         int $maxSeries = 60,
         bool $force = false,
+        ?CheckRun $run = null,
     ): array {
         $due = $this->candidates($user, $maxSeries, $force);
 
@@ -187,16 +222,46 @@ class CheckLedger
             'failed' => 0,
             'no_chapters' => 0,
             'budget_out' => false,
+            'cancelled' => false,
         ];
+
+        if ($run !== null && ! $run->isRunning()) {
+            $tally['cancelled'] = true;
+
+            return $tally;
+        }
 
         $started = microtime(true);
 
         foreach ($due as $state) {
-            if (microtime(true) - $started >= $budgetSeconds) {
+            /*
+             * Re-read the row rather than trusting the copy in memory. Stop is
+             * pressed in another request, so the flag can change between two
+             * series in this loop. The refresh is one indexed read per series
+             * against a table with one live row per reader.
+             */
+            if ($run !== null) {
+                $run->refresh();
+
+                if (! $run->isRunning()) {
+                    $tally['cancelled'] = true;
+
+                    break;
+                }
+            }
+
+            $remaining = $budgetSeconds - (microtime(true) - $started);
+
+            if ($remaining < 1) {
                 $tally['budget_out'] = true;
 
                 break;
             }
+
+            $timeout = (int) min(
+                self::PER_SERIES_TIMEOUT_SECONDS,
+                max(1, (int) floor($remaining)),
+            );
 
             /*
              * One bad series must not end the pass.
@@ -214,12 +279,16 @@ class CheckLedger
              * answer than 866.
              */
             try {
-                $row = $this->check($user, (int) $state->suwayomi_manga_id, $force);
+                $row = $this->check($user, (int) $state->suwayomi_manga_id, $force, $timeout);
             } catch (Throwable $e) {
                 report($e);
 
                 $tally['failed']++;
                 $tally['checked']++;
+
+                if ($run !== null) {
+                    $this->advance($run);
+                }
 
                 continue;
             }
@@ -231,9 +300,33 @@ class CheckLedger
                 LibraryCheck::NO_CHAPTERS => $tally['no_chapters']++,
                 default => $tally['failed']++,
             };
+
+            if ($run !== null) {
+                $this->advance($run, $row);
+            }
         }
 
         return $tally;
+    }
+
+    /**
+     * Move the run's counters by one finished series.
+     *
+     * Called for every outcome, including a series that threw before producing a
+     * row, because the run's `checked` is what the Stop sentence reports. A
+     * series the source could not answer for is counted in `failed` so the
+     * finished sentence does not call the run complete while hiding it.
+     */
+    private function advance(CheckRun $run, ?LibraryCheck $row = null): void
+    {
+        $run->forceFill([
+            'checked' => $run->checked + 1,
+            'new_chapters' => $run->new_chapters
+                + (($row !== null && $row->hasNewChapters()) ? (int) $row->new_chapters : 0),
+            'failed' => $run->failed
+                + (($row !== null && $row->state === LibraryCheck::ERROR) ? 1 : 0),
+            'last_progress_at' => now(),
+        ])->save();
     }
 
     /**
@@ -272,7 +365,7 @@ class CheckLedger
     }
 
     /**
-     * @param  array{checked: int, chapters: int, new: int, failed: int, no_chapters: int, budget_out: bool}  $tally
+     * @param  array{checked: int, chapters: int, new: int, failed: int, no_chapters: int, budget_out: bool, cancelled: bool}  $tally
      */
     private function tallySuccess(array &$tally, LibraryCheck $row): void
     {
@@ -368,11 +461,23 @@ class CheckLedger
      * A reader-facing description of a failure.
      *
      * Suwayomi reports a bare exception with no detail, so this adds only what we
-     * actually know, which is that the call did not complete.
+     * actually know, which is that the call did not complete. A timeout is
+     * called a timeout rather than printing the transport's millisecond count:
+     * the reader needs to know the series was skipped on purpose, not how long
+     * cURL waited.
      */
     private function describe(SuwayomiException $e): string
     {
         $message = trim($e->getMessage());
+
+        /*
+         * Transport turns every connection failure into one exception, so a
+         * cURL timeout arrives as `Unavailable` rather than `Timeout`. The text
+         * is the only signal left, and it is the one cURL writes.
+         */
+        if ($e->isTimeout() || str_contains(strtolower($message), 'timed out')) {
+            return 'The source did not answer in time, so Papyrus skipped this series. It will try again on the next check.';
+        }
 
         return $message === ''
             ? 'The server could not be reached. Nothing was recorded as checked.'

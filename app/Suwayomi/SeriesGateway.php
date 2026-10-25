@@ -112,11 +112,20 @@ class SeriesGateway
      * ours. It arrives as a GraphQL error with HTTP 200, so it is caught and
      * reported as "no chapters" instead of surfacing as a failed page.
      *
+     * `$timeout` exists for the bulk check. The measured worst refresh is 1617ms,
+     * so the default forty second ceiling is deliberate for a reader waiting on
+     * one card. A pass over sixty series cannot afford that: one unresponsive
+     * source would consume most of the forty five second slice, and the next
+     * slice would begin with the same series first in line. The caller passes a
+     * ceiling sized to a pass, and the series is recorded and skipped when the
+     * ceiling is hit.
+     *
+     * @param  int|null  $timeout  Per-call budget override, in seconds.
      * @return array{series: array<string, mixed>|null, error: string|null}
      *
      * @throws SuwayomiException
      */
-    public function refresh(int $mangaId): array
+    public function refresh(int $mangaId, ?int $timeout = null): array
     {
         try {
             $data = $this->gateway->execute(<<<'GQL'
@@ -134,7 +143,7 @@ class SeriesGateway
                         }
                     }
                 }
-                GQL, ['id' => $mangaId], (int) config('papyrus.search.per_source_timeout', 20) + 20);
+                GQL, ['id' => $mangaId], $timeout ?? (int) config('papyrus.search.per_source_timeout', 20) + 20);
         } catch (SuwayomiException $e) {
             if (str_contains(strtolower($e->getMessage()), 'no chapters')) {
                 return ['series' => $this->find($mangaId), 'error' => $e->getMessage()];

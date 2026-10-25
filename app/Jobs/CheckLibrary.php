@@ -4,10 +4,12 @@ namespace App\Jobs;
 
 use App\Library\CheckLedger;
 use App\Library\CheckSchedule;
+use App\Models\CheckRun;
 use App\Models\SeriesState;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 /**
  * Works through a reader's due series, in slices, until none are left.
@@ -22,6 +24,14 @@ use Illuminate\Foundation\Queue\Queueable;
  * So each pass takes a slice bounded by time, writes what it found, and re-books
  * itself if any are due. The page polls the ledger, so progress is visible the whole
  * way rather than arriving at the end.
+ *
+ * ## Why the run is a row
+ *
+ * A slice is a pass, not a run: a 300 series library is many slices over several
+ * minutes. The run row is what survives a page reload between them, holds the
+ * Stop flag the reader can set, and records how far the whole thing got when it
+ * ends. The job carries the run id from slice to slice; a scheduled pass creates
+ * one when it starts.
  *
  * Chained through the queue rather than the scheduler, for the reason
  * {@see SyncDownloads} chains: `schedule:work` is not running, and a feature that
@@ -84,6 +94,7 @@ class CheckLibrary implements ShouldQueue
         public readonly int $userId,
         public readonly ?int $shelfId = null,
         public readonly bool $force = false,
+        public readonly ?int $runId = null,
     ) {}
 
     public function handle(CheckLedger $ledger, CheckSchedule $schedule): void
@@ -91,32 +102,139 @@ class CheckLibrary implements ShouldQueue
         self::$chainDepth++;
 
         try {
+            $run = $this->run($schedule);
+
+            if ($run === null) {
+                return;
+            }
+
+            /*
+             * Stop can arrive while this job is queued or between slices. The run
+             * row is the only place that knows, so it is read before any work.
+             */
+            if (! $run->isRunning()) {
+                return;
+            }
+
             $tally = $ledger->checkDue(
                 $this->userId,
                 self::BUDGET_SECONDS,
                 self::MAX_SERIES,
                 $this->force,
+                $run,
             );
 
-            if ($tally['checked'] === 0) {
+            if ($tally['cancelled']) {
+                $this->finish($run, CheckRun::CANCELLED);
+
+                return;
+            }
+
+            $stillDue = $this->anythingStillDue($schedule);
+
+            if (! $stillDue) {
+                $this->finish($run, CheckRun::COMPLETE);
+
                 return;
             }
 
             /*
-             * Re-book only at depth one, and only if work remains.
-             *
-             * Both halves matter. The depth stops the inline-dispatch recursion, and
-             * the remaining-work test stops a pass that finished the last series from
-             * scheduling another one, which is what ends the chain rather than running
-             * forever.
+             * A pass that visited nothing while work remains is a pass that cannot
+             * make progress. Re-booking it would repeat the same empty slice for as
+             * long as a worker runs, which is the loop this feature exists to stop.
+             * The run ends as failed so the page can say it stopped rather than
+             * holding a running bar at zero for ever.
              */
-            if (self::$chainDepth === 1 && $this->anythingStillDue($schedule)) {
-                self::dispatch($this->userId, $this->shelfId, $this->force)
-                    ->delay(now()->addSeconds(self::NEXT_SLICE_SECONDS));
+            if ($tally['checked'] === 0) {
+                $this->finish($run, CheckRun::FAILED);
+
+                return;
             }
+
+            /*
+             * Re-book only at depth one. The depth stops the inline-dispatch
+             * recursion; at depth two the next slice is already running in this
+             * process, and a further dispatch would be the loop the depth guard
+             * exists to prevent.
+             */
+            if (self::$chainDepth === 1) {
+                self::dispatch($this->userId, $this->shelfId, $this->force, (int) $run->getKey())
+                    ->delay(now()->addSeconds(self::NEXT_SLICE_SECONDS));
+
+                return;
+            }
+
+            /*
+             * Reached only with a sync queue, where the nested slice has already
+             * run and cannot book another. The run is over, and leaving it
+             * running would show a bar that never moves.
+             */
+            $this->finish($run, CheckRun::FAILED);
         } finally {
             self::$chainDepth--;
         }
+    }
+
+    /**
+     * The run this pass belongs to, creating one for a scheduled pass.
+     *
+     * A page initiated pass already has a row, because the page shows progress
+     * from the moment of the press and needs the id to dispatch. A scheduled
+     * pass has no page, so it creates the row here; a pass with nothing due
+     * creates nothing and returns null, which keeps an hourly sweep from
+     * writing a row per reader per hour for no work.
+     */
+    private function run(CheckSchedule $schedule): ?CheckRun
+    {
+        if ($this->runId !== null) {
+            return CheckRun::query()->forUser($this->userId)->find($this->runId);
+        }
+
+        $total = $this->force
+            ? SeriesState::forUser($this->userId)
+                ->where('in_library', true)
+                ->whereNotNull('suwayomi_manga_id')
+                ->count()
+            : (int) $schedule->summary($this->userId)['due'];
+
+        if ($total === 0) {
+            return null;
+        }
+
+        return CheckRun::begin($this->userId, $total);
+    }
+
+    /**
+     * End the run with the state it reached.
+     */
+    private function finish(CheckRun $run, string $state): void
+    {
+        $run->forceFill([
+            'state' => $state,
+            'finished_at' => now(),
+            'last_progress_at' => now(),
+        ])->save();
+    }
+
+    /**
+     * A job that dies must not leave its run claiming to be alive.
+     *
+     * The page would otherwise show a running bar until the stall warning, and a
+     * reader would have to press Stop on work that is not happening. Laravel
+     * calls this with the run id still on the serialized job.
+     */
+    public function failed(?Throwable $e): void
+    {
+        if ($this->runId === null) {
+            return;
+        }
+
+        $run = CheckRun::query()->forUser($this->userId)->find($this->runId);
+
+        $run?->forceFill([
+            'state' => CheckRun::FAILED,
+            'finished_at' => now(),
+        ])->save();
     }
 
     /**

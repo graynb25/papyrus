@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Suwayomi;
 
+use App\Suwayomi\AuthManager;
+use App\Suwayomi\Gateway;
 use App\Suwayomi\SeriesGateway;
+use App\Suwayomi\Transport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -263,6 +266,45 @@ class SeriesGatewayTest extends TestCase
         $this->assertNotNull($result['series']);
         $this->assertSame(3, $result['series']['chapters']['totalCount']);
         $this->assertCount(3, $result['series']['chapters']['nodes']);
+    }
+
+    /**
+     * The bulk check needs a per-series ceiling well under the default.
+     *
+     * HTTP faking cannot see a client timeout, so the seam records the argument
+     * the gateway actually passed. The default is asserted first, because a
+     * regression that ignored the argument would otherwise look correct only
+     * when the caller happened to pass the default.
+     */
+    public function test_refresh_uses_the_timeout_it_is_given(): void
+    {
+        $gateway = new class(app(Transport::class), app(AuthManager::class)) extends Gateway
+        {
+            public ?int $timeout = null;
+
+            public function execute(string $document, array $variables = [], ?int $timeout = null): array
+            {
+                $this->timeout = $timeout;
+
+                return ['fetchMangaAndChapters' => ['manga' => null, 'chapters' => []]];
+            }
+        };
+
+        $this->app->instance(Gateway::class, $gateway);
+
+        $series = app(SeriesGateway::class);
+
+        $series->refresh(76);
+
+        $this->assertSame(
+            (int) config('papyrus.search.per_source_timeout', 20) + 20,
+            $gateway->timeout,
+            'the single card keeps the longer budget a reader can wait out',
+        );
+
+        $series->refresh(76, 15);
+
+        $this->assertSame(15, $gateway->timeout, 'a pass supplies its own ceiling');
     }
 
     /**

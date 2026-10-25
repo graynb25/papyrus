@@ -5,9 +5,16 @@ namespace Tests\Feature;
 use App\Jobs\CheckLibrary;
 use App\Library\CheckLedger;
 use App\Library\CheckSchedule;
+use App\Models\CheckRun;
 use App\Models\LibraryCheck;
 use App\Models\SeriesState;
 use App\Models\User;
+use App\Support\Library;
+use App\Support\Suwayomi\Timestamps;
+use App\Suwayomi\AuthManager;
+use App\Suwayomi\Gateway;
+use App\Suwayomi\SeriesGateway;
+use App\Suwayomi\Transport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -17,6 +24,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
@@ -55,6 +63,9 @@ class LibraryCheckTest extends TestCase
     /** @var array<int, string> a series whose refresh throws outright */
     private array $unreachable = [];
 
+    /** @var array<int, bool> a series whose refresh times out at the transport */
+    private array $timedOut = [];
+
     /** @var array<int, int> a series the source has no chapters for */
     private array $noChapters = [];
 
@@ -83,6 +94,7 @@ class LibraryCheckTest extends TestCase
         $this->sent = [];
         $this->refreshShapes = [];
         $this->unreachable = [];
+        $this->timedOut = [];
         $this->noChapters = [];
         $this->renumber = [];
         $this->libraryIds = [];
@@ -114,6 +126,12 @@ class LibraryCheckTest extends TestCase
 
             if (in_array($id, $this->unreachable, true)) {
                 throw new ConnectionException('connection refused');
+            }
+
+            if (in_array($id, $this->timedOut, true)) {
+                throw new ConnectionException(
+                    'cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'
+                );
             }
 
             if (str_contains($query, 'mutation Refresh')) {
@@ -1247,14 +1265,14 @@ class LibraryCheckTest extends TestCase
 
         $page = $this->page()->call('checkLibrary');
 
-        $page->set('checkingSince', now()->subMinutes(2)->toIso8601String());
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
 
-        // One of the two has been checked, which is what makes it stop being due.
-        app(CheckLedger::class)->check($this->user, 76, force: true);
+        // One series, which is what a slice of a pass does and what advances the run.
+        app(CheckLedger::class)->checkDue($this->user, 45, 1, false, $run);
 
         $progress = $page->call('$refresh')->instance()->checkProgress();
 
-        $this->assertSame(1, $progress['done'], 'a real count, read from the schedule, not an animation');
+        $this->assertSame(1, $progress['done'], 'a real count, read from the run, not an animation');
         $this->assertSame(2, $progress['total']);
         $this->assertSame(50, (int) round($progress['done'] / $progress['total'] * 100));
     }
@@ -1267,7 +1285,9 @@ class LibraryCheckTest extends TestCase
 
         $page = $this->page()->call('checkLibrary');
 
-        app(CheckLedger::class)->check($this->user, 76, force: true);
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        $this->app->call([new CheckLibrary($this->user->id, runId: (int) $run->getKey()), 'handle']);
 
         $progress = $page->call('$refresh')->instance()->checkProgress();
 
@@ -1295,10 +1315,9 @@ class LibraryCheckTest extends TestCase
          * also has nothing checked yet, and treating that as stalled meant every run reported
          * itself dead before it had done anything.
          */
-        // Through `set()`, not by assigning to the instance: a round trip rehydrates the
-        // component from its snapshot, so an in-memory assignment is discarded before the
-        // assertion reads it.
-        $page->set('checkingSince', now()->subMinutes(20)->toIso8601String());
+        // The stall clock lives on the run, not on the page, so a reload sees it too.
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+        $run->forceFill(['last_progress_at' => now()->subMinutes(20)])->save();
 
         $progress = $page->call('$refresh')->instance()->checkProgress();
 
@@ -1338,9 +1357,11 @@ class LibraryCheckTest extends TestCase
 
         $page = $this->page()->call('checkLibrary');
 
-        $page->set('checkingSince', now()->subMinutes(2)->toIso8601String());
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+        $run->forceFill(['last_progress_at' => now()->subMinutes(2)])->save();
 
-        app(CheckLedger::class)->check($this->user, 76, force: true);
+        // A series finishing now is what a working queue looks like.
+        app(CheckLedger::class)->checkDue($this->user, 45, 1, false, $run);
 
         $progress = $page->call('$refresh')->instance()->checkProgress();
 
@@ -1461,11 +1482,253 @@ class LibraryCheckTest extends TestCase
 
         $this->assertSame(1, $progress['total'], 'the press counted only what could be checked');
 
-        app(CheckLedger::class)->check($this->user, 76, force: true);
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        $this->app->call([new CheckLibrary($this->user->id, runId: (int) $run->getKey()), 'handle']);
 
         $progress = $page->call('$refresh')->instance()->checkProgress();
 
         $this->assertFalse($progress['running'], 'and it reports finished rather than hanging at 0%');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A run that outlives the page which started it.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_reload_reports_the_run_started_before_it(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $this->page()->call('checkLibrary');
+
+        /*
+         * A new component is what a reload builds. The fraction, the Stop control
+         * and the finished sentence used to live in page properties, so this read
+         * as an ordinary visit with a job running invisibly behind it.
+         */
+        $reloaded = $this->page();
+
+        $progress = $reloaded->instance()->checkProgress();
+
+        $this->assertNotNull($progress, 'the run row is the page state');
+        $this->assertSame(1, $progress['total']);
+        $this->assertTrue($progress['running']);
+
+        $reloaded->assertSee('Checked 0 of 1 series, 0 percent.')
+            ->assertSee('Stop checking');
+    }
+
+    public function test_a_press_counts_only_what_is_due_not_the_whole_library(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $progress = $page->instance()->checkProgress();
+
+        $this->assertSame(
+            1,
+            $progress['total'],
+            'the button count, the run total and the work done must agree',
+        );
+    }
+
+    public function test_stopping_a_run_keeps_the_work_already_done(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+        $this->addToLibrary(77);
+
+        $page = $this->page()->call('checkLibrary');
+
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        app(CheckLedger::class)->checkDue($this->user, 45, 1, false, $run);
+
+        $page->call('stopLibraryCheck');
+
+        $run->refresh();
+
+        $this->assertSame(CheckRun::CANCELLED, $run->state);
+        $this->assertNotNull($run->cancelled_at);
+        $this->assertSame(1, $run->checked);
+        $this->assertSame(1, LibraryCheck::query()->forUser($this->user->id)->count());
+
+        /*
+         * The job may already be queued when Stop is pressed. It reads the row
+         * before every series, so it must ask nothing further.
+         */
+        $this->app->call([new CheckLibrary($this->user->id, runId: (int) $run->getKey()), 'handle']);
+
+        $this->assertSame(
+            1,
+            LibraryCheck::query()->forUser($this->user->id)->count(),
+            'a stopped run checks no more series',
+        );
+
+        $progress = $this->page()->instance()->checkProgress();
+
+        $this->assertTrue($progress['cancelled']);
+        $this->assertSame(1, $progress['done']);
+        $this->assertSame(2, $progress['total']);
+    }
+
+    public function test_the_scheduled_pass_creates_its_own_run(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $this->app->call([new CheckLibrary($this->user->id), 'handle']);
+
+        $run = CheckRun::query()->forUser($this->user->id)->sole();
+
+        $this->assertSame(1, $run->total);
+        $this->assertSame(1, $run->checked);
+        $this->assertSame(CheckRun::COMPLETE, $run->state);
+        $this->assertNotNull($run->finished_at);
+    }
+
+    public function test_a_scheduled_pass_with_nothing_due_writes_no_run(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        app(CheckLedger::class)->check($this->user, 76, force: true);
+
+        $this->app->call([new CheckLibrary($this->user->id), 'handle']);
+
+        $this->assertSame(
+            0,
+            CheckRun::query()->forUser($this->user->id)->count(),
+            'an hourly sweep must not write a row per reader for no work',
+        );
+    }
+
+    public function test_a_job_that_dies_marks_its_run_failed(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $this->page()->call('checkLibrary');
+
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        (new CheckLibrary($this->user->id, runId: (int) $run->getKey()))->failed(new RuntimeException('worker died'));
+
+        $run->refresh();
+
+        $this->assertSame(CheckRun::FAILED, $run->state);
+        $this->assertNotNull($run->finished_at);
+
+        $this->assertFalse(
+            $this->page()->instance()->checkProgress()['running'],
+            'the page must not hold a bar for work that is not happening',
+        );
+    }
+
+    public function test_a_finished_run_is_not_reported_an_hour_later(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $this->page()->call('checkLibrary');
+
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        $run->forceFill([
+            'state' => CheckRun::COMPLETE,
+            'finished_at' => now()->subMinutes(CheckRun::VISIBLE_MINUTES + 1),
+        ])->save();
+
+        $this->assertNull(
+            $this->page()->instance()->checkProgress(),
+            'yesterday\'s result must not read as today\'s news',
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * A source that never answers.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_pass_gives_each_series_a_short_timeout(): void
+    {
+        /*
+         * The pass cannot afford the gateway's forty second default. Fifteen
+         * seconds is about nine times the worst measured refresh, so a healthy
+         * source is never cut off while one dead source costs a third of a slice.
+         */
+        $gateway = new class(app(Transport::class), app(AuthManager::class)) extends Gateway
+        {
+            /** @var list<int|null> */
+            public array $timeouts = [];
+
+            public function execute(string $document, array $variables = [], ?int $timeout = null): array
+            {
+                $this->timeouts[] = $timeout;
+
+                return ['fetchMangaAndChapters' => [
+                    'manga' => [
+                        'id' => '76',
+                        'title' => 'Series 76',
+                        'initialized' => true,
+                        'source' => ['id' => '1', 'name' => 'Asura Scans', 'lang' => 'en'],
+                    ],
+                    'chapters' => [],
+                ]];
+            }
+        };
+
+        $this->addToLibrary(76);
+
+        $ledger = new CheckLedger(
+            new SeriesGateway($gateway, app(Timestamps::class)),
+            app(Library::class),
+        );
+
+        $tally = $ledger->checkDue($this->user, 45, 60, true);
+
+        $this->assertSame(1, $tally['checked']);
+        $this->assertSame([CheckLedger::PER_SERIES_TIMEOUT_SECONDS], $gateway->timeouts);
+    }
+
+    public function test_a_timed_out_series_is_skipped_with_a_reader_facing_sentence(): void
+    {
+        Queue::fake();
+
+        $this->addToLibrary(76);
+
+        $this->timedOut[] = 76;
+
+        $row = app(CheckLedger::class)->check($this->user, 76, force: true, timeout: 15);
+
+        $this->assertSame(LibraryCheck::ERROR, $row->state);
+
+        $this->assertSame(
+            'The source did not answer in time, so Papyrus skipped this series. It will try again on the next check.',
+            $row->error,
+        );
+
+        $this->assertStringNotContainsString(
+            'milliseconds',
+            (string) $row->error,
+            'the reader needs to know it was skipped, not how long cURL waited',
+        );
     }
 
     public function test_the_polling_attribute_is_the_bare_form(): void
