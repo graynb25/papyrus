@@ -5,18 +5,54 @@ No commit hashes, no file names, no jargon.
 
 ---
 
+## Version 1.4.0, 24 October 2026
+
+This release makes a real 41MB backup importable, keeps the reading time a Tachimanga backup
+carries, lets a library check be stopped without losing what it finished, and writes times in
+words. Sources and Source health now have a way back, Privacy says exactly what Papyrus sends, and
+the last UI/UX audit findings are closed.
+
+### Big backups now get through
+
+If you tried to import a real Tachimanga or Tachiyomi backup, the file could be refused for its
+size even though the page offered an upload. Papyrus now accepts a 256MB upload from the installed
+app, reads a large `.tachibk` without loading the whole file at once, and names the same limit the
+server enforces. A `.tachibk` still brings your read marks, but it does not carry reading time.
+
+### Your reading time follows your backup
+
+A Tachimanga backup records how long you read each day. Papyrus now keeps that time separately,
+adds it to Insights, and labels it as imported. Importing the same file again replaces its own days
+rather than doubling them, and time you read in Papyrus is never touched. If two exports overlap,
+the larger figure for that series and day is used.
+
+### A library check can be stopped
+
+A check used to be able to sit on one unresponsive source with no way out. Each series now gets a
+short limit, Stop takes effect between series, and a reload shows the run again. Stopping keeps
+every series already checked and reports how many were done and how many new chapters were found.
+
+### Times are written in words
+
+Insights and the import and backup panels now say "1 minute 30 seconds", not a raw number. Each
+saved backup shows the date and time it was taken beside how long ago it was. Durations keep at most
+three units, so they stay short and readable.
+
+### Smaller fixes
+
+Sources offers Back to your library and Source health offers Back to sources. Privacy now has a
+section called Mail, and when it is sent, and says a default install sends nothing; the welcome mail
+is gone. The last UI/UX audit findings are closed: a backup refusal names an empty server, the
+Healthy pill is moss, a source's flags open a health drill-down, the health probe is cached for 60
+seconds with site filters, and the library keeps five continue-reading cards with unread, new and
+stale placed first. The reading path and error messages are clearer, and manga images use
+responsive sizes.
+
 ## Version 1.3.0, 19 October 2026
 
 This release adds guided moves between sources, source pins for search, reading insights, and a
 licences page. You can also import a library from another reader app and back up or restore your
 Papyrus data while the app is running.
-
-## Changes since 1.3.0
-
-The Sources page now shows a flag for each installed language variant. Clicking it opens that
-source directly. Site cards keep their source count and health status without expanding into a long
-list. The catalogue still has a separate language filter. The reading path and error messages have
-also been clarified, and manga images now use responsive sizes.
 
 ## Version 1.2.0, 12 October 2026
 

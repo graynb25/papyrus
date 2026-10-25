@@ -15,13 +15,27 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.4.0 - 2026-10-24
+
+The release after 1.3.0: the last UI/UX audit findings, time and navigation in plainer words, a
+library check that can be stopped, reading time carried in from a backup, and backup uploads as
+large as the server allows. 2026-10-20 to 2026-10-24.
 
 The portable builder exists, but a portable archive is not published and its clean-machine first
-launch is not proven. The latest distributable release remains the Windows installer. See the
+launch is not proven. The distributable release remains the Windows installer. See the
 [roadmap](ROADMAP.md) and [portable status](docs/PORTABLE.md) for details.
 
 ### Added
+
+**Reading time carried in from a backup now counts.** A Tachimanga `.tmb` backup carries daily
+reading time, and it is now kept in its own ledger keyed by the file's sha256, so re-importing the
+same file replaces that file's days without touching time Papyrus recorded itself. Insights adds
+the two together, labels the imported part, and takes the largest value for a series and day when
+two exports overlap. A `.tachibk` still carries read marks but no reading time. `8e26a23`
+
+**A way back from Sources and Source health.** Sources offers Back to your library, Source health
+offers Back to sources, and Migrate sources uses the same shared header, so a subpage is no longer
+a place a reader has to escape with the browser's back button. `8481d8d`
 
 **Sources are easier to choose.** The Sources page keeps its language filter for the extension catalogue. Installed site cards show a direct flag link for every language variant, along with the site count and health status; choosing a flag opens that source without expanding a long card. The mirror-drift notice gives a count and a sync action rather than a wall of extension names. `b4794cc` `73f8c8e` `942e544`
 
@@ -42,6 +56,38 @@ pair of backups while the app and the manga server keep running, puts one back t
 sends your shelves and your read marks out as a `.tachibk` file another reader app can open, with a
 report of what was matched, what was skipped and why. The page no longer tells you to open a
 terminal. `58919fe` `f9ce674` `3c9a4c5` `41f34f1` `f50de31`
+
+### Changed
+
+**Time is written the way a reader says it.** Insights and the import and backup panels say
+`1 minute 30 seconds` instead of `90`, and never print a raw difference such as
+`1273352.650004s`. Durations keep at most three units, largest first, and a duration shorter than a
+minute keeps its seconds. Each saved backup also shows the date and clock it was taken beside its
+age, so it can be matched against a message without converting a relative phrase. `50a73e0`
+
+**Privacy says what Papyrus sends, and a default install sends nothing.** The welcome mail and the
+command line flag that suppressed it are gone. Privacy has a section called Mail, and when it is
+sent, and states that a default install sends nothing. `078570d`
+
+**The UI/UX audit is closed.** A refused backup names an empty server plainly and marks the run,
+while the elapsed timer stays with a run that is still running. Sources turns the Healthy pill moss
+and shows a source's flags with a health drill-down. Health caches its liveness probe for 60
+seconds, filters sites and paginates them. The library keeps five continue-reading cards and puts
+unread, new and stale where the eye lands first. `43bedce`
+
+### Fixed
+
+**A library check no longer waits forever on one series.** A measured pass could hang on a source
+that never answered, leaving the page at the same fraction with no way to stop it. Each series now
+has a 15 second ceiling inside the slice's 45 second budget, Stop is read between series, and the
+run's counters and finished rows are stored, so a reload restores the progress and a stopped run
+reports how far it got and what it found. Stopping keeps every series already checked. `f49e566`
+
+**A real backup is no longer refused for its size.** The measured 41MB Tachimanga backup did not
+fit through the development limits, so the import page could offer an upload that could never
+arrive. The packaged install now permits a 256MB upload and a 260MB post, the page and the upload
+endpoint read that same server ceiling, and the `.tachibk` reader walks the archive in a stream
+instead of holding it in memory whole. `7dd24f3`
 
 ---
 
