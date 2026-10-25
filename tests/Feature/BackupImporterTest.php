@@ -12,6 +12,7 @@ use App\Import\SeriesWriter;
 use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
 use App\Models\ChapterState;
+use App\Models\ImportedReadingDay;
 use App\Models\ImportedSeries as Ledger;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
@@ -22,6 +23,7 @@ use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\Gateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SeriesLocator;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -742,6 +744,77 @@ class BackupImporterTest extends TestCase
 
         $this->assertSame(1, $third->count('applied'), 'the series whose chapters changed');
         $this->assertSame(1, $third->count('unchanged'), 'and the one whose did not, because the delta is per series');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Reading time carried from the other app.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_imported_reading_time_lands_in_its_own_ledger(): void
+    {
+        $path = $this->backup();
+
+        $this->importer([self::FIRST => 1768, self::SECOND => 1769])->import($this->user, $path);
+
+        $rows = ImportedReadingDay::forUser($this->user)
+            ->orderBy('suwayomi_manga_id')
+            ->orderBy('day')
+            ->get();
+
+        $this->assertCount(3, $rows, 'one History day for the first series and two daily rows for the second');
+
+        $first = $rows->where('suwayomi_manga_id', 1768)->values();
+        $second = $rows->where('suwayomi_manga_id', 1769)->values();
+
+        $this->assertSame(360, $first[0]->seconds);
+        $this->assertSame(
+            CarbonImmutable::createFromTimestamp(1_798_301_351)->toDateString(),
+            $first[0]->day,
+            'a lifetime History total is dated by its last read',
+        );
+
+        $this->assertSame([100, 250], $second->pluck('seconds')->all());
+        $this->assertSame(['2025-09-20', '2025-09-21'], $second->pluck('day')->all());
+
+        $this->assertSame(
+            hash_file('sha256', $path),
+            $rows->first()->backup_key,
+            'the ledger is keyed by the file itself, not its name',
+        );
+
+        $this->assertSame(0, DB::table('reading_sessions')->count(), 'importing time is not reading it here');
+    }
+
+    public function test_reimporting_the_same_file_replaces_its_days_rather_than_doubling_them(): void
+    {
+        $path = $this->backup();
+        $catalogue = [self::FIRST => 1768, self::SECOND => 1769];
+
+        $this->importer($catalogue)->import($this->user, $path);
+
+        // Forced, because the identical file is otherwise correctly skipped by the delta.
+        $this->importer($catalogue)->import($this->user, $path, force: true);
+
+        $this->assertSame(
+            3,
+            ImportedReadingDay::forUser($this->user)->count(),
+            'the same three days, not a second copy of each',
+        );
+        $this->assertSame(710, (int) ImportedReadingDay::forUser($this->user)->sum('seconds'));
+    }
+
+    public function test_a_limited_run_records_time_only_for_what_it_applied(): void
+    {
+        $this->importer([self::FIRST => 1768, self::SECOND => 1769])
+            ->import($this->user, $this->backup(), limit: 1);
+
+        $this->assertSame(
+            [1768],
+            ImportedReadingDay::forUser($this->user)->distinct()->pluck('suwayomi_manga_id')->all(),
+            'the series the run never reached has no imported days yet',
+        );
     }
 
     public function test_a_series_whose_source_came_back_is_picked_up_rather_than_left_behind(): void

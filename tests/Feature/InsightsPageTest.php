@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ImportedReadingDay;
 use App\Models\ReadingSession;
 use App\Models\SeriesState;
 use App\Models\User;
@@ -93,6 +94,22 @@ class InsightsPageTest extends TestCase
         ]);
     }
 
+    /**
+     * One imported day, keyed by a file so two exports can be told apart.
+     *
+     * The default key is 64 characters because that is the column's width and the
+     * shape the importer produces from a sha256.
+     */
+    private function imported(User $who, int $manga, int $seconds, int $daysAgo = 0, string $backup = 'a'): ImportedReadingDay
+    {
+        return ImportedReadingDay::createFor($who, [
+            'backup_key' => str_pad($backup, 64, '0'),
+            'suwayomi_manga_id' => $manga,
+            'day' => now()->subDays($daysAgo)->toDateString(),
+            'seconds' => $seconds,
+        ]);
+    }
+
     // ---------------------------------------------------------------- the page
 
     public function test_the_page_reads_its_numbers_from_the_ledger_and_writes_nothing(): void
@@ -102,7 +119,7 @@ class InsightsPageTest extends TestCase
         $response = $this->get('/insights');
 
         $response->assertOk();
-        $response->assertSee('1 minute'); // Ninety seconds is one whole minute, not a rounded or a decimal one.
+        $response->assertSee('1 minute 30 seconds'); // Ninety seconds keeps the thirty that remain.
         $response->assertSee('across one series so far');
 
         $this->assertSame(1, ReadingSession::forAllUsers()->count(), 'A render is a read, and nothing else.');
@@ -120,8 +137,8 @@ class InsightsPageTest extends TestCase
          */
         $this->get('/insights?since='.now()->toDateString())
             ->assertOk()
-            ->assertSee('1 minute')
-            ->assertDontSee('1 hour 23 minutes');
+            ->assertSee('1 minute 30 seconds')
+            ->assertDontSee('1 hour 23 minutes 20 seconds');
     }
 
     public function test_a_window_with_no_rows_in_it_says_so(): void
@@ -145,7 +162,7 @@ class InsightsPageTest extends TestCase
              * the total is the two together: ninety seconds plus one hour and
              * twenty three minutes is one hour and twenty four.
              */
-            ->assertSee('1 hour 24 minutes')
+            ->assertSee('1 hour 24 minutes 50 seconds')
             ->assertSee('2 sittings');
     }
 
@@ -159,8 +176,75 @@ class InsightsPageTest extends TestCase
         $response = $this->get('/insights');
 
         $response->assertOk();
-        $response->assertSee('1 minute'); // Alice's sitting is hers.
+        $response->assertSee('1 minute 30 seconds'); // Alice's sitting is hers.
         $response->assertDontSee('1 hour 30 minutes'); // Bob's sitting is invisible from her page.
+    }
+
+    // ------------------------------------------------------------- imported time
+
+    public function test_imported_reading_time_is_counted_and_says_where_it_came_from(): void
+    {
+        $this->sitting($this->alice, 76, 60);
+        $this->imported($this->alice, 76, 120);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('3 minutes') // Ninety seconds here plus two imported minutes.
+            ->assertSee('Includes 2 minutes from imported backups')
+            ->assertSee('2 minutes from an imported backup');
+    }
+
+    public function test_a_window_counts_imported_days_from_inside_it(): void
+    {
+        $this->imported($this->alice, 76, 90);
+        $this->imported($this->alice, 76, 5000, daysAgo: 400);
+
+        $this->get('/insights?since='.now()->toDateString())
+            ->assertOk()
+            ->assertSee('1 minute 30 seconds')
+            ->assertDontSee('1 hour 23 minutes 20 seconds');
+    }
+
+    public function test_imported_time_is_never_shared_between_readers(): void
+    {
+        $bob = User::factory()->create();
+
+        $this->imported($this->alice, 76, 60);
+        $this->imported($bob, 76, 5400);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('1 minute')
+            ->assertDontSee('1 hour 30 minutes');
+    }
+
+    public function test_two_backups_that_carry_the_same_day_count_it_once(): void
+    {
+        /*
+         * February's export contains January's days. The later file is not a second
+         * January: the ledger keeps both files so neither import destroys the other,
+         * and the page takes the largest claim for a series and day. Summing 120 and
+         * 300 would report seven minutes of reading where five happened.
+         */
+        $this->imported($this->alice, 76, 120, backup: 'a');
+        $this->imported($this->alice, 76, 300, backup: 'b');
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('5 minutes')
+            ->assertDontSee('7 minutes');
+    }
+
+    public function test_a_series_with_only_imported_time_does_not_claim_sittings_it_never_had(): void
+    {
+        $this->imported($this->alice, 999, 3600);
+
+        $this->get('/insights')
+            ->assertOk()
+            ->assertSee('1 hour')
+            ->assertSee('1 hour from an imported backup')
+            ->assertDontSee('0 pages')
+            ->assertDontSee('0 sittings');
     }
 
     public function test_a_named_row_pictures_the_series_the_lens_already_carries(): void
@@ -309,8 +393,9 @@ class InsightsPageTest extends TestCase
             ->assertOk()
             ->assertSee('No reading recorded yet')
             // The local-only fact is said on the page, not left to be inferred
-            // from the absence of a claim.
-            ->assertSee('These numbers come from reading recorded on this machine.')
+            // from the absence of a claim. Imported time is named in the same breath
+            // so a reader knows the page can count more than this machine saw.
+            ->assertSee('These numbers come from reading recorded on this machine, plus reading time carried over from backups you imported.')
             ->assertSee('Papyrus does not send or request anything to create them.');
     }
 

@@ -8,6 +8,7 @@ use App\Import\ImportedBackup;
 use App\Import\ImportedChapter;
 use App\Import\ImportedSeries;
 use App\Import\ImportRefused;
+use App\Import\ReadingDay;
 use App\Support\CbzWriter;
 use App\Support\ReadingState;
 use App\Support\Suwayomi\Timestamps;
@@ -28,8 +29,9 @@ use ZipArchive;
  * ## Nothing is read into memory as a string
  *
  * The archive is two zips deep and the inner one holds a 113.5MB SQLite file, against
- * this server's `memory_limit` of 128M. `ZipArchive::getFromName()` on that entry would
- * be 113MB of PHP string and would fail, so both layers are streamed to temp files with
+ * the smallest `memory_limit` Papyrus runs under, 128M on the checkout (the packaged
+ * install ships 512M). `ZipArchive::getFromName()` on that entry would be 113MB of PHP
+ * string and would fail, so both layers are streamed to temp files with
  * `stream_copy_to_stream()` and the database is opened by path. Same reason
  * {@see CbzWriter} streams rather than buffering a whole CBZ.
  *
@@ -285,8 +287,9 @@ final class TachimangaReader implements BackupReader
         $series = $this->librarySeries($pdo);
         $chapters = $this->chaptersByManga($pdo);
         $resumes = $this->resumePoints($pdo);
+        $readingDays = $this->readingDays($pdo);
 
-        $built = $series->map(function (array $row) use ($chapters, $resumes): ImportedSeries {
+        $built = $series->map(function (array $row) use ($chapters, $resumes, $readingDays): ImportedSeries {
             $id = (int) $row['id'];
             $resume = $resumes[$id] ?? null;
 
@@ -299,6 +302,7 @@ final class TachimangaReader implements BackupReader
                 lastReadAt: $resume['read_at'] ?? null,
                 backupResumeChapterId: $resume['chapter_id'] ?? null,
                 chapters: $chapters[$id] ?? new Collection,
+                readingDays: $readingDays[$id] ?? new Collection,
             );
         });
 
@@ -442,10 +446,7 @@ final class TachimangaReader implements BackupReader
 
         foreach ($required as $table => $columns) {
             // An absent table reports every column absent, which is the honest report.
-            $present = array_column(
-                $this->query($pdo, 'pragma table_info('.$this->t($table).')')->fetchAll(),
-                'name',
-            );
+            $present = $this->columnsOf($pdo, $table);
 
             foreach (array_diff($columns, $present) as $missing) {
                 $problems[] = $table.'.'.$missing;
@@ -587,6 +588,151 @@ final class TachimangaReader implements BackupReader
         }
 
         return $points;
+    }
+
+    /**
+     * Reading time per shelf series, from the daily ledger or History's total.
+     *
+     * ## The two sources are not added together
+     *
+     * `Stats` is the daily truth: one row per series per day. `History.read_duration`
+     * is a lifetime total on the one row the resume point uses. Measured on the real
+     * file, they agree on 729 series with a median ratio of 1.5625, so adding both
+     * would count the same reading twice and invent time nobody spent. `Stats` wins
+     * where it has a positive day for a series; History is the fallback for the 365
+     * shelf series that have no `Stats` rows at all, dated by their last read.
+     *
+     * ## Both are optional, and absence is not an error
+     *
+     * A backup from an older Tachimanga release can lack `Stats` or the History
+     * duration column, and a `.tachibk` from another app carries neither. Reading time
+     * is a bonus on top of the library and read marks, so a missing table or column
+     * means "this file has none", not "refuse the whole import". The columns are asked
+     * for before the query rather than caught after it, because SQLite reports a
+     * missing column as "no such table: <column>", which names a table that exists.
+     *
+     * Zero, negative, deleted and impossible days are dropped: a row that cannot be
+     * attributed to a real calendar day is worse than no row, because it would land in
+     * a window it does not belong to. The browse-cache join is the same one chapters
+     * use: only 5,547 of the measured 13,501 Stats rows belong to the shelf, and the
+     * rest is reading a reader did while browsing, which is not their library.
+     *
+     * @return Collection<int, Collection<int, ReadingDay>> Backup manga id to its days, oldest first.
+     */
+    private function readingDays(PDO $pdo): Collection
+    {
+        /** @var Collection<int, Collection<int, ReadingDay>> $days */
+        $days = new Collection;
+
+        $statsColumns = $this->columnsOf($pdo, TachimangaSchema::STATS_TABLE);
+        $statsUsable = in_array(TachimangaSchema::STATS_MANGA_COLUMN, $statsColumns, true)
+            && in_array(TachimangaSchema::STATS_DAY_COLUMN, $statsColumns, true)
+            && in_array(TachimangaSchema::STATS_DURATION_COLUMN, $statsColumns, true);
+
+        if ($statsUsable) {
+            $deleted = in_array(TachimangaSchema::STATS_DELETED_COLUMN, $statsColumns, true)
+                ? ' and s.'.$this->t(TachimangaSchema::STATS_DELETED_COLUMN).' = 0'
+                : '';
+
+            /*
+             * One query for the whole shelf, grouped in SQLite.
+             *
+             * The real file holds 5,547 shelf rows. A select per series would be the
+             * same 1,277-query mistake the chapter read already avoids, and grouping
+             * here also sums two rows the same day, which the app emits when a sync
+             * merges a local row with a remote one.
+             */
+            $sql = 'select s.'.$this->t(TachimangaSchema::STATS_MANGA_COLUMN).' as manga,
+                           s.'.$this->t(TachimangaSchema::STATS_DAY_COLUMN).' as day,
+                           sum(s.'.$this->t(TachimangaSchema::STATS_DURATION_COLUMN).') as seconds
+                    from '.$this->t(TachimangaSchema::STATS_TABLE).' s
+                    join '.$this->t(TachimangaSchema::MANGA_TABLE).' m
+                      on m.'.$this->t(TachimangaSchema::MANGA_ID_COLUMN).' = s.'.$this->t(TachimangaSchema::STATS_MANGA_COLUMN).'
+                    where m.'.$this->t(TachimangaSchema::IN_LIBRARY_COLUMN).' = :on_the_shelf
+                      and s.'.$this->t(TachimangaSchema::STATS_DURATION_COLUMN).' > 0'.$deleted.'
+                    group by s.'.$this->t(TachimangaSchema::STATS_MANGA_COLUMN).', s.'.$this->t(TachimangaSchema::STATS_DAY_COLUMN).'
+                    order by s.'.$this->t(TachimangaSchema::STATS_MANGA_COLUMN).', s.'.$this->t(TachimangaSchema::STATS_DAY_COLUMN);
+
+            $statement = $pdo->prepare($sql);
+            $statement->execute(['on_the_shelf' => 1]);
+
+            foreach ($statement as $row) {
+                $reading = ReadingDay::fromBackupDay($row['day'], $row['seconds']);
+
+                if ($reading === null || $reading->day->year < self::EARLIEST_PLAUSIBLE_YEAR) {
+                    continue;
+                }
+
+                $manga = (int) $row['manga'];
+
+                if (! $days->has($manga)) {
+                    $days->put($manga, new Collection);
+                }
+
+                $days->get($manga)->push($reading);
+            }
+        }
+
+        $historyColumns = $this->columnsOf($pdo, TachimangaSchema::HISTORY_TABLE);
+        $historyUsable = in_array(TachimangaSchema::HISTORY_MANGA_COLUMN, $historyColumns, true)
+            && in_array(TachimangaSchema::HISTORY_LAST_READ_AT_COLUMN, $historyColumns, true)
+            && in_array(TachimangaSchema::HISTORY_DURATION_COLUMN, $historyColumns, true);
+
+        if (! $historyUsable) {
+            return $days;
+        }
+
+        $history = $pdo->prepare(
+            'select h.'.$this->t(TachimangaSchema::HISTORY_MANGA_COLUMN).' as manga,
+                    h.'.$this->t(TachimangaSchema::HISTORY_LAST_READ_AT_COLUMN).' as read_at,
+                    h.'.$this->t(TachimangaSchema::HISTORY_DURATION_COLUMN).' as seconds
+             from '.$this->t(TachimangaSchema::HISTORY_TABLE).' h
+             join '.$this->t(TachimangaSchema::MANGA_TABLE).' m
+               on m.'.$this->t(TachimangaSchema::MANGA_ID_COLUMN).' = h.'.$this->t(TachimangaSchema::HISTORY_MANGA_COLUMN).'
+             where m.'.$this->t(TachimangaSchema::IN_LIBRARY_COLUMN).' = :on_the_shelf
+               and h.'.$this->t(TachimangaSchema::HISTORY_DURATION_COLUMN).' > 0'
+        );
+
+        $history->execute(['on_the_shelf' => 1]);
+
+        foreach ($history as $row) {
+            $manga = (int) $row['manga'];
+
+            // A series with daily rows already has a finer answer; History is a total
+            // and would double it.
+            if ($days->has($manga)) {
+                continue;
+            }
+
+            $seconds = (int) $row['seconds'];
+            $readAt = $this->date($row['read_at']);
+
+            if ($seconds <= 0 || $readAt === null || $readAt->year < self::EARLIEST_PLAUSIBLE_YEAR) {
+                continue;
+            }
+
+            $days->put($manga, new Collection([
+                new ReadingDay($readAt->startOfDay(), $seconds),
+            ]));
+        }
+
+        return $days;
+    }
+
+    /**
+     * The column names a table carries, or an empty list when the table is absent.
+     *
+     * @return array<int, string>
+     */
+    private function columnsOf(PDO $pdo, string $table): array
+    {
+        return array_map(
+            'strval',
+            array_column(
+                $this->query($pdo, 'pragma table_info('.$this->t($table).')')->fetchAll(),
+                'name',
+            ),
+        );
     }
 
     /**

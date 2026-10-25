@@ -49,6 +49,7 @@ final class ImportedSeries
      * @param  string  $url  Source-relative path. Already normalised by the reader.
      * @param  int|null  $backupResumeChapterId  The other app's local chapter id for the resume point.
      * @param  Collection<int, ImportedChapter>  $chapters
+     * @param  Collection<int, ReadingDay>  $readingDays  Daily totals, empty when the format carries none.
      */
     public function __construct(
         public readonly int $backupId,
@@ -59,6 +60,7 @@ final class ImportedSeries
         public readonly ?CarbonImmutable $lastReadAt = null,
         public readonly ?int $backupResumeChapterId = null,
         public readonly Collection $chapters = new Collection,
+        public readonly Collection $readingDays = new Collection,
     ) {}
 
     /**

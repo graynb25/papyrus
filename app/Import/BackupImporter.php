@@ -89,6 +89,23 @@ final class BackupImporter
          * nothing behind it.
          */
         try {
+            /*
+             * The file's identity, not its name.
+             *
+             * Imported reading days are kept per backup so that a re-import replaces
+             * that file's days instead of adding a second copy, and two exports can
+             * share a name. Hashing here rather than in the writer means one read of
+             * the file's bytes for the whole run.
+             */
+            $backupKey = is_readable($path) ? hash_file('sha256', $path) : false;
+
+            if ($backupKey === false) {
+                throw new ImportRefused(
+                    'That backup could not be read. It may have been moved or become unreadable. '
+                    .'Nothing has been changed.'
+                );
+            }
+
             $backup = $this->readers->for($path)->read($path);
         } catch (ImportRefused $e) {
             // A refusal is kept as a run, not thrown away. "It did nothing" and "it worked"
@@ -115,7 +132,7 @@ final class BackupImporter
         $extensions = $this->installExtensions($user, $run, $sources, $installExtensions);
 
         return new ImportResult(
-            series: $this->applySeries($user, $run, $backup, $limit, $force),
+            series: $this->applySeries($user, $run, $backup, $limit, $force, $backupKey),
             alreadyInstalled: $extensions['already'],
             attempted: $extensions['attempted'],
             installed: $extensions['installed'],
@@ -223,7 +240,7 @@ final class BackupImporter
      *
      * @return array<string, int>
      */
-    private function applySeries(User|int $user, ImportRun $run, ImportedBackup $backup, int $limit, bool $force = false): array
+    private function applySeries(User|int $user, ImportRun $run, ImportedBackup $backup, int $limit, bool $force = false, ?string $backupKey = null): array
     {
         /*
          * Keyed by the resolver's tier names, so the bucketing is a lookup rather than a
@@ -348,7 +365,7 @@ final class BackupImporter
                     $counts['resolved']++;
                     $counts[$resolution->tier]++;
 
-                    $written = $this->writer->write($user, $series, $resolution);
+                    $written = $this->writer->write($user, $series, $resolution, $backupKey);
 
                     $counts['applied'] += (int) $written['written'];
                     $counts['read_chapters'] += $written['read_chapters'];

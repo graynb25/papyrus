@@ -2,6 +2,7 @@
 
 namespace App\Import;
 
+use App\Models\ImportedReadingDay;
 use App\Models\User;
 use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
@@ -69,11 +70,18 @@ final class SeriesWriter
     /**
      * Write one resolved series.
      *
+     * The backup key is the hash of the file the series came from. When it is present,
+     * the imported reading days are replaced for this series and this file inside the
+     * same transaction as its read marks, so a re-import is a replacement rather than a
+     * second copy. A format that carries no reading time passes an empty collection and
+     * simply clears nothing.
+     *
      * @param  User|int  $user  Explicit rather than read from the session, because an import
      *                          runs as a job and there may be no session to read.
+     * @param  string|null  $backupKey  The backup's sha256, or null to leave imported days alone.
      * @return array{written: bool, read_chapters: int, chapters_seen: int, pointer: string|null, reason: string|null}
      */
-    public function write(User|int $user, ImportedSeries $series, Resolution $resolution): array
+    public function write(User|int $user, ImportedSeries $series, Resolution $resolution, ?string $backupKey = null): array
     {
         if (! $resolution->resolved || $resolution->suwayomiMangaId === null) {
             return [
@@ -109,7 +117,7 @@ final class SeriesWriter
             }
         }
 
-        DB::transaction(function () use ($user, $mangaId, $readIds, $bookmarkIds): void {
+        DB::transaction(function () use ($user, $mangaId, $readIds, $bookmarkIds, $series, $backupKey): void {
             $this->reading->setInLibrary($user, $mangaId, true);
 
             if ($readIds !== []) {
@@ -118,6 +126,10 @@ final class SeriesWriter
 
             foreach ($bookmarkIds as $chapterId) {
                 $this->reading->setBookmark($user, $mangaId, $chapterId, true);
+            }
+
+            if ($backupKey !== null) {
+                ImportedReadingDay::replaceFor($user, $backupKey, $mangaId, $series->readingDays);
             }
         });
 

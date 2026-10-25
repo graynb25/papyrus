@@ -42,6 +42,22 @@ trait BuildsTachimangaBackups
     /** Build the archive but leave out a table the reader requires. */
     protected bool $withoutHistoryTable = false;
 
+    /**
+     * Build the archive without the daily Stats table.
+     *
+     * Reading time is a bonus, so an older backup that has no `Stats` must still
+     * import its library and read marks. This is the knob that proves it.
+     */
+    protected bool $withoutStatsTable = false;
+
+    /**
+     * Build History without its lifetime read_duration column.
+     *
+     * `History` itself stays, because the resume point still needs it. Only the
+     * fallback reading total disappears, which is the second optional source.
+     */
+    protected bool $withoutHistoryDuration = false;
+
     /** Build the archive but leave out a column the reader binds. */
     protected bool $withoutSourceOrder = false;
 
@@ -165,6 +181,11 @@ trait BuildsTachimangaBackups
         $pdo->exec($this->historyTable());
         $pdo->exec($this->categoryTables());
         $pdo->exec($this->sourceTables());
+
+        if (! $this->withoutStatsTable) {
+            $pdo->exec($this->statsTable());
+        }
+
         $this->seedRows($pdo);
 
         return $path;
@@ -238,13 +259,34 @@ trait BuildsTachimangaBackups
             return 'create table Unrelated (id integer primary key)';
         }
 
+        $duration = $this->withoutHistoryDuration ? '' : ', read_duration integer';
+
         // manga_id, not manga. The sibling tables say manga.
-        return <<<'SQL'
+        return <<<SQL
             create table History (
                 id integer primary key autoincrement,
                 manga_id integer,
                 last_chapter_id integer,
-                last_read_at bigint
+                last_read_at bigint{$duration}
+            )
+            SQL;
+    }
+
+    /**
+     * The daily reading ledger, with the columns the reader binds.
+     *
+     * The real table carries create_at, update_at, dirty and commit_id as well. None of
+     * them are read, and adding them here would suggest they matter.
+     */
+    private function statsTable(): string
+    {
+        return <<<'SQL'
+            create table Stats (
+                id integer primary key autoincrement,
+                manga_id integer,
+                day integer,
+                read_duration integer,
+                is_delete boolean
             )
             SQL;
     }
@@ -395,9 +437,46 @@ trait BuildsTachimangaBackups
         }
 
         if (! $this->withoutHistoryTable) {
-            $pdo->prepare(
-                'insert into History (manga_id, last_chapter_id, last_read_at) values (?, ?, ?)'
-            )->execute([217, 430_617, 1_798_301_351]);
+            /*
+             * 217 is the fallback series: it has no Stats rows, so its 360 seconds
+             * come from the lifetime total and land on the day it was last read.
+             * 9265 carries the daily rows instead, which is the primary source.
+             */
+            $hasDuration = ! $this->withoutHistoryDuration;
+            $columns = 'manga_id, last_chapter_id, last_read_at'.($hasDuration ? ', read_duration' : '');
+            $placeholders = $hasDuration ? '?, ?, ?, ?' : '?, ?, ?';
+
+            $pdo->prepare("insert into History ({$columns}) values ({$placeholders})")
+                ->execute($hasDuration
+                    ? [217, 430_617, 1_798_301_351, 360]
+                    : [217, 430_617, 1_798_301_351]);
+        }
+
+        if (! $this->withoutStatsTable) {
+            $stats = $pdo->prepare(
+                'insert into Stats (day, manga_id, read_duration, is_delete) values (?, ?, ?, ?)'
+            );
+
+            /*
+             * Two days for the second shelf series, with a same-day duplicate so a
+             * reader that forgot to group by day would report two rows where the app
+             * reports one day's reading.
+             */
+            $stats->execute([20250920, 9265, 100, 0]);
+            $stats->execute([20250921, 9265, 200, 0]);
+            $stats->execute([20250921, 9265, 50, 0]);
+
+            /*
+             * Rows that must not become reading time: deleted, zero, and a day that
+             * is not a date. The zero has its own day so a filter that only dropped
+             * zero seconds would still leave the deleted and impossible rows.
+             */
+            $stats->execute([20250920, 9265, 999, 1]);
+            $stats->execute([20250922, 9265, 0, 0]);
+            $stats->execute([20251301, 9265, 777, 0]);
+
+            // Browse cache: the shelf join is what keeps this out.
+            $stats->execute([20250920, 9263, 999, 0]);
         }
 
         $category = $pdo->prepare('insert into Category (id, name, create_at) values (?, ?, ?)');

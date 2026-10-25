@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Import\ImportedSeries;
 use App\Import\ImportRefused;
+use App\Import\ReadingDay;
 use App\Import\Tachimanga\TachimangaReader;
 use App\Import\Tachimanga\TachimangaSchema;
 use App\Support\Suwayomi\Timestamps;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\BuildsTachimangaBackups;
@@ -447,6 +449,78 @@ class TachimangaReaderTest extends TestCase
                 'the refusal must name the missing column, since SQLite would name a table that exists'
             );
         }
+    }
+
+    public function test_reading_time_comes_from_the_daily_stats_ledger(): void
+    {
+        $this->built = $this->buildTachimangaBackup();
+        $series = $this->reader()->read($this->built)->series->keyBy('title');
+
+        $days = $series['The Berserker\'s Second Playthrough']->readingDays;
+
+        /*
+         * Two days from three rows: the app emits a second row when a sync merges a
+         * local day with a remote one, and two rows for one day is still one day.
+         */
+        $this->assertCount(2, $days);
+        $this->assertSame(
+            ['2025-09-20' => 100, '2025-09-21' => 250],
+            $days->mapWithKeys(fn (ReadingDay $day): array => [$day->day->toDateString() => $day->seconds])->all(),
+        );
+
+        // The deleted, zero, impossible-day and browse-cache rows are all absent, so
+        // the total is 100 + 200 + 50 and nothing else.
+        $this->assertSame(350, $days->sum(fn (ReadingDay $day): int => $day->seconds));
+    }
+
+    public function test_a_series_with_no_daily_rows_falls_back_to_its_history_total(): void
+    {
+        $this->built = $this->buildTachimangaBackup();
+        $series = $this->reader()->read($this->built)->series->keyBy('title');
+
+        $days = $series['Hiding a Logistics Center']->readingDays;
+
+        $this->assertCount(1, $days, 'the daily table has nothing for this series, so History answers');
+        $this->assertSame(360, $days->first()->seconds);
+        $this->assertSame(
+            CarbonImmutable::createFromTimestamp(1_798_301_351)->toDateString(),
+            $days->first()->day->toDateString(),
+            'the lifetime total is dated by the History row last read',
+        );
+    }
+
+    public function test_reading_time_is_optional_when_the_stats_table_is_missing(): void
+    {
+        $this->withoutStatsTable = true;
+        $this->built = $this->buildTachimangaBackup();
+
+        $series = $this->reader()->read($this->built)->series->keyBy('title');
+
+        $this->assertCount(1, $series['Hiding a Logistics Center']->readingDays, 'the History fallback still works');
+        $this->assertCount(
+            0,
+            $series['The Berserker\'s Second Playthrough']->readingDays,
+            'and a series with neither source simply has none rather than failing the import',
+        );
+    }
+
+    public function test_reading_time_is_optional_when_history_has_no_duration_column(): void
+    {
+        $this->withoutHistoryDuration = true;
+        $this->built = $this->buildTachimangaBackup();
+
+        $series = $this->reader()->read($this->built)->series->keyBy('title');
+
+        $this->assertCount(
+            2,
+            $series['The Berserker\'s Second Playthrough']->readingDays,
+            'the daily ledger is enough on its own',
+        );
+        $this->assertCount(
+            0,
+            $series['Hiding a Logistics Center']->readingDays,
+            'and a History row without a duration contributes nothing',
+        );
     }
 
     /**

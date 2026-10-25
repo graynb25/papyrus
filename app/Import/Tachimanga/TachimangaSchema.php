@@ -179,6 +179,37 @@ final class TachimangaSchema
 
     public const HISTORY_LAST_READ_AT_COLUMN = 'last_read_at';
 
+    /**
+     * The lifetime reading total on the History row, in seconds.
+     *
+     * Optional on read: a backup from an older release has no such column, and the
+     * daily `Stats` table is the better source anyway. Measured on the real file: 1,069
+     * shelf History rows, 630 of them with a positive duration, 752,870 seconds in all.
+     */
+    public const HISTORY_DURATION_COLUMN = 'read_duration';
+
+    /**
+     * The daily reading-time ledger.
+     *
+     * One row per series per day, measured on the real file: 13,501 live rows across
+     * 4,467 series and 381 days, 3,113,690 seconds in all. Only 5,547 of those rows
+     * belong to shelf series, so the shelf join is as load-bearing here as it is for
+     * chapters: importing the rest would count a reader's browsing as reading time.
+     */
+    public const STATS_TABLE = 'Stats';
+
+    /** `manga_id` here too, not `manga`. */
+    public const STATS_MANGA_COLUMN = 'manga_id';
+
+    /** An integer `YYYYMMDD`, not a timestamp and not a text date. */
+    public const STATS_DAY_COLUMN = 'day';
+
+    /** Seconds read on that day for that series. */
+    public const STATS_DURATION_COLUMN = 'read_duration';
+
+    /** Measured at 0 on every one of the 13,501 rows; still checked because a delete is a delete. */
+    public const STATS_DELETED_COLUMN = 'is_delete';
+
     public const CATEGORY_TABLE = 'Category';
 
     public const CATEGORY_NAME_COLUMN = 'name';

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Import\ImportedSeries as SeriesFromBackup;
+use App\Import\ReadingDay;
 use App\Models\Concerns\OwnedModel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -150,6 +151,22 @@ class ImportedSeries extends OwnedModel
             ->values()
             ->all();
 
+        /*
+         * Reading time is part of what this importer writes, so it is part of the
+         * question the fingerprint answers. Without it, a second import of the same
+         * file after the first run failed to record its days would look unchanged and
+         * the time would never be recovered, and a newer export whose only difference
+         * was another day of reading would be skipped.
+         */
+        $readingDays = $series->readingDays
+            ->map(fn (ReadingDay $day): array => [
+                $day->day->format('Y-m-d'),
+                $day->seconds,
+            ])
+            ->sortBy(fn (array $day): string => $day[0])
+            ->values()
+            ->all();
+
         return hash('sha256', json_encode([
             // The identity, so two series cannot collide even with identical chapter sets.
             'source' => $series->sourceId,
@@ -158,6 +175,7 @@ class ImportedSeries extends OwnedModel
             'last_read_at' => $series->lastReadAt?->format('Y-m-d H:i:s'),
             'resume' => $series->backupResumeChapterId,
             'chapters' => $chapters,
+            'reading_days' => $readingDays,
         ], JSON_THROW_ON_ERROR));
     }
 

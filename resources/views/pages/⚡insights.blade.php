@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Duration;
 use App\Support\Library;
 use App\Support\ReadingInsights;
 use App\Suwayomi\SuwayomiException;
@@ -143,6 +144,8 @@ new #[Title('Insights')] class extends Component {
                 'cover' => $entry['cover'] ?? null,
                 'unread_chapters' => $entry['unread_chapters'] ?? null,
                 'seconds' => $row['seconds'],
+                'native_seconds' => $row['native_seconds'],
+                'imported_seconds' => $row['imported_seconds'],
                 'pages' => $row['pages'],
                 'sessions' => $row['sessions'],
                 'last_active_at' => $row['last_active_at'],
@@ -157,6 +160,8 @@ new #[Title('Insights')] class extends Component {
 
         return [
             'seconds' => (int) $rows->sum('seconds'),
+            'native_seconds' => (int) $rows->sum('native_seconds'),
+            'imported_seconds' => (int) $rows->sum('imported_seconds'),
             'pages' => (int) $rows->sum('pages'),
             'series' => $rows->count(),
         ];
@@ -190,7 +195,7 @@ new #[Title('Insights')] class extends Component {
         $span = $this->bound === null
             ? __('so far')
             : __('since :date', ['date' => $this->bound->translatedFormat('F jS Y')]);
-        $spent = $this->formatSeconds($totals['seconds']);
+        $spent = Duration::forHumans($totals['seconds']);
 
         return trans_choice('{1} :time across one series :span.|[2,*] :time across :series series :span.', $totals['series'], [
             'time' => $spent,
@@ -199,25 +204,6 @@ new #[Title('Insights')] class extends Component {
         ]);
     }
 
-    /**
-     * Whole minutes dominate; a sitting shorter than a minute still says seconds
-     * because "0 minutes" would be a lie about a reading that happened.
-     */
-    public function formatSeconds(int $seconds): string
-    {
-        if ($seconds < 60) {
-            return trans_choice('{1} :count second|[2,*] :count seconds', max(1, $seconds), ['count' => Number::format(max(1, $seconds))]);
-        }
-
-        $hours = intdiv($seconds, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        $hourPart = trans_choice('{1} :count hour|[2,*] :count hours', $hours, ['count' => Number::format($hours)]);
-        $minutePart = trans_choice('{1} :count minute|[2,*] :count minutes', $minutes, ['count' => Number::format($minutes)]);
-
-        return $hours === 0
-            ? $minutePart
-            : $hourPart.' '.$minutePart;
-    }
 };
 
 ?>
@@ -230,7 +216,7 @@ new #[Title('Insights')] class extends Component {
     {{-- The ledger's own honesty, said once, in its own block ---------------- --}}
     <flux:callout variant="secondary" icon="lock-closed">
         <p class="text-sm">
-            {{ __('These numbers come from reading recorded on this machine. Papyrus does not send or request anything to create them.') }}
+            {{ __('These numbers come from reading recorded on this machine, plus reading time carried over from backups you imported. Papyrus does not send or request anything to create them.') }}
         </p>
     </flux:callout>
 
@@ -253,7 +239,7 @@ new #[Title('Insights')] class extends Component {
         <flux:callout variant="secondary" icon="sparkles">
             <p class="font-display text-base font-semibold">{{ $this->line }}</p>
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ __('Counted by when each sitting began, so no window counts the same minutes twice.') }}
+                {{ __('Counted by the day each sitting began, so no window counts the same minutes twice.') }}
             </p>
         </flux:callout>
     @endif
@@ -264,7 +250,14 @@ new #[Title('Insights')] class extends Component {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <flux:card class="card-press gap-1 p-4">
                 <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Reading time') }}</p>
-                <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ $this->formatSeconds($this->totals['seconds']) }}</p>
+                <p class="mt-0.5 font-display text-2xl font-semibold tabular-nums">{{ Duration::forHumans($this->totals['seconds']) }}</p>
+                @if ($this->totals['imported_seconds'] > 0)
+                    {{-- Imported time is in the total, so it is named rather than left
+                         for the reader to discover by subtracting. --}}
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('Includes :time from imported backups', ['time' => Duration::forHumans($this->totals['imported_seconds'])]) }}
+                    </p>
+                @endif
             </flux:card>
 
             <flux:card class="card-press gap-1 p-4">
@@ -295,7 +288,12 @@ new #[Title('Insights')] class extends Component {
             </div>
         @else
             <ul class="divide-y divide-zinc-200 dark:divide-white/10">
-                @php($largest = $this->rows->first()['seconds'])
+                {{-- Written as a block, not @php(...), because Blade pairs the first
+                     @php with the next @endphp: the inline form here would swallow
+                     every directive down to the row facts block at the bottom. --}}
+                @php
+                    $largest = $this->rows->first()['seconds'];
+                @endphp
 
                 @foreach ($this->rows as $row)
                     <li class="flex gap-3 p-4">
@@ -327,7 +325,7 @@ new #[Title('Insights')] class extends Component {
                                 {{-- The minutes are the row's carrying number, in figures the eye
                                      can line up across every row. --}}
                                 <flux:badge size="sm" class="tabular-nums">
-                                    {{ $this->formatSeconds($row['seconds']) }}
+                                    {{ Duration::forHumans($row['seconds']) }}
                                 </flux:badge>
                             </div>
 
@@ -342,15 +340,34 @@ new #[Title('Insights')] class extends Component {
                                 ></div>
                             </div>
 
-                            <p class="text-xs mt-2 text-zinc-500 dark:text-zinc-400">
-                                {{ trans_choice('{1} :count page|[2,*] :count pages', $row['pages'], ['count' => Number::format($row['pages'])]) }}
-                                &middot;
-                                {{ trans_choice('{1} :count sitting|[2,*] :count sittings', $row['sessions'], ['count' => Number::format($row['sessions'])]) }}
-                                @if ($row['unread_chapters'] !== null)
-                                    &middot;
-                                    {{ trans_choice('{1} still :count chapter unread|[2,*] still :count chapters unread', $row['unread_chapters'], ['count' => Number::format($row['unread_chapters'])]) }}
-                                @endif
-                            </p>
+                            @php
+                                /*
+                                 * Pages and sittings are facts only the native ledger has.
+                                 * An imported day carries neither, so the row does not say
+                                 * "0 sittings" beside two hours: it says where the time came
+                                 * from instead, and keeps the native figures when both exist.
+                                 */
+                                $facts = [];
+
+                                if ($row['native_seconds'] > 0) {
+                                    $facts[] = trans_choice('{1} :count page|[2,*] :count pages', $row['pages'], ['count' => Number::format($row['pages'])]);
+                                    $facts[] = trans_choice('{1} :count sitting|[2,*] :count sittings', $row['sessions'], ['count' => Number::format($row['sessions'])]);
+                                }
+
+                                if ($row['imported_seconds'] > 0) {
+                                    $facts[] = __(':time from an imported backup', ['time' => Duration::forHumans($row['imported_seconds'])]);
+                                }
+
+                                if ($row['unread_chapters'] !== null) {
+                                    $facts[] = trans_choice('{1} still :count chapter unread|[2,*] still :count chapters unread', $row['unread_chapters'], ['count' => Number::format($row['unread_chapters'])]);
+                                }
+                            @endphp
+
+                            @if ($facts !== [])
+                                <p class="text-xs mt-2 text-zinc-500 dark:text-zinc-400">
+                                    {{ implode(' · ', $facts) }}
+                                </p>
+                            @endif
                         </div>
                     </li>
                 @endforeach

@@ -4,15 +4,18 @@ namespace Tests\Feature;
 
 use App\Import\ImportedChapter;
 use App\Import\ImportedSeries;
+use App\Import\ReadingDay;
 use App\Import\Resolution;
 use App\Import\SeriesWriter;
 use App\Models\ChapterState;
+use App\Models\ImportedReadingDay;
 use App\Models\ImportedSeries as LedgerRow;
 use App\Models\ImportedSource;
 use App\Models\ImportRun;
 use App\Models\User;
 use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -154,7 +157,7 @@ class SeriesWriterTest extends TestCase
         return $chapters;
     }
 
-    private function backupSeries(Collection $chapters, ?int $resumeBackupId = null): ImportedSeries
+    private function backupSeries(Collection $chapters, ?int $resumeBackupId = null, ?Collection $readingDays = null): ImportedSeries
     {
         return new ImportedSeries(
             backupId: 217,
@@ -163,6 +166,18 @@ class SeriesWriterTest extends TestCase
             title: 'A Series',
             backupResumeChapterId: $resumeBackupId,
             chapters: $chapters,
+            readingDays: $readingDays ?? new Collection,
+        );
+    }
+
+    /**
+     * @param  list<array{0: string, 1: int}>  $days  Day and seconds.
+     * @return Collection<int, ReadingDay>
+     */
+    private function readingDays(array $days): Collection
+    {
+        return (new Collection($days))->map(
+            fn (array $day): ReadingDay => new ReadingDay(CarbonImmutable::parse($day[0]), $day[1]),
         );
     }
 
@@ -962,6 +977,112 @@ class SeriesWriterTest extends TestCase
         );
 
         $this->assertSame(1, $this->refreshCount());
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Reading time carried in by the backup.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_imported_reading_days_are_written_under_the_backup_that_carried_them(): void
+    {
+        $key = hash('sha256', 'a backup');
+
+        $result = $this->writer()->write(
+            $this->user,
+            $this->backupSeries(
+                $this->backupChapters(2),
+                readingDays: $this->readingDays([['2026-09-20', 120], ['2026-09-21', 240]]),
+            ),
+            $this->resolved(),
+            $key,
+        );
+
+        $this->assertTrue($result['written']);
+
+        $rows = ImportedReadingDay::forUser($this->user)->orderBy('day')->get();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(['2026-09-20', '2026-09-21'], $rows->pluck('day')->all());
+        $this->assertSame([120, 240], $rows->pluck('seconds')->all());
+        $this->assertSame([$key, $key], $rows->pluck('backup_key')->all());
+    }
+
+    public function test_a_reimport_replaces_that_files_days(): void
+    {
+        $key = hash('sha256', 'a backup');
+        $writer = $this->writer();
+
+        $writer->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(2), readingDays: $this->readingDays([
+                ['2026-09-20', 120],
+                ['2026-09-21', 240],
+            ])),
+            $this->resolved(),
+            $key,
+        );
+
+        $writer->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(2), readingDays: $this->readingDays([
+                ['2026-09-21', 300],
+            ])),
+            $this->resolved(),
+            $key,
+        );
+
+        $rows = ImportedReadingDay::forUser($this->user)->orderBy('day')->get();
+
+        $this->assertCount(1, $rows, 'the day the newer read no longer carries is gone');
+        $this->assertSame('2026-09-21', $rows->first()->day);
+        $this->assertSame(300, $rows->first()->seconds);
+    }
+
+    public function test_a_write_with_no_backup_key_leaves_the_imported_ledger_alone(): void
+    {
+        $key = hash('sha256', 'a backup');
+        $writer = $this->writer();
+
+        $writer->write(
+            $this->user,
+            $this->backupSeries($this->backupChapters(2), readingDays: $this->readingDays([['2026-09-20', 120]])),
+            $this->resolved(),
+            $key,
+        );
+
+        // A caller that did not come from a file, such as a test of the read-state half.
+        $writer->write($this->user, $this->backupSeries($this->backupChapters(2)), $this->resolved());
+
+        $this->assertSame(1, ImportedReadingDay::forUser($this->user)->count());
+        $this->assertSame(120, ImportedReadingDay::forUser($this->user)->sole()->seconds);
+    }
+
+    public function test_the_fingerprint_covers_reading_days_and_not_their_order(): void
+    {
+        $base = LedgerRow::fingerprintFor($this->backupSeries(
+            $this->backupChapters(2),
+            readingDays: $this->readingDays([['2026-09-20', 120], ['2026-09-21', 240]]),
+        ));
+
+        $this->assertSame(
+            $base,
+            LedgerRow::fingerprintFor($this->backupSeries(
+                $this->backupChapters(2),
+                readingDays: $this->readingDays([['2026-09-21', 240], ['2026-09-20', 120]]),
+            )),
+            'SQLite does not promise a row order, so the fingerprint settles one',
+        );
+
+        $this->assertNotSame(
+            $base,
+            LedgerRow::fingerprintFor($this->backupSeries(
+                $this->backupChapters(2),
+                readingDays: $this->readingDays([['2026-09-20', 120], ['2026-09-21', 300]]),
+            )),
+            'a day the backup now reports differently is a change worth applying',
+        );
     }
 
     /** How many `mutation Refresh` documents this test has sent. */
