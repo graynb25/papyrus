@@ -141,14 +141,37 @@ final class BackupSummary
      */
     public function ageForHumans(): string
     {
+        return $this->takenAtDate()?->diffForHumans() ?? 'at an unknown time';
+    }
+
+    /**
+     * The same moment as a date and a clock.
+     *
+     * The relative age says which backup is newest, and the absolute time says
+     * which backup this is when a reader is trying to match one against a
+     * message or a terminal. Null when the manifest stated no readable time,
+     * so the page leaves the line out rather than printing a placeholder.
+     */
+    public function takenAtForHumans(): ?string
+    {
+        return $this->takenAtDate()
+            ?->setTimezone((string) config('app.timezone'))
+            ->translatedFormat('j F Y, H:i');
+    }
+
+    /**
+     * The manifest's time in one shape, or null when it cannot be read.
+     */
+    private function takenAtDate(): ?CarbonImmutable
+    {
         if ($this->takenAt === '') {
-            return 'at an unknown time';
+            return null;
         }
 
         try {
-            return CarbonImmutable::parse($this->takenAt)->diffForHumans();
+            return CarbonImmutable::parse($this->takenAt);
         } catch (Throwable) {
-            return 'at an unknown time';
+            return null;
         }
     }
 

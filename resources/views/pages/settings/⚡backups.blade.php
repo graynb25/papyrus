@@ -3,6 +3,7 @@
 use App\Backup\BackupLibrary;
 use App\Backup\BackupSummary;
 use App\Jobs\RunLiveExport;
+use App\Support\Duration;
 use Papyrus\Launcher\BackupPair;
 use App\Import\ImportRefused;
 use App\Import\Tachibk\TachibkReader;
@@ -281,11 +282,7 @@ new #[Title('Backups')] class extends Component {
     {
         $seconds = (int) floor(max(0, $startedAt->diffInSeconds(now())));
 
-        return trans_choice(
-            '{0} 0 seconds so far|{1} 1 second so far|[2,*] :count seconds so far',
-            $seconds,
-            ['count' => $seconds],
-        );
+        return Duration::forHumans($seconds).' '.__('so far');
     }
 
     /**
@@ -1362,7 +1359,9 @@ new #[Title('Backups')] class extends Component {
                             <tr>
                                 <td class="px-3 py-2">
                                     <span class="font-medium">{{ $pair->ageForHumans() }}</span>
-                                    <span class="block font-mono text-xs text-gray-500 dark:text-gray-400">{{ $pair->token }}</span>
+                                    @if (($savedAt = $pair->takenAtForHumans()) !== null)
+                                        <span class="block text-xs text-gray-500 dark:text-gray-400">{{ $savedAt }}</span>
+                                    @endif
 
                                     @if (($restoredAt = $this->lastRestoredAt($pair->token)) !== null)
                                         <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">

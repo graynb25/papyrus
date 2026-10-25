@@ -306,6 +306,22 @@ class BackupsPageTest extends TestCase
     }
 
     /**
+     * A saved backup says when it was taken, in a date a reader can read.
+     *
+     * The row used to carry the manifest's raw token, `20261014-203857`, under
+     * the relative age. The token is still what restore is keyed on, but it is
+     * not what a reader needs to tell one backup from another.
+     */
+    public function test_a_saved_backup_shows_when_it_was_taken(): void
+    {
+        $this->writePair();
+
+        $this->get('/settings/backups')
+            ->assertSee('14 October 2026')
+            ->assertDontSee('20261014-203857</span>');
+    }
+
+    /**
      * What a restore kept is named and measured, so the disk space is accounted for.
      */
     public function test_it_says_what_a_restore_left_behind(): void
