@@ -2,9 +2,10 @@
 
 Status: approved and in progress. Batches A, B, C, D, E, F and G are committed in `86e033a`. The
 1.5.0 install tree passed the Windows Sandbox gate on run 19, including a Windows source page
-read. The real setup executable also installed 1.5.0 in the manual sandbox and the reader flow
-worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were rebuilt from
-it, and a fresh manual run is pending. Batch H is in progress; 1.5.1 is not
+read. The real setup executable installed 1.5.0 in the manual sandbox on 2026-10-26 and the
+reader flow worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were
+rebuilt from it, and the fresh manual run on the rebuilt installer passed on 2026-10-27,
+including the shortcut double-click. Batch H is in progress; 1.5.1 is not
 started. This plan turns the walk in `walk.md` and the security
 assessment in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD
 `6572ba0`; the batch changes and the audit documents themselves are committed in `86e033a`.
@@ -85,8 +86,14 @@ the behaviour changes or the deployment posture makes it irrelevant.
   search, Chapter 001 read and marked read. The shortcut did not start because `Papyrus.cmd` ran
   `php -n` with no script and the console stdin stayed open. The check is now `php -n -v`, with a
   regression test that keeps stdin open; all six gates pass. The fix is committed in `86e033a`
-  and the artifacts were rebuilt from it; the rebuilt installer needs a fresh manual shortcut
-  run. This is manual evidence, not a gate pass.
+  and the artifacts were rebuilt from it. This is manual evidence, not a gate pass.
+- [x] Fresh manual run on the rebuilt installer, 2026-10-27. The installer verified against the
+  manifest before launch and again inside the guest. The post-install launch printed its
+  preflight and opened the browser; the shortcut double-click printed the complete preflight and
+  started the reader, so the hang did not reproduce; and the flow passed: first account,
+  Keiyoushi store, MangaTaro, a One Piece search of 14 results from 2 of 2 runnable sources,
+  1,202 chapters fetched, Chapter 001 read and marked read with the state persisted. Session
+  `session-20261027-103455`. Still manual evidence, not a gate pass.
 - [x] Reader walkthrough from the same session, 2026-10-27. `docs/WALKTHROUGH.md` and seven
   images under `docs/walkthrough` walk a reader from the setup wizard to reading, taken from
   this run's screenshots. Each image is cropped to the window it shows and the two third-party
@@ -102,8 +109,10 @@ runtime build and the final gates are done. Run 19
 passed the Windows Sandbox gate on the install tree, including a source page read, so the
 clean-machine bar is met for that tree. The manual sandbox then ran the real setup executable: it
 installed 1.5.0 and the reader flow worked, but the shortcut preflight hung; the fix is in
-`86e033a` and the artifacts were rebuilt from it. Batch H must not present the gate as proof of
-the installer, and the rebuilt installer needs a fresh manual shortcut run. Batch H is next.
+`86e033a` and the artifacts were rebuilt from it. The fresh manual run on the rebuilt installer
+passed on 2026-10-27, so the installer payload and its shortcut are now proven. The gate still
+copies `build/install` and never runs the setup executable, so the two proofs stay separate.
+Batch H continues.
 
 ## Environment and clean-machine record, 2026-10-26
 
@@ -171,7 +180,8 @@ One limit remains for the gate itself. The gate copies `build/install`; it does 
 executable, so it proves the install tree and the launcher, not the installer payload. The separate
 manual sandbox (`build\sandbox\launch-manual.ps1`) runs the real `Papyrus-1.5.0-setup.exe`, verifies
 the copy against the manifest and records the install with a screenshot watcher. It ran on
-2026-10-26 and its record is the subsection below; it is manual evidence, not a gate pass.
+2026-10-26 and again on the rebuilt installer on 2026-10-27; the records are the subsections
+below, and both are manual evidence, not a gate pass.
 Artifacts for run 19 are under `%TEMP%\opencode\run19-20261026\`.
 
 Runs 16 to 18 added the source-access section and found three defects in the probe rather than
@@ -224,6 +234,28 @@ rebuilt installer passes a fresh manual shortcut run. The rebuilt installer from
 `95a043c86c41cc95d5fd4ef3008fc1863b1ae88bfc2029c2cdde8e0480d7a5c5`. Full evidence is in
 `docs/ENGINEERING-NOTES.md` section 16.5; artifacts are in
 `build\manual-sandbox-results\session-20261026-210533\`.
+
+### Manual installer sandbox, fresh run on the rebuilt installer, 2026-10-27
+
+The fresh run used the rebuilt installer from `86e033a`, 275,084,375 bytes with SHA-256
+`95a043c86c41cc95d5fd4ef3008fc1863b1ae88bfc2029c2cdde8e0480d7a5c5`. The launcher verified it
+against the manifest before the guest started, and the guest verified its copy again
+(`installer-verified.txt`, `match=True`). The setup completed as a per-user install; the
+post-install launch printed its preflight and opened the browser; and the shortcut double-click,
+the exact path that had hung the day before, printed the complete preflight through "the app
+reports itself ready", the queue worker, "Papyrus is running at http://localhost:8000" and
+"Asked your browser to open it." The hang did not reproduce. The only console noise was a
+Chromium GPU line about a missing video device, which the sandbox's absence of a video device
+explains and which stopped nothing.
+
+The flow matched the first run: first account registered, empty library, Keiyoushi store added,
+MangaTaro installed, a One Piece search of 14 results deduplicated from 2 of 2 runnable sources,
+1,202 chapters fetched, and Chapter 001 read at `/read/1/1` with the read state persisted on the
+series page. The watcher took 41 frames and stopped on the stop marker. Verdict: the rebuilt
+installer's payload, post-install launch, shortcut preflight and reader flow are proven on the
+real setup executable. This is manual evidence, not a gate pass. Full evidence is in
+`docs/ENGINEERING-NOTES.md` section 16.5; artifacts are in
+`build\manual-sandbox-results\session-20261027-103455\`.
 
 ### Final gates, 2026-10-26
 
@@ -685,8 +717,8 @@ Walk remaining:
   installer remains unsigned after this plan.
 - The installer payload is proven by the manual sandbox, not by B1. On 2026-10-26 the real setup
   executable installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight hung;
-  the fix is committed in `86e033a` and the artifacts were rebuilt from it. The rebuilt installer
-  needs a fresh manual shortcut run. B1's gate
+  the fix is committed in `86e033a` and the artifacts were rebuilt from it. The fresh manual run
+  on the rebuilt installer passed on 2026-10-27 through the shortcut. B1's gate
   still copies `build/install` and never runs the setup executable, so do not close the installer
   on the strength of a green install-tree run alone.
 - The owner-role migration can lock an existing install out of backups if it promotes nobody.
@@ -708,7 +740,7 @@ Walk remaining:
 | Batch | Focused proof | Final proof |
 | --- | --- | --- |
 | A | first and second account role tests, posted role ignored, migration backfill | six gates |
-| B | staged `php -v`, `frankenphp --version`, `java -version`, build assertions | installer and portable built; install tree passed the Windows Sandbox gate on run 19, including a source page read; source access also passed on WSL; the manual sandbox proved the setup executable installs 1.5.0 and the reader flow works, and found the shortcut preflight hang, fixed in the tree; a fresh manual shortcut run on the rebuilt installer is pending |
+| B | staged `php -v`, `frankenphp --version`, `java -version`, build assertions | installer and portable built; install tree passed the Windows Sandbox gate on run 19, including a source page read; source access also passed on WSL; the manual sandbox proved the setup executable installs 1.5.0 and the reader flow works, and found the shortcut preflight hang, fixed in the tree; the fresh manual run on the rebuilt installer passed on 2026-10-27, including the shortcut double-click |
 | C | two-account page, action and export tests | scratch-install write probe, re-walk backups page |
 | D | non-owner path refusal, crafted archive cap, store URL refusals | scratch-install probes, re-walk import and sources |
 | E | warning copy and documentation assertions | dash and machine-detail gates |

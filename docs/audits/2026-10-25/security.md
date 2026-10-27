@@ -10,8 +10,9 @@ The install tree passed the Windows Sandbox gate on run 19 (86 checks, 0 failure
 source page through the app proxy on Windows, which is the clean-machine acceptance those
 findings needed. The separate manual installer sandbox ran the real setup executable on
 2026-10-26: it installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight
-hung; the fix is committed in `86e033a`, the artifacts were rebuilt from it, and a fresh manual
-shortcut run is pending. It is tracked in [`hardening-plan.md`](hardening-plan.md) and is not part
+hung; the fix is committed in `86e033a` and the artifacts were rebuilt from it. The fresh manual
+run on the rebuilt installer passed on 2026-10-27, including the shortcut double-click. It is
+tracked in [`hardening-plan.md`](hardening-plan.md) and is not part
 of B1 or M8.
 
 ## Status, method, limitations

@@ -19,8 +19,9 @@ run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`
 created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and
 page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The gate copies
 `build/install` rather than running the setup executable. The separate manual sandbox ran the
-setup executable: it installed 1.5.0 per-user and the reader flow passed, but found the shortcut
-preflight hang; the rebuilt installer awaits a fresh manual shortcut run. macOS and Linux
+setup executable: the first run installed 1.5.0 per-user and the reader flow passed, but found
+the shortcut preflight hang, and the fresh run on the rebuilt installer passed on 2026-10-27,
+including the shortcut double-click. macOS and Linux
 packaging below remain proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship

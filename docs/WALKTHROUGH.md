@@ -33,11 +33,12 @@ password, Create account](walkthrough/02-register.png)
 
 Start Papyrus from its shortcut. A console window opens, the first launch takes
 15 to 30 seconds while the manga server starts and the database is created, and
-then your browser opens at `http://localhost:8000`, which on a fresh install is
-the sign-up page. Nobody has signed up yet, so the form is open: a name, an
-email address, and a password, with the page marking which password rules you
-already meet as you type. The first account becomes this install's owner, and
-the moment it exists the sign-up form closes itself behind you.
+then your browser opens at `http://localhost:8000`. Nobody has signed up yet,
+so the log-in screen that answers carries a "Sign up" link, and it opens the
+form below: a name, an email address, and a password, with the page marking
+which password rules you already meet as you type. The first account becomes
+this install's owner, and the moment it exists the sign-up form closes itself
+behind you.
 
 ## 3. The library starts empty
 

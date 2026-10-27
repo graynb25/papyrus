@@ -7404,8 +7404,9 @@ proves the install tree and the launcher, not the installer payload. A Windows s
 longer a limit. The separate manual sandbox (`build\sandbox\launch-manual.ps1`) runs the real
 `build\dist\Papyrus-1.5.0-setup.exe` and records the install, its shortcuts, registration and
 the reader pages. Its first run on 2026-10-26 installed the payload and recorded the reader flow,
-and found the shortcut preflight defect recorded in section 16.5. It is manual evidence, not a
-gate pass.
+and found the shortcut preflight defect recorded in section 16.5; its second run on 2026-10-27
+repeated the flow on the rebuilt installer through the shortcut, and the defect did not
+reproduce. It is manual evidence, not a gate pass.
 
 Operationally, the gate killed the Sandbox client but `vmmemWindowsSandbox` was still up
 after its 90 second wait on runs 15, 18 and 19. On runs 18 and 19 only an elevated `hcsdiag
@@ -7537,7 +7538,7 @@ clean Linux userland. It does not prove the Windows installer, the reader shortc
 bundled Windows runtime, Windows file locking, a desktop or mobile visual walk, or a clean
 Windows machine, and it is not a Windows Sandbox pass.
 
-### 16.5 Manual installer sandbox, 2026-10-26
+### 16.5 Manual installer sandbox, 2026-10-26 and 2026-10-27
 
 The manual sandbox ran the real `build\dist\Papyrus-1.5.0-setup.exe` in a fresh Windows Sandbox,
 not `build\install`. The guest verified the copied installer as 275,084,054 bytes with SHA-256
@@ -7578,3 +7579,31 @@ until the rebuilt installer passes a fresh manual shortcut run. Artifacts are in
 `build\manual-sandbox-results\session-20261026-210533\`: `installer-verified.txt`,
 `papyrus-direct.txt`, `diag\`, the 171 `shot-*.png` frames, and `screenshots.log`.
 
+The fresh manual run on the rebuilt installer came on 2026-10-27, in session
+`build\manual-sandbox-results\session-20261027-103455\`. The launcher verified the installer
+against the manifest before the guest started, and the guest verified its copy again: 275,084,375
+bytes, SHA-256 `95a043c86c41cc95d5fd4ef3008fc1863b1ae88bfc2029c2cdde8e0480d7a5c5`, with
+`installer-verified.txt` recording `match=True`. The setup completed as a per-user install and its
+post-install launch printed the preflight, caught in the captured frame at Suwayomi's first wait,
+and the browser opened at `localhost:8000/login`.
+
+The guest then closed that first instance and double-clicked the reader's shortcut, the exact path
+that had hung the day before. The new console printed the complete preflight: data directory
+ready, Suwayomi answering on attempt 2, database current, web server ready, queue worker and
+scheduler started, "Papyrus is running at http://localhost:8000", and "Asked your browser to open
+it." The hang did not reproduce. The only console noise was a Chromium GPU line,
+`GetGpuDriverOverlayInfo: Failed to retrieve video device`, which comes from the sandbox's absent
+video device and stopped nothing.
+
+The flow then matched the day before: the first account registered, the empty library offered its
+three starting actions, the Keiyoushi store was added and MangaTaro installed, the One Piece
+search answered 14 results deduplicated from 2 of 2 runnable sources, the series page fetched
+1,202 chapters, and Chapter 001: Romance Dawn rendered at `/read/1/1` with the progress bar
+naming "Chapter 1 of 1202". Back at the series, Chapter 001 showed read and the page offered
+"Continue reading" at 1 of 1,202, so the read state persisted. The watcher took 41 frames at a ten
+second interval and stopped on the stop marker.
+
+Verdict: the rebuilt installer's payload, post-install launch, shortcut preflight and reader flow
+are all proven on the real setup executable. This stays manual acceptance evidence, not a gate
+pass. The frames live under `build/`, which git ignores, so the committed record of what the run
+showed is the walkthrough and this text.
