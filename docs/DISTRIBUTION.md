@@ -7,17 +7,21 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-10-26
+## Current delivery status, 2026-10-27
 
-The working tree is 1.5.0 and the local build produced an unsigned 262.3MB installer and a 306.2MB
+The working tree is 1.5.0, committed as `86e033a`, and the artifacts were rebuilt from that commit.
+The local build produced an unsigned 262.3MB installer and a 306.2MB
 portable zip with 12,963 entries; required files, privacy exclusions and the sidecar SHA256 were
-verified. No 1.5.0 artifact is published, and no release record exists for it yet. The 1.4.0
+verified. No 1.5.0 artifact is published. A local release record exists at
+`releases/1.5.0.json`; the 1.4.0
 record remains the latest published release. The install tree passed the Windows Sandbox gate on
 run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`, first account
 created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and
 page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The gate copies
-`build/install` rather than running the setup executable, so the installer payload remains
-unproven. macOS and Linux packaging below remain proposals, not available downloads.
+`build/install` rather than running the setup executable. The separate manual sandbox ran the
+setup executable: it installed 1.5.0 per-user and the reader flow passed, but found the shortcut
+preflight hang; the rebuilt installer awaits a fresh manual shortcut run. macOS and Linux
+packaging below remain proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship
 

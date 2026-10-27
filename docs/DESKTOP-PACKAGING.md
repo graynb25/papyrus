@@ -2,8 +2,8 @@
 
 Status: **the 1.5.0 Windows installer builds; the install tree passed the Windows Sandbox gate on
 run 19 with a real Windows source read. The real setup executable also installed 1.5.0 in the
-manual sandbox and the reader flow worked, but the shortcut preflight hung; the fix is in the tree
-and a fresh manual run on the rebuilt installer is pending.** Run 19
+manual sandbox and the reader flow worked, but the shortcut preflight hung; the fix is in commit
+`86e033a`, the artifacts were rebuilt from it, and a fresh manual run is pending.** Run 19
 copied `build/install` to a fresh guest and started it through the reader shortcut. All 86 checks
 held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app reported ready on 8402, Edge opened,
 the first account was created, `/sources` rendered, the Keiyoushi store and MangaTaro were
@@ -27,15 +27,17 @@ php packaging/installer/build-installer.php --unsigned  the local unsigned .exe
 php packaging/installer/build-portable.php   the zip, hashed
 ```
 
-The 1.5.0 build on 2026-10-26 ran in the checkout. The install payload passed its built-in checks
-at 12,962 files. The unsigned installer compiled at 275,084,054 bytes (262.3MB), and the portable
-archive compiled at 321,054,843 bytes (306.2MB) with 12,963 entries and a matching sidecar hash.
+The 1.5.0 build on 2026-10-26 ran in the checkout, and the artifacts were rebuilt on 2026-10-27
+from commit `86e033a` after the shortcut fix. The install payload passed its built-in checks at
+12,962 files. The unsigned installer compiled at 275,084,375 bytes (262.3MB), and the portable
+archive compiled at 321,055,119 bytes (306.2MB) with 12,963 entries and a matching sidecar hash.
 The staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The install tree
 passed the Windows Sandbox gate on run 19 with 86 checks, including a source page read through
 the app proxy. The gate copies `build/install` rather than running the setup executable. The
-separate manual sandbox ran `Papyrus-1.5.0-setup.exe`: it installed 1.5.0 per-user and the reader
-flow worked, but `Papyrus.cmd` hung at its `php -n` preflight. The check is now `php -n -v`, with a
-regression test; a fresh manual run on the rebuilt installer is pending.
+separate manual sandbox ran the first `Papyrus-1.5.0-setup.exe` (275,084,054 bytes): it installed
+1.5.0 per-user and the reader flow worked, but `Papyrus.cmd` hung at its `php -n` preflight. The
+check is now `php -n -v`, with a regression test; a fresh manual run on the rebuilt installer is
+pending.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved
@@ -733,7 +735,7 @@ memory:
 | 0.7 | Data location under `%LOCALAPPDATA%` | done | `DataLocation.php`, with a portable branch beside the program. Live install at `%LOCALAPPDATA%\Papyrus` |
 | 0.8 | Launcher: tray, start, stop, open browser | **partly done** | `Papyrus.cmd` starts, stops, reports, and **opens the browser at the address it actually bound** (`--open`). **No tray icon and no native binary.** The plan called for a 5 to 10MB Go or C# binary; what exists is a batch file. Deliberate, since the batch file is what the clean sandbox could prove, and a native binary would need its own gate |
 | 0.9 | One place for four processes' logs | done | `SummaryLog` writes the one-line-per-process summary; nine parsers normalise the nine native formats; `papyrus diagnostics` bundles them |
-| 0.10 | Clean-sandbox verification | **partly done, re-run on 1.5.0** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Run 19, 2026-10-26: PASS, 86 checks, 0 failures**, on a fresh guest with no Java, no PHP on PATH and no Java installed. It started the install through the reader shortcut with `--open`, created the first account, rendered `/sources`, added the Keiyoushi store, installed MangaTaro, fetched One Piece, read page 0 of chapter 1 through the proxy (200 `image/webp`, 175,432 bytes, SHA-256 `9996ffbb...`), and rendered `/sources` and `/series/1` after the catalogue was populated. The original bar also names importing a backup; run 19 does not, so the backup path in a clean guest remains unproven. The gate copies `build/install`; the separate manual sandbox ran the setup executable on 2026-10-26 and installed 1.5.0, but its shortcut preflight hung. The fix is in the tree; a fresh manual run on the rebuilt installer is pending |
+| 0.10 | Clean-sandbox verification | **partly done, re-run on 1.5.0** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Run 19, 2026-10-26: PASS, 86 checks, 0 failures**, on a fresh guest with no Java, no PHP on PATH and no Java installed. It started the install through the reader shortcut with `--open`, created the first account, rendered `/sources`, added the Keiyoushi store, installed MangaTaro, fetched One Piece, read page 0 of chapter 1 through the proxy (200 `image/webp`, 175,432 bytes, SHA-256 `9996ffbb...`), and rendered `/sources` and `/series/1` after the catalogue was populated. The original bar also names importing a backup; run 19 does not, so the backup path in a clean guest remains unproven. The gate copies `build/install`; the separate manual sandbox ran the setup executable on 2026-10-26 and installed 1.5.0, but its shortcut preflight hung. The fix is in `86e033a`; the artifacts were rebuilt from it, and a fresh manual run is pending |
 | 0.12 | Look at a real install in a sandbox | done | `build/sandbox/hold-open.ps1` and `papyrus-hold.wsb`. A gate stops everything it starts, so it cannot be used to look at the thing. This is the same setup and then it holds. **Verified live: 12,644 files copied, `/ready` 200 in 15s.** Nine tests in `SandboxRunnerTest`, both mutations killed |
 | 0.11 | Decide the Suwayomi runtime shape | done | The `jlink` question was answered by staging rather than building: a pinned JRE is staged beside the jar at build time and digest verified. 353.6 MB of the 623 MB install is Suwayomi and its JVM, none of it ours |
 | 0.12 | Uninstall must not delete the library | done | `papyrus.iss` contains **zero** `[UninstallDelete]` directives. The full install, run, uninstall cycle was run with the library hashed either side and it came back byte identical |

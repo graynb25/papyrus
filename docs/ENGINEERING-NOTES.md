@@ -7553,7 +7553,7 @@ cause was line 91: `php -n` with no script reads the script from stdin, and a co
 open, so the runtime check waited forever. The gate and `PapyrusCmdTest` had both redirected stdin
 from an empty file, which made PHP exit at once and hid the defect. The check is now `php -n -v`,
 and a regression test runs the real script with an open stdin and fails if it waits. The fix is in
-the tree; the rebuilt installer needs a fresh manual run.
+commit `86e033a`; the artifacts were rebuilt from it and the installer needs a fresh manual run.
 
 To separate the defect from the rest of the payload, the guest ran the launcher directly
 (`start-direct.cmd`, without `Papyrus.cmd`). It created `%LOCALAPPDATA%\Papyrus` with 11

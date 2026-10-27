@@ -732,7 +732,7 @@ first page the WSL run read. `/sources` and `/series/1` rendered after the catal
 populated. The gate copies `build/install` and starts it through the reader shortcut; it does
 not run the setup executable. A separate manual sandbox ran the real installer on 2026-10-26:
 it installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight hung. The
-fix is in the tree and a fresh manual run on the rebuilt installer is pending.
+fix is in commit `86e033a`, the artifacts were rebuilt from it, and a fresh manual run is pending.
 
 There is a fifth gate and it is not a command: open the page. Three bugs in this project
 passed the whole suite and showed up on the first click.

@@ -1,14 +1,13 @@
 # Hardening plan, 2026-10-25
 
-Status: approved and in progress. Resumed on 2026-10-26. Batches A, B, C, D, E, F and G are
-accepted in the working tree. The 1.5.0 install tree passed the Windows Sandbox gate on run 19,
-including a Windows source page read. The real setup executable also installed 1.5.0 in the manual
-sandbox and the reader flow worked, but the shortcut preflight hung; the fix is in the tree and a
-fresh manual run on the rebuilt installer is pending. Batch H is in progress; 1.5.1 is not
+Status: approved and in progress. Batches A, B, C, D, E, F and G are committed in `86e033a`. The
+1.5.0 install tree passed the Windows Sandbox gate on run 19, including a Windows source page
+read. The real setup executable also installed 1.5.0 in the manual sandbox and the reader flow
+worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were rebuilt from
+it, and a fresh manual run is pending. Batch H is in progress; 1.5.1 is not
 started. This plan turns the walk in `walk.md` and the security
 assessment in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD
-`6572ba0`; the only files written beyond the four untracked audit documents are the
-uncommitted batch changes described below.
+`6572ba0`; the batch changes and the audit documents themselves are committed in `86e033a`.
 
 The owner accepted the recommended defaults: keep the server-path import field for the owner
 only, include the copy-only M1 backup warning in 1.5.0, hold L1 for 1.5.1, and approve the
@@ -41,13 +40,14 @@ the behaviour changes or the deployment posture makes it irrelevant.
   the JRE path uses the plan's alternative of removing the four distrust-listed roots because
   Adoptium publishes no 25.0.5.0.2 build. The staged `cacerts` has 117 entries, no emSign or
   AAA subjects, and none of the four distrust fingerprints. `build/install/version.txt` is
-  1.5.0 at commit `6572ba0`. The unsigned installer is 275,084,054 bytes (SHA-256
-  `87e514aa4639bf8b19c43567fccc6c6cfee9f2568014c30bbec8ebf616e2ddd0`) and the portable
-  archive is 321,054,843 bytes (SHA-256
-  `6534d5398f8d1176f1ef59d503db0f6b04c87fb3bda664981dd12c150f986f4b`), both 1.5.0.0. The
-  manual installer sandbox proved the setup executable installs this payload and the reader flow
-  works, and found the shortcut preflight hang; the fix is in the tree and the rebuilt installer
-  needs a fresh manual run. See the environment record below.
+  1.5.0 at commit `86e033a`. The unsigned installer is 275,084,375 bytes (SHA-256
+  `95a043c86c41cc95d5fd4ef3008fc1863b1ae88bfc2029c2cdde8e0480d7a5c5`) and the portable
+  archive is 321,055,119 bytes (SHA-256
+  `6d938c4988c440d04c3ab068627abe428ca7c092c97ccd81fda322aab09f43e7`), both 1.5.0.0. The
+  manual installer sandbox ran the pre-fix build (`87e514aa4639bf8b19c43567fccc6c6cfee9f2568014c30bbec8ebf616e2ddd0`,
+  275,084,054 bytes): it proved the setup executable installs the payload and the reader flow
+  works, and found the shortcut preflight hang. The fix is in the rebuilt installer, which needs
+  a fresh manual run. See the environment record below.
 - [x] Batch C, backup and export authorization. Accepted 2026-10-25: 124 focused
   tests, 2533 full-suite tests reported by the batch, PHPStan 0 errors, Pint gate clean.
   Review corrected two comments only: the controller now says 403 rather than 404 for a
@@ -84,19 +84,20 @@ the behaviour changes or the deployment posture makes it irrelevant.
   per-user, and the reader flow passed: first account, Keiyoushi store, MangaTaro, One Piece
   search, Chapter 001 read and marked read. The shortcut did not start because `Papyrus.cmd` ran
   `php -n` with no script and the console stdin stayed open. The check is now `php -n -v`, with a
-  regression test that keeps stdin open; all six gates pass. The rebuilt installer needs a fresh
-  manual shortcut run. This is manual evidence, not a gate pass.
+  regression test that keeps stdin open; all six gates pass. The fix is committed in `86e033a`
+  and the artifacts were rebuilt from it; the rebuilt installer needs a fresh manual shortcut
+  run. This is manual evidence, not a gate pass.
 - [ ] Batch H, release close-out
 - [ ] 1.5.1, remaining hardening and reader copy
 
-Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. Nothing is committed or
-pushed; `HEAD` remains `6572ba0` on `main`, and every batch change above is in the working
-tree for review. The shelf re-import, the runtime build and the final gates are done. Run 19
+Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
+documents are committed as `86e033a` on `main`; nothing is pushed. The shelf re-import, the
+runtime build and the final gates are done. Run 19
 passed the Windows Sandbox gate on the install tree, including a source page read, so the
 clean-machine bar is met for that tree. The manual sandbox then ran the real setup executable: it
-installed 1.5.0 and the reader flow worked, but the shortcut preflight hung, and the fix is in the
-tree. Batch H must not present the gate as proof of the installer, and the rebuilt installer needs
-a fresh manual shortcut run. Batch H is next.
+installed 1.5.0 and the reader flow worked, but the shortcut preflight hung; the fix is in
+`86e033a` and the artifacts were rebuilt from it. Batch H must not present the gate as proof of
+the installer, and the rebuilt installer needs a fresh manual shortcut run. Batch H is next.
 
 ## Environment and clean-machine record, 2026-10-26
 
@@ -212,7 +213,9 @@ recorded for 1.5.1.
 
 Verdict: the installer payload and the reader flow are proven on the real setup executable; the
 shortcut is not. This is manual evidence, not a gate pass, and 1.5.0 must not ship until the
-rebuilt installer passes a fresh manual shortcut run. Full evidence is in
+rebuilt installer passes a fresh manual shortcut run. The rebuilt installer from `86e033a` is
+275,084,375 bytes with SHA-256
+`95a043c86c41cc95d5fd4ef3008fc1863b1ae88bfc2029c2cdde8e0480d7a5c5`. Full evidence is in
 `docs/ENGINEERING-NOTES.md` section 16.5; artifacts are in
 `build\manual-sandbox-results\session-20261026-210533\`.
 
@@ -676,7 +679,8 @@ Walk remaining:
   installer remains unsigned after this plan.
 - The installer payload is proven by the manual sandbox, not by B1. On 2026-10-26 the real setup
   executable installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight hung;
-  the fix is in the tree and the rebuilt installer needs a fresh manual shortcut run. B1's gate
+  the fix is committed in `86e033a` and the artifacts were rebuilt from it. The rebuilt installer
+  needs a fresh manual shortcut run. B1's gate
   still copies `build/install` and never runs the setup executable, so do not close the installer
   on the strength of a green install-tree run alone.
 - The owner-role migration can lock an existing install out of backups if it promotes nobody.
