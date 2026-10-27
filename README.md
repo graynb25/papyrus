@@ -774,6 +774,7 @@ something to monetise.
 | [`docs/SETUP-SUWAYOMI.md`](docs/SETUP-SUWAYOMI.md) | Installing and configuring Suwayomi, including why it runs as a JAR rather than a Windows Service |
 | **[docs/INSTALL.md](docs/INSTALL.md)** | **Installing on Windows, for a reader. Where the library goes, backups, and troubleshooting by symptom** |
 | **[docs/SOURCES.md](docs/SOURCES.md)** | **Finding and using sources. The one page you cannot skip, because Papyrus ships none** |
+| **[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)** | **The install-to-reading flow in pictures, taken from a real install run. Start here if you would rather see it than read about it** |
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | **How it is put together and why. Two databases, four processes, the launcher that is not Laravel** |
 | **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
