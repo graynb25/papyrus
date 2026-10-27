@@ -5,8 +5,8 @@ Status: approved and in progress. Batches A, B, C, D, E, F and G are committed i
 read. The real setup executable installed 1.5.0 in the manual sandbox on 2026-10-26 and the
 reader flow worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were
 rebuilt from it, and the fresh manual run on the rebuilt installer passed on 2026-10-27,
-including the shortcut double-click. Batch H is in progress; 1.5.1 is not
-started. This plan turns the walk in `walk.md` and the security
+including the shortcut double-click. Batch H is recorded and committed
+locally; 1.5.1 is not started. This plan turns the walk in `walk.md` and the security
 assessment in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD
 `6572ba0`; the batch changes and the audit documents themselves are committed in `86e033a`.
 
@@ -100,7 +100,7 @@ the behaviour changes or the deployment posture makes it irrelevant.
   store tabs in the browser's tab strip are blurred out, so the guide names no store.
   `tools/make-walkthrough.ps1` regenerates the images from the session folder, which git
   ignores, so the committed images are the record.
-- [ ] Batch H, release close-out
+- [x] Batch H, release close-out
 - [ ] 1.5.1, remaining hardening and reader copy
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
@@ -112,7 +112,8 @@ installed 1.5.0 and the reader flow worked, but the shortcut preflight hung; the
 `86e033a` and the artifacts were rebuilt from it. The fresh manual run on the rebuilt installer
 passed on 2026-10-27, so the installer payload and its shortcut are now proven. The gate still
 copies `build/install` and never runs the setup executable, so the two proofs stay separate.
-Batch H continues.
+Batch H's gates, write probes and re-walk are done and recorded with the batch below, dated
+2026-10-27, and the close-out is committed locally; nothing is pushed.
 
 ## Environment and clean-machine record, 2026-10-26
 
@@ -663,6 +664,102 @@ python tools\test-check-machine-detail.py
   `/settings/backups`, `/sources` and `/migrate/sources` at desktop and mobile width.
 - Commit locally only after the full body of work is reviewed. Do not push without approval.
 
+### Batch H record, 2026-10-27
+
+**Venue, owner-approved on 2026-10-27.** Windows Sandbox was not used. The venue is a scratch
+install on the host: `build/install` copied to a scratch directory beside the repository,
+12,962 files, with its own data directory, the app on loopback port 8010 and Suwayomi on
+loopback port 4591. The copy was verified before it was started: `version.txt` names 1.5.0 at
+commit `86e033a`, built 2026-10-27 03:56:30+00:00, and the copy's source held no database, no
+`.env` and no logs. The launcher preflight passed, `/up` answered 200, and both listeners were
+read from the socket, loopback only. `Papyrus.cmd` passes `--open` unconditionally, so the
+launch also opened a browser tab on this desktop at the scratch address; harmless, and
+recorded here so the number of tabs has an owner. Cookies were kept apart from the live
+install by browsing the scratch one at `localhost` while the live one sits at `127.0.0.1`.
+
+**Content the probes needed.** The first web account became the owner, Batch A's migration,
+and a second account registered as a reader for the reader-side probes. The Keiyoushi store
+was added through the page, its signing key prefix `9add655a78e96c4ec7a5` matched the one run
+19 trusted, and the catalogue mirrored 1,042 extensions; MangaTaro 1.6.0 installed healthy. A
+search for One Piece answered with 14 results deduplicated from 2 sources and a `search_runs`
+row; the series was added and `/series/1` listed 1,202 chapters from 4 scanlator groups. An
+owner export ran to completion, `live_export_runs` state complete, and wrote a 366 byte
+`.tachibk` carrying 0 series, which is correct for this library. The backups page showed the
+owner-only sentence, the M1 credentials warning, and the path inside the scratch data
+directory.
+
+**Reader refusals, each read back from the page.** Registration closed after the first
+account: `/login` shows no Sign up link. The reader's `/settings/backups` answers 403 "This
+action is unauthorized.", which covers a restore attempt in the same refusal: the
+whole-install page answers before any action exists to press. The reader's export route
+`/settings/backups/export/{run}` answers 403 at the route middleware, before the controller's
+own 404 layer, and the file is not delivered; that layer is defense in depth, not the primary
+control. The reader's `/settings/import` is upload only: no server path field, the copy says
+only the person who owns this server can import a file that is already on it, the H3 warning
+is present, and Backups is absent from the reader's settings navigation. The reader's
+`/sources` has no add store field or button and no Remove, and trust is per user.
+`/migrate/sources` renders for the reader with the empty library message.
+
+**Crafted archive, two stages.** A bare zip named `.tmb` was refused first, "No reader
+recognises that file. This server reads backups from: tachimanga, tachibk. Tachimanga writes a
+.tmb and Mihon or Suwayomi writes a .tachibk.", which is the positive control: the format gate
+answers before any staging. The real fixture is a valid Tachimanga backup whose
+`tachimanga.db`, inside `contents.zip`, unpacks to 314,896,384 bytes while the `.tmb` on disk
+stays 43,955 bytes. Building it taught the seam: the reader stages only `contents.zip` and
+`tachimanga.db`, so the payload that trips the per entry cap has to be one of those two; a
+third inner entry is never staged, and a fixture that hid the payload there would have been
+refused for the wrong reason, the database schema, and the probe would have proven nothing
+about the cap. And `meta.json`'s `version` is the integer 520, not a version string. The live
+refusal came mid staging with the exact sentence "That backup holds a file larger than 256 MB
+when unpacked, which is more than this server reads. Nothing has been changed.", the
+`import_runs` row holds state `refused` with that reason, and the copy's temp directory held
+no import leftovers afterwards, only the runtime's own process plumbing. Both refusal rows sit
+under the reader account, run 1 the unknown format and run 2 the cap.
+
+**Loopback store address.** The owner typed `http://127.0.0.1:4591`, the install's own server,
+into the add store field, and the page refused with the exact policy sentence "That store
+address points at this server or a private network. Use a public address for the store." The
+`extension_stores` table still holds exactly the one Keiyoushi row, so the refused attempt
+wrote nothing.
+
+**Re-walk.** All seven routes rendered at desktop width, 1440 pixels, and mobile width, 390
+pixels: library, search, series, import, backups, sources and migrate. Four accessibility
+observations, each present at both widths: the library grid's cover card link has no
+accessible name, while the resume card's link is labelled correctly; the series page's cover
+upload input and tags input have no accessible name, and the fourth scanlator group button is
+labelled only a zero width space; the migrate page's destination checkboxes are label wrapped
+but report no accessible name to the checker; the search result cover links' accessible name
+is the content badge, not the series title. What the checker read as good on the same walk:
+the chapter mark and note controls, the search add buttons, and the owner's import path field
+are all labelled. These four observations are now in the 1.5.1 walk list as W-M5, W-M6, W-M7
+and W-L5.
+
+**Where the extension install boundary sits.** The security page states the deliberate set:
+whole-install backup, restore, export and store add or remove require the install owner, and
+extension install is deliberately absent from that list because it is gated by per user trust
+instead. The live reader confirmed it: with no store trusted, `/sources` says nothing is
+installable and shows no Install control. A reader can uninstall an extension that is already
+installed, which is by design because the extension lives on the shared server. That is
+posture, not a defect, and it is now written here so the next sitting does not rediscover it
+as a suspected escalation.
+
+**Six gates, on `d1629dc` with a clean status, before these two documents were edited:**
+2,599 tests, 7,498 assertions, no failures, 520 seconds; PHPStan 0 errors; Pint clean; the
+dash checker 656 files clean; the machine detail gate 636 tracked files clean; the checker's
+own self tests 29 of 29 and 20 of 20. The dash and machine detail counts sit one under the
+earlier 657 and 637 because the machine detail gate deliberately scans untracked but
+unignored files and a stray file was deleted. After these two documents were edited the two
+gates that read documents were re-run: the dash checker scanned 656 files and found none, the
+machine detail gate scanned 636 tracked files and found none, and the checker's self tests
+read 29 of 29 and 20 of 20.
+
+**What was not done here, on purpose.** No chapter was read on the scratch install; reading
+through the app proxy is proven by run 19 and the manual installer run, not by this sitting.
+No import was ever applied; both import attempts were refusals, and the import happy path is
+the suite's to prove. The owner's restore was not exercised: it would re-prove an action that
+is allowed by design and would destroy the probe state mid sitting. H3 stays open as
+accepted. M1 ships as a warning only, and L1 waits for 1.5.1.
+
 ## Release 1.5.1: remaining hardening and reader copy
 
 Security remaining:
@@ -696,6 +793,14 @@ Walk remaining:
 - W-L3: product copy and a cancel action on the confirm-password page.
 - W-L4: import copy that says "above" when the picker is below.
 - W-P1: keep `/search` clean until a search or filter is chosen.
+- W-M5: the library grid's cover card link has no accessible name. The resume card's link
+  carries `aria-label="Open {title}"` and is the shape to copy.
+- W-M6: the series page's cover upload input and tags input have no accessible name, and the
+  fourth scanlator group button is labelled only a zero width space.
+- W-M7: the migrate page's destination checkboxes are label wrapped but report no accessible
+  name to the checker.
+- W-L5: the search result cover links' accessible name is the content badge, not the series
+  title.
 
 ## Accepted risks and deferred items
 
@@ -746,7 +851,7 @@ Walk remaining:
 | E | warning copy and documentation assertions | dash and machine-detail gates |
 | F | `composer audit`, focused suite | six gates |
 | G | search count and copy, bulk-download ids across the page boundary | re-walk search and series |
-| H | full six gates, write probes, re-walk | release artifacts and changelog |
+| H | full six gates, write probes, re-walk | artifacts rebuilt from `86e033a` and verified against the manifest; the changelog entry is in place; the probes and the re-walk are recorded in the batch |
 
 ## Order
 

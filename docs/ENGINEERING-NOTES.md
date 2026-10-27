@@ -7129,6 +7129,19 @@ exactly that moment and it costs five minutes.
     words. `BackupsPageTest` travels 34 seconds and reads `34 seconds elapsed` from
     the rendered live modal. A time test that only calls the helper would leave the
     rendered sentence unproved.
+
+335. **A packaged install's console needs three things named together, and the failure of
+    any one reads as a broken install rather than as a wrong invocation.**
+
+    Measured 2026-10-27 driving a 1.5.0 scratch install's artisan from a probe. The
+    invocation needs all three of `PAPYRUS_DATA` at the copy's data directory, `PAPYRUS_ENV`
+    at the `.env` inside that directory, and `-c` at that directory's own `php\php.ini`,
+    because the packaged runtime's own configuration carries no `pdo_sqlite` and the data
+    directory's ini does. Miss any one of the three and the command reports `could not find
+    driver` or answers against a different database, and both surfaces look like an
+    application fault. The scratch data directory carries its own `.env` and its own ini, so
+    the whole invocation is reproducible from the copy alone, which is what made the probe's
+    database reads trustworthy.
 ---
 
 ## 15. Phase 7 run notes: the backup that never stops anything, and the round trip
