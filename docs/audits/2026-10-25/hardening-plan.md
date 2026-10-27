@@ -87,6 +87,12 @@ the behaviour changes or the deployment posture makes it irrelevant.
   regression test that keeps stdin open; all six gates pass. The fix is committed in `86e033a`
   and the artifacts were rebuilt from it; the rebuilt installer needs a fresh manual shortcut
   run. This is manual evidence, not a gate pass.
+- [x] Reader walkthrough from the same session, 2026-10-27. `docs/WALKTHROUGH.md` and seven
+  images under `docs/walkthrough` walk a reader from the setup wizard to reading, taken from
+  this run's screenshots. Each image is cropped to the window it shows and the two third-party
+  store tabs in the browser's tab strip are blurred out, so the guide names no store.
+  `tools/make-walkthrough.ps1` regenerates the images from the session folder, which git
+  ignores, so the committed images are the record.
 - [ ] Batch H, release close-out
 - [ ] 1.5.1, remaining hardening and reader copy
 
