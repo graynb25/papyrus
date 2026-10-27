@@ -8,10 +8,12 @@ use App\Models\User;
 use App\Models\UserExtensionStore;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SourceCatalog;
+use App\Suwayomi\StoreHostResolver;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\FakeStoreHostResolver;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
@@ -33,6 +35,12 @@ class ExtensionManagerTest extends TestCase
         parent::setUp();
 
         $this->sent = [];
+
+        /*
+         * The store address tests here use names that must not depend on this machine's
+         * resolver. Empty means "no answer", which the policy leaves to the server.
+         */
+        $this->app->instance(StoreHostResolver::class, new FakeStoreHostResolver);
     }
 
     private function fakeSuwayomi(array $overrides = []): void

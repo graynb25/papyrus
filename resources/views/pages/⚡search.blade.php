@@ -632,6 +632,36 @@ new #[Title('Search')] class extends AdultContentPage
     }
 
     /**
+     * The runnable sources these filters draw from, before the cap.
+     *
+     * The denominator for the cost line. It comes from the fanout's own universe read,
+     * so disabled, dead and filtered-out sources are already excluded exactly as they
+     * are for the run itself.
+     */
+    #[Computed]
+    public function runnableSourceCount(): int
+    {
+        return app(SearchFanout::class)->runnableCount(Auth::user(), $this->fanoutOptions());
+    }
+
+    /**
+     * How many runnable sources the cap leaves out.
+     *
+     * Answered only when no pinned scope is in play. With pins active the skipped list
+     * also carries the reader's own narrowing, so calling all of it the cap's cut would
+     * be false; the pin block below names that case separately.
+     */
+    #[Computed]
+    public function sourcesSkippedByCap(): int
+    {
+        if ($this->sourcesNotPinned->isNotEmpty()) {
+            return 0;
+        }
+
+        return max(0, $this->runnableSourceCount - $this->eligibleSources);
+    }
+
+    /**
      * The runnable sources this reader's pins leave out of the run, named.
      *
      * The honest half of the scope. With pins active, "no results" must never read
@@ -828,8 +858,22 @@ new #[Title('Search')] class extends AdultContentPage
                 </div>
 
                 <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('Leave empty to search all installed sources.') }}
+                    {{ trans_choice(
+                        '{1} Leave empty to search every language. This search asks at most :cap of :total runnable source.|[2,*] Leave empty to search every language. This search asks at most :cap of :total runnable sources.',
+                        $this->runnableSourceCount,
+                        ['cap' => $this->limit, 'total' => $this->runnableSourceCount],
+                    ) }}
                 </p>
+
+                @if ($this->sourcesSkippedByCap > 0)
+                    <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                        {{ trans_choice(
+                            '{1} The cap skips :count runnable source.|[2,*] The cap skips :count runnable sources.',
+                            $this->sourcesSkippedByCap,
+                            ['count' => $this->sourcesSkippedByCap],
+                        ) }}
+                    </p>
+                @endif
 
                 {{--
                     Buttons rather than checkboxes, and that is not decoration. The
@@ -1002,7 +1046,11 @@ new #[Title('Search')] class extends AdultContentPage
         <div class="flex items-center gap-3">
             @if ($this->eligibleSources > 0)
                 <span class="text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ trans_choice('{1} Searching :count source|[2,*] Searching :count sources', $this->eligibleSources, ['count' => $this->eligibleSources]) }}
+                    {{ trans_choice(
+                        '{1} Searching :searched of :total runnable source, capped at :cap.|[2,*] Searching :searched of :total runnable sources, capped at :cap.',
+                        $this->runnableSourceCount,
+                        ['searched' => $this->eligibleSources, 'total' => $this->runnableSourceCount, 'cap' => $this->limit],
+                    ) }}
                 </span>
 
                 {{--

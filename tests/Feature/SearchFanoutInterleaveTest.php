@@ -129,6 +129,54 @@ class SearchFanoutInterleaveTest extends TestCase
         $this->assertSame(0, $this->targets(['limit' => 0])->count(), 'A zero limit means none, as SQL reads it.');
     }
 
+    /**
+     * The page's denominator is the runnable universe, not the capped slice.
+     *
+     * It has to be the same read `targets()` starts from, or the page can name a total
+     * that no run could ever draw from. The limit is deliberately included in the
+     * options and deliberately makes no difference to the count.
+     */
+    public function test_the_runnable_count_is_the_universe_before_the_cap(): void
+    {
+        $this->sources('mangadex', 30);
+        $this->sources('mangafire', 30);
+        $this->sources('asurascans', 30);
+
+        $fanout = app(SearchFanout::class);
+        $capped = ['limit' => 40];
+
+        $this->assertSame(90, $fanout->runnableCount($this->user, $capped));
+        $this->assertSame(40, $fanout->targets($this->user, $capped)->count());
+        $this->assertSame(
+            50,
+            $fanout->runnableCount($this->user, $capped) - $fanout->targets($this->user, $capped)->count(),
+            'The difference is the number of runnable sources the cap skips.',
+        );
+        $this->assertSame(90, $fanout->runnableCount($this->user, ['limit' => -1]), 'The denominator does not move with the cap.');
+    }
+
+    /**
+     * The filters are the same ones `targets()` applies.
+     *
+     * A count built in the page from a different query would drift the moment a language
+     * or content filter changed. This proves the public count and the run disagree about
+     * nothing when a language is selected.
+     */
+    public function test_the_runnable_count_applies_the_same_language_filter(): void
+    {
+        $this->sources('english', 3);
+
+        foreach ($this->sources('japanese', 2) as $source) {
+            $source->update(['lang' => 'ja']);
+        }
+
+        $fanout = app(SearchFanout::class);
+        $options = ['langs' => ['ja'], 'limit' => 40];
+
+        $this->assertSame(2, $fanout->runnableCount($this->user, $options));
+        $this->assertSame(2, $fanout->targets($this->user, $options)->count());
+    }
+
     public function test_the_slice_is_deterministic(): void
     {
         $this->sources('mangadex', 6);

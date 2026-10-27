@@ -16,6 +16,8 @@ use App\Support\Suwayomi\Timestamps;
 use App\Support\UploadLimit;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\Gateway;
+use App\Suwayomi\StoreHostResolver;
+use App\Suwayomi\SystemStoreHostResolver;
 use App\Suwayomi\Transport;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Registered;
@@ -23,6 +25,7 @@ use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use RuntimeException;
@@ -61,6 +64,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Transport::class);
         $this->app->singleton(AuthManager::class);
         $this->app->singleton(Gateway::class);
+        $this->app->singleton(StoreHostResolver::class, SystemStoreHostResolver::class);
         $this->app->singleton(Deployment::class);
         $this->app->singleton(TitleNormalizer::class);
 
@@ -125,6 +129,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->allowTemporaryUploadsToTheServerCeiling();
         $this->rememberTheLocalReader();
+        $this->defineInstallOwnerGate();
     }
 
     /**
@@ -187,6 +192,19 @@ class AppServiceProvider extends ServiceProvider
                 app(LocalReaderAccount::class)->remember($event->user->email);
             }
         });
+    }
+
+    /**
+     * Define the abilities that belong to the install rather than to one reader.
+     *
+     * One definition rather than a role comparison at each call site, because the whole
+     * point of the gate is that every screen asks the same question. `manage-install`
+     * names the install-wide actions; it does not make the account an administrator of
+     * anything outside this database.
+     */
+    private function defineInstallOwnerGate(): void
+    {
+        Gate::define('manage-install', fn (User $user): bool => $user->isInstallOwner());
     }
 
     /**

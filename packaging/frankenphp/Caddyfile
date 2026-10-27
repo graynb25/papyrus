@@ -18,7 +18,7 @@
 #
 # ## Verified
 #
-# Against frankenphp.exe 1.13.0 / PHP 8.5.11 on Windows: the app boots, `/login` returns a
+# Against frankenphp.exe 1.13.2 / PHP 8.5.12 on Windows: the app boots, `/login` returns a
 # rendered 60KB Livewire page, and a warm request is about 55ms.
 
 {

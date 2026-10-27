@@ -8,6 +8,7 @@ use Flux\Flux;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
@@ -315,9 +316,30 @@ new #[Title('Import a backup')] class extends Component
             return null;
         }
 
-        if (! is_file($given) || ! is_readable($given)) {
+        /*
+         * The path names a file on the process that reads it, so it is an install-wide
+         * capability rather than a reader one. This check is before the file test on
+         * purpose: whether a file exists is itself information about the server, and a
+         * reader outside the owner should learn neither.
+         */
+        if (Gate::denies('manage-install')) {
             Flux::toast(
-                text: __('There is no readable file at :path.', ['path' => $given]),
+                text: __('Only the person who owns this server can import a file that is already on it. Choose the backup file above instead.'),
+                heading: __('That path cannot be used'),
+                variant: 'danger',
+            );
+
+            return null;
+        }
+
+        if (! is_file($given) || ! is_readable($given)) {
+            /*
+             * The name and not the path. The reader already knows what they typed, and the
+             * refusal may be shown on a shared screen; the rest of the path says where this
+             * server keeps things, which is not the reader's business.
+             */
+            Flux::toast(
+                text: __('There is no readable file named :name on this server.', ['name' => basename(str_replace('\\', '/', $given))]),
                 heading: __('Nothing to import'),
                 variant: 'danger',
             );
@@ -832,7 +854,11 @@ new #[Title('Import a backup')] class extends Component
                     </p>
 
                     <p>
-                        {{ __('Then send that file here: pick it above, or if it is too big to upload, copy it onto the server and give its path below.') }}
+                        @can('manage-install')
+                            {{ __('Then send that file here: pick it above, or if it is too big to upload, copy it onto the server and give its path below.') }}
+                        @else
+                            {{ __('Then send that file here: pick it above.') }}
+                        @endcan
                     </p>
 
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
@@ -886,7 +912,11 @@ new #[Title('Import a backup')] class extends Component
 
                 <p class="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
                     @if ($this->uploadCeiling() !== null)
-                        {{ __('This server accepts uploads up to :size. A larger backup can be left on the server and given by path below.', ['size' => $this->humanBytes($this->uploadCeiling())]) }}
+                        @can('manage-install')
+                            {{ __('This server accepts uploads up to :size. A larger backup can be left on the server and given by path below.', ['size' => $this->humanBytes($this->uploadCeiling())]) }}
+                        @else
+                            {{ __('This server accepts uploads up to :size.', ['size' => $this->humanBytes($this->uploadCeiling())]) }}
+                        @endcan
                     @else
                         {{ __('This server does not limit upload size.') }}
                     @endif
@@ -894,11 +924,17 @@ new #[Title('Import a backup')] class extends Component
 
                 <flux:separator />
 
-                <flux:input
-                    label="{{ __('Or a file already on this server') }}"
-                    wire:model="path"
-                    placeholder="{{ __('e.g., /home/you/backups/library.tmb') }}"
-                />
+                @can('manage-install')
+                    <flux:input
+                        label="{{ __('Or a file already on this server') }}"
+                        wire:model="path"
+                        placeholder="{{ __('e.g., /home/you/backups/library.tmb') }}"
+                    />
+                @else
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('Only the person who owns this server can import a file that is already on it. Choose the backup file above instead.') }}
+                    </p>
+                @endcan
 
                 <flux:input
                     label="{{ __('Stop after this many series, 0 for all of them') }}"
@@ -912,6 +948,10 @@ new #[Title('Import a backup')] class extends Component
                     label="{{ __('Install the extensions this backup needs') }}"
                     wire:model="installExtensions"
                 />
+
+                <p class="-mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    {{ __('This box is on by default. An extension is code that runs inside the manga server with the access that process has, and the import installs the extensions the backup names without asking you to trust the store they came from first. If you did not make the backup, clear this box before importing it.') }}
+                </p>
 
                 <flux:checkbox
                     label="{{ __('Read the file first and report, without importing') }}"

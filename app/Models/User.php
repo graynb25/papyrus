@@ -21,6 +21,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $email
  * @property Carbon|null $email_verified_at
  * @property string $password
+ * @property string $role
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -36,6 +37,17 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
+     * The role that owns the install. Kept as `admin` because `users:create --admin` already
+     * writes it and the column predates this ability.
+     */
+    public const ROLE_INSTALL_OWNER = 'admin';
+
+    /**
+     * The role every other account carries.
+     */
+    public const ROLE_READER = 'user';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -46,6 +58,17 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Whether this account may manage the install itself.
+     *
+     * Reads the existing role column rather than a second owner flag, so there is one fact
+     * about who owns the install and no way for two flags to disagree.
+     */
+    public function isInstallOwner(): bool
+    {
+        return $this->role === self::ROLE_INSTALL_OWNER;
     }
 
     /**

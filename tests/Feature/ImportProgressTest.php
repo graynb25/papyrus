@@ -23,6 +23,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Number;
 use Tests\Support\BuildsTachimangaBackups;
 use Tests\TestCase;
 
@@ -61,7 +63,7 @@ class ImportProgressTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->create(['role' => User::ROLE_INSTALL_OWNER]);
         $this->actingAs($this->user);
 
         $this->fakeSuwayomi();
@@ -251,7 +253,167 @@ class ImportProgressTest extends TestCase
         $run = ImportRun::query()->latest('id')->firstOrFail();
 
         $this->assertSame(ImportRun::REFUSED, $run->state);
-        $this->assertStringContainsString('no/such/backup.tmb', (string) $run->refusal_reason);
+        $this->assertSame(
+            'There is no file named backup.tmb when the import started.',
+            (string) $run->refusal_reason,
+            'a server path must not reach the history or the page',
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Which paths an account may import from.
+     *
+     * A path names a file on the server, not in the reader's browser, so a reader who
+     * can name any path can ask the queue to read anything the PHP account can read.
+     * The owner may, because the large-backup route is theirs. A reader may only name
+     * a file this app itself stored under `imports`.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_reader_cannot_import_a_path_outside_the_app_imports_directory(): void
+    {
+        $reader = User::factory()->create();
+
+        $this->built = $this->backup();
+
+        $job = new RunBackupImport($reader->id, $this->built);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->forUser($reader->id)->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+        $this->assertSame(
+            'There is no file named '.basename($this->built).' that this account can import.',
+            (string) $run->refusal_reason,
+        );
+        $this->assertStringNotContainsString($this->built, (string) $run->refusal_reason);
+    }
+
+    public function test_the_account_rule_is_checked_before_the_file_is_checked(): void
+    {
+        $reader = User::factory()->create();
+
+        $job = new RunBackupImport($reader->id, 'D:/no/such/backup.tmb');
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->forUser($reader->id)->latest('id')->firstOrFail();
+
+        $this->assertSame(
+            'There is no file named backup.tmb that this account can import.',
+            (string) $run->refusal_reason,
+            'a reader learns nothing about which outside paths exist',
+        );
+    }
+
+    public function test_a_reader_can_import_a_file_the_app_stored_under_imports(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->makeDirectory('imports');
+
+        $reader = User::factory()->create();
+
+        $this->built = $this->buildTachimangaBackup(
+            Storage::disk('local')->path('imports/reader-upload.tmb'),
+        );
+
+        $job = new RunBackupImport($reader->id, $this->built, inspectOnly: true);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->forUser($reader->id)->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::COMPLETE, $run->state);
+        $this->assertSame((int) $reader->id, (int) $run->user_id);
+    }
+
+    /**
+     * A prefix is not containment.
+     *
+     * `imports-evil` starts with `imports`, so a string prefix check would hand a reader a
+     * directory beside the uploads one. The check canonicalises both sides and requires a
+     * separator, which is the difference between a directory and a sibling with a shared name.
+     */
+    public function test_a_reader_cannot_reach_a_sibling_of_the_imports_directory(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->makeDirectory('imports');
+        Storage::disk('local')->makeDirectory('imports-evil');
+
+        $reader = User::factory()->create();
+
+        $this->built = $this->buildTachimangaBackup(
+            Storage::disk('local')->path('imports/../imports-evil/reader-upload.tmb'),
+        );
+
+        $job = new RunBackupImport($reader->id, $this->built, inspectOnly: true);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->forUser($reader->id)->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+    }
+
+    public function test_a_missing_upload_still_reads_as_a_missing_file(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->makeDirectory('imports');
+
+        $reader = User::factory()->create();
+        $missing = Storage::disk('local')->path('imports/gone.tmb');
+
+        $job = new RunBackupImport($reader->id, $missing);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->forUser($reader->id)->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+        $this->assertSame(
+            'There is no file named gone.tmb when the import started.',
+            (string) $run->refusal_reason,
+        );
+    }
+
+    public function test_a_backup_over_the_unpacked_entry_cap_is_refused_in_reader_words(): void
+    {
+        config(['papyrus.import.max_entry_bytes' => 10]);
+
+        $job = new RunBackupImport($this->user->id, $this->backup(), inspectOnly: true);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+        $this->assertStringContainsString('larger than 10 B when unpacked', (string) $run->refusal_reason);
+        $this->assertStringContainsString('Nothing has been changed', (string) $run->refusal_reason);
+    }
+
+    public function test_a_backup_over_the_staged_total_cap_is_refused_in_reader_words(): void
+    {
+        $this->built = $this->backup();
+
+        $zip = new \ZipArchive;
+        $zip->open($this->built);
+        $stat = $zip->statName('contents.zip');
+        $zip->close();
+
+        $this->assertIsArray($stat);
+
+        $cap = (int) $stat['size'] + 1;
+
+        config([
+            'papyrus.import.max_entry_bytes' => 268_435_456,
+            'papyrus.import.max_staged_bytes' => $cap,
+        ]);
+
+        $job = new RunBackupImport($this->user->id, $this->built, inspectOnly: true);
+        $job->handle($this->app->make(BackupImporter::class));
+
+        $run = ImportRun::query()->latest('id')->firstOrFail();
+
+        $this->assertSame(ImportRun::REFUSED, $run->state);
+        $this->assertStringContainsString('temporary space when unpacked', (string) $run->refusal_reason);
+        $this->assertStringContainsString(Number::fileSize($cap, precision: 0), (string) $run->refusal_reason);
+        $this->assertStringContainsString('Nothing has been changed', (string) $run->refusal_reason);
     }
 
     public function test_a_deleted_account_does_not_fail_the_job(): void

@@ -9,6 +9,7 @@ use App\Models\SeriesState;
 use App\Models\Source;
 use App\Models\User;
 use App\Models\UserSource;
+use App\Search\SearchFanout;
 use App\Support\AdultContent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -394,6 +395,38 @@ class SearchPageTest extends TestCase
         $this->assertSame(1, $component->instance()->eligibleSources());
     }
 
+    /**
+     * The page must not claim to ask every installed source while the cap leaves some out.
+     *
+     * A reader with no pins is the case the old copy could not show: `sourcesNotPinned` is
+     * empty when nothing is pinned, so the cap cut was silent. The denominator comes from
+     * `SearchFanout::runnableCount()`, not from a second filter written in the page.
+     */
+    public function test_the_page_names_the_runnable_total_and_what_the_cap_skips(): void
+    {
+        for ($i = 0; $i < 60; $i++) {
+            $this->source('Source '.$i, $i);
+        }
+
+        $expected = app(SearchFanout::class)->targets($this->user, [
+            'langs' => null,
+            'content' => [Source::SAFE, Source::MIXED],
+            'limit' => 40,
+        ])->count();
+
+        $component = Livewire::actingAs($this->user)->test('pages::search')->assertOk();
+
+        $this->assertSame($expected, $component->instance()->eligibleSources());
+        $this->assertSame(60, $component->instance()->runnableSourceCount());
+        $this->assertSame(60 - $expected, $component->instance()->sourcesSkippedByCap());
+        $this->assertNotSame(0, $component->instance()->sourcesSkippedByCap());
+
+        $component
+            ->assertSee('Searching '.$expected.' of 60 runnable sources, capped at 40.')
+            ->assertSee('The cap skips '.(60 - $expected).' runnable sources.')
+            ->assertDontSee('Leave empty to search all installed sources.');
+    }
+
     public function test_cover_urls_are_proxied_not_hotlinked(): void
     {
         $result = SearchResult::createFor($this->user->id, [
@@ -683,7 +716,7 @@ class SearchPageTest extends TestCase
         $component = Livewire::actingAs($this->user)->test('pages::search');
 
         $this->assertSame(1, $component->instance()->eligibleSources());
-        $component->assertSee('Searching 1 source')
+        $component->assertSee('Searching 1 of 3 runnable sources, capped at 40.')
             ->assertDontSee('Searching 3');
     }
 
@@ -717,7 +750,8 @@ class SearchPageTest extends TestCase
 
         Livewire::actingAs($this->user)->test('pages::search')
             ->assertOk()
-            ->assertSee('Searching 2 sources')
+            ->assertSee('Searching 2 of 2 runnable sources, capped at 40.')
+            ->assertDontSee('The cap skips')
             ->assertDontSee('not pinned');
     }
 }

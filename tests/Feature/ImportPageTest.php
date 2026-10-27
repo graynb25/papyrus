@@ -48,7 +48,7 @@ class ImportPageTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->create(['role' => User::ROLE_INSTALL_OWNER]);
         $this->actingAs($this->user);
 
         $this->file = $this->temporaryFile('papyrus-import-');
@@ -213,9 +213,75 @@ class ImportPageTest extends TestCase
         $this->page()
             ->set('path', 'D:/no/such/backup.tmb')
             ->call('start')
-            ->assertHasNoErrors();
+            ->assertHasNoErrors()
+            ->assertDispatched('toast-show', function (string $name, array $params): bool {
+                return ($params['slots']['text'] ?? null) === 'There is no readable file named backup.tmb on this server.';
+            });
 
         Queue::assertNothingPushed();
+    }
+
+    /**
+     * The path field is an install-wide capability, not a reader one.
+     *
+     * A path is read by the process that runs the queue, so on a shared install it would let
+     * one reader name any file the server account can read. The owner still needs it for a
+     * backup too large to upload, which is why the field stays and the rule lives in PHP as
+     * well as in the markup: a hidden input is not a control.
+     */
+    public function test_a_reader_is_not_offered_the_server_path_field(): void
+    {
+        $reader = User::factory()->create();
+
+        $this->actingAs($reader);
+
+        $this->page()
+            ->assertOk()
+            ->assertSee('Only the person who owns this server can import a file that is already on it. Choose the backup file above instead.')
+            ->assertDontSee('wire:model="path"', escape: false);
+    }
+
+    public function test_the_owner_is_offered_the_server_path_field(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertSee('Or a file already on this server')
+            ->assertSee('wire:model="path"', escape: false);
+    }
+
+    public function test_a_reader_cannot_use_a_server_path_even_if_they_call_the_action(): void
+    {
+        Queue::fake();
+
+        $reader = User::factory()->create();
+
+        $this->actingAs($reader);
+
+        $this->page()
+            ->set('path', (string) $this->file)
+            ->call('start')
+            ->assertDispatched('toast-show', function (string $name, array $params): bool {
+                return ($params['slots']['heading'] ?? null) === 'That path cannot be used'
+                    && ($params['slots']['text'] ?? null) === 'Only the person who owns this server can import a file that is already on it. Choose the backup file above instead.';
+            });
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_a_reader_can_still_choose_an_uploaded_backup(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $reader = User::factory()->create();
+
+        $this->actingAs($reader);
+
+        $this->page()
+            ->set('backup', UploadedFile::fake()->create('Tachimanga_backup.tmb', 16, 'application/zip'))
+            ->call('start');
+
+        Queue::assertPushed(RunBackupImport::class, fn (RunBackupImport $job): bool => $job->userId === (int) $reader->id);
     }
 
     public function test_an_empty_path_is_not_treated_as_the_working_directory(): void
@@ -280,6 +346,22 @@ class ImportPageTest extends TestCase
         Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
             return $job->limit === 25 && $job->installExtensions === false;
         });
+    }
+
+    /**
+     * The install box is on by default, and the page says what that means.
+     *
+     * Import installs the extensions a backup names without the per-store trust step the
+     * Sources page asks for. That is accepted for this release rather than hidden, so the
+     * default and the consequence are on the page beside the box that controls it.
+     */
+    public function test_the_install_checkbox_carries_its_warning(): void
+    {
+        $this->page()
+            ->assertSee('This box is on by default.')
+            ->assertSee('An extension is code that runs inside the manga server with the access that process has')
+            ->assertSee('without asking you to trust the store they came from first')
+            ->assertSee('If you did not make the backup, clear this box before importing it.');
     }
 
     public function test_the_force_flag_reaches_the_job(): void

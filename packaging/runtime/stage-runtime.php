@@ -32,21 +32,19 @@
  *
  * Usage:
  *
- *   php packaging/runtime/stage-jre.php [--force] [--into=<dir>]
+ *   php packaging/runtime/stage-runtime.php [--force] [--into=<dir>]
  */
 
 declare(strict_types=1);
 
 namespace Papyrus\Runtime\Stage;
 
-// Pinned deliberately. A floating "latest 25" makes two builds of the same commit differ, and
-// an update to the patch would silently change what ships.
-const JRE_VERSION = '25.0.4.1+1';
-const JRE_ARCHIVE = 'OpenJDK25U-jre_x64_windows_hotspot_25.0.4.1_1.zip';
-const JRE_SHA256 = '4c95451cea98556def2c54f7782933f52a26d4a36bd85e1d59f0364464828b07';
+use Papyrus\Runtime\RuntimePins;
+use Papyrus\Runtime\TrustStore;
+use RuntimeException;
 
-const JRE_URL = 'https://github.com/adoptium/temurin25-binaries/releases/download/'
-    .'jdk-25.0.4.1%2B1/'.JRE_ARCHIVE;
+require_once __DIR__.DIRECTORY_SEPARATOR.'RuntimePins.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'TrustStore.php';
 
 // The CA bundle, pinned the same way and for the same reason.
 //
@@ -82,7 +80,7 @@ const DEFAULT_DESTINATION = 'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
 $options = parseArguments($argv);
 
 if ($options['help']) {
-    fwrite(STDOUT, "Usage: php stage-jre.php [--force] [--into=<dir>]\n");
+    fwrite(STDOUT, "Usage: php stage-runtime.php [--force] [--into=<dir>]\n");
 
     exit(0);
 }
@@ -91,14 +89,37 @@ $destination = $options['into'] ?? defaultDestination();
 
 report('destination', $destination);
 
+/*
+ * A staged java.exe is not evidence that the pinned JRE is staged.
+ *
+ * The first version of this guard exited whenever any java.exe existed unless --force was passed,
+ * so moving the JRE pin left the old runtime in place and every later build copied it without a
+ * word. The guard now reads the staged release file and replaces a version that is not the pin.
+ *
+ * The trust store is checked even on the already-staged path. A staging run killed between
+ * extraction and root removal leaves a matching version with some roots still trusted, and the
+ * next run has to finish that work rather than report the version and stop.
+ */
 if (is_dir($destination) && is_file($destination.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'java.exe')) {
-    if (! $options['force']) {
-        report('already staged', 'pass --force to replace it');
+    $stagedVersion = RuntimePins::javaVersionFromRelease(
+        $destination.DIRECTORY_SEPARATOR.'release'
+    );
+
+    if (! $options['force'] && $stagedVersion === RuntimePins::JRE_JAVA_VERSION) {
+        report('already staged', 'version '.$stagedVersion.', checking its trust store');
+
+        applyTrustStore($destination);
+        verifyStagedJre($destination);
 
         exit(0);
     }
 
-    report('replacing', 'the existing JRE at that path');
+    report(
+        'replacing',
+        $stagedVersion === null
+            ? 'the existing JRE has no readable release file'
+            : 'the existing JRE is version '.$stagedVersion.', not '.RuntimePins::JRE_JAVA_VERSION,
+    );
 
     if (! removeTree($destination)) {
         fwrite(STDERR, "  could not remove the existing JRE, refusing to stage over it\n");
@@ -128,12 +149,12 @@ if ($digest === false || $size === false) {
 report('downloaded', formatBytes($size));
 report('sha256', $digest);
 
-if (! hash_equals(JRE_SHA256, $digest)) {
+if (! hash_equals(RuntimePins::JRE_SHA256, $digest)) {
     // Deleted rather than kept. A mismatched archive left on disk is something the next run,
     // or the next person, can mistake for something already checked.
     @unlink($archive);
 
-    fwrite(STDERR, '  expected '.JRE_SHA256."\n");
+    fwrite(STDERR, '  expected '.RuntimePins::JRE_SHA256."\n");
     fwrite(STDERR, "  this does not match, so it has been deleted and nothing was staged\n");
 
     exit(1);
@@ -147,7 +168,9 @@ extract($archive, $destination);
 
 verifyStagedJre($destination);
 
-report('staged', 'version '.JRE_VERSION);
+applyTrustStore($destination);
+
+report('staged', 'version '.RuntimePins::JRE_JAVA_VERSION.' (Temurin '.RuntimePins::JRE_VERSION.')');
 
 stageCaBundle();
 
@@ -282,11 +305,74 @@ function verifyStagedJre(string $destination): void
 
     report('javac', 'absent, so it is a JRE');
 
+    $releaseVersion = RuntimePins::javaVersionFromRelease(
+        $destination.DIRECTORY_SEPARATOR.'release'
+    );
+
+    if ($releaseVersion !== RuntimePins::JRE_JAVA_VERSION) {
+        fwrite(
+            STDERR,
+            '  the staged release file reports JAVA_VERSION="'
+            .($releaseVersion ?? 'missing')
+            .'", and this build requires "'.RuntimePins::JRE_JAVA_VERSION."\"\n",
+        );
+
+        exit(1);
+    }
+
+    report('release', 'JAVA_VERSION="'.$releaseVersion.'"');
+
     $reported = trim((string) shell_exec(escapeshellarg($java).' -version 2>&1'));
+
+    if (preg_match('/version "([^"]+)"/', $reported, $matches) !== 1) {
+        fwrite(STDERR, "  java -version did not report a version:\n  ".str_replace("\n", "\n  ", $reported)."\n");
+
+        exit(1);
+    }
+
+    if ($matches[1] !== RuntimePins::JRE_JAVA_VERSION) {
+        fwrite(
+            STDERR,
+            '  java -version reports '.$matches[1].', and this build requires '
+            .RuntimePins::JRE_JAVA_VERSION."\n",
+        );
+
+        exit(1);
+    }
 
     foreach (array_filter(explode("\n", $reported)) as $line) {
         report('java -version', trim($line));
     }
+}
+
+/**
+ * Apply the four-root distrust the Adoptium 25.0.5+8 build predates.
+ *
+ * Adoptium publishes no 25.0.5.0.2 build, so the alternative from the hardening plan is to remove
+ * the roots from the staged store. The removal is idempotent and is re-run on the already-staged
+ * path, because a staging run killed between extraction and this check must not be mistaken for a
+ * completed one.
+ */
+function applyTrustStore(string $destination): void
+{
+    $keytool = $destination.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'keytool.exe';
+    $keystore = $destination.DIRECTORY_SEPARATOR.'lib'.DIRECTORY_SEPARATOR.'security'.DIRECTORY_SEPARATOR.'cacerts';
+
+    report('trust store', 'checking the four distrusted roots');
+
+    try {
+        $outcome = TrustStore::removeDistrusted($keytool, $keystore);
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, '  the staged trust store could not be checked: '.$e->getMessage()."\n");
+
+        exit(1);
+    }
+
+    foreach ($outcome as $root => $result) {
+        report('  '.$root, $result);
+    }
+
+    report('trust store', 'the four distrusted roots are absent');
 }
 
 /**
@@ -305,15 +391,15 @@ function downloadArchive(string $destination): string
         exit(1);
     }
 
-    $target = $parent.'.'.JRE_ARCHIVE.'.part';
+    $target = $parent.'.'.RuntimePins::JRE_ARCHIVE.'.part';
 
-    report('downloading', JRE_VERSION.' (about 56 MB)');
+    report('downloading', RuntimePins::JRE_VERSION.' (about 56 MB)');
 
-    $source = @fopen(JRE_URL, 'rb');
+    $source = @fopen(RuntimePins::jreUrl(), 'rb');
     $sink = @fopen($target, 'wb');
 
     if ($source === false || $sink === false) {
-        fwrite(STDERR, '  could not reach '.JRE_URL."\n");
+        fwrite(STDERR, '  could not reach '.RuntimePins::jreUrl()."\n");
 
         exit(1);
     }

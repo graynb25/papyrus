@@ -134,6 +134,22 @@ class SearchFanout
     }
 
     /**
+     * How many runnable sources this scope draws from, before pins and before the cap.
+     *
+     * The page needs the denominator its cap is cutting into, and it must come from the
+     * same read {@see targets()} uses. Counting the installed table in the page would
+     * include disabled and dead sources, which are not runnable, and applying the
+     * language or content filters a second time in Blade is how the two numbers start
+     * to disagree.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function runnableCount(User $user, array $options = []): int
+    {
+        return $this->universe($user, $options)->count();
+    }
+
+    /**
      * Decide which sources this run should hit.
      *
      * Every eligible source is *candidates*, including all 61 MangaDex language variants,

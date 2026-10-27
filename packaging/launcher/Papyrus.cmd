@@ -85,10 +85,13 @@ rem run the interpreter the app is written in, and "the lines above" is cmd.exe'
 rem layer Papyrus does not own. A reader who files that as a bug report sends us antivirus software
 rem we had no way to know about, which is the most expensive kind of report to receive.
 rem
-rem So the two cases are told apart. `-n` is the cheapest possible PHP: no ini, no extensions, which
-rem is what makes this a question about whether the file can execute at all rather than about whether
-rem Papyrus is configured. It costs about a fortieth of a second.
-"%PAPYRUS_PHP%" -n > nul 2>&1
+rem So the two cases are told apart. `-n -v` is the cheapest PHP that also exits without reading a
+rem script: no ini, no extensions, print the version and stop. The `-v` is not decoration. PHP with
+rem no script reads one from stdin, and a double-clicked console leaves stdin open, so `-n` alone
+rem waited forever on this check. That shipped once: the window sat blank before the launcher could
+rem print anything, and no data directory was created. The gate and the tests redirected stdin from
+rem an empty file, so only a reader's double-click showed it.
+"%PAPYRUS_PHP%" -n -v > nul 2>&1
 if errorlevel 1 (
     echo Papyrus cannot start: Windows refused to run the PHP runtime at
     echo   "%PAPYRUS_PHP%"

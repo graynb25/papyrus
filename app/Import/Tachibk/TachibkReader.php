@@ -86,8 +86,14 @@ final class TachibkReader implements BackupReader
             }
 
             return false;
-        } catch (MalformedProto) {
-            return false;
+        } catch (MalformedProto $e) {
+            /*
+             * A field over this server's configured ceiling is not a foreign file: the bytes
+             * reached the protobuf walk far enough to declare a length. Returning true here
+             * lets the read pass walk again and turn the same failure into the cap sentence,
+             * while every other malformed payload stays unrecognised.
+             */
+            return $e->fieldCapExceeded;
         } finally {
             $stream->close();
         }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Import\BackupReaders;
 use App\Import\ImportRefused;
 use App\Import\Tachibk\TachibkReader;
 use Tests\Support\BuildsTachibkBackups;
@@ -85,6 +86,73 @@ class TachibkReaderTest extends TestCase
         $this->assertFalse($this->reader()->recognises(__FILE__), 'a php file is not a backup');
         $this->assertFalse($this->reader()->recognises(sys_get_temp_dir().'/no-such-backup.tachibk'));
         $this->assertFalse($this->reader()->recognises(sys_get_temp_dir()));
+    }
+
+    /**
+     * A field over the configured ceiling is still this format, not a foreign file.
+     *
+     * The stream refuses the declared length before allocating it. Recognition has to pass
+     * that failure through to the read pass rather than reporting "no reader recognises",
+     * because the reader did ask to import and the cap is a refusal with words they can act
+     * on. A plain gzip or a CBZ is still refused as unrecognised below.
+     */
+    public function test_an_over_cap_field_is_recognised_and_refused_with_the_cap_sentence(): void
+    {
+        config(['papyrus.import.max_field_bytes' => 16]);
+
+        $this->declaredSeriesBytes = 64 * 1024 * 1024;
+        $this->built = $this->buildTachibkBackup();
+
+        $readers = new BackupReaders([$this->reader()]);
+
+        $this->assertSame(
+            'tachibk',
+            $readers->for($this->built)->name(),
+            'a field over the cap is this format, so the read pass has to run',
+        );
+
+        try {
+            $this->reader()->read($this->built);
+            $this->fail('the cap should refuse the file during the read pass');
+        } catch (ImportRefused $e) {
+            $this->assertStringContainsString(
+                'one field claims a length larger than the 16 B this server reads in a single field',
+                $e->getMessage(),
+            );
+            $this->assertStringContainsString('Nothing has been changed', $e->getMessage());
+        }
+    }
+
+    /**
+     * The cap marker must not turn every malformed gzip into a recognised backup.
+     *
+     * This is the boundary the marker exists to keep: a gzip whose payload is not protobuf
+     * still gets the resolver's "No reader recognises" refusal, not a claim followed by a
+     * parse error.
+     */
+    public function test_a_gzip_that_is_not_a_tachibk_is_still_refused_as_unrecognised(): void
+    {
+        $this->gzipButNotProtobuf = true;
+        $this->built = $this->buildTachibkBackup();
+
+        $readers = new BackupReaders([$this->reader()]);
+
+        try {
+            $readers->for($this->built);
+            $this->fail('a gzip that is not protobuf must not be claimed');
+        } catch (ImportRefused $e) {
+            $this->assertStringContainsString('No reader recognises that file', $e->getMessage());
+        }
+    }
+
+    public function test_a_valid_backup_is_still_recognised_and_read_through_the_resolver(): void
+    {
+        $this->built = $this->buildTachibkBackup();
+
+        $reader = (new BackupReaders([$this->reader()]))->for($this->built);
+
+        $this->assertSame('tachibk', $reader->name());
+        $this->assertSame(2, $reader->read($this->built)->series->count());
     }
 
     public function test_it_reads_the_library_with_its_read_state(): void

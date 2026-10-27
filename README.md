@@ -710,10 +710,9 @@ A fourth gate runs a packaged install inside Windows Sandbox, on a machine with 
 and an empty user profile. It is the only check here that runs where a reader runs, and it has
 found four defects that the suite, the clean-room probe and the gate itself all reported as green.
 
-```bash
+```powershell
 # from a checkout, after building an install into build/install
-mkdir build/sandbox-results
-& "$env:WINDIR\System32\WindowsSandbox.exe" build\sandbox\papyrus.wsb
+powershell -File build\sandbox\launch-gate.ps1
 ```
 
 Results land in `build/sandbox-results/sandbox-report.txt`. Windows Sandbox runs one guest at a
@@ -721,6 +720,19 @@ time, so close the window and check for `vmmemWindowsSandbox` before launching a
 trusting the clock; three ways of running it wrong fail with no output at all, and each is recorded
 in [`build/sandbox/papyrus.wsb`](build/sandbox/papyrus.wsb).
 [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) lists what it asserts and what it found.
+
+**Current state, 2026-10-26:** the gate passed on run 19. All 86 checks held, and the run wrote
+`build/sandbox-results/sandbox-report.txt` and a screenshot showing Edge on the Papyrus login
+page at `localhost:8402`. The guest had been dying with `0x80370106`; a host policy,
+`HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0, fixed it on this
+build. Run 19 also added the Keiyoushi store, installed the MangaTaro extension, fetched One
+Piece, and read page 0 of chapter 1 through the authenticated proxy: 200 `image/webp`, 175,432
+bytes, SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`, the same
+first page the WSL run read. `/sources` and `/series/1` rendered after the catalogue was
+populated. The gate copies `build/install` and starts it through the reader shortcut; it does
+not run the setup executable. A separate manual sandbox ran the real installer on 2026-10-26:
+it installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight hung. The
+fix is in the tree and a fresh manual run on the rebuilt installer is pending.
 
 There is a fifth gate and it is not a command: open the page. Three bugs in this project
 passed the whole suite and showed up on the first click.
@@ -766,7 +778,7 @@ something to monetise.
 | **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The archive builder works; publication and clean-machine source access remain unproven |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The archive builder works; publication and a portable clean-machine read remain unproven |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

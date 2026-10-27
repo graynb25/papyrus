@@ -11,6 +11,7 @@ use App\Support\Suwayomi\Timestamps;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Number;
 use Tests\Support\BuildsTachimangaBackups;
 use Tests\TestCase;
 use ZipArchive;
@@ -545,6 +546,70 @@ class TachimangaReaderTest extends TestCase
         }
 
         $this->assertSame($before, $this->stagedFiles(), 'a refused read must clean up after itself');
+    }
+
+    /**
+     * The archive is from another app, so its own size says nothing about what it expands to.
+     * A small `.tmb` can carry a database many times its size, and the staging files are what
+     * this server pays for. The cap is read as the entry is copied, so a header that lies
+     * about its length cannot get past it.
+     */
+    public function test_an_entry_over_the_cap_is_refused_and_its_partial_stage_removed(): void
+    {
+        $before = $this->stagedFiles();
+
+        config([
+            'papyrus.import.max_entry_bytes' => 10,
+            'papyrus.import.max_staged_bytes' => 402_653_184,
+        ]);
+
+        $this->built = $this->buildTachimangaBackup();
+
+        try {
+            $this->reader()->read($this->built);
+            $this->fail('an entry larger than the cap must be refused');
+        } catch (ImportRefused $e) {
+            $this->assertStringContainsString('larger than 10 B when unpacked', $e->getMessage());
+            $this->assertStringContainsString('Nothing has been changed', $e->getMessage());
+        }
+
+        $this->assertSame($before, $this->stagedFiles(), 'the half written entry must be removed');
+    }
+
+    /**
+     * Two entries that each fit can still be more than this server will unpack for one import.
+     * The total is counted across the entries rather than read from the archive's metadata.
+     */
+    public function test_a_backup_over_the_staged_total_cap_is_refused(): void
+    {
+        $before = $this->stagedFiles();
+
+        $this->built = $this->buildTachimangaBackup();
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($this->built));
+        $stat = $zip->statName('contents.zip');
+        $zip->close();
+
+        $this->assertIsArray($stat);
+
+        $cap = (int) $stat['size'] + 1;
+
+        config([
+            'papyrus.import.max_entry_bytes' => 268_435_456,
+            'papyrus.import.max_staged_bytes' => $cap,
+        ]);
+
+        try {
+            $this->reader()->read($this->built);
+            $this->fail('a backup larger than the staged total must be refused');
+        } catch (ImportRefused $e) {
+            $this->assertStringContainsString('temporary space when unpacked', $e->getMessage());
+            $this->assertStringContainsString(Number::fileSize($cap, precision: 0), $e->getMessage());
+            $this->assertStringContainsString('Nothing has been changed', $e->getMessage());
+        }
+
+        $this->assertSame($before, $this->stagedFiles(), 'the partial second stage must be removed');
     }
 
     public function test_reading_a_backup_writes_nothing_to_this_application(): void

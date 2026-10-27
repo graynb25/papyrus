@@ -48,13 +48,21 @@ class BackupsPageTest extends TestCase
     use MintsTokens;
     use RefreshDatabase;
 
+    private User $owner;
+
     private string $folder = '';
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->actingAs(User::factory()->create());
+        $this->owner = User::factory()->create(['role' => User::ROLE_INSTALL_OWNER]);
+        $this->owner->refresh();
+
+        $this->assertSame(User::ROLE_INSTALL_OWNER, $this->owner->role);
+        $this->assertTrue($this->owner->isInstallOwner());
+
+        $this->actingAs($this->owner);
 
         $this->folder = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-backupspage-'.bin2hex(random_bytes(6));
 
@@ -88,6 +96,83 @@ class BackupsPageTest extends TestCase
         auth()->logout();
 
         $this->get('/settings/backups')->assertRedirect();
+    }
+
+    public function test_a_signed_in_reader_is_forbidden_from_the_page(): void
+    {
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertSame(User::ROLE_READER, $reader->role);
+        $this->assertFalse($reader->isInstallOwner());
+
+        $this->actingAs($reader);
+
+        $this->get('/settings/backups')->assertForbidden();
+    }
+
+    public function test_a_signed_in_reader_cannot_boot_the_component(): void
+    {
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertFalse($reader->isInstallOwner());
+        $this->actingAs($reader);
+
+        Livewire::test('pages::settings.backups')->assertForbidden();
+    }
+
+    public function test_a_reader_cannot_call_the_backup_actions(): void
+    {
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertFalse($reader->isInstallOwner());
+
+        foreach (['start' => null, 'restore' => '20261014-203857', 'startExport' => null] as $method => $token) {
+            $this->actingAs($this->owner);
+
+            Bus::fake([RunLiveBackup::class, RunLiveRestore::class, RunLiveExport::class]);
+
+            $page = Livewire::test('pages::settings.backups');
+
+            if ($token !== null) {
+                $page->set('restoreToken', $token);
+            }
+
+            $this->actingAs($reader);
+
+            $page->call($method)->assertForbidden();
+
+            Bus::assertNotDispatched(RunLiveBackup::class);
+            Bus::assertNotDispatched(RunLiveRestore::class);
+            Bus::assertNotDispatched(RunLiveExport::class);
+        }
+    }
+
+    public function test_a_reader_does_not_see_the_backups_link_in_settings(): void
+    {
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertFalse($reader->isInstallOwner());
+
+        $this->actingAs($reader)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertDontSee(route('backups.edit'));
+
+        $this->actingAs($this->owner)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertSee(route('backups.edit'));
+    }
+
+    public function test_the_page_says_only_the_install_owner_can_take_these_actions(): void
+    {
+        $this->get('/settings/backups')
+            ->assertOk()
+            ->assertSee('Only the install owner can take them');
     }
 
     /**
@@ -303,6 +388,25 @@ class BackupsPageTest extends TestCase
         $this->get('/settings/backups')
             ->assertSee($this->folder)
             ->assertSee('papyrus restore');
+    }
+
+    /**
+     * The copy is not library-only, and the page says so before inviting the reader to copy it.
+     *
+     * Its reader half is a copy of the whole application database, so it carries live session
+     * rows, the Suwayomi token cache, the plaintext AniList token and password hashes. The
+     * warning is copy only in 1.5.0; the table exclusion is later work.
+     */
+    public function test_it_warns_that_a_backup_carries_live_secrets(): void
+    {
+        $this->writePair();
+
+        $this->get('/settings/backups')
+            ->assertSee('A backup pair contains the whole application database')
+            ->assertSee('live session rows')
+            ->assertSee('the tokens the manga server has cached')
+            ->assertSee('an AniList token and password hashes')
+            ->assertSee('Treat this folder as a secret.');
     }
 
     /**

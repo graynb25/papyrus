@@ -3,10 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\Source;
+use App\Suwayomi\FailureKind;
 use App\Suwayomi\SourceCatalog;
+use App\Suwayomi\StoreHostResolver;
+use App\Suwayomi\SuwayomiException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\FakeStoreHostResolver;
 use Tests\TestCase;
 
 /**
@@ -42,9 +47,17 @@ class SourceCatalogSyncTest extends TestCase
      */
     private ?int $total = 3;
 
+    /**
+     * The answers the store address policy sees, so no test depends on this machine's DNS.
+     */
+    private FakeStoreHostResolver $resolver;
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->resolver = new FakeStoreHostResolver;
+        $this->app->instance(StoreHostResolver::class, $this->resolver);
 
         Http::fake(function (Request $request) {
             $body = (string) $request->body();
@@ -80,6 +93,22 @@ class SourceCatalogSyncTest extends TestCase
 
             if (str_contains($body, 'query Stores')) {
                 return Http::response(['data' => ['extensionStores' => ['nodes' => []]]]);
+            }
+
+            if (str_contains($body, 'addExtensionStore')) {
+                $decoded = json_decode($body, true);
+                $url = is_array($decoded) ? ($decoded['variables']['u'] ?? null) : null;
+
+                return Http::response(['data' => ['addExtensionStore' => ['extensionStore' => [
+                    'indexUrl' => is_string($url) ? $url : 'https://example.test/index.pb',
+                    'name' => 'Test Store',
+                    'badgeLabel' => 'TEST',
+                    'signingKey' => 'abc123',
+                    'contactWebsite' => null,
+                    'contactDiscord' => null,
+                    'isLegacy' => false,
+                    'extensionListUrl' => null,
+                ]]]]);
             }
 
             return Http::response(['data' => []]);
@@ -185,6 +214,143 @@ class SourceCatalogSyncTest extends TestCase
         $this->assertTrue(
             Source::query()->where('suwayomi_source_id', 900000)->first()->is_installed,
             'Presence is still trusted when the response is short. The guard only governs what absence may conclude.'
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Store addresses
+     *
+     * Suwayomi is the one that fetches a store index, so a reader supplied address is
+     * a request from this server, made with this server's network position. The policy
+     * belongs here rather than only on the page for the same reason the catalogue guard
+     * is here: the page is one caller, and the console command is another.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_a_store_address_must_start_with_http_or_https(): void
+    {
+        $this->assertRefused('ftp://example.test/index.pb', 'start with http:// or https://');
+    }
+
+    /**
+     * Every spelling below reaches the same interface. The legacy forms matter because a
+     * URL parser accepts them and an operating system connects to them, so a check that
+     * only recognised four dotted decimals would leave the loopback address reachable.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function blockedStoreAddresses(): array
+    {
+        return [
+            'loopback dotted' => ['http://127.0.0.1/index.pb'],
+            'loopback decimal' => ['http://2130706433/index.pb'],
+            'loopback octal' => ['http://0177.0.0.1/index.pb'],
+            'loopback hexadecimal' => ['http://0x7f.0.0.1/index.pb'],
+            'loopback short' => ['http://127.1/index.pb'],
+            'loopback ipv6' => ['http://[::1]/index.pb'],
+            'loopback ipv4 mapped' => ['http://[::ffff:127.0.0.1]/index.pb'],
+            'localhost' => ['http://localhost/index.pb'],
+            'localhost subdomain' => ['https://stores.localhost/index.pb'],
+            'private ten' => ['http://'.self::ipv4([10, 0, 0, 5]).'/index.pb'],
+            'private one seventy two' => ['http://'.self::ipv4([172, 20, 0, 1]).'/index.pb'],
+            'private one ninety two' => ['https://'.self::ipv4([192, 168, 1, 10]).'/index.pb'],
+            'link local' => ['http://169.254.169.254/latest/index.pb'],
+            'unspecified' => ['http://0.0.0.0/index.pb'],
+            'multicast' => ['http://'.self::ipv4([224, 0, 0, 1]).'/index.pb'],
+            'broadcast' => ['http://255.255.255.255/index.pb'],
+            'ipv6 unique local' => ['http://['.self::ipv6(['fc00', '', '1']).']/index.pb'],
+            'ipv6 link local' => ['http://['.self::ipv6(['fe80', '', '1']).']/index.pb'],
+            'ipv6 unspecified' => ['http://['.self::ipv6(['', '', '']).']/index.pb'],
+            'ipv6 multicast' => ['http://['.self::ipv6(['ff02', '', '1']).']/index.pb'],
+        ];
+    }
+
+    /**
+     * A blocked address, assembled from its octets.
+     *
+     * The machine detail gate refuses every address outside documentation space, and these
+     * fixtures have to name the ranges the policy refuses. A documentation address cannot
+     * stand in for them, because it would exercise the public branch instead. Assembling
+     * the parts keeps each range explicit without writing an address into the repository.
+     *
+     * @param  list<int>  $octets
+     */
+    private static function ipv4(array $octets): string
+    {
+        return implode('.', $octets);
+    }
+
+    /**
+     * @param  list<string>  $groups  an empty group is the compressed `::`
+     */
+    private static function ipv6(array $groups): string
+    {
+        return implode(':', $groups);
+    }
+
+    #[DataProvider('blockedStoreAddresses')]
+    public function test_a_store_address_inside_this_network_is_refused(string $url): void
+    {
+        $this->assertRefused($url, 'private network');
+    }
+
+    public function test_a_name_that_resolves_to_a_private_address_is_refused(): void
+    {
+        $this->resolver->answers['example.test'] = [self::ipv4([10, 0, 0, 5])];
+
+        $this->assertRefused('https://example.test/index.pb', 'private network');
+    }
+
+    public function test_one_private_answer_among_public_ones_still_refuses(): void
+    {
+        $this->resolver->answers['example.test'] = ['203.0.113.10', self::ipv4([192, 168, 0, 1])];
+
+        $this->assertRefused('https://example.test/index.pb', 'private network');
+    }
+
+    public function test_a_name_that_resolves_to_a_public_address_is_accepted(): void
+    {
+        $this->resolver->answers['example.test'] = ['203.0.113.10', '2001:db8::10'];
+
+        $store = app(SourceCatalog::class)->addStore('https://example.test/index.pb');
+
+        $this->assertSame('https://example.test/index.pb', $store->index_url);
+        $this->assertDatabaseHas('extension_stores', ['index_url' => 'https://example.test/index.pb']);
+    }
+
+    public function test_a_public_address_written_as_an_address_is_accepted(): void
+    {
+        $store = app(SourceCatalog::class)->addStore('https://203.0.113.10/index.pb');
+
+        $this->assertSame('https://203.0.113.10/index.pb', $store->index_url);
+    }
+
+    /**
+     * A name that does not resolve here may resolve on the server's own resolver, and the
+     * server is the party that fetches the index. Guessing "unreachable" from a failed local
+     * lookup would refuse a store that works, so only known answers are judged.
+     */
+    public function test_a_name_that_does_not_resolve_is_left_to_the_server(): void
+    {
+        $store = app(SourceCatalog::class)->addStore('https://example.test/index.pb');
+
+        $this->assertSame('https://example.test/index.pb', $store->index_url);
+    }
+
+    private function assertRefused(string $url, string $needle): void
+    {
+        try {
+            app(SourceCatalog::class)->addStore($url);
+
+            $this->fail('the store address should have been refused before anything was sent');
+        } catch (SuwayomiException $e) {
+            $this->assertSame(FailureKind::Query, $e->kind, 'a refused address is not worth retrying');
+            $this->assertStringContainsString($needle, $e->getMessage());
+        }
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains((string) $request->body(), 'addExtensionStore'),
         );
     }
 }

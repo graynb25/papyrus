@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\User;
 use Illuminate\Contracts\Cache\LockProvider;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Whether the sign-up form is open right now, which is not the same question as which mode this is.
@@ -62,6 +63,12 @@ final class Registration
     public const LOCK_SECONDS = 15;
 
     /**
+     * The lock that serialises the single owner decision, kept apart from the registration
+     * claim because the two protect different things and the claim is taken in only one mode.
+     */
+    public const OWNER_LOCK = 'papyrus:install-owner-claim';
+
+    /**
      * @var (callable(): int)|null
      */
     private $userCount;
@@ -110,6 +117,75 @@ final class Registration
         return (bool) $this->cache
             ->lock(self::LOCK, self::LOCK_SECONDS)
             ->get(fn (): bool => $this->count() === 0);
+    }
+
+    /**
+     * Create an account and settle who owns the install in one serialized step.
+     *
+     * ## Why the lock is taken around the write rather than at a call site
+     *
+     * `claim()` above is the single-reader guard: in `single` it refuses the second sign-up,
+     * and in `shared` or `public` it deliberately serializes nothing. The owner question still
+     * has to be answered once in every mode. Two first sign-ups that both read "no owner" and
+     * both promote themselves would leave the install with two owners, and one that read "no
+     * owner" and then lost the write would leave it with none.
+     *
+     * ## Why the lock is held across the commit
+     *
+     * Because the promotion and the account are one transaction. Releasing the lock before that
+     * transaction commits lets a second sign-up read the pre-promotion state through a cache
+     * store that is not the database, promote itself, and produce the two-owner install this
+     * lock exists to prevent. The callback returns only after the transaction has committed.
+     *
+     * ## Why the earliest account rather than the one that just arrived
+     *
+     * That is the rule the data migration applies to an existing install. Using the same rule
+     * here means an install where an account already existed and an install whose first account
+     * arrives by sign-up cannot disagree about who the first account is.
+     *
+     * ## Why an explicit owner is a flag rather than a role
+     *
+     * `users:create --admin` must still be able to add an owner when one already exists. The
+     * command passes a boolean; no request field reaches this parameter, and `role` stays out
+     * of the model's fillable list. Every account that does not ask explicitly still follows
+     * the shared earliest-account rule.
+     *
+     * @param  callable(): User  $create
+     * @param  bool  $explicitOwner  Write the owner role to this account even when another owner
+     *                               exists. Only the console `--admin` flag may pass true; no
+     *                               request input reaches it.
+     */
+    public function createAccount(callable $create, bool $explicitOwner = false): User
+    {
+        /** @var User $user */
+        $user = $this->cache
+            ->lock(self::OWNER_LOCK, self::LOCK_SECONDS)
+            ->block(self::LOCK_SECONDS, function () use ($create, $explicitOwner): User {
+                return DB::transaction(function () use ($create, $explicitOwner): User {
+                    $user = $create();
+
+                    if ($explicitOwner) {
+                        $user->forceFill(['role' => User::ROLE_INSTALL_OWNER])->save();
+                    } elseif (! User::query()->where('role', User::ROLE_INSTALL_OWNER)->exists()) {
+                        $earliest = User::query()->orderBy('id')->first();
+
+                        if ($earliest !== null) {
+                            $earliest->forceFill(['role' => User::ROLE_INSTALL_OWNER])->save();
+                        }
+                    }
+
+                    /*
+                     * The promotion queries its own model, so the account this method returns
+                     * would otherwise carry no role at all. Refresh it here, inside the same
+                     * transaction, so the caller sees the state the commit is about to write.
+                     */
+                    $user->refresh();
+
+                    return $user;
+                });
+            });
+
+        return $user;
     }
 
     private function count(): int

@@ -14,6 +14,7 @@ use App\Support\ReadingState;
 use App\Support\Suwayomi\Timestamps;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Number;
 use PDO;
 use PDOException;
 use PDOStatement;
@@ -154,11 +155,12 @@ final class TachimangaReader implements BackupReader
         }
 
         $staged = [];
+        $stagedBytes = 0;
 
         try {
             $version = $this->version($zip);
 
-            $contents = $this->stage($zip, TachimangaSchema::CONTENTS_ENTRY, $staged);
+            $contents = $this->stage($zip, TachimangaSchema::CONTENTS_ENTRY, $staged, $stagedBytes);
             $zip->close();
 
             $inner = new ZipArchive;
@@ -175,7 +177,7 @@ final class TachimangaReader implements BackupReader
                     );
                 }
 
-                $database = $this->stage($inner, TachimangaSchema::DATABASE_ENTRY, $staged);
+                $database = $this->stage($inner, TachimangaSchema::DATABASE_ENTRY, $staged, $stagedBytes);
             } finally {
                 $inner->close();
             }
@@ -233,17 +235,27 @@ final class TachimangaReader implements BackupReader
     /**
      * Copy one entry to a temp file and remember it for cleanup.
      *
+     * The bytes are counted as they are copied, not read from the zip's declared size.
+     * An archive can lie about a size or declare nothing usable, and the number that
+     * matters is the disk this server actually fills. The temp file is registered before
+     * the first byte is written, so the caller's `finally` removes a partial file when a
+     * cap stops the copy.
+     *
      * @param  list<string>  $staged  Collected by reference so the caller's `finally` removes them.
+     * @param  int  $stagedBytes  Bytes already staged by earlier entries, updated on success.
      *
      * @throws ImportRefused
      */
-    private function stage(ZipArchive $zip, string $entry, array &$staged): string
+    private function stage(ZipArchive $zip, string $entry, array &$staged, int &$stagedBytes): string
     {
         $stream = $zip->getStream($entry);
 
         if ($stream === false) {
             throw new ImportRefused("That backup is missing {$entry}, so it cannot be read.");
         }
+
+        $entryLimit = (int) config('papyrus.import.max_entry_bytes', 268_435_456);
+        $totalLimit = (int) config('papyrus.import.max_staged_bytes', 402_653_184);
 
         $target = tempnam($this->temporaryDirectory ?? sys_get_temp_dir(), 'papyrus-import-');
 
@@ -265,12 +277,46 @@ final class TachimangaReader implements BackupReader
             throw new ImportRefused('There was a problem unpacking that backup. Try again.');
         }
 
+        $written = 0;
+
         try {
-            stream_copy_to_stream($stream, $out);
+            while (! feof($stream)) {
+                $chunk = fread($stream, 1_048_576);
+
+                if ($chunk === false) {
+                    throw new ImportRefused('There was a problem unpacking that backup. Try again.');
+                }
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $written += strlen($chunk);
+
+                if ($entryLimit > 0 && $written > $entryLimit) {
+                    throw new ImportRefused(sprintf(
+                        'That backup holds a file larger than %s when unpacked, which is more than this server reads. Nothing has been changed.',
+                        Number::fileSize($entryLimit, precision: 0),
+                    ));
+                }
+
+                if ($totalLimit > 0 && $stagedBytes + $written > $totalLimit) {
+                    throw new ImportRefused(sprintf(
+                        'That backup needs more than %s of temporary space when unpacked, which is more than this server allows for one import. Nothing has been changed.',
+                        Number::fileSize($totalLimit, precision: 0),
+                    ));
+                }
+
+                if (fwrite($out, $chunk) !== strlen($chunk)) {
+                    throw new ImportRefused('There was a problem unpacking that backup. Try again.');
+                }
+            }
         } finally {
             fclose($stream);
             fclose($out);
         }
+
+        $stagedBytes += $written;
 
         return $target;
     }

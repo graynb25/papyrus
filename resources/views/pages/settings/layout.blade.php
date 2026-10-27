@@ -6,10 +6,11 @@
             <flux:navlist.item :href="route('security.edit')" wire:navigate>{{ __('Security') }}</flux:navlist.item>
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
             <flux:navlist.item :href="route('import.edit')" wire:navigate>{{ __('Import') }}</flux:navlist.item>
-            {{-- Last, and read only. Everything above changes something about the reader's account
-                 or their library; this one only reports what is installed, which is why it sits at
-                 the bottom rather than among the things you set up. --}}
-            <flux:navlist.item :href="route('backups.edit')" wire:navigate>{{ __('Backups') }}</flux:navlist.item>
+            {{-- Set apart from the account pages, and only for the install owner: this page
+                 can replace the whole library, not just change one account. --}}
+            @can('manage-install')
+                <flux:navlist.item :href="route('backups.edit')" wire:navigate>{{ __('Backups') }}</flux:navlist.item>
+            @endcan
     <flux:navlist.item :href="route('about.edit')" wire:navigate>{{ __('About') }}</flux:navlist.item>
               {{-- Stays inside the app, because answering a question should not throw the reader
                    out of it. The public FAQ page is still there and is still public, for a reader

@@ -11,12 +11,14 @@ use App\Models\UserSource;
 use App\Support\AdultContent;
 use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
+use App\Suwayomi\StoreHostResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Tests\Support\FakeStoreHostResolver;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
@@ -25,6 +27,11 @@ class SourcesPageTest extends TestCase
     use MintsTokens, RefreshDatabase;
 
     private User $user;
+
+    /**
+     * The answers the store address policy sees, so no test depends on this machine's DNS.
+     */
+    private FakeStoreHostResolver $resolver;
 
     /**
      * The nodes the fake will serve.
@@ -133,9 +140,12 @@ class SourcesPageTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->create(['role' => User::ROLE_INSTALL_OWNER]);
 
         $this->actingAs($this->user);
+
+        $this->resolver = new FakeStoreHostResolver;
+        $this->app->instance(StoreHostResolver::class, $this->resolver);
 
         $this->fakeSuwayomi();
     }
@@ -942,6 +952,78 @@ class SourcesPageTest extends TestCase
             ->set('storeUrl', 'not a url')
             ->call('addStore')
             ->assertHasErrors(['storeUrl' => 'url']);
+    }
+
+    /*
+     * Adding and removing a store change what every reader on this server sees, so both
+     * belong to the owner. A hidden control is not the rule, because a Livewire method is
+     * callable from the browser console, which is why each half is asserted separately:
+     * the reader does not see the control, and the reader cannot run the action.
+     */
+
+    public function test_the_owner_is_offered_the_store_form_and_the_remove_control(): void
+    {
+        $this->store();
+
+        $html = $this->page()->html();
+
+        $this->assertStringContainsString('wire:submit="addStore"', $html);
+        $this->assertStringContainsString('removeStore(', $html);
+    }
+
+    public function test_a_reader_is_not_offered_the_store_form_or_the_remove_control(): void
+    {
+        $this->store();
+
+        $this->actingAs(User::factory()->create());
+
+        $html = $this->page()->html();
+
+        $this->assertStringNotContainsString('wire:submit="addStore"', $html);
+        $this->assertStringNotContainsString('removeStore(', $html);
+    }
+
+    public function test_a_reader_cannot_add_a_store_even_if_they_call_the_action(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $this->page()
+            ->set('storeUrl', 'https://example.test/index.pb')
+            ->call('addStore')
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('extension_stores', 0);
+    }
+
+    public function test_a_reader_cannot_remove_a_store_even_if_they_call_the_action(): void
+    {
+        $store = $this->store();
+
+        $this->actingAs(User::factory()->create());
+
+        $this->page()
+            ->call('removeStore', $store->index_url)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('extension_stores', ['id' => $store->id]);
+    }
+
+    /**
+     * A store is fetched by Suwayomi, not by the browser, so an address on this machine asks
+     * the server to fetch from itself or from the network behind it. The refusal is at the
+     * catalog seam, which is why the page only has to show the sentence.
+     */
+    public function test_a_store_address_on_this_machine_is_refused_with_its_reason(): void
+    {
+        $this->page()
+            ->set('storeUrl', 'http://127.0.0.1/index.pb')
+            ->call('addStore')
+            ->assertDispatched('toast-show', function (string $name, array $params): bool {
+                return ($params['slots']['text'] ?? null) === 'That store address points at this server or a private network. Use a public address for the store.'
+                    && ($params['dataset']['variant'] ?? null) === 'danger';
+            });
+
+        $this->assertDatabaseCount('extension_stores', 0);
     }
 
     public function test_it_reports_how_many_sources_a_sync_mirrored(): void

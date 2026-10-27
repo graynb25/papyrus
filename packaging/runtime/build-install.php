@@ -50,7 +50,13 @@ use DateTimeImmutable;
 use Papyrus\Launcher\LicenceStaging;
 use Papyrus\Launcher\Supervisor;
 use Papyrus\Launcher\SuwayomiCompatibility;
+use Papyrus\Runtime\RuntimePins;
+use Papyrus\Runtime\TrustStore;
+use RuntimeException;
 use Throwable;
+
+require_once __DIR__.DIRECTORY_SEPARATOR.'RuntimePins.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'TrustStore.php';
 
 /**
  * The application's own files, copied by allowlist rather than denylist.
@@ -147,6 +153,8 @@ const REQUIRED_AFTER_BUILD = [
     'runtime/frankenphp/Caddyfile',
     'runtime/cacert.pem',
     'suwayomi/runtime/bin/java.exe',
+    'suwayomi/runtime/release',
+    'suwayomi/runtime/lib/security/cacerts',
     'artisan',
     'composer.json',
     'package.json',
@@ -369,6 +377,15 @@ if (file_put_contents(
     fail('could not write '.$into.DIRECTORY_SEPARATOR.'version.txt');
 }
 
+/*
+ * Read the stamp back from disk rather than trusting the write.
+ *
+ * This build has twice reported success over a file that was not there. The required value is the
+ * one `VERSION` holds, so this fails on a mismatched stamp without hard coding a release number
+ * that would have to be edited again for 1.5.1.
+ */
+assertVersionStamp($into.DIRECTORY_SEPARATOR.'version.txt', $version);
+
 say('version', $version.' ('.$commit.')');
 
 /*
@@ -558,6 +575,9 @@ say('jar', basename($options['jar']).' at '.formatBytes($jarSize === false ? 0 :
 copyTree($jre, $suwayomi.DIRECTORY_SEPARATOR.'runtime');
 
 say('jre', 'staged beside the jar, where javaExecutable looks');
+
+assertJavaRuntime($into);
+assertDistrustedRootsAbsent($into);
 
 // --- the application ---------------------------------------------------------------
 
@@ -1041,6 +1061,17 @@ if ($smokeStatus !== 0) {
 say('standalone', 'php.exe runs outside the install directory, '.strtok($smokeText, "\n"));
 
 /*
+ * The versions a file listing cannot tell you.
+ *
+ * A rebuilt install that still carries the previous FrankenPHP archive looks complete and passes
+ * every path check. The runtime a reader gets is the security boundary B1 was about, so the binary
+ * is asked what it is and the build refuses a version below the floor rather than recording the
+ * pin in a comment and hoping the archive followed it.
+ */
+assertPhpVersion($bootPhp);
+assertFrankenphpVersion($into.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'frankenphp.exe');
+
+/*
  * As a file, through `php_ini_loaded_file`, rather than as a `-r` snippet.
  *
  * The `-r` version of this check reported the SQLite driver missing from an install that booted
@@ -1422,6 +1453,176 @@ function fail(string $message): never
     fwrite(STDERR, '  '.$message."\n");
 
     exit(1);
+}
+
+/**
+ * Read the stamp written a moment ago and compare it with the version being built.
+ */
+function assertVersionStamp(string $path, string $version): void
+{
+    $contents = @file_get_contents($path);
+
+    if ($contents === false) {
+        fail("could not read back {$path}, so the build cannot prove it was stamped");
+    }
+
+    $lines = preg_split('/\R/', trim($contents)) ?: [];
+    $stamp = $lines[0] ?? '';
+    $required = 'version '.$version;
+
+    if ($stamp !== $required) {
+        fail(
+            "version.txt records '{$stamp}', and this build requires '{$required}'.\n\n"
+            ."  The value comes from VERSION at the repository root, so the two cannot disagree\n"
+            .'  unless the file was changed after it was written.'
+        );
+    }
+}
+
+function assertPhpVersion(string $php): void
+{
+    [$status, $text] = runVersionCommand(escapeshellarg($php).' -v');
+
+    if ($status !== 0) {
+        fail(
+            "the staged php.exe could not report its version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if (preg_match('/^PHP\s+(\d+\.\d+\.\d+)/m', $text, $matches) !== 1) {
+        fail(
+            "the staged php.exe did not print a PHP version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if (version_compare($matches[1], RuntimePins::MINIMUM_PHP_VERSION, '<')) {
+        fail(
+            "the staged php.exe reports PHP {$matches[1]}, and this build requires PHP "
+            .RuntimePins::MINIMUM_PHP_VERSION." or newer.\n\n"
+            ."  That floor closes CVE-2026-109618 and CVE-2026-109619. A FrankenPHP pin carries\n"
+            .'  its own PHP build, so move both together and rebuild.'
+        );
+    }
+
+    say('php', 'PHP '.$matches[1].' (floor '.RuntimePins::MINIMUM_PHP_VERSION.')');
+}
+
+function assertFrankenphpVersion(string $frankenphp): void
+{
+    [$status, $text] = runVersionCommand(escapeshellarg($frankenphp).' --version');
+
+    if ($status !== 0) {
+        fail(
+            "the staged frankenphp.exe could not report its version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if (preg_match('/\bFrankenPHP\s+v?(\d+\.\d+\.\d+)/i', $text, $matches) !== 1) {
+        fail(
+            "the staged frankenphp.exe did not print a FrankenPHP version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if (version_compare($matches[1], RuntimePins::MINIMUM_FRANKENPHP_VERSION, '<')) {
+        fail(
+            "the staged frankenphp.exe reports {$matches[1]}, and this build requires "
+            .RuntimePins::MINIMUM_FRANKENPHP_VERSION." or newer.\n\n"
+            .'  The four advisories fixed in 1.13.2 affect the packaged web server itself.'
+        );
+    }
+
+    say('frankenphp', 'FrankenPHP '.$matches[1].' (floor '.RuntimePins::MINIMUM_FRANKENPHP_VERSION.')');
+}
+
+function assertJavaRuntime(string $into): void
+{
+    $jre = $into.DIRECTORY_SEPARATOR.'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
+    $releasePath = $jre.DIRECTORY_SEPARATOR.'release';
+    $releaseVersion = RuntimePins::javaVersionFromRelease($releasePath);
+
+    if ($releaseVersion !== RuntimePins::JRE_JAVA_VERSION) {
+        fail(
+            'the staged JRE release file reports JAVA_VERSION="'
+            .($releaseVersion ?? 'missing')
+            .'", and this build requires "'.RuntimePins::JRE_JAVA_VERSION."\".\n\n"
+            .'  The JRE pin and the archive move together. Run stage-runtime.php again.'
+        );
+    }
+
+    [$status, $text] = runVersionCommand(
+        escapeshellarg($jre.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'java.exe').' -version'
+    );
+
+    if ($status !== 0) {
+        fail(
+            "the staged java.exe could not report its version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if (preg_match('/version "([^"]+)"/', $text, $matches) !== 1) {
+        fail(
+            "the staged java.exe did not print a version.\n\n  "
+            .str_replace("\n", "\n  ", $text)."\n"
+        );
+    }
+
+    if ($matches[1] !== RuntimePins::JRE_JAVA_VERSION) {
+        fail(
+            'the staged java.exe reports '.$matches[1].', and this build requires '
+            .RuntimePins::JRE_JAVA_VERSION.".\n\n"
+            .'  The release file says '.$releaseVersion.', so the two disagree.'
+        );
+    }
+
+    say('java', 'Java '.$matches[1].' (release '.$releaseVersion.')');
+}
+
+/**
+ * Assert the four distrust-listed roots are not trusted by the JRE this install ships.
+ */
+function assertDistrustedRootsAbsent(string $into): void
+{
+    $jre = $into.DIRECTORY_SEPARATOR.'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
+    $keytool = $jre.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'keytool.exe';
+    $keystore = $jre.DIRECTORY_SEPARATOR.'lib'.DIRECTORY_SEPARATOR.'security'.DIRECTORY_SEPARATOR.'cacerts';
+
+    try {
+        $present = TrustStore::present($keytool, $keystore);
+    } catch (RuntimeException $e) {
+        fail(
+            "the installed JRE trust store could not be checked.\n\n  "
+            .str_replace("\n", "\n  ", $e->getMessage())."\n"
+        );
+    }
+
+    if ($present !== []) {
+        fail(
+            'the installed cacerts still trusts '.implode(', ', $present).', and this build'
+            ." requires all four distrusted roots to be absent.\n\n"
+            ."  Adoptium 25.0.5+8 predates the eMudhra distrust. Run stage-runtime.php, which\n"
+            .'  removes emsignrootcag1, emsignrootcag2, emsigneccrootcag3 and comodoaaaca.'
+        );
+    }
+
+    say('cacerts', 'the four distrusted roots are absent');
+}
+
+/**
+ * @return array{0: int, 1: string}
+ */
+function runVersionCommand(string $command): array
+{
+    $output = [];
+    $status = 1;
+
+    exec($command.' 2>&1', $output, $status);
+
+    return [$status, trim(implode("\n", $output))];
 }
 
 function formatBytes(int $bytes): string

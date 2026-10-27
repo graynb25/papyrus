@@ -89,17 +89,46 @@ if (-not (Test-Path $results)) {
 }
 
 # Clear anything already in it, so a stale report can never be read as this run's.
-Get-ChildItem $results -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem $results -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-# --- 3. the configuration and the runner must be there ----------------------------------------
-foreach ($needed in @($wsb, (Join-Path $repo 'build\sandbox\run-in-sandbox.ps1'), (Join-Path $repo 'build\dist\Papyrus-1.3.0-setup.exe'))) {
+# A clear that silently fails would let the previous run's report be read as this one's, which is
+# what happened on 2026-10-26: the diagnostics directory survived a clear without -Recurse, the
+# watcher saw the old report immediately, and the gate closed a live guest. The report and the
+# progress file are the evidence, so their absence is checked before the launch rather than
+# inferred from Remove-Item not complaining.
+$leftovers = @(Get-ChildItem $results -Force -ErrorAction SilentlyContinue)
+
+if ($leftovers.Count -gt 0) {
+    $names = @($leftovers | ForEach-Object { $_.Name })
+    Say "REFUSING TO LAUNCH: $($leftovers.Count) item(s) remain in $results after clearing: $($names -join ', ')."
+    Say 'A stale report would be read as this run. Close anything holding them, remove them by hand, and try again.'
+    exit 1
+}
+
+Say 'ok   results folder cleared'
+
+# --- 3. the configuration, the runner and the current install must be there ------------------
+$version = Get-Content (Join-Path $repo 'VERSION') -Raw -ErrorAction SilentlyContinue
+$version = if ($null -eq $version) { '' } else { $version.Trim() }
+$stamp   = Join-Path $repo 'build\install\version.txt'
+
+foreach ($needed in @($wsb, (Join-Path $repo 'build\sandbox\run-in-sandbox.ps1'), $stamp)) {
     if (-not (Test-Path $needed)) {
         Say "REFUSING TO LAUNCH: $needed is missing."
         exit 1
     }
 }
 
-Say "ok   the installer under test is $((Get-Item (Join-Path $repo 'build\dist\Papyrus-1.3.0-setup.exe')).LastWriteTime)"
+$recorded = Get-Content $stamp -TotalCount 1 -ErrorAction SilentlyContinue
+$required = "version $version"
+
+if ($version -eq '' -or $recorded -ne $required) {
+    Say "REFUSING TO LAUNCH: $stamp records '$recorded', and VERSION asks for '$required'."
+    exit 1
+}
+
+Say "ok   the install under test is $version, copied from build\install; the guest does not run the setup"
 
 # --- launch -----------------------------------------------------------------------------------
 Say ''
@@ -162,6 +191,9 @@ while ((Get-Date) -lt $deadline) {
             if (Get-Process -Name 'vmmemWindowsSandbox' -ErrorAction SilentlyContinue) {
                 Say '  WARNING: the virtual machine is still up after 90s. A second run will be refused'
                 Say '  silently, so check this before launching again.'
+                Say '  Stopping WindowsSandboxServer does not release it on this host. In an elevated'
+                Say '  shell, run `hcsdiag list`, find the Running WindowsSandbox compute system, and'
+                Say '  run `hcsdiag kill <that id>`. Do not kill the SavedAsTemplate entry.'
             }
         }
 

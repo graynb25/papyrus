@@ -532,7 +532,7 @@ new #[Title('Series')] class extends Component
             app(ReadingState::class)->setPointer(auth()->user(), $this->manga, (int) $furthest['id']);
         }
 
-        unset($this->state, $this->chapterStates, $this->readCount);
+        unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
 
         app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
 
@@ -557,7 +557,7 @@ new #[Title('Series')] class extends Component
         app(ReadingState::class)->markManyRead(auth()->user(), $this->manga, $ids, false);
         app(ReadingState::class)->setPointer(auth()->user(), $this->manga, null);
 
-        unset($this->state, $this->chapterStates, $this->readCount);
+        unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
 
         Flux::toast(
             text: trans_choice(':count chapter marked unread.|:count chapters marked unread.', count($ids), ['count' => count($ids)]),
@@ -598,7 +598,7 @@ new #[Title('Series')] class extends Component
             app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
         }
 
-        unset($this->state, $this->chapterStates, $this->readCount);
+        unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
     }
 
     /**
@@ -789,6 +789,35 @@ new #[Title('Series')] class extends Component
         );
 
         return app(ReadingState::class)->chapterStates(auth()->user(), $ids);
+    }
+
+    /**
+     * Read state for every filtered chapter, not only the open page.
+     *
+     * The row markers and `readCount()` stay on the page slice because the reader can
+     * only see one page at a time. The two bulk download controls are different: they
+     * act on the whole filtered list, so their view of "read" has to cover that list
+     * too. Loading the page's map there made every read chapter on another page look
+     * unread: measured against a 641 chapter series, the button offered 591 when only
+     * 8 were unread.
+     *
+     * Chunked because a long series can carry thousands of chapter ids, and an
+     * unbounded `whereIn` eventually runs into a database's parameter limit.
+     *
+     * @return array<int, \App\Models\ChapterState>
+     */
+    #[Computed]
+    public function allChapterStates(): array
+    {
+        $ids = array_map(static fn (array $c): int => (int) ($c['id'] ?? 0), $this->chapters);
+        $reading = app(ReadingState::class);
+        $states = [];
+
+        foreach (array_chunk($ids, 500) as $chunk) {
+            $states += $reading->chapterStates(auth()->user(), $chunk);
+        }
+
+        return $states;
     }
 
     /**
@@ -1223,11 +1252,14 @@ new #[Title('Series')] class extends Component
      * Queue every chapter this reader has not read.
      *
      * Uses our own read state, not the server's. `ChapterType.isRead` belongs to
-     * Admin(1) and has never meant anything to a reader of this app.
+     * Admin(1) and has never meant anything to a reader of this app. Read state is
+     * loaded for the whole filtered list, not the open page, because this control
+     * queues across every page.
      */
     public function downloadUnread(): void
     {
         $ids = [];
+        $states = $this->allChapterStates;
 
         foreach ($this->chapters as $chapter) {
             $chapterId = (int) $chapter['id'];
@@ -1236,7 +1268,7 @@ new #[Title('Series')] class extends Component
                 continue;
             }
 
-            $state = $this->chapterStates[$chapterId] ?? null;
+            $state = $states[$chapterId] ?? null;
 
             if ($state?->is_read) {
                 continue;
@@ -1277,11 +1309,12 @@ new #[Title('Series')] class extends Component
     public function unreadDownloadableCount(): int
     {
         $count = 0;
+        $states = $this->allChapterStates;
 
         foreach ($this->chapters as $chapter) {
             $chapterId = (int) $chapter['id'];
 
-            if (! (bool) ($chapter['isDownloaded'] ?? false) && ! ($this->chapterStates[$chapterId] ?? null)?->is_read) {
+            if (! (bool) ($chapter['isDownloaded'] ?? false) && ! ($states[$chapterId] ?? null)?->is_read) {
                 $count++;
             }
         }

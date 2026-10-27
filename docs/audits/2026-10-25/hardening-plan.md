@@ -1,0 +1,726 @@
+# Hardening plan, 2026-10-25
+
+Status: approved and in progress. Resumed on 2026-10-26. Batches A, B, C, D, E, F and G are
+accepted in the working tree. The 1.5.0 install tree passed the Windows Sandbox gate on run 19,
+including a Windows source page read. The real setup executable also installed 1.5.0 in the manual
+sandbox and the reader flow worked, but the shortcut preflight hung; the fix is in the tree and a
+fresh manual run on the rebuilt installer is pending. Batch H is in progress; 1.5.1 is not
+started. This plan turns the walk in `walk.md` and the security
+assessment in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD
+`6572ba0`; the only files written beyond the four untracked audit documents are the
+uncommitted batch changes described below.
+
+The owner accepted the recommended defaults: keep the server-path import field for the owner
+only, include the copy-only M1 backup warning in 1.5.0, hold L1 for 1.5.1, and approve the
+runtime rebuild only after Batches A, C, D, E, F and G are reviewed.
+
+## Owner decisions
+
+Recorded on 2026-10-25:
+
+- 1.5.0 carries the security-critical set. The remaining Medium, Low and copy findings go
+  to 1.5.1. The two walk High findings stay in 1.5.0.
+- Whole-install backup, restore, export and store changes use an install-owner ability.
+  The existing `users.role` column is the seam. No new owner column.
+- Import keeps its current automatic extension installation. The owner accepts the H3
+  risk for 1.5.0. The code path is not changed. The documentation and the import warning
+  must state the behaviour plainly.
+
+The owner decision on H3 is a risk acceptance, not a finding closure. H3 stays open until
+the behaviour changes or the deployment posture makes it irrelevant.
+
+## Progress
+
+- [x] Batch A, install-owner ability. Accepted 2026-10-25: 63 focused tests, 2525
+  full-suite tests, PHPStan 0 errors, Pint clean.
+- [x] Batch B, packaged runtime and JRE. Accepted 2026-10-26: built, and the install tree
+  passed the Windows Sandbox gate on run 19 with 86 checks and no failures, including a source
+  page read. `VERSION` is 1.5.0
+  and the 1.5.0 changelog entry is written, so the build stamps the release
+  once. Pins and hashes for FrankenPHP 1.13.2 (PHP 8.5.12) and Temurin 25.0.5+8 are measured;
+  the JRE path uses the plan's alternative of removing the four distrust-listed roots because
+  Adoptium publishes no 25.0.5.0.2 build. The staged `cacerts` has 117 entries, no emSign or
+  AAA subjects, and none of the four distrust fingerprints. `build/install/version.txt` is
+  1.5.0 at commit `6572ba0`. The unsigned installer is 275,084,054 bytes (SHA-256
+  `87e514aa4639bf8b19c43567fccc6c6cfee9f2568014c30bbec8ebf616e2ddd0`) and the portable
+  archive is 321,054,843 bytes (SHA-256
+  `6534d5398f8d1176f1ef59d503db0f6b04c87fb3bda664981dd12c150f986f4b`), both 1.5.0.0. The
+  manual installer sandbox proved the setup executable installs this payload and the reader flow
+  works, and found the shortcut preflight hang; the fix is in the tree and the rebuilt installer
+  needs a fresh manual run. See the environment record below.
+- [x] Batch C, backup and export authorization. Accepted 2026-10-25: 124 focused
+  tests, 2533 full-suite tests reported by the batch, PHPStan 0 errors, Pint gate clean.
+  Review corrected two comments only: the controller now says 403 rather than 404 for a
+  refused caller, and the nav comment no longer calls Backups the last item.
+- [x] Batch D, import and store request safety. Accepted 2026-10-25: 41 of 251 focused
+  checks failed before the fixes; 251 passed after, plus 3 seam tests for the Tachibk cap
+  refusal. Full suite 2582 tests, 7403 assertions. PHPStan 0 errors, Pint gate clean.
+  Caps: 256 MiB per staged entry, 384 MiB total, 16 MiB per Tachibk field, each measured
+  against the packaged fixtures and recorded in `config/papyrus.php`.
+- [x] Batch E, H3 accepted risk, M1 warning and the security page. Accepted 2026-10-25:
+  148 focused tests and 652 assertions independently, 2589 full-suite tests reported by the
+  batch, PHPStan 0 errors, Pint gate clean, dash and machine-detail checkers clean. Copy
+  only. H3 stays open and accepted; M1 keeps its warning only.
+- [x] Batch F, Livewire update. Accepted 2026-10-26: `livewire/livewire` v4.4.7 to
+  v4.4.8 within the unchanged `^4.1` constraint, one lock stanza plus content hash, no
+  other package moved, `composer audit` exits 0 and `GHSA-mhf7-xp6r-6qrc` is gone.
+  Papyrus uses neither `#[Authorize]` nor `#[Json]`. Focused suite 324 tests, 1024
+  assertions independently; full suite 2589 tests reported by the batch. PHPStan 0
+  errors, Pint clean, dash and machine-detail gates clean.
+- [x] Batch G, the two walk High findings. Accepted 2026-10-26: `SearchFanout::runnableCount()`
+  added from the same universe read as `targets()`, the search page now names the cap and
+  the runnable total and shows the skipped count when no pins are active, and both bulk
+  download controls read a chunked series-wide state map. The new download test failed on
+  the old code (expected 2, got 11) and passes after. Focused suite 97 tests, 260
+  assertions independently; full suite 2593 tests, 7474 assertions reported by the batch.
+  PHPStan 0 errors, Pint clean, dash and machine-detail gates clean. With pins active the
+  cap is named in the top line but the separate skipped count yields to the pin copy;
+  recorded as remaining risk, not a silent case.
+- [x] Pre-rebuild verification: Tachimanga shelves (owner-reported, see below). Accepted
+  2026-10-26 on a scratch database copy: the real backup imported into 2 shelves, 97 of
+  105 linked members placed, 3,322 reading days across 587 series, and both pages rendered
+  with the expected values. No reader data or live database was written.
+- [x] Manual installer sandbox, 2026-10-26. The real `Papyrus-1.5.0-setup.exe` installed 1.5.0
+  per-user, and the reader flow passed: first account, Keiyoushi store, MangaTaro, One Piece
+  search, Chapter 001 read and marked read. The shortcut did not start because `Papyrus.cmd` ran
+  `php -n` with no script and the console stdin stayed open. The check is now `php -n -v`, with a
+  regression test that keeps stdin open; all six gates pass. The rebuilt installer needs a fresh
+  manual shortcut run. This is manual evidence, not a gate pass.
+- [ ] Batch H, release close-out
+- [ ] 1.5.1, remaining hardening and reader copy
+
+Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. Nothing is committed or
+pushed; `HEAD` remains `6572ba0` on `main`, and every batch change above is in the working
+tree for review. The shelf re-import, the runtime build and the final gates are done. Run 19
+passed the Windows Sandbox gate on the install tree, including a source page read, so the
+clean-machine bar is met for that tree. The manual sandbox then ran the real setup executable: it
+installed 1.5.0 and the reader flow worked, but the shortcut preflight hung, and the fix is in the
+tree. Batch H must not present the gate as proof of the installer, and the rebuilt installer needs
+a fresh manual shortcut run. Batch H is next.
+
+## Environment and clean-machine record, 2026-10-26
+
+### WSL2 and Docker are available
+
+The earlier documents said virtualization was off and Docker was unavailable. That was wrong.
+Measured on 2026-10-26: `HypervisorPresent` is `True`; WSL 3.0.3.0 runs kernel 6.18.54.1-1;
+Ubuntu 26.04.1 is installed with 20 CPUs and about 7.8 GB RAM; Docker Desktop 4.96.0 is
+installed per user. `VirtualizationFirmwareEnabled` still reads `False`, which is why the old
+inference looked right, but it is not the gate: WSL2 runs. The Docker Linux engine is stopped
+when not in use. WSL2 and Docker are test tools, not the supported desktop deployment.
+
+### Docker soak, 2026-10-20
+
+A differential soak ran the 1.3.0 packaged application tree on Linux with FrankenPHP 8.5.11
+and Suwayomi 2.4.2366. It covered 90 beats at 30 second intervals from 09:31:49 to 10:08:46,
+45 minutes. All 279 HTTP probes returned 200 (`/login`, `/up`, `/sources`, 93 each). The
+in-container `suwayomi:check` returned 0 on 34 consecutive even beats from 09:45:28 to
+10:08:46; the 13 earlier even beats failed because the probe omitted `-p papyrus-soak` and
+Compose looked for a project under another name. Free RAM stayed between 3.95 and 4.31 GB.
+
+This proves the 1.3.0 payload served pages and read Suwayomi back for 45 minutes under a
+container stack. It does not prove the 1.5.0 tree, a chapter read, a Cloudflare-protected
+source (CEF could not initialise in the container because `libXext.so.6` is absent), or the
+Windows installer. Artifacts: `%TEMP%\opencode\papyrus-docker-soak-20261020\`
+(`http-probes.csv`, `cli-probes.csv`, `compose-logs.txt`, `probe-soak.ps1`).
+
+### Windows Sandbox passed on run 19, with the installer payload proven separately
+
+The gate produced its first final report for 1.5.0 on run 15, and run 19 reached the source
+read on the same day. Run 19 ended with `PASS, every check held`: 86 checks passed and none
+failed. The report is `build\sandbox-results\sandbox-report.txt`, 10,056 bytes, SHA-256
+`02413c0cdfb47475ffc681033d2d3eb02362208a7934008d7eb335267b94d650`; the screenshot is
+`screen-after-start.png`, 1,556,164 bytes, SHA-256
+`c0926a1af1d5fd3adf31c6f421eff1ab0645e6c818b0125c359b4cbc19cd42df`. Both were copied to
+`%TEMP%\opencode\run19-20261026\`.
+
+The guest had no host PHP or Java and no Java installed. It copied the install tree to
+`C:\Program Files\Papyrus`, checked that no database, `.env` or logs shipped, and started it
+through the reader shortcut with `--open`. The bundled PHP ran 8.5.12, Suwayomi answered
+2.4.2366 on loopback, the database was current, the app reported ready on 8402, the queue
+worker and scheduler started, Edge opened, `/ready` and `/up` returned 200, the first account
+was created through `/register`, and `/sources` returned 200 with the page's eyebrow and no
+failure callout. The data directory with a space in its path, the diagnostics bundle and
+HTTPS through the bundled trust store also passed. Run 19 then added the Keiyoushi protobuf
+store (signing key prefix `9add655a78e96c4ec7a5`, 1,431 extensions), installed
+`eu.kanade.tachiyomi.extension.all.mangataro`, mirrored two sources, fetched One Piece (manga
+id 1) with 1,202 chapters, and called `fetchChapterPages` for chapter id 1, "Chapter 001:
+Romance Dawn", which returned 53 page paths. Page 0 was requested through the app proxy at
+`/suwayomi/api/v1/manga/1/chapter/1/page/0`: 200, `image/webp`, 175,432 bytes, SHA-256
+`9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`, the same first page WSL
+run 3 read. `/sources` returned 200 with no failure callout after the catalogue was populated,
+and `/series/1` rendered One Piece. The stop released 8402 and 4571 and left no Papyrus
+process.
+
+The twelve earlier deaths were `0x80370106`. Run 13 had enumerated the host `AMD Radeon RX
+6600` in the guest despite `<VGpu>Disable</VGpu>`. The fix was a host policy, not a code
+change: `HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0. The key
+was absent before the run. The host is Windows 11 Pro 26H2 build 26300.9711 with Sandbox app
+0.8.107.0. The same failure and fix are reported for this build and Sandbox version in
+Microsoft's Windows Sandbox issue #88. With the policy in place the guest stayed up past four
+minutes and wrote the screenshot and report.
+
+One limit remains for the gate itself. The gate copies `build/install`; it does not run the setup
+executable, so it proves the install tree and the launcher, not the installer payload. The separate
+manual sandbox (`build\sandbox\launch-manual.ps1`) runs the real `Papyrus-1.5.0-setup.exe`, verifies
+the copy against the manifest and records the install with a screenshot watcher. It ran on
+2026-10-26 and its record is the subsection below; it is manual evidence, not a gate pass.
+Artifacts for run 19 are under `%TEMP%\opencode\run19-20261026\`.
+
+Runs 16 to 18 added the source-access section and found three defects in the probe rather than
+the install. Run 16 read `Sources mirrored 0` from a successful sync because the regex matched
+the wrong spacing, while the app had mirrored 2. Run 17 fetched 1,202 chapters that all reported
+`pageCount: -1`, and the probe's `pageCount > 0` filter treated unknown as no pages. Run 18
+removed that filter and guessed chapter indexes 1, 0, 2 and 3; all four returned 404, because the
+proxy does not fetch a chapter's images and the page path addresses the chapter's source order
+rather than its id. The corrected probe calls `fetchChapterPages` for a chapter and requests the
+path that mutation returns, which is what the reader does. Run 19 used it and passed with 86
+checks and 0 failures. It also reached the two catalogue pages run 18 skipped: `/sources`
+returned 200 with no failure callout and `/series/1` rendered One Piece.
+
+The gate killed the Sandbox client but `vmmemWindowsSandbox` was still up after its 90 second
+wait. `WindowsSandboxServer` was stopped by hand and the memory process drained more slowly.
+Check for `vmmemWindowsSandbox` before the next launch. Run 18 left the compute system running
+again, and it was released only with an elevated `hcsdiag kill` of the running WindowsSandbox
+identifier. Stopping `WindowsSandboxServer` and `WindowsSandboxRemoteSession` did not release the
+memory process. Run 19 printed the same warning after the report was written; an elevated
+`hcsdiag kill` of the running WindowsSandbox compute system then closed the guest. The launcher
+now prints that remedy with the warning.
+
+Run 14's seven progress artifacts remain at `%TEMP%\opencode\run14-20261026\`; its
+`progress.txt` is 2,264 bytes, SHA-256
+`7de193d21379d7c6d4f7ca49597d243cbb37aa03323754f2925bd96e92ab2e06`.
+
+### Manual installer sandbox, 2026-10-26
+
+The manual sandbox ran the real `build\dist\Papyrus-1.5.0-setup.exe` in a fresh Windows Sandbox
+guest. The guest verified the copy as 275,084,054 bytes with SHA-256
+`87e514aa4639bf8b19c43567fccc6c6cfee9f2568014c30bbec8ebf616e2ddd0`, matching
+`build\dist\manifest.json`. The setup completed as a per-user install at
+`%LOCALAPPDATA%\Programs\Papyrus`; `version.txt` read 1.5.0 at commit `6572ba0`, and the install
+tree held no database, `.env` or logs. The reader flow then passed through a direct start
+(`start-direct.cmd`, which bypasses `Papyrus.cmd`): the first account, the Keiyoushi store,
+MangaTaro, a One Piece search of 14 results from 2 of 2 sources, the 1,202 chapter series page,
+and Chapter 001 read at `/read/1/1` and marked read.
+
+The reader's shortcut did not start the install. `Papyrus.cmd` ran `php -n` with no script, PHP
+reads the script from stdin, and a console leaves stdin open, so the runtime check waited forever
+and the window stayed blank. The gate and `PapyrusCmdTest` had both redirected stdin from an empty
+file, which is why only this run found it. The check is now `php -n -v`, with a regression test
+that keeps stdin open. The run also found the separate `Supervisor::status()` scope defect
+recorded for 1.5.1.
+
+Verdict: the installer payload and the reader flow are proven on the real setup executable; the
+shortcut is not. This is manual evidence, not a gate pass, and 1.5.0 must not ship until the
+rebuilt installer passes a fresh manual shortcut run. Full evidence is in
+`docs/ENGINEERING-NOTES.md` section 16.5; artifacts are in
+`build\manual-sandbox-results\session-20261026-210533\`.
+
+### Final gates, 2026-10-26
+
+All six gates passed on the code tree after the shortcut preflight fix and before the final
+documentation edits:
+
+- `php artisan test --without-tty`: 2,599 tests, 7,498 assertions, 590,780 ms.
+- PHPStan level 7 over `app/` and `packaging/`: 0 errors.
+- Pint over `app/`, `tests/` and `packaging/`: clean.
+- Dash checker: 654 files, no em or en dashes.
+- Machine-detail gate: 634 tracked files, no account name, developer folder path or IP address.
+- Its self-tests: 29 verdict cases and 20 skip cases, all correct.
+
+The shortcut fix added a regression test that failed on the shipped `php -n` line, with the
+command still running under an open stdin after 5.2 seconds, and passes on `php -n -v`. The edits
+after the suite are documentation only, and the dash and machine-detail gates are re-run over the
+tree after them. The counts are the measured counts on this tree, not a completion criterion.
+
+### WSL2 acceptance substitute
+
+The full plan is in `docs/ENGINEERING-NOTES.md` section 16.3. In short: install PHP 8.4 or
+newer and a JRE in Ubuntu, copy the application payload without `runtime\` and `suwayomi\`
+into a scratch directory, start a scratch Suwayomi with a fresh data directory, run migrations
+and `suwayomi:check`, create the first account, require the `/sources` catalogue sentence
+rather than a 200, read one chapter if the run is the source-access substitute, then soak for
+at least 30 minutes with `/login`, `/up`, `/sources` and `suwayomi:check`.
+
+Prerequisites installed in Ubuntu 26.04.1 on 2026-10-26: PHP 8.5.4 from the Ubuntu archive
+with `pdo_sqlite`, `sqlite3`, `mbstring`, `xml`, `curl`, `openssl`, `fileinfo` and `tokenizer`;
+OpenJDK 25.0.4.1; `sqlite3` 3.46.1; `rsync` 3.4.1; `unzip`. `php8.5-intl` 8.5.4-0ubuntu1.5
+and `php8.5-zip` 8.5.4-0ubuntu1.5 were installed on 2026-10-27; both are in the Ubuntu 26.04
+archive, so the earlier note that neither package existed was wrong. `intl` is required: the
+Sources page formats byte counts through `Illuminate\Support\Number` and returns 500 without
+it.
+
+Run 1, 58 beats at 30 seconds from 17:34 to 18:02 UTC on 2026-10-26, stopped at beat 58 of
+60, answered `/login` and
+`/up` on all 58 probes and `suwayomi:check` exited 0 on all 29 even beats, but `/sources`
+returned 500 on every authenticated probe because `intl` was missing. Run 2, 6 beats at 10
+seconds on 2026-10-27 after installing `intl`, returned 200 for `/sources`, `/search`,
+`/library`, `/settings/import`, `/settings/backups` and `/migrate/sources`; 18 of 18 HTTP
+probes and 3 of 3 CLI checks passed. Run 3 on 2026-10-27 added the Keiyoushi store, installed
+MangaTaro, fetched One Piece, and read all 53 pages of Chapter 001 through the authenticated
+app proxy: 53 of 53 returned 200 `image/webp`, 7,766,490 bytes in total. That meets the
+source-access substitute on this Linux userland. It does not touch the Windows installer,
+shortcut or runtime. The full record is `docs/ENGINEERING-NOTES.md` section 16.4.
+
+A WSL pass would prove the current source tree on a clean Linux userland. It would not prove
+the Windows installer, the reader shortcut, the bundled Windows runtime, paths with spaces,
+Windows file locking, or a clean Windows machine. It must not be recorded as a Windows
+Sandbox pass.
+
+### Shelf check, first pass, 2026-10-26
+
+The owner reported on 2026-10-26 that the library showed no shelves and Insights was empty,
+after a run in the walk session. Both instances were measured read-only; no reader data was
+written.
+
+Reader side, current tree, the new backup `Tachimanga_backup_2026-10-26_09-33-38-542.tmb`
+through `TachimangaReader`: format `tachimanga`, schema 525, 1,283 library series, 43,166
+read chapters, 2 categories (`"Youtube "` 20 members, `"Snowflakes"` 85), and 5,085 reading
+days totalling 1,673,755 seconds. The file has no `default` category row; Tachimanga's
+Default is its built-in unfiled bucket, so two shelves is the whole of what a file can carry.
+
+Installed side, the checkout database copied with its WAL: 14 import runs, all 2026-10-09 to
+2026-10-10, every one with `categories_in_file` null; 867 series states, 21,450 chapter
+states, 0 categories, 0 category members and 0 imported reading days.
+
+Commit dates: shelves landed 2026-10-20 (`58919fe`), reading days 2026-10-24 (`8e26a23`).
+Both are in the 1.4.0 source `26419e6`. The imports predate both features, so the shelves and
+Insights were never written rather than damaged or hidden, and no re-import has run since.
+
+The remaining step is the scratch-database re-import after Batch G, which must show the two
+shelves with members and populated reading days. `default` is expected to be absent.
+
+### Shelf check, second pass, 2026-10-26
+
+The new backup was imported into a fresh copy of the checkout database with the current
+tree, extension installation off. The copy was asserted as the connected database before
+any write. The run took 486.7 seconds and its row records `categories_in_file` 2,
+`category_members_placed` 97, `category_members_skipped` 8 and `read_chapters_applied`
+28,952. Series counters: 1,283 in the library, 863 resolved (696 from the catalogue, 167
+from a source), 299 not found, 58 missing an extension, 63 on an unreachable source, and
+11 filed without a source.
+
+Result in the copy: 2 shelves, `Youtube` with 18 members and `Snowflakes` with 79, 97
+category rows; 3,322 imported reading days across 587 series totalling 1,083,300 seconds.
+The 8 skipped members are the ones whose series did not resolve in this pass.
+
+Rendered in process against the same copy: `/library` returned 200 and its shelf pills read
+`Youtube 18` and `Snowflakes 79`. `/insights` returned 200 and read `12 days 12 hours 55
+minutes across 587 series`, with the imported-time line present. Both match the copy's
+rows.
+
+This was a scratch copy and no reader data or live database was written. The run did ask
+Suwayomi for source lookups and may have refreshed uninitialized series, which is what a
+normal import does; no Papyrus state outside the copy changed.
+
+## Release 1.5.0: security-critical set
+
+### Batch A. Install-owner ability
+
+Goal: one account, whether made by browser sign-up or `users:create`, owns the install;
+every other account is a reader.
+
+Use the existing `users.role` column rather than adding a column. The value `admin` means
+install owner. `users:create --admin` still writes an explicit owner when one already exists.
+The first web or console account becomes the owner through the shared serialized rule.
+
+Files:
+
+- `app/Models/User.php`: add an `isInstallOwner()` method or equivalent that reads `role`.
+- `app/Providers/AppServiceProvider.php`: define the `manage-install` gate in the boot seam.
+  No gate definitions exist today.
+- `app/Actions/Fortify/CreateNewUser.php`: give the first account the owner role without
+  making `role` fillable. Use `forceFill` inside the same claim that closes registration, or
+  an equivalent serialized write. A request must never choose its own role.
+- `app/Console/Commands/UsersCreate.php`: create the account through the same owner rule.
+  `--admin` still creates an explicit owner; no other command line value chooses a role.
+- `database/migrations/2026_10_25_000000_promote_first_user_to_install_owner.php`: if no
+  account has the owner role, promote the earliest account by id. Do nothing when an owner
+  already exists.
+- `tests/Feature/InstallOwnerTest.php`: first web account is owner, second account is not,
+  the role survives a profile save, a posted `role` field is ignored, and the migration
+  backfills an existing install without changing the reader count.
+- `tests/Feature/UsersCreateCommandTest.php`: first console account is owner, later console
+  accounts are readers, `--admin` still works, and an ownerless install promotes the earliest
+  account.
+
+Acceptance:
+
+- A fresh single-mode install has exactly one owner, whether the first account comes from
+  the browser or `users:create`.
+- A shared or public install has one owner and any number of readers.
+- The role is not fillable and no web request can set it.
+- The migration is idempotent.
+
+### Batch B. Packaged runtime and JRE
+
+Goal: close B1 and M8 in the shipped artifacts, not only in the checkout.
+
+Files:
+
+- `packaging/runtime/stage-frankenphp.php`: move the pin from FrankenPHP 1.13.0 to 1.13.2
+  or the newest 1.13.x that carries PHP 8.5.12 or newer. Move the SHA256 with it.
+- `packaging/runtime/stage-runtime.php`: move the JRE pin from 25.0.4.1+1 to 25.0.5.0.2,
+  or apply the four-root removal to the staged `cacerts`. The pin and SHA256 move together.
+- `packaging/php/php.ini`: correct the verified-version comment.
+- `packaging/frankenphp/Caddyfile`: correct the verified-version comment.
+- `packaging/runtime/build-install.php`: add build-time assertions that the staged
+  `php.exe -v` reports at least 8.5.12, `frankenphp.exe --version` reports at least 1.13.2,
+  and `java.exe -version` reports the pinned build. A comment is not an assertion.
+- `packaging/suwayomi.json`: unchanged unless the Suwayomi smoke test forces a change.
+- `tests/Feature/LauncherDependencyListTest.php` or a new packaging test: assert the pins
+  and the minimum versions, if the existing test seam can read them without a build.
+
+Execution order:
+
+```text
+stage-frankenphp.php -> stage-runtime.php -> build-install.php
+                                      -> build-installer.php
+                                      -> build-portable.php
+```
+
+Acceptance:
+
+- The staged runtime reports PHP 8.5.12 or newer and FrankenPHP 1.13.2 or newer.
+- The staged JRE reports 25.0.5.0.2, or the root removal is documented and verified.
+- `php artisan suwayomi:check` passes against the rebuilt install.
+- The installer and portable are rebuilt.
+- `build\sandbox\launch-gate.ps1` passes and the report, progress file and screenshot are
+  read back. The gate must start the reader's actual shortcut path with `--open`.
+- Source access is proven on the clean machine, not only a rendered page.
+
+This batch changes tracked packaging inputs and produces build output. It needs a separate
+`go` before any download, build, installer run or sandbox launch. Free RAM must be measured
+and stated before the sandbox.
+
+### Batch C. Backup and export authorization
+
+Goal: close H1 and H2.
+
+Files:
+
+- `routes/settings.php`: put the backups page and the export download route behind
+  `can:manage-install`.
+- `resources/views/pages/settings/⚡backups.blade.php`: call `Gate::authorize` in a `mount()`,
+  in `start()`, in `restore()` and in `startExport()`. The route middleware is not enough for
+  a Livewire action that a crafted request can call directly.
+- `resources/views/pages/settings/layout.blade.php`: show the Backups nav item only to the
+  owner, so a reader is not offered a link that answers 403.
+- `app/Http/Controllers/ExportDownloadController.php`: require the owner and, as defence in
+  depth, treat a run started by another account as a 404 for a caller who is not the owner.
+  Keep the existing 404 shapes for a missing, running, escaped-name or mismatched product.
+- `app/Support/Faq.php`: the backup answer names the install owner, so a reader is not sent to
+  a page they cannot open.
+- `tests/Feature/Settings/BackupsPageTest.php`: a second account gets 403 on the page and on
+  each action; the owner still loads the page; the owner-only copy is rendered.
+- `tests/Feature/ExportDownloadTest.php`: a second account cannot fetch the first account's
+  completed run, including by walking sequential ids.
+- `tests/Feature/FaqTest.php`: the backup answer names the install owner.
+- `tests/Feature/RunLiveBackupJobTest.php`, `RunLiveRestoreJobTest.php`,
+  `RunLiveExportJobTest.php`: keep the job-level tests, because the jobs can be dispatched
+  from code as well as the page.
+
+Acceptance:
+
+- Only the owner can see the backups page.
+- Only the owner can start a backup, a restore or an export.
+- A non-owner cannot download an export, even with a valid run id.
+- The page copy says the actions are owner-only.
+
+### Batch D. Import and store request safety
+
+Goal: close M2, M3 and M7.
+
+M2, import path:
+
+- The free-text server path stays only for the owner. A non-owner sees the upload field and
+  no path field.
+- `resolvePath()` rejects a non-owner path before `is_file()` or `is_readable()`, so the
+  refusal cannot become a path oracle.
+- The refusal sentence names the basename, not the full path. The queued job rejects a path
+  outside the app's `imports` directory unless the account is the owner, before it calls
+  `is_file()`, and writes the same redacted sentence. An uploaded file under `imports` stays
+  available to every reader.
+- Files: `resources/views/pages/settings/⚡import.blade.php`,
+  `app/Jobs/RunBackupImport.php`, `tests/Feature/ImportPageTest.php`,
+  `tests/Feature/ImportProgressTest.php`.
+
+M3, archive bounds:
+
+- Add configured caps for uncompressed bytes per entry, total staged bytes and a single
+  Tachibk field. Reject before allocating or copying past the cap.
+- Files: `config/papyrus.php`, `app/Import/Tachimanga/TachimangaReader.php`,
+  `app/Import/Tachibk/TachibkStream.php`.
+- Tests: `tests/Feature/TachimangaReaderTest.php`, `tests/Feature/TachibkStreamTest.php`,
+  `tests/Feature/ImportPageTest.php`. Use a small archive that expands past the cap. Assert
+  the run is refused, the worker does not exhaust memory and the temp file is removed.
+
+M7, store URL:
+
+- Restrict `addStore()` and `removeStore()` to the owner. Both change the shared Suwayomi
+  server rather than one reader's record.
+- Resolve the host before sending it to Suwayomi. Allow only `http` and `https`. Reject
+  loopback, private, link-local, multicast and unspecified addresses, including IPv4-mapped
+  IPv6 and the decimal, octal and hexadecimal spellings of a loopback address.
+- Files: `resources/views/pages/⚡sources.blade.php`, `app/Suwayomi/SourceCatalog.php` or a
+  small support class beside it.
+- Tests: `tests/Feature/SourcesPageTest.php`, `tests/Feature/SourceCatalogSyncTest.php`.
+  Cover loopback, RFC1918, link-local IPv6, a non-HTTP scheme, a public URL and a hostname
+  whose resolved address is private.
+- Residual risk: Suwayomi performs the fetch and may follow redirects. The plan does not
+  claim full SSRF protection. Owner-only access is the primary control. A DNS answer can
+  change between the check and the fetch.
+
+Acceptance:
+
+- A non-owner cannot reach the server-path import or the store URL action.
+- A crafted archive cannot expand beyond the configured cap.
+- A store URL pointing at loopback or a private address is refused before the mutation.
+- The refusal copy never echoes a full server path to a non-owner.
+
+### Batch E. H3 accepted risk and the security page
+
+Goal: make the accepted risk honest and correct the three false claims in
+`docs/SECURITY.md`, without changing the import behaviour.
+
+Files:
+
+- `docs/SECURITY.md`: the import section must say that a backup can install the extensions
+  it names and that this is not the same trust decision as the sources page. The rate-limit
+  sentence and the proxy query allowlist sentence are corrected at the same time.
+- `resources/views/pages/settings/⚡import.blade.php`: add a sentence beside the install
+  checkbox saying the extension runs with the Suwayomi process's access and the import
+  will install it unless the box is cleared. Copy only, no behaviour change.
+- `resources/views/pages/settings/⚡backups.blade.php`: add the copy-only M1 warning that a
+  backup carries live credentials and session identifiers. The exclusion and the AniList
+  encryption are 1.5.1.
+- `tests/Feature/ImportPageTest.php`: assert the warning is rendered.
+- `tests/Feature/Settings/BackupsPageTest.php`: assert the backup warning is rendered.
+- `tests/Feature/LegalPagesTest.php` or a new documentation test: keep the rate-limit and
+  proxy claims from drifting again where the values are stable enough to assert.
+
+Acceptance:
+
+- `docs/SECURITY.md` no longer claims that nothing installs quietly.
+- The import page states the default and the consequence.
+- The backups page warns that a backup contains live credentials.
+- The owner decision and the remaining risk are recorded in `CHANGELOG.md` in Batch H.
+
+H3 remains an open High finding. It is not marked fixed.
+
+### Batch F. Dependency update
+
+Goal: clear the reachable dependency advisory without a general dependency sweep.
+
+- Update `livewire/livewire` from 4.4.7 to 4.4.8 or newer within the existing `^4.1`
+  constraint. Update `composer.lock`.
+- Run the Livewire, search, import, backup and reader tests that exercise the changed
+  package.
+- Do not update npm, Node or unrelated Composer packages in this batch. Those are 1.5.1.
+- Record the advisory URL and the new resolved version in `CHANGELOG.md`.
+
+Acceptance:
+
+- `composer audit` no longer reports `GHSA-mhf7-xp6r-6qrc`.
+- The full suite still passes.
+- No unrelated lockfile churn.
+
+### Batch G. Walk High findings
+
+W-H1, search scope:
+
+- Replace "Leave empty to search all installed sources." with copy that names the cap and
+  the runnable source count. Disclose how many runnable sources are skipped. Do not claim a
+  full search when the cap leaves sources out.
+- Measured: `⚡search.blade.php:63` defaults `$limit` to 40, the form allows 1 to 150, and
+  `SearchFanout::targets()` cuts the runnable set to that limit unless it is negative. The
+  only disclosure today is `sourcesNotPinned`, which is empty when the reader has no pins,
+  so a cap cut is silent.
+- Add one public count to `SearchFanout` for the runnable universe under the same options
+  rather than re-implementing the filters in the page. The page's line should then read as
+  "searching N of M runnable sources" with the cap named, and a skipped count when M is
+  larger.
+- Files: `resources/views/pages/⚡search.blade.php`, `app/Search/SearchFanout.php`.
+  The `routes/web.php:185-192` comment already states the 40 target cap and an 82 source
+  measurement, so it needs no correction unless the copy contradicts it.
+- Test: `tests/Feature/SearchPageTest.php` and `SearchFanoutInterleaveTest.php`. Assert the
+  rendered count matches `targets()->count()`, the runnable total is named, and the skipped
+  count is not zero when the cap cuts the set. Also assert a reader with no pins sees the
+  cap disclosure, which is the case the current page cannot show.
+- Acceptance: a reader cannot read the page and believe every installed source was queried.
+
+W-H2, bulk download:
+
+- Stop reading the page-scoped `chapterStates` map in `unreadDownloadableCount()` and
+  `downloadUnread()`. Load the reader's state for every filtered chapter in chunks, or use a
+  dedicated series-wide read-state query.
+- Measured: `⚡series.blade.php` has `PER_PAGE = 50`; `chapterStates()` returns states only
+  for the slice on the open page, while both bulk actions loop over all filtered
+  `$this->chapters`. A read chapter on another page therefore counts as unread and is
+  queued. `DownloadLedger::enqueue()` receives the full id list at line 1258, which is the
+  seam a test can assert exactly.
+- Files: `resources/views/pages/⚡series.blade.php`.
+- Test: `tests/Feature/DownloadTest.php` (the existing bulk-download block) with more than
+  50 chapters and read states on both sides of the page boundary. Assert the button count
+  and the exact ids passed to the download ledger. Confirm the test fails against the
+  current code.
+- Acceptance: "Download unread" queues only chapters the reader has not read, regardless of
+  which page is open.
+
+### Pre-rebuild verification: imported Tachimanga shelves
+
+Owner-reported on 2026-10-26, before the runtime rebuild. This is a reader-path check, not
+a code batch. The import path does carry categories: `TachimangaReader::categories()` joins
+`CategoryManga` to shelf series and `BackupImporter::applyShelves()` creates shelves through
+`Library::createCategory()` and files members. The report row records
+`categories_in_file`, `category_members_placed` and `category_members_skipped`.
+
+First pass, measured read-only on 2026-10-26 and recorded above: the file carries two stored
+categories, `Youtube` and `Snowflakes`; `default` is Tachimanga's built-in unfiled bucket and
+has no `Category` row. The checkout's imports all ran 2026-10-09 to 2026-10-10, before
+shelves (`58919fe`) and reading days (`8e26a23`) existed, and left 0 shelves, 0 members and 0
+reading days. So the reported emptiness is an old import, not damage and not a hidden shelf.
+The current reader already returns both shelves, their members and 5,085 reading days from
+the new backup.
+
+Remaining acceptance step, after Batch G:
+
+- Reproduce on the current checkout against a scratch copy of the database, using the new
+  backup. Confirm `/library` lists `Youtube` and `Snowflakes` with their members, and that
+  Insights shows reading time. `default` is expected to be absent.
+- If the drop point turns out to be the code, fix it in 1.5.0 with a failing test first. If
+  it is the old build only, record that and rebuild. Do not change reader data.
+
+Passed on 2026-10-26. The scratch import produced both shelves with 97 members and 3,322
+reading days, and the rendered pages showed them; see the second pass above.
+
+Acceptance: the two shelves with their members and populated reading days appear from the
+current tree on a scratch database, or the exact drop point is named with counts from both
+sides and a dated finding.
+
+### Batch H. Release close-out for 1.5.0
+
+- `CHANGELOG.md`: 1.5.0 entry, including the H3 accepted risk.
+- `VERSION`: 1.5.0.
+- `docs/SECURITY.md`: the Batch E corrections and the new owner-only boundary.
+- `README.md`: only if a reader-facing claim changed.
+- Run all six gates on the final tree:
+
+```powershell
+php -d memory_limit=2048M artisan test --without-tty
+php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G
+php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/
+python ..\.tools\suwayomi\check-dashes.py
+python tools\check-machine-detail.py
+python tools\test-check-machine-detail.py
+```
+
+- Run the approved write probes against a scratch install or sandbox, not the live checkout:
+  two-account backup, restore and export attempts; non-owner import path; crafted archive;
+  loopback store URL. Record each result or mark it not run with the reason.
+- Re-walk `/search`, `/series/{manga}`, `/library`, `/settings/import`,
+  `/settings/backups`, `/sources` and `/migrate/sources` at desktop and mobile width.
+- Commit locally only after the full body of work is reviewed. Do not push without approval.
+
+## Release 1.5.1: remaining hardening and reader copy
+
+Security remaining:
+
+- M1: exclude `sessions` and `cache` from the reader-half backup, or replace them with empty
+  tables. Keep the 1.5.0 warning until this lands. Add a restore round-trip test.
+- M4: add an `encrypted` cast to `anilist_accounts.access_token`, migrate existing rows,
+  and document that disconnecting does not revoke a token unless AniList exposes a
+  revocation endpoint. Check the API before promising revocation.
+- M5: add AniList title lookup and mail to `Outbound::routes()`. Correct "collects nothing",
+  "Nothing", "Three things" and "no cookie". Add a test that the rendered privacy page and
+  the outbound list agree.
+- L1: remove the `title` key from the showcase payload. Keep the cover URL and manga id.
+- L2: document that `REMOTE_ADDR` is not a client identity behind a same-host proxy. Decide
+  between a launcher secret and a separate listener in a later release.
+- L3: delete an imported upload in a `finally`, or add a bounded retention command.
+- L6: add a security-header middleware with `frame-ancestors 'none'`, `Referrer-Policy:
+  same-origin`, `Permissions-Policy` and a global `X-Content-Type-Options: nosniff`. Add
+  HSTS only on a secure request.
+- I2: update the build and test Node toolchain and clear the npm advisories. This is not
+  shipped runtime code, but the build machines should not carry known criticals.
+
+Walk remaining:
+
+- W-M1: library check summary grammar and the disabled "Check 0 series" control.
+- W-M2: import history rows with date, counts and a distinguishable identity.
+- W-M3: migration destination filter and de-duplicated labels.
+- W-M4: a `<main>` landmark and a skip link.
+- W-L1: browse and series document titles include the source or series name.
+- W-L2: backups table column label and the absolute path in the interface.
+- W-L3: product copy and a cancel action on the confirm-password page.
+- W-L4: import copy that says "above" when the picker is below.
+- W-P1: keep `/search` clean until a search or filter is chosen.
+
+## Accepted risks and deferred items
+
+- H3 remains open. Import installs the extensions a backup names, by default, without the
+  per-user store trust check. The owner accepted this on 2026-10-25. Revisit if `shared` or
+  `public` mode is promoted beyond an experiment.
+- L4 guest session rows: 1.5.1 or later, unless public mode is promoted.
+- L5 reader GET creates a reading session: data quality, not security. Schedule separately.
+- I3 Suwayomi 2.4.2366 has no published advisory. No change.
+- I4 positive controls: keep the signature gate, the proxy allowlist and the build allowlist.
+- Installer signing, the historical machine-identity rewrite and PHPStan coverage of
+  `tests/` remain owner decisions outside this plan.
+
+## Risks and controls
+
+- B1's clean-machine acceptance is met for the install tree: run 19 passed every gate check on
+  Windows and read a source page through the app proxy. The runtime update and rebuild are done:
+  PHP 8.5.12, FrankenPHP 1.13.2 and the corrected JRE trust store are in both artifacts. The
+  installer remains unsigned after this plan.
+- The installer payload is proven by the manual sandbox, not by B1. On 2026-10-26 the real setup
+  executable installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight hung;
+  the fix is in the tree and the rebuilt installer needs a fresh manual shortcut run. B1's gate
+  still copies `build/install` and never runs the setup executable, so do not close the installer
+  on the strength of a green install-tree run alone.
+- The owner-role migration can lock an existing install out of backups if it promotes nobody.
+  The migration must backfill the earliest account and the test must cover an install with
+  existing users and no owner.
+- M2 owner-only paths reduce functionality for non-owners. That is deliberate. The upload
+  path stays available to every reader.
+- M3 caps must be generous enough for a real backup. Choose the limits from measured fixture
+  sizes, not a guess, and report the cap in the refusal.
+- M7 host checks can be bypassed by a redirect or a DNS rebind after the check. Owner-only
+  access is the primary control. Do not claim the request is fully SSRF-proof.
+- M1 and M4 are deferred to 1.5.1. Until then, a copied backup still carries live session
+  rows, the Suwayomi token cache and the plaintext AniList token. If the owner approves the
+  copy-only M1 warning for 1.5.0, it must say so; otherwise the 1.5.1 backup change carries
+  the warning.
+
+## Verification matrix
+
+| Batch | Focused proof | Final proof |
+| --- | --- | --- |
+| A | first and second account role tests, posted role ignored, migration backfill | six gates |
+| B | staged `php -v`, `frankenphp --version`, `java -version`, build assertions | installer and portable built; install tree passed the Windows Sandbox gate on run 19, including a source page read; source access also passed on WSL; the manual sandbox proved the setup executable installs 1.5.0 and the reader flow works, and found the shortcut preflight hang, fixed in the tree; a fresh manual shortcut run on the rebuilt installer is pending |
+| C | two-account page, action and export tests | scratch-install write probe, re-walk backups page |
+| D | non-owner path refusal, crafted archive cap, store URL refusals | scratch-install probes, re-walk import and sources |
+| E | warning copy and documentation assertions | dash and machine-detail gates |
+| F | `composer audit`, focused suite | six gates |
+| G | search count and copy, bulk-download ids across the page boundary | re-walk search and series |
+| H | full six gates, write probes, re-walk | release artifacts and changelog |
+
+## Order
+
+1. A, because C and D depend on the owner ability.
+2. C, because it closes the two remaining High findings that do not need the runtime build.
+3. D, because it closes the import and store request paths.
+4. E and F, which are small and documentation or dependency work.
+5. G, the two walk High findings.
+6. B, last in the code order, because it needs a separate build and sandbox approval. It may
+   run in parallel with A to G, but nothing may run from `build/install` while a build is
+   rewriting it.
+7. H, after every batch is reviewed.
+
+## Resolved decisions
+
+- The server-path import field stays for the owner only.
+- The copy-only M1 backup warning ships in 1.5.0; L1 waits for 1.5.1.
+- The runtime rebuild and sandbox are approved after Batches A, C, D, E, F and G are
+  reviewed.

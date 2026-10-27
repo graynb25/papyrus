@@ -1,11 +1,18 @@
 # Packaging Papyrus for Windows
 
-Status: **the 1.4.0 Windows installer builds; clean-machine reader verification is incomplete.** The
-latest Sandbox attempt started Papyrus on port 8402 and Suwayomi answered, but the guest produced no
-final report and did not prove a clean reader can browse and read from a source. Do not treat startup
-as end-to-end reader verification. Earlier completed runs found thirteen defects, including three
-visible only off the development machine. Item 0.9, the unified logging that makes any of this
-diagnosable, is designed in
+Status: **the 1.5.0 Windows installer builds; the install tree passed the Windows Sandbox gate on
+run 19 with a real Windows source read. The real setup executable also installed 1.5.0 in the
+manual sandbox and the reader flow worked, but the shortcut preflight hung; the fix is in the tree
+and a fresh manual run on the rebuilt installer is pending.** Run 19
+copied `build/install` to a fresh guest and started it through the reader shortcut. All 86 checks
+held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app reported ready on 8402, Edge opened,
+the first account was created, `/sources` rendered, the Keiyoushi store and MangaTaro were
+installed, One Piece was fetched, and page 0 of chapter 1 was read through the authenticated
+proxy as a 175,432-byte WebP. The gate does not run the setup executable;
+`launch-manual.ps1` is the separate manual run, and its first run installed the payload and found
+the shortcut defect. Earlier
+completed runs found thirteen defects, including three visible only off the development machine. Item 0.9, the unified logging that makes any of this diagnosable, is
+designed in
 [`LOGGING.md`](LOGGING.md). Distribution, signing, platforms, backup and publishing are in
 [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
 and the upstream projects it would ship.
@@ -20,10 +27,15 @@ php packaging/installer/build-installer.php --unsigned  the local unsigned .exe
 php packaging/installer/build-portable.php   the zip, hashed
 ```
 
-The 1.4.0 build on 2026-10-25 ran in the checkout. The install payload passed its built-in checks
-at 625.4MB. The unsigned installer compiled at 262.0MB, and the portable archive compiled at
-305.9MB with 12,957 entries and a matching sidecar hash. The clean-machine reader path remains
-unproven because the latest Sandbox run did not produce a final report or verify source reads.
+The 1.5.0 build on 2026-10-26 ran in the checkout. The install payload passed its built-in checks
+at 12,962 files. The unsigned installer compiled at 275,084,054 bytes (262.3MB), and the portable
+archive compiled at 321,054,843 bytes (306.2MB) with 12,963 entries and a matching sidecar hash.
+The staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The install tree
+passed the Windows Sandbox gate on run 19 with 86 checks, including a source page read through
+the app proxy. The gate copies `build/install` rather than running the setup executable. The
+separate manual sandbox ran `Papyrus-1.5.0-setup.exe`: it installed 1.5.0 per-user and the reader
+flow worked, but `Papyrus.cmd` hung at its `php -n` preflight. The check is now `php -n -v`, with a
+regression test; a fresh manual run on the rebuilt installer is pending.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved
@@ -407,7 +419,9 @@ measured on four real processes rather than argued.
 
 Windows Sandbox will not start a second guest while one is open, and the message goes to a window
 nobody is watching. Close the window and check for `vmmemWindowsSandbox` before launching again
-rather than trusting the clock.
+rather than trusting the clock. On this host the memory process can outlive both the client and
+`WindowsSandboxServer`; the release that worked was an elevated `hcsdiag list` followed by
+`hcsdiag kill <the Running WindowsSandbox id>`, never the SavedAsTemplate entry.
 
 Three things about it fail silently, and each is recorded in `build/sandbox/papyrus.wsb` so it does
 not have to be rediscovered:
@@ -420,25 +434,44 @@ not have to be rediscovered:
 - Every path passed to `Start-Process` has to be quoted. This is defect 16's mechanism one level
   down, and it appeared four times in a single afternoon, each time as a confident wrong answer.
 
+Run it with `powershell -File build\sandbox\launch-gate.ps1`, not by opening the `.wsb` by hand.
+The launcher refuses a running guest, clears `build\sandbox-results` recursively, and refuses to
+launch if anything remains, so a report from an earlier run cannot be mistaken for this one. It
+waits for `sandbox-report.txt` and prints the report as it grows.
+
 **What the gate actually asserts**, from `build/sandbox/run-in-sandbox.ps1`:
 
 ```
 no java on PATH, no php on PATH, no Java installed
 all required files present, exactly one suwayomi jar
 no database, no .env and no logs shipped
-bundled php.exe runs standalone                      PHP 8.5.11 ZTS Visual C++ 2022 x64
+bundled php.exe runs standalone                      PHP 8.5.12 ZTS Visual C++ 2022 x64
 13 directories created, Suwayomi answering
 database migrated, no database written into the install
 the app reports ready
 queue worker and scheduler started
 Papyrus is running at http://127.0.0.1:<port>
 suwayomi answers graphql                             v2.4.2366
+the Keiyoushi store adds 1,431 extensions
+MangaTaro installs and Suwayomi lists it as a source
+the source returns One Piece with 1,202 chapters
+fetchChapterPages returns 53 page paths for chapter 1
+page 0 through /suwayomi/api/v1/... is 200 image/webp, 175,432 bytes
+/sources and /series/1 render after the catalogue is populated
 https works with the bundled trust store            200
 papyrus diagnostics writes its five files and collects its logs
 no line lost collecting suwayomi output              209 collected, 209 in the source
 all four processes stopped, both ports released
 the stop did not claim there was nothing to stop
 ```
+
+Run 19 was the first run to reach the source read. The report is 10,056 bytes, SHA-256
+`02413c0cdfb47475ffc681033d2d3eb02362208a7934008d7eb335267b94d650`; the screenshot is
+1,556,164 bytes, SHA-256
+`c0926a1af1d5fd3adf31c6f421eff1ab0645e6c818b0125c359b4cbc19cd42df`. The page was 175,432
+bytes, SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`, the same
+first page WSL run 3 read. The artifacts are preserved under
+`%TEMP%\opencode\run19-20261026\`.
 
 An empty library in the sandbox is the **correct** result, not a symptom. No database and no
 extensions ship, so a clean machine shows an empty library by design.
@@ -485,6 +518,58 @@ treated a `start` command still serving after four minutes as a hang when a fore
 holding and serving *is* the success case. The second one made a healthy install look broken for
 ten minutes. The runner now reads the port from the launcher's own output and treats a running
 process as success.
+
+### The manual sandbox: the installer, not the install tree
+
+The gate copies `build/install` and never runs `Papyrus-1.5.0-setup.exe`. That is the right shape for
+a gate, and it leaves the setup executable, its shortcuts, its first run and the pages a reader
+actually clicks unproven. Those are manual checks, so they have their own sandbox rather than a
+weakened gate.
+
+`build\sandbox\launch-manual.ps1` builds `build\sandbox\papyrus-manual.wsb` from
+`papyrus-manual.wsb.template`, creates a fresh `build\manual-sandbox-results\session-<timestamp>`
+folder, writes the expected installer size and SHA-256 into it, and maps three folders:
+
+| Host | Guest | Mode |
+| --- | --- | --- |
+| `build\dist` | `C:\installer` | read only |
+| `build\sandbox` | `C:\sandbox` | read only |
+| the session folder | `C:\results` | writable |
+
+The guest copies the installer to its desktop, checks the copy against the host-written hash, and
+leaves it there to be double-clicked. It also starts `capture-screen.ps1` hidden: a PNG every ten
+seconds, a CSV index, and a stop marker. Four desktop shortcuts open the installer, take a named
+step capture, stop the loop, and open the results folder. The loop is the record; the named frames
+are the index a person can read.
+
+    powershell -File build\sandbox\launch-manual.ps1
+    powershell -File build\sandbox\launch-manual.ps1 -NoLaunch
+
+`-NoLaunch` writes the `.wsb` and the session files without starting a guest. The launcher refuses a
+running guest and refuses an installer whose size or hash does not match `build\dist\manifest.json`.
+Inside the guest, the desktop shortcuts and `START-HERE.txt` carry the order: install, register, add
+the Keiyoushi store, install MangaTaro, search One Piece, read a chapter, name the moments, stop the
+screenshots, close the sandbox.
+
+The session folder ends up with `READY.txt`, `installer-verified.txt`, `setup.log`, `session.txt`,
+`MANUAL-README.txt`, `shot-*.png`, `screenshots.log`, `step-*.png`, `steps.log` and
+`capture-stopped.txt`. The named steps are `step-<label>-<timestamp>.png`; a label is sanitised to
+letters, digits, dots, underscores and hyphens before it becomes a file name.
+
+The run is manual acceptance evidence and never a gate pass. It proves what a person saw, not a
+reproducible assertion. The installer is unsigned, so any warning is recorded rather than worked
+around. The app binds loopback only, so the guest's own browser is the only one that can reach it.
+The host scripts were exercised on the development machine: the watcher took two frames and stopped
+on its shot limit, the named capture wrote its frame and log, and `-NoLaunch` generated a valid
+`.wsb` with the expected installer hash.
+
+The first guest run on 2026-10-26 used the pre-fix installer and proved the setup executable, the
+registration page, the Keiyoushi store, MangaTaro, a One Piece search, the series page and a
+chapter read. It also found the preflight defect: `Papyrus.cmd` ran `php -n` with no script, and a
+console leaves stdin open, so the runtime check waited forever and the window stayed blank. The
+gate and `PapyrusCmdTest` had redirected stdin from an empty file and missed it. The check is now
+`php -n -v`, with a regression test that keeps stdin open. The rebuilt installer still needs a
+fresh manual run through the shortcut before this evidence can be called a pass.
 
 ### Done and verified: 0.2, the FrankenPHP gate
 
@@ -648,7 +733,7 @@ memory:
 | 0.7 | Data location under `%LOCALAPPDATA%` | done | `DataLocation.php`, with a portable branch beside the program. Live install at `%LOCALAPPDATA%\Papyrus` |
 | 0.8 | Launcher: tray, start, stop, open browser | **partly done** | `Papyrus.cmd` starts, stops, reports, and **opens the browser at the address it actually bound** (`--open`). **No tray icon and no native binary.** The plan called for a 5 to 10MB Go or C# binary; what exists is a batch file. Deliberate, since the batch file is what the clean sandbox could prove, and a native binary would need its own gate |
 | 0.9 | One place for four processes' logs | done | `SummaryLog` writes the one-line-per-process summary; nine parsers normalise the nine native formats; `papyrus diagnostics` bundles them |
-| 0.10 | Clean-sandbox verification | done, **and re-run** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Re-run 2026-10-13: PASS, 53 assertions**, on a fresh guest with no Java, no PHP on PATH and no Java installed |
+| 0.10 | Clean-sandbox verification | **partly done, re-run on 1.5.0** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Run 19, 2026-10-26: PASS, 86 checks, 0 failures**, on a fresh guest with no Java, no PHP on PATH and no Java installed. It started the install through the reader shortcut with `--open`, created the first account, rendered `/sources`, added the Keiyoushi store, installed MangaTaro, fetched One Piece, read page 0 of chapter 1 through the proxy (200 `image/webp`, 175,432 bytes, SHA-256 `9996ffbb...`), and rendered `/sources` and `/series/1` after the catalogue was populated. The original bar also names importing a backup; run 19 does not, so the backup path in a clean guest remains unproven. The gate copies `build/install`; the separate manual sandbox ran the setup executable on 2026-10-26 and installed 1.5.0, but its shortcut preflight hung. The fix is in the tree; a fresh manual run on the rebuilt installer is pending |
 | 0.12 | Look at a real install in a sandbox | done | `build/sandbox/hold-open.ps1` and `papyrus-hold.wsb`. A gate stops everything it starts, so it cannot be used to look at the thing. This is the same setup and then it holds. **Verified live: 12,644 files copied, `/ready` 200 in 15s.** Nine tests in `SandboxRunnerTest`, both mutations killed |
 | 0.11 | Decide the Suwayomi runtime shape | done | The `jlink` question was answered by staging rather than building: a pinned JRE is staged beside the jar at build time and digest verified. 353.6 MB of the 623 MB install is Suwayomi and its JVM, none of it ours |
 | 0.12 | Uninstall must not delete the library | done | `papyrus.iss` contains **zero** `[UninstallDelete]` directives. The full install, run, uninstall cycle was run with the library hashed either side and it came back byte identical |

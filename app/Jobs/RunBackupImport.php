@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Runs one backup import for one reader.
@@ -95,6 +96,23 @@ class RunBackupImport implements ShouldQueue
             return;
         }
 
+        /*
+         * Which paths an account may name.
+         *
+         * A path is read by the queue worker, so on a shared install it would let a reader
+         * ask the server to read any file its account can read. The owner keeps the
+         * large-backup route. A reader may only name a file this app itself stored under
+         * `imports`, which is the only place an upload can land.
+         *
+         * The rule is repeated here, after dispatch, because the account's role can change
+         * between the page and the worker, and a queued payload is not a permission.
+         */
+        if (! $user->isInstallOwner() && ! $this->isUnderImports($this->path)) {
+            $this->refuse("There is no file named {$this->fileLabel()} that this account can import.");
+
+            return;
+        }
+
         if (! is_file($this->path)) {
             /*
              * The file can be gone before the job runs, and it usually is: the page accepts a
@@ -102,8 +120,12 @@ class RunBackupImport implements ShouldQueue
              * file is a refusal with a sentence attached, which is what {@see ImportRefused}
              * means, so it is recorded the same way a format problem is rather than being left
              * as an exception in `failed_jobs` that a page has no way to read.
+             *
+             * The sentence names the file, not the path. The history and the page are visible
+             * to every reader on this install, and a server path says where this machine keeps
+             * things.
              */
-            $this->refuse("There is no file at {$this->path} when the import started.");
+            $this->refuse("There is no file named {$this->fileLabel()} when the import started.");
 
             return;
         }
@@ -211,6 +233,46 @@ class RunBackupImport implements ShouldQueue
     }
 
     /**
+     * Whether a path names a file inside this app's own imports directory.
+     *
+     * A prefix is not containment: `imports-evil` starts with `imports`, so a string
+     * comparison would hand a reader a sibling directory. Both sides are canonicalised and
+     * the result must sit below the directory separator. A leaf that no longer exists is
+     * resolved through its parent, which is exactly the missing-upload case, so a reader
+     * learns "missing" rather than "outside" for a file this app stored.
+     */
+    private function isUnderImports(string $path): bool
+    {
+        $root = realpath(Storage::disk('local')->path('imports'));
+
+        if ($root === false) {
+            return false;
+        }
+
+        $candidate = realpath($path);
+
+        if ($candidate === false) {
+            $parent = realpath(dirname($path));
+
+            if ($parent === false) {
+                return false;
+            }
+
+            $candidate = $parent.DIRECTORY_SEPARATOR.basename($path);
+        }
+
+        $root = rtrim($root, '/\\');
+        $candidate = rtrim($candidate, '/\\');
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $root = strtolower($root);
+            $candidate = strtolower($candidate);
+        }
+
+        return $candidate !== $root && str_starts_with($candidate, $root.DIRECTORY_SEPARATOR);
+    }
+
+    /**
      * The name a reader recognises, rather than the key the file was stored under.
      *
      * Laravel names an upload after its guessed MIME type, so a Tachimanga `.tmb` (a ZIP)
@@ -230,7 +292,7 @@ class RunBackupImport implements ShouldQueue
             return basename(str_replace('\\', '/', $name));
         }
 
-        return basename($this->path);
+        return basename(str_replace('\\', '/', $this->path));
     }
 
     /**

@@ -56,6 +56,17 @@ credential lasts until the reader revokes it or the token expires, which AniList
 about a year, and the app deletes the row on a rejected token rather than trying to
 refresh it.
 
+## A backup holds the whole database, secrets included
+
+A backup pair is not a library-only copy. Its reader half is a copy of the whole application
+database, so it carries live `sessions` rows, the `cache` table where the Suwayomi bearer and
+refresh tokens live, the plaintext AniList OAuth token in `anilist_accounts`, password hashes
+and remember tokens from `users`, and every reader's library rows.
+
+Treat the backups folder as a secret, the same as the database itself. Copy a backup only to
+a place you trust, and delete one you no longer need. Version 1.5.0 does not exclude those
+tables or encrypt the AniList token inside a backup.
+
 ## Suwayomi answers on loopback only
 
 Two separate things, and for a long time this section described one of them while being titled
@@ -102,12 +113,18 @@ reach it controls everything. `AuthMode.UI_LOGIN` is the setting that matters he
 ## Extension stores are code you have not read
 
 A store index is a list of extensions. Installing one runs Kotlin that scrapes a website on
-your behalf, and Papyrus deliberately ships no bundled list, so you choose what runs.
+your behalf, and Papyrus deliberately ships no bundled list, so you choose what runs. It
+cannot tell you whether an extension is well behaved, because nobody can without reading
+the source.
 
-Papyrus shows you each extension's signing key and makes trusting it an explicit decision,
-so nothing installs itself quietly. It cannot tell you whether an extension is well
-behaved, because nobody can without reading the source. Treat the store URL as the trust
-decision it is: paste one you have looked at.
+The Sources page asks for an explicit trust decision per store, and names the signing key
+before anything is installed from it. Import is not the same decision. A backup names the
+extensions it needs, and unless you clear "Install the extensions this backup needs" before
+you start, Papyrus installs them by default without the per-store trust step. That is a
+known risk, accepted for this release. Clear the checkbox before importing a backup you did
+not make yourself.
+
+Treat the store URL as the trust decision it is: paste one you have looked at.
 
 ## What the app already does for you
 
@@ -115,6 +132,11 @@ Worth knowing before deciding what to add in front of it:
 
 - **Registration is closed in `single` mode**, which is the default. `/register` answers 404,
   and the sign-up link is hidden, so a one-reader install cannot be joined by accident.
+- **Whole-install backup, restore, export and store add or remove require the install
+  owner.** That is the first account, made by the browser's first-account window or by
+  `php artisan users:create` (where `--admin` names an owner explicitly), and the role is
+  not settable from a web request. Readers keep their own library, imports, trust records
+  and profile.
 - **Login is rate limited** to 5 attempts a minute, and there are separate limiters for
   two-factor and passkey challenges.
 - **Two-factor authentication** is available per account, with password confirmation to
@@ -122,8 +144,8 @@ Worth knowing before deciding what to add in front of it:
 - **Passkeys** are available per account, and `.well-known/passkey-endpoints` is public by
   necessity, since that is what a passkey provider fetches.
 - **Every page image streams through a Laravel route**, with an allow-list of the two URL
-  shapes and only `format` and `updateProgress` forwarded to Suwayomi. A page image is
-  therefore never a request Suwayomi's REST layer can serve unauthenticated.
+  shapes and only `format`, `updateProgress`, `width` and `height` forwarded to Suwayomi. A
+  page image is therefore never a request Suwayomi's REST layer can serve unauthenticated.
 - **Page routes require a bearer token**, so a bare request to Suwayomi's REST endpoint gets
   a 401 and not a page.
 - **The AniList callback sits behind `auth` and `verified`, and compares the OAuth state
@@ -140,7 +162,11 @@ table and the moderation surfaces are aspirations: `enforcesQuotas()` and `quota
 and are unit tested, and no application code calls either, so `storage_quota_bytes` is
 written by nothing. Section 14 of the engineering notes has the detail.
 
-No application route is rate limited. Only the Fortify endpoints are.
+The public FAQ, privacy, terms and showcase JSON routes carry `throttle:120,1`, which is
+120 requests a minute for one client. The showcase cover route is deliberately not
+throttled: it serves public cache and its expensive step is a thumbnail on the
+loopback-bound server. The Fortify endpoints have their own login, two-factor and passkey
+limiters.
 
 ## Reporting
 

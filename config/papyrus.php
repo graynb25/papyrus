@@ -321,6 +321,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backup imports
+    |--------------------------------------------------------------------------
+    |
+    | A backup is unpacked to temporary files before it is read, so its own size is
+    | not the amount of disk it can ask for. Tachimanga's format is two zips deep:
+    | a measured real `.tmb` is 39.36MB compressed, and its `contents.zip` entry is
+    | 41.40MB when unpacked while the SQLite database inside that is 110.84MB. Those
+    | two files are staged at once, 152.24MB in total for a backup of 39MB.
+    |
+    | The per-entry cap is 256MB, 2.3 times the measured database, so a library a
+    | little larger than the measured one still imports. The total cap is 384MB, 2.4
+    | times the measured pair and above 256MB plus the 41.40MB container, so a
+    | legitimate entry at the per-entry ceiling can still be staged beside the other.
+    | Both are ceilings on what this app will unpack, not on what a phone can export.
+    |
+    | A `.tachibk` is not staged, but its protobuf walk allocates one top level field
+    | at a time. The largest measured field in a real file is 91,005 bytes, in a
+    | 259,930 byte payload, so 16MB is about 184 times the measured field and still
+    | far below the memory limit. The cap is checked against the declared length,
+    | before the bytes are read, which is the only point where it can prevent the
+    | allocation rather than report it afterwards.
+    |
+    */
+
+    'import' => [
+        'max_entry_bytes' => (int) env('PAPYRUS_IMPORT_MAX_ENTRY_BYTES', 268_435_456),
+        'max_staged_bytes' => (int) env('PAPYRUS_IMPORT_MAX_STAGED_BYTES', 402_653_184),
+        'max_field_bytes' => (int) env('PAPYRUS_IMPORT_MAX_FIELD_BYTES', 16_777_216),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Covers
     |--------------------------------------------------------------------------
     |

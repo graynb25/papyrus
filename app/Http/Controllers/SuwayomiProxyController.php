@@ -53,6 +53,8 @@ class SuwayomiProxyController extends Controller
      *
      * format      - MIME transcode, e.g. webp or avif (Suwayomi serveConversions)
      * updateProgress - lets a bare <img> advance read state with no JS at all
+     * width       - requested width in pixels for a responsive image source
+     * height      - requested height in pixels for a responsive image source
      */
     private const ALLOWED_QUERY = ['format', 'updateProgress', 'width', 'height'];
 

@@ -14,8 +14,8 @@ shipped, and so has H7.** For what exists, read
 [`ENGINEERING-NOTES.md`](ENGINEERING-NOTES.md) section 11, and section 14 for the list of
 things the code does not actually do.
 
-Where the two disagree, the code and the engineering notes are right. Two claims in here
-were caught being wrong during a documentation pass in October 2026 and are marked in place
+Where the two disagree, the code and the engineering notes are right. Several claims in here
+were caught being wrong during documentation passes in October 2026 and are marked in place
 rather than deleted, since a plan that only records what it got right is not worth keeping.
 
 Several items below were answered by measurement after the plan was written, in ways
@@ -33,7 +33,7 @@ live in `docs/ENGINEERING-NOTES.md` section 3.
 | Source policy | No bundled source list; user pastes repo URLs | Matches Mihon/Suwayomi practice. Lowest legal exposure. |
 | Devices | Desktop-first, mobile works | Keyboard nav, spreads, wide layouts first. |
 | Reader zoom | Custom canvas, zero dependencies | Full control, no licence/maintenance risk. |
-| Host | Native Windows, JAR | No Docker/WSL2 (virtualization off). Simpler for single-user anyway. |
+| Host | Native Windows, JAR; WSL2 and Docker for Linux tests | The JAR is the supported desktop deployment. WSL2 and Docker are available and used only for test and soak runs. The original "no Docker/WSL2" claim was wrong; see the correction below. |
 
 ---
 
@@ -44,7 +44,7 @@ live in `docs/ENGINEERING-NOTES.md` section 3.
 | PHP | 8.4.25 (Herd) | Meets `^8.3` |
 | Node / npm | 26.7.0 / 11.19.0 | |
 | JRE | **26.0.2** Oracle JDK | Exceeds Suwayomi's JRE 21+ requirement |
-| Virtualization | **Off** (`VirtualizationFirmwareEnabled: False`, SLAT `False`) | WSL2, Hyper-V, Docker Desktop all unavailable. **JAR only.** |
+| Virtualization | **On** (corrected 2026-10-26) | `HypervisorPresent: True`; WSL2 3.0.3.0 with kernel 6.18.54.1, Ubuntu 26.04.1 and Docker Desktop 4.96 are installed. The old `VirtualizationFirmwareEnabled: False` reading did not mean the hypervisor was off. **JAR remains the shipped deployment.** |
 | CPU | i7-12700K (x64) | ARM64 JCEF segfault (#2170) does not apply |
 | Herd nginx | `Herd's nginx config directory` | Site config generated at runtime from `herd.sqlite` |
 | Java on PATH | Yes, `JAVA_HOME` empty | |

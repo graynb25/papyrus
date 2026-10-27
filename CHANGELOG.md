@@ -15,7 +15,70 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## 1.4.0 - 2026-10-25
+## 1.5.0 - 2026-10-26
+
+The security release after 1.4.0. Whole-install actions now belong to the install owner, the
+import and store paths refuse the cases the audit measured, and the packaged runtime moves to
+the PHP, FrankenPHP and Java builds that close the October advisories. The two High findings
+from the walk are fixed. The findings and the batch record are in the
+[2026-10-25 audit](docs/audits/2026-10-25/security.md).
+
+### Security
+
+**The install has an owner.** The first account, whether created in the browser or with
+`users:create`, becomes the install owner; an existing install promotes its first account once.
+The new `manage-install` ability gates the whole-install actions: the Backups page, a restore, a
+library export, and adding or removing an extension store. A reader keeps every other page, and
+the Backups link is no longer offered to an account that cannot use it.
+
+**Import and stores refuse the measured attack cases.** The server-path import field is owner
+only, uploads are contained inside the import folder, and a staged archive is capped at 256 MiB
+per entry and 384 MiB in total, with a 16 MiB cap per Tachibk field. A store address must be
+http or https and cannot resolve to loopback, a private or link-local address, multicast, the
+unspecified address, or an alternate spelling of loopback. Adding or removing a store is owner
+only.
+
+**The packaged runtime is current.** FrankenPHP 1.13.2 ships PHP 8.5.12, which closes
+CVE-2026-109618 and CVE-2026-109619, and carries the fixes for four FrankenPHP advisories:
+GHSA-6q3j-62j9-f9hh, GHSA-fq24-r53r-xcx3, GHSA-ccgp-ch9h-533f and GHSA-4gfw-9v29-gp9h.
+The packaged Java runtime moves to Temurin 25.0.5+8 for the October CPU and the compromised
+eMudhra roots are removed from its trust store.
+
+**Livewire 4.4.8.** The update closes GHSA-mhf7-xp6r-6qrc, an authorization bypass in
+`#[Authorize]` with `#[Json]`. Papyrus uses neither attribute, so direct exposure was unlikely,
+but the dependency finding is closed.
+
+**A backup pair is a secret.** The Backups page now says plainly that a pair contains the whole
+application database, including live session rows, cached manga-server tokens, an AniList token
+and password hashes, and that the folder must be treated as one. Excluding sessions and cache
+from the reader half is planned for 1.5.1; this release warns rather than changes the shape of a
+backup.
+
+**Import can install source extensions.** A Tachimanga import can install the extensions the
+file names so its series can resolve. The import page states this before the run. The install
+owner accepted the behaviour for 1.5.0; the code path is unchanged.
+
+### Fixed
+
+**Search says what it actually asks.** The page used to say it searched every installed source
+while the fanout was capped at 40. It now names the cap, the runnable total and how many
+runnable sources the cap leaves out, so a reader cannot read the page and believe every
+installed source was queried. Walk finding H1.
+
+**Download unread ignores read chapters on other pages.** The bulk action read its read state
+from the 50 chapters on the open page, so a read chapter on any later page looked unread. It now
+reads the whole filtered series in chunks. Walk finding H2.
+
+**The reader's shortcut no longer waits for a script.** `Papyrus.cmd` ran `php -n` to check the
+runtime, and PHP with no script reads one from stdin. A double-clicked console leaves stdin open,
+so the window sat blank before the launcher printed anything and no data directory was created.
+The check now runs `php -n -v`, which exits without reading stdin. The gate and the tests had
+redirected stdin from an empty file, which is why only the manual installer run found it.
+
+The remaining Medium, Low and copy findings from the audit are scheduled for 1.5.1.
+
+---
+
 
 The release after 1.3.0: the last UI/UX audit findings, time and navigation in plainer words, a
 library check that can be stopped, reading time carried in from a backup, and backup uploads as

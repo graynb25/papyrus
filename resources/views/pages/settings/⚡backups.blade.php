@@ -18,6 +18,7 @@ use Carbon\CarbonInterface;
 use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -52,6 +53,11 @@ new #[Title('Backups')] class extends Component {
      * `RunRecord` and `BackupPair` are autoloadable from here, so there is one implementation of each
      * format rather than a second one to drift. See `RunOutcome`.
      */
+
+    public function mount(): void
+    {
+        Gate::authorize('manage-install');
+    }
 
     #[Computed]
     public function backups(): BackupLibrary
@@ -402,6 +408,13 @@ new #[Title('Backups')] class extends Component {
 
     public function start(): void
     {
+        /*
+         * Every action repeats the gate because a Livewire action is its own request: the
+         * route middleware does not cover a crafted action call, and mount runs only on the
+         * first render.
+         */
+        Gate::authorize('manage-install');
+
         $pressing = $this->activeRun();
 
         if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
@@ -706,6 +719,8 @@ new #[Title('Backups')] class extends Component {
 
     public function restore(): void
     {
+        Gate::authorize('manage-install');
+
         $run = $this->activeRestoreRun();
 
         if ($run !== null && $run->isRunning() && ! $this->runIsAbandoned($run)) {
@@ -893,6 +908,8 @@ new #[Title('Backups')] class extends Component {
 
     public function startExport(): void
     {
+        Gate::authorize('manage-install');
+
         $pressing = $this->activeExportRun();
 
         if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
@@ -998,6 +1015,10 @@ new #[Title('Backups')] class extends Component {
     <flux:heading level="2" class="sr-only">{{ __('Backups') }}</flux:heading>
 
     <x-pages::settings.layout :heading="__('Backups')" :subheading="__('Keep a copy of your library, or put one back')">
+        <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
+            {{ __('These actions manage the whole install rather than one account: a backup copies the live database, a restore replaces it, and an export writes the library out. Only the install owner can take them.') }}
+        </p>
+
         {{--
             The last time, read in one place.
 
@@ -1419,6 +1440,10 @@ new #[Title('Backups')] class extends Component {
         <flux:heading level="3" class="mb-3 text-base">{{ __('Where they are') }}</flux:heading>
 
         <p class="mb-2 font-mono text-sm break-all text-gray-700 dark:text-gray-300">{{ $this->directory() }}</p>
+
+        <p class="mb-2 text-sm text-amber-700 dark:text-amber-300">
+            {{ __('A backup pair contains the whole application database, including live session rows, the tokens the manga server has cached, an AniList token and password hashes. Treat this folder as a secret.') }}
+        </p>
 
         <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
             {{ __('To use one, press Restore on its row. Papyrus keeps running, and the confirmation shows what will be replaced. You can also close Papyrus and run papyrus restore in a terminal with the backup file path.') }}

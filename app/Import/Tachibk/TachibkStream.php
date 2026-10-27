@@ -352,6 +352,18 @@ final class TachibkStream
             throw MalformedProto::cutShort();
         }
 
+        /*
+         * The declared length is known before any of the value is read, so this is the
+         * only point where the cap can stop the allocation instead of measuring it after
+         * the fact. `skip()` is deliberately not capped: an unwanted field is discarded
+         * from the stream and never becomes a string.
+         */
+        $limit = (int) config('papyrus.import.max_field_bytes', 16_777_216);
+
+        if ($limit > 0 && $size > $limit) {
+            throw MalformedProto::fieldTooLarge($limit);
+        }
+
         $value = '';
 
         while (strlen($value) < $size) {

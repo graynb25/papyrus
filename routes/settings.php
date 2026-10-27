@@ -37,28 +37,31 @@ Route::middleware(['auth'])->group(function () {
     /*
      * What can be restored, and what the last run from any door did.
      *
-     * Behind `auth` and not `verified`, beside `about` and for the same reason: it reads the
-     * filesystem and nothing about the reader. There is no reader data on the page, so there is
-     * nothing to escalate for, and a reader who has just signed up and cannot yet receive a mail is
-     * exactly the one most likely to be wondering whether their first backup happened.
+     * Behind `auth` and `can:manage-install`, not `verified`. The owner check is the point: a
+     * backup copies every reader's library, a restore replaces the live database for every
+     * reader, and an export writes the library out, so these are install-wide actions rather
+     * than changes to one account. A reader who has just signed up and cannot yet receive a
+     * mail may be the owner of a fresh install, which is why verification is not asked here.
      *
      * The page takes pairs itself now, through the live backup and the live restore, and keeps
      * the launcher's commands named beside them as the doors that stop Papyrus to run. Nothing
      * here stops anything: a backup is taken while everything keeps running, and the refusals
      * it can meet are named on the page in the run rows, not in this comment.
      */
-    Route::livewire('settings/backups', 'pages::settings.backups')->name('backups.edit');
+    Route::livewire('settings/backups', 'pages::settings.backups')
+        ->middleware('can:manage-install')
+        ->name('backups.edit');
 
     /*
      * The download one finished export run offers.
      *
-     * A GET beside the backups page whose button presses it, in that page's own group rather
-     * than the verified one below: the reader standing at `settings/backups` pressing the
-     * export is already past this seam, and the page's own reason for sitting under plain
-     * `auth` is this one's too. Nothing the request changes is state on this server, the
-     * file having been written by a finished run before the request arrived, so a GET is
-     * the whole shape and a reader can bookmark a completion or open it in a new tab the
-     * way the cbz export's route comment argues in `routes/web.php`.
+     * A GET beside the backups page whose button presses it, behind `auth` and
+     * `can:manage-install` in that page's own group. The file is a whole-library export, so
+     * only the install owner may ask for it; a reader is refused at the route and again in
+     * the controller. Nothing the request changes is state on this server, the file having
+     * been written by a finished run before the request arrived, so a GET is the whole shape
+     * and the owner can bookmark a completion or open it in a new tab the way the cbz
+     * export's route comment argues in `routes/web.php`.
      *
      * Keyed on the run and never on a file name, which is the decision the controller's
      * own docblock carries in full: the exports folder is a product folder, and only a
@@ -66,6 +69,7 @@ Route::middleware(['auth'])->group(function () {
      */
     Route::get('settings/backups/export/{run}', ExportDownloadController::class)
         ->whereNumber('run')
+        ->middleware('can:manage-install')
         ->name('backups.export');
 
     Route::livewire('settings/about', 'pages::settings.about')->name('about.edit');

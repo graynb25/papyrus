@@ -7,14 +7,17 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-10-25
+## Current delivery status, 2026-10-26
 
-Release metadata identifies 1.4.0 and lists an unsigned Windows installer. No portable archive is
-published. The 1.4.0 build on 2026-10-25 produced an unsigned 262.0MB installer and a 305.9MB
-portable zip with 12,957 entries; required files, privacy exclusions and the sidecar SHA256 were
-verified. These are local build artifacts. The latest Sandbox attempt produced no final report and
-did not prove fresh-install source access. macOS and Linux packaging below remain proposals, not
-available downloads.
+The working tree is 1.5.0 and the local build produced an unsigned 262.3MB installer and a 306.2MB
+portable zip with 12,963 entries; required files, privacy exclusions and the sidecar SHA256 were
+verified. No 1.5.0 artifact is published, and no release record exists for it yet. The 1.4.0
+record remains the latest published release. The install tree passed the Windows Sandbox gate on
+run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`, first account
+created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and
+page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The gate copies
+`build/install` rather than running the setup executable, so the installer payload remains
+unproven. macOS and Linux packaging below remain proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship
 

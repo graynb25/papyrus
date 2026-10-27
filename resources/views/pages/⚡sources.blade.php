@@ -14,6 +14,7 @@ use App\Suwayomi\SourceCatalog;
 use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -190,6 +191,13 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public function addStore(): void
     {
+        /*
+         * The control is hidden from readers below, but a Livewire method is callable
+         * from the browser console. The gate is the rule; the hidden control is only the
+         * courtesy that keeps a reader from trying.
+         */
+        Gate::authorize('manage-install');
+
         $this->validate(['storeUrl' => ['required', 'string', 'url', 'max:500']]);
 
         try {
@@ -227,6 +235,8 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public function removeStore(string $indexUrl): void
     {
+        Gate::authorize('manage-install');
+
         try {
             app(SourceCatalog::class)->removeStore($indexUrl);
         } catch (SuwayomiException $e) {
@@ -2067,7 +2077,11 @@ new #[Title('Sources')] class extends AdultContentPage
 
         @if ($this->stores->isEmpty())
             <flux:callout variant="secondary" icon="circle-stack">
-                {{ __('No store is registered yet. Add one below to begin.') }}
+                @can('manage-install')
+                    {{ __('No store is registered yet. Add one below to begin.') }}
+                @else
+                    {{ __('No store is registered yet. The person who owns this server can add one.') }}
+                @endcan
             </flux:callout>
         @else
             <ul class="space-y-3">
@@ -2106,18 +2120,20 @@ new #[Title('Sources')] class extends AdultContentPage
                                         </flux:button>
                                     @endif
 
-                                    @php($removeStoreAction = 'removeStore('.Illuminate\Support\Js::from($store->index_url)->toHtml().')')
+                                    @can('manage-install')
+                                        @php($removeStoreAction = 'removeStore('.Illuminate\Support\Js::from($store->index_url)->toHtml().')')
 
-                                    <x-confirm
-                                        :action="$removeStoreAction"
-                                        :title="__('Remove this store from the server?')"
-                                        :body="__('Its trust records go too.')"
-                                        :confirm="__('Remove')"
-                                    >
-                                        <flux:button size="sm" color="red">
-                                            {{ __('Remove') }}
-                                        </flux:button>
-                                    </x-confirm>
+                                        <x-confirm
+                                            :action="$removeStoreAction"
+                                            :title="__('Remove this store from the server?')"
+                                            :body="__('Its trust records go too.')"
+                                            :confirm="__('Remove')"
+                                        >
+                                            <flux:button size="sm" color="red">
+                                                {{ __('Remove') }}
+                                            </flux:button>
+                                        </x-confirm>
+                                    @endcan
                                 </div>
                             </div>
 
@@ -2155,29 +2171,31 @@ new #[Title('Sources')] class extends AdultContentPage
             </ul>
         @endif
 
-        <form wire:submit="addStore" class="flex flex-wrap items-end gap-3">
-            <div class="min-w-72 flex-1">
-                <flux:input
-                    wire:model="storeUrl"
-                    :label="__('Add a store')"
-                    placeholder=""
-                    icon="link"
-                    required
-                />
+        @can('manage-install')
+            <form wire:submit="addStore" class="flex flex-wrap items-end gap-3">
+                <div class="min-w-72 flex-1">
+                    <flux:input
+                        wire:model="storeUrl"
+                        :label="__('Add a store')"
+                        placeholder=""
+                        icon="link"
+                        required
+                    />
 
-                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('Papyrus does not ship with any store. Search for an extension repository you trust, paste its index URL here, and compare its signing key before you trust it.') }}
-                </p>
+                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('Papyrus does not ship with any store. Search for an extension repository you trust, paste its index URL here, and compare its signing key before you trust it.') }}
+                    </p>
 
-                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('The index file itself, not the repository root. Keiyoushi publishes protobuf at index.pb.') }}
-                </p>
-            </div>
+                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('The index file itself, not the repository root. Keiyoushi publishes protobuf at index.pb.') }}
+                    </p>
+                </div>
 
-            <flux:button type="submit" variant="primary" icon="plus" wire:target="addStore" wire:loading.attr="disabled">
-                {{ __('Add store') }}
-            </flux:button>
-        </form>
+                <flux:button type="submit" variant="primary" icon="plus" wire:target="addStore" wire:loading.attr="disabled">
+                    {{ __('Add store') }}
+                </flux:button>
+            </form>
+        @endcan
     </section>
 
     {{-- Extensions ------------------------------------------------------ --}}

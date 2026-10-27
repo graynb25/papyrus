@@ -137,6 +137,15 @@ trait BuildsTachibkBackups
     protected bool $withExporterTimestamps = false;
 
     /**
+     * Write a series field whose declared length is this many bytes, and no bytes for it.
+     *
+     * A length prefix is read before its value, so this is the shape that proves the cap is
+     * checked against the declaration rather than after the string exists. Without the check
+     * the walk reads on until the payload ends, which reports a cut short file instead.
+     */
+    protected int $declaredSeriesBytes = 0;
+
+    /**
      * Write a backup to a temporary file and return its path.
      *
      * @param  string  $path  Where to write it. Empty means a temporary file.
@@ -195,6 +204,12 @@ trait BuildsTachibkBackups
     private function tachibkPayload(): string
     {
         $payload = '';
+
+        if ($this->declaredSeriesBytes > 0) {
+            // The length is a claim about bytes that do not follow it.
+            $payload .= $this->tag(TachibkSchema::BACKUP_SERIES, 2)
+                .$this->encodeVarint($this->declaredSeriesBytes);
+        }
 
         if ($this->withSeriesLackingTitles) {
             // Walks cleanly, sits in the right field, and has nothing a reader could be shown.

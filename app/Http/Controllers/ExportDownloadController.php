@@ -5,10 +5,20 @@ namespace App\Http\Controllers;
 use App\Backup\BackupLibrary;
 use App\Export\ExportLibrary;
 use App\Models\LiveExportRun;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Serves one finished export as the download its run row offers.
+ *
+ * ## Who may ask
+ *
+ * Only the install owner. The route asks the same question, and this controller asks it
+ * again before it resolves a run, because the file is a whole-library product rather than
+ * one reader's record. A request that reached here without the owner's authority is
+ * refused before the lookup, so this check never confirms whether a run exists to a
+ * caller the route should have turned away.
  *
  * ## Why the URL is keyed on the run and never on the file
  *
@@ -34,9 +44,17 @@ class ExportDownloadController extends Controller
 {
     public function __invoke(int $run): Response
     {
+        Gate::authorize('manage-install');
+
         $row = LiveExportRun::query()->find($run);
 
         if ($row === null || $row->state !== LiveExportRun::COMPLETE || $row->file_name === null) {
+            abort(404, 'No finished export answers for that run.');
+        }
+
+        $viewer = auth()->user();
+
+        if (! $viewer instanceof User || ! $viewer->isInstallOwner()) {
             abort(404, 'No finished export answers for that run.');
         }
 

@@ -402,6 +402,17 @@ class FaqTest extends TestCase
         }
     }
 
+    public function test_the_backup_answer_names_the_install_owner(): void
+    {
+        $answer = $this->answerTo('How do I make a backup?');
+
+        $this->assertStringContainsString(
+            'install owner',
+            $answer,
+            'only the install owner can open the Backups page, so the answer must not send every reader there',
+        );
+    }
+
     /**
      * The ban sites the page names are the sites the app warns about at the install press.
      *

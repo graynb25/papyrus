@@ -247,6 +247,32 @@ class DownloadTest extends TestCase
         return $tag !== '' && preg_match('/\\sdisabled(\\s|=|>)/', $tag) === 1;
     }
 
+    /**
+     * The visible text of the button carrying a label.
+     *
+     * `buttonTag()` returns only the opening tag, which is enough to read a `wire:click`
+     * or a disabled attribute but drops the count rendered inside the control.
+     */
+    private function buttonText(string $html, string $label): string
+    {
+        $tag = $this->buttonTag($html, $label);
+        $start = $tag === '' ? false : strpos($html, $tag);
+
+        if ($start === false) {
+            return '';
+        }
+
+        $end = strpos($html, '</button>', $start);
+
+        if ($end === false) {
+            return '';
+        }
+
+        $text = strip_tags(substr($html, $start, $end - $start));
+
+        return trim((string) preg_replace('/\s+/', ' ', $text));
+    }
+
     private function ledger(): DownloadLedger
     {
         return app(DownloadLedger::class);
@@ -1089,6 +1115,48 @@ class DownloadTest extends TestCase
         $this->assertSame([4], Download::forUser($this->user->id)->pluck('suwayomi_chapter_id')->all());
     }
 
+    /**
+     * Read state beyond the open page still decides what "Download unread" queues.
+     *
+     * The page renders fifty chapters at a time and used to read read state from that
+     * same page slice, so a read chapter on any later page looked unread to the bulk
+     * action. This series has sixty chapters and two unread, one on each side of the
+     * page boundary: chapter 5 on page one and chapter 55 on page two.
+     */
+    public function test_download_unread_uses_read_state_beyond_the_open_page(): void
+    {
+        $chapters = range(1, 60);
+
+        $this->fakeSeries($chapters, []);
+
+        $reading = app(ReadingState::class);
+
+        foreach (array_diff($chapters, [5, 55]) as $chapterId) {
+            $reading->markRead($this->user->id, 76, $chapterId, true);
+        }
+
+        $component = Livewire::test('pages::series', ['manga' => 76])->assertOk();
+
+        $this->assertSame(2, $component->instance()->unreadDownloadableCount());
+
+        $button = $this->buttonText($component->html(), 'Download unread');
+
+        $this->assertStringContainsString('Download unread', $button);
+        $this->assertMatchesRegularExpression(
+            '/\b2\b/',
+            $button,
+            'The rendered button must carry the same count the action will queue.',
+        );
+
+        $component->call('downloadUnread')->assertOk();
+
+        $this->assertSame([[5, 55]], $this->enqueueCalls);
+        $this->assertSame(
+            [5, 55],
+            Download::forUser($this->user->id)->orderBy('id')->pluck('suwayomi_chapter_id')->map(fn (mixed $id): int => (int) $id)->all(),
+        );
+    }
+
     public function test_downloading_one_chapter_from_the_series_page(): void
     {
         $this->fakeSeries();
@@ -1121,13 +1189,19 @@ class DownloadTest extends TestCase
     /**
      * A four chapter series: three on disk, one not. Chapter 3 is the one a test
      * marks read, so "unread and not already on disk" leaves exactly chapter 4.
+     *
+     * Both lists can be supplied when a test needs a longer series or a different
+     * split between what exists and what is already downloaded.
+     *
+     * @param  array<int, int>  $chapters
+     * @param  array<int, int>  $downloaded
      */
-    private function fakeSeries(): void
+    private function fakeSeries(array $chapters = [1, 2, 3, 4], array $downloaded = [1, 2, 3]): void
     {
         // Set both lists directly rather than through onDisk(), which assumes the
         // two are the same. Here they are not: chapter 4 exists and has never been
         // fetched, and that gap is the whole subject of the tests below.
-        $this->seriesChapters = [1, 2, 3, 4];
-        $this->downloadedChapters = [1, 2, 3];
+        $this->seriesChapters = $chapters;
+        $this->downloadedChapters = $downloaded;
     }
 }

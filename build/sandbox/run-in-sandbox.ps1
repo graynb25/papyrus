@@ -815,6 +815,7 @@ Section 'the reader path'
 # production.
 $password = 'Papyrus-gate-7!Kx'
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$readerCreated = $false
 
 $registerPage = Get-Body "http://127.0.0.1:$appPort/register" -session $session
 Check 'the register page renders' ($registerPage.Status -eq 200) "got $($registerPage.Status)"
@@ -831,7 +832,8 @@ if ($registerToken -ne '') {
         password_confirmation = $password
     }
 
-    Check 'the register form creates the account' ($created.Status -eq 200) `
+    $readerCreated = $created.Status -eq 200
+    Check 'the register form creates the account' $readerCreated `
         "final status $($created.Status) after its redirects"
 
     $sources = Get-Body "http://127.0.0.1:$appPort/sources" -session $session
@@ -852,6 +854,394 @@ if ($registerToken -ne '') {
         "eyebrow=$hasEyebrow failure callout=$hasCallout"
 } else {
     Say '  no csrf token, so no account and no sources page: the reader path stops here'
+}
+
+# The catalogue page rendering is not a source read.
+#
+# Run 15 passed every check with an empty catalogue: `/sources` rendered its eyebrow because the
+# page can render without a store, an extension or a chapter. WSL run 3 proved the reader path on
+# Linux, which is a different PHP, JVM and trust store. This section adds the public Keiyoushi
+# store, installs one English extension, mirrors the catalogue, fetches a manga and a chapter, and
+# reads a page through the app's authenticated proxy. A page with an image content type and real
+# bytes is the evidence; a 200 on `/sources` alone is not.
+#
+# The store and extension are public and named. They are not shipped, and the guest is disposable.
+# The checks are ordered so a failure names the step that stopped the path.
+$graphqlUrl = "http://127.0.0.1:$suwayomiPort/api/graphql"
+
+function Get-Suwayomi([string]$query, [string]$label) {
+    $body = @{ query = $query } | ConvertTo-Json -Compress
+    $file = "C:\results\$label.json"
+
+    try {
+        $response = Invoke-WebRequest -Uri $graphqlUrl -Method Post -Body $body `
+            -ContentType 'application/json' -UseBasicParsing -TimeoutSec 180
+        [System.IO.File]::WriteAllText($file, [string]$response.Content)
+
+        $decoded = $response.Content | ConvertFrom-Json
+        $errors = ''
+
+        if ($null -ne $decoded.errors) {
+            $errors = (@($decoded.errors | ForEach-Object { $_.message }) -join '; ')
+        }
+
+        return @{
+            Ok = ($errors -eq '')
+            Errors = $errors
+            Data = $decoded.data
+        }
+    } catch {
+        $status = 0
+        $text = $_.Exception.Message
+
+        if ($_.Exception.Response) {
+            $status = [int]$_.Exception.Response.StatusCode
+
+            try {
+                $text = (New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
+            } catch {
+                $text = '(unreadable body)'
+            }
+        }
+
+        [System.IO.File]::WriteAllText($file, [string]$text)
+        return @{ Ok = $false; Errors = "HTTP $status $text"; Data = $null }
+    }
+}
+
+function Get-ProxyPage([string]$url, [string]$path) {
+    if (Test-Path $path) { Remove-Item -Path $path -Force }
+
+    try {
+        $response = Invoke-WebRequest `
+            -Uri $url `
+            -WebSession $session -OutFile $path -UseBasicParsing -PassThru -TimeoutSec 120
+
+        $type = [string]$response.Headers['Content-Type']
+        $bytes = if (Test-Path $path) { (Get-Item $path).Length } else { 0 }
+
+        return @{
+            Status = [int]$response.StatusCode
+            Type = $type
+            Bytes = $bytes
+            Ok = ([int]$response.StatusCode -eq 200 -and $type -match '^image/' -and $bytes -gt 1000)
+        }
+    } catch {
+        $status = 0
+        $type = ''
+
+        if ($_.Exception.Response) {
+            $status = [int]$_.Exception.Response.StatusCode
+            $type = [string]$_.Exception.Response.ContentType
+        }
+
+        return @{ Status = $status; Type = $type; Bytes = 0; Ok = $false }
+    }
+}
+
+# Mirror the reader's own URL construction.
+#
+# `fetchChapterPages` returns a root-relative /api/v1/... path, and
+# `Gateway::resolvePageUrls()` moves it under the app's /suwayomi prefix. The path is not
+# rebuilt from the manga and chapter ids, because Suwayomi addresses a page by the
+# chapter's source order rather than by its id. Measured live: chapter id 3178 came back
+# as /api/v1/manga/116/chapter/2/page/0, and the id-shaped URL 404s.
+function Resolve-ProxyPageUrl([string]$serverPath) {
+    $path = $serverPath -replace '^https?://[^/]+', ''
+    $path = $path.TrimStart('/')
+    $path = $path -replace '^api/v1/', ''
+
+    return "http://127.0.0.1:$appPort/suwayomi/api/v1/$path"
+}
+
+function Invoke-SourceProbe {
+    if (-not $readerCreated) {
+        Say '  the reader account was not created, so the source path cannot be tested'
+        Check 'a source page was read through the app proxy' $false 'no authenticated session'
+        return
+    }
+
+    $storeUrl = 'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb'
+    $artisan = Join-Path $root 'artisan'
+
+    $store = Invoke-Captured $launcherPhp @(
+        '-c "' + $resolvedIni + '" "' + $artisan + '" sources:sync --add-store=' + $storeUrl + ' --refresh'
+    ) 'source-store'
+
+    Check 'the install added the extension store' ($store.Code -eq 0) "exit $($store.Code)"
+
+    if ($store.Code -ne 0) {
+        Check 'a source page was read through the app proxy' $false 'the store did not load'
+        return
+    }
+
+    Check 'the store refresh listed extensions' ($store.Out -match 'Store refresh.*extensions available') `
+        'its output names no extension count'
+
+    $extensions = Get-Suwayomi '{ extensions(first: 2000) { nodes { pkgName name lang isInstalled } } }' 'source-extensions'
+    $extensionNodes = @()
+
+    if ($extensions.Ok -and $null -ne $extensions.Data -and $null -ne $extensions.Data.extensions -and $null -ne $extensions.Data.extensions.nodes) {
+        $extensionNodes = @($extensions.Data.extensions.nodes)
+    }
+
+    Say "  extensions listed: $($extensionNodes.Count)"
+    Check 'the store listed an extension' ($extensionNodes.Count -gt 0) $extensions.Errors
+
+    if ($extensionNodes.Count -eq 0) {
+        Check 'a source page was read through the app proxy' $false 'the store listed no extensions'
+        return
+    }
+
+    # MangaTaro is the extension the scratch WSL probe read through. The fallbacks keep the gate
+    # useful when that package moves, but the check still names the package it chose.
+    $wanted = 'eu.kanade.tachiyomi.extension.all.mangataro'
+    $chosen = @($extensionNodes | Where-Object { $_.pkgName -eq $wanted }) | Select-Object -First 1
+
+    if ($null -eq $chosen) {
+        $chosen = @($extensionNodes | Where-Object { $_.lang -eq 'en' -and $_.pkgName -match 'mangataro|mangadex' }) | Select-Object -First 1
+    }
+
+    if ($null -eq $chosen) {
+        $chosen = @($extensionNodes | Where-Object { $_.lang -eq 'en' }) | Select-Object -First 1
+    }
+
+    Check 'the store listed an English extension' ($null -ne $chosen) "wanted $wanted"
+
+    if ($null -eq $chosen) {
+        Check 'a source page was read through the app proxy' $false 'no English extension was listed'
+        return
+    }
+
+    Say "  extension: $($chosen.pkgName) $($chosen.name)"
+    $install = Get-Suwayomi ('mutation { updateExtension(input: {id: "' + $chosen.pkgName + '", patch: {install: true}}) { clientMutationId } }') 'source-install'
+    Check 'the extension install request was accepted' $install.Ok $install.Errors
+
+    $installed = $false
+    $polls = 0
+
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        Start-Sleep -Seconds 2
+        $polls = $attempt + 1
+        $after = Get-Suwayomi '{ extensions(first: 2000) { nodes { pkgName isInstalled } } }' 'source-extensions-after'
+        $node = @()
+
+        if ($after.Ok -and $null -ne $after.Data -and $null -ne $after.Data.extensions -and $null -ne $after.Data.extensions.nodes) {
+            $node = @($after.Data.extensions.nodes | Where-Object { $_.pkgName -eq $chosen.pkgName })
+        }
+
+        if ($node.Count -gt 0 -and $node[0].isInstalled -eq $true) {
+            $installed = $true
+            break
+        }
+    }
+
+    Check 'the extension reports installed' $installed "package $($chosen.pkgName) after $polls polls"
+
+    if (-not $installed) {
+        Check 'a source page was read through the app proxy' $false 'the extension did not install'
+        return
+    }
+
+    $sync = Invoke-Captured $launcherPhp @(
+        '-c "' + $resolvedIni + '" "' + $artisan + '" sources:sync'
+    ) 'source-sync'
+
+    $mirrored = [regex]::Match($sync.Out, 'Sources mirrored\D*(\d+)')
+    $mirroredCount = if ($mirrored.Success) { [int]$mirrored.Groups[1].Value } else { 0 }
+
+    Check 'the app mirrored the installed source' ($sync.Code -eq 0 -and $mirroredCount -gt 0) `
+        "exit $($sync.Code), mirrored $mirroredCount"
+
+    if ($sync.Code -ne 0 -or $mirroredCount -eq 0) {
+        Check 'a source page was read through the app proxy' $false 'no source was mirrored'
+        return
+    }
+
+    $sources = Get-Suwayomi '{ sources { nodes { id name lang } } }' 'source-sources'
+    $sourceNodes = @()
+
+    if ($sources.Ok -and $null -ne $sources.Data -and $null -ne $sources.Data.sources -and $null -ne $sources.Data.sources.nodes) {
+        $sourceNodes = @($sources.Data.sources.nodes)
+    }
+
+    $source = @($sourceNodes | Where-Object { $_.name -eq $chosen.name }) | Select-Object -First 1
+
+    if ($null -eq $source) {
+        $source = @($sourceNodes | Where-Object { $_.name -like '*MangaTaro*' }) | Select-Object -First 1
+    }
+
+    if ($null -eq $source) {
+        $source = @($sourceNodes | Where-Object { $_.lang -eq 'en' }) | Select-Object -First 1
+    }
+
+    Check 'suwayomi listed a source for the installed extension' ($null -ne $source) "extension $($chosen.name)"
+
+    if ($null -eq $source) {
+        Check 'a source page was read through the app proxy' $false 'suwayomi listed no source'
+        return
+    }
+
+    Say "  source: $($source.id) $($source.name)"
+
+    $popular = Get-Suwayomi ('mutation { fetchSourceManga(input: {source: "' + $source.id + '", type: POPULAR, page: 1}) { mangas { id title } hasNextPage } }') 'source-popular'
+    $mangas = @()
+
+    if ($popular.Ok -and $null -ne $popular.Data -and $null -ne $popular.Data.fetchSourceManga -and $null -ne $popular.Data.fetchSourceManga.mangas) {
+        $mangas = @($popular.Data.fetchSourceManga.mangas)
+    }
+
+    Say "  mangas listed: $($mangas.Count)"
+    Check 'the source returned a manga' ($mangas.Count -gt 0) $popular.Errors
+
+    if ($mangas.Count -eq 0) {
+        Check 'a source page was read through the app proxy' $false 'the source returned no manga'
+        return
+    }
+
+    $manga = @($mangas | Where-Object { $_.title -eq 'One Piece' }) | Select-Object -First 1
+
+    if ($null -eq $manga) {
+        $manga = $mangas[0]
+    }
+
+    $mangaId = [int]$manga.id
+    Say "  manga: $mangaId $($manga.title)"
+
+    $chapters = Get-Suwayomi ('mutation { fetchMangaAndChapters(input: {id: ' + $mangaId + ', fetchManga: true, fetchChapters: true}) { manga { id title } chapters { id name pageCount } } }') 'source-chapters'
+    $chapterList = @()
+
+    if ($chapters.Ok -and $null -ne $chapters.Data -and $null -ne $chapters.Data.fetchMangaAndChapters -and $null -ne $chapters.Data.fetchMangaAndChapters.chapters) {
+        $chapterList = @($chapters.Data.fetchMangaAndChapters.chapters)
+    }
+
+    Check 'the manga listed a chapter' ($chapterList.Count -gt 0) `
+        "chapters $($chapterList.Count), error $($chapters.Errors)"
+
+    if ($chapterList.Count -eq 0) {
+        Check 'a source page was read through the app proxy' $false 'the chapter list was empty'
+        return
+    }
+
+    # `fetchChapterPages` is the only call that produces a real page count, and the only
+    # one that downloads the images. The proxy does not fetch on its own: asking it for a
+    # page from a chapter Suwayomi has never opened returns 404. Run 18 guessed chapter
+    # indexes 1, 0, 2 and 3 and got four 404s for exactly that reason, while WSL's read
+    # worked because its chapter had already been fetched.
+    #
+    # So pick a chapter, let Suwayomi fetch its pages, and then request the path the
+    # mutation returned. That is the reader's own path, not a guess.
+    $candidates = @()
+
+    for ($index = 0; $index -lt [Math]::Min(3, $chapterList.Count); $index++) {
+        $candidates += [pscustomobject]@{
+            Id = [int]$chapterList[$index].id
+            Name = [string]$chapterList[$index].name
+            Pages = [int]$chapterList[$index].pageCount
+        }
+    }
+
+    $chapter = $null
+    $pagePaths = @()
+
+    foreach ($candidate in $candidates) {
+        $fetched = Get-Suwayomi ('mutation { fetchChapterPages(input: {chapterId: ' + $candidate.Id + '}) { chapter { id name pageCount } pages } }') 'source-pages'
+
+        if (-not $fetched.Ok -or $null -eq $fetched.Data -or $null -eq $fetched.Data.fetchChapterPages) {
+            continue
+        }
+
+        $paths = @($fetched.Data.fetchChapterPages.pages)
+
+        if ($paths.Count -eq 0) {
+            continue
+        }
+
+        $candidate.Pages = [int]($fetched.Data.fetchChapterPages.chapter.pageCount)
+        $chapter = $candidate
+        $pagePaths = $paths
+        break
+    }
+
+    Check 'fetchChapterPages returned pages for a chapter' ($null -ne $chapter) `
+        "tried chapter ids $((@($candidates | ForEach-Object { $_.Id })) -join ', ')"
+
+    if ($null -eq $chapter) {
+        Check 'a source page was read through the app proxy' $false 'no chapter pages were fetched'
+        return
+    }
+
+    Say "  chapter: id $($chapter.Id) $($chapter.Name), $($chapter.Pages) pages"
+
+    $attempts = [System.Collections.Generic.List[string]]::new()
+    $attempts.Add('chapter_id,page_count,page_index,status,content_type,bytes,path')
+    $page = $null
+    $pagePath = ''
+    $pageNumber = -1
+
+    for ($index = 0; $index -lt [Math]::Min(3, $pagePaths.Count); $index++) {
+        $serverPath = [string]$pagePaths[$index]
+        $url = Resolve-ProxyPageUrl $serverPath
+        $path = "C:\results\source-page-$index.bin"
+        $result = Get-ProxyPage $url $path
+        $attempts.Add("$($chapter.Id),$($chapter.Pages),$index,$($result.Status),$($result.Type),$($result.Bytes),$serverPath")
+
+        if ($result.Ok) {
+            $page = $result
+            $pagePath = $path
+            $pageNumber = $index
+            break
+        }
+    }
+
+    Set-Content -Path 'C:\results\source-pages.csv' -Value ($attempts -join [Environment]::NewLine) -Encoding UTF8
+    Check 'a source page was read through the app proxy' ($null -ne $page) `
+        'tried page paths returned by fetchChapterPages'
+
+    if ($null -eq $page) {
+        return
+    }
+
+    Check 'the source page answered 200' ($page.Status -eq 200) "got $($page.Status)"
+    Check 'the source page is an image' ($page.Type -match '^image/') "got $($page.Type)"
+    Check 'the source page has real bytes' ($page.Bytes -gt 1000) "got $($page.Bytes) bytes"
+
+    $hash = (Get-FileHash -Path $pagePath -Algorithm SHA256).Hash
+    Say "  page: chapter id $($chapter.Id) page $pageNumber, $($page.Status) $($page.Type) $($page.Bytes) bytes"
+    Say "  page sha256: $hash"
+
+    $sourcesAfter = Get-Body "http://127.0.0.1:$appPort/sources" -session $session
+    Check 'the sources page renders after the catalogue is populated' ($sourcesAfter.Status -eq 200) `
+        "got $($sourcesAfter.Status)"
+    Check 'the sources page shows no failure callout' ($sourcesAfter.Body -notmatch 'The extension list did not load')
+
+    $seriesPage = Get-Body "http://127.0.0.1:$appPort/series/$mangaId" -session $session
+    Check 'the series page renders the fetched manga' ($seriesPage.Status -eq 200) "got $($seriesPage.Status)"
+    Check 'the series page is the app page, not an error page' `
+        ($seriesPage.Body -notmatch 'Server Error|Whoops|Stack trace')
+
+    $summary = @(
+        "store $storeUrl"
+        "extension $($chosen.pkgName) $($chosen.name)"
+        "source $($source.id) $($source.name)"
+        "manga $mangaId $($manga.title)"
+        "chapter list $($chapterList.Count), read chapter id $($chapter.Id) $($chapter.Name), $($chapter.Pages) pages"
+        "page $pageNumber, $($page.Status) $($page.Type) $($page.Bytes) bytes"
+        "sha256 $hash"
+    ) -join [Environment]::NewLine
+
+    Set-Content -Path 'C:\results\source-summary.txt' -Value $summary -Encoding UTF8
+}
+
+Section 'source access'
+
+# An unexpected throw must become a failure rather than leaving the gate green by skipping the
+# checks below. The functions above catch the requests they expect to fail; this catches the rest.
+try {
+    Invoke-SourceProbe
+} catch {
+    Say "  the source probe threw: $($_.Exception.Message)"
+    Check 'the source probe ran to completion' $false $_.Exception.Message
 }
 
 Section 'the database is in the data directory, not the install'

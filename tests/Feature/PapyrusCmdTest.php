@@ -115,7 +115,8 @@ final class PapyrusCmdTest extends TestCase
      *
      * stdin is closed immediately, because `Papyrus.cmd` calls `pause` on every failure path and
      * `pause` against a closed stdin returns at once. Without that the suite would sit on a keypress
-     * nobody is there to give, and a test that hangs is worse than no test.
+     * nobody is there to give, and a test that hangs is worse than no test. The reader's console is
+     * the opposite case, and `runCmdWithOpenStdin` is the one test that models it.
      *
      * @return array{output: string, status: int}
      */
@@ -140,6 +141,71 @@ final class PapyrusCmdTest extends TestCase
         fclose($pipes[2]);
 
         return ['output' => $output, 'status' => proc_close($process)];
+    }
+
+    /**
+     * Run a command with stdin left open, as a double-clicked console does.
+     *
+     * The other tests close stdin so `pause` returns. That is right for their failure paths, and it
+     * is also why they could not see the shipped defect: the same closed stdin made `php -n` at the
+     * runtime check read end-of-file and exit. A reader's console does not close stdin, so this
+     * helper keeps it open and fails if the command is still running after the timeout.
+     *
+     * @return array{output: string, status: int, waited: bool}
+     */
+    private function runCmdWithOpenStdin(string $command, float $seconds = 5.0): array
+    {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($command, $descriptors, $pipes);
+
+        $this->assertIsResource($process, 'cmd.exe could not be started at all');
+
+        $status = proc_get_status($process);
+        $deadline = microtime(true) + $seconds;
+
+        while ($status['running'] && microtime(true) < $deadline) {
+            usleep(100000);
+            $status = proc_get_status($process);
+        }
+
+        if ($status['running']) {
+            /*
+             * Give the process end-of-file so a PHP waiting on stdin can finish, then stop the batch
+             * file. The test fails either way; this is cleanup, not a second chance.
+             */
+            fclose($pipes[0]);
+
+            $end = microtime(true) + 2.0;
+
+            while ($status['running'] && microtime(true) < $end) {
+                usleep(50000);
+                $status = proc_get_status($process);
+            }
+
+            if ($status['running']) {
+                proc_terminate($process);
+            }
+
+            @fclose($pipes[1]);
+            @fclose($pipes[2]);
+            proc_close($process);
+
+            return ['output' => '', 'status' => -1, 'waited' => true];
+        }
+
+        $output = (string) stream_get_contents($pipes[1]);
+        $output .= (string) stream_get_contents($pipes[2]);
+
+        fclose($pipes[0]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return ['output' => $output, 'status' => proc_close($process), 'waited' => false];
     }
 
     /**
@@ -232,6 +298,39 @@ final class PapyrusCmdTest extends TestCase
         );
 
         return true;
+    }
+
+    /**
+     * A working runtime that records the launcher being reached.
+     *
+     * The launcher exits 0 because `Papyrus.cmd` pauses on a non-zero exit, and an open stdin would
+     * wait at that pause. Reaching the marker is the assertion: the runtime check let the script
+     * continue.
+     */
+    private function installARuntimeThatSucceeds(): ?string
+    {
+        $real = $this->aRealPhpExecutable();
+
+        if ($real === null) {
+            return null;
+        }
+
+        $bin = $this->scratch.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'bin';
+
+        copy($real, $bin.DIRECTORY_SEPARATOR.'php.exe');
+
+        foreach (glob(dirname($real).DIRECTORY_SEPARATOR.'php*.dll') ?: [] as $dll) {
+            copy($dll, $bin.DIRECTORY_SEPARATOR.basename($dll));
+        }
+
+        $marker = $this->scratch.DIRECTORY_SEPARATOR.'launcher-ran.txt';
+
+        file_put_contents(
+            $this->scratch.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'papyrus.php',
+            "<?php\nfile_put_contents(".var_export($marker, true).", 'yes');\nexit(0);\n",
+        );
+
+        return $marker;
     }
 
     /**
@@ -338,5 +437,36 @@ final class PapyrusCmdTest extends TestCase
             $result['output'],
             'an absent file is not an antivirus problem and must not be dressed up as one',
         );
+    }
+
+    /**
+     * A double-clicked console leaves stdin open, and the runtime check must not wait on it.
+     *
+     * PHP with no script reads one from stdin. The gate and the other tests in this file hand it an
+     * empty file or `< NUL`, so it exits at once and the check looks harmless. A reader's console
+     * stays open, so the shipped `php -n` waited for a script that would never come. The window sat
+     * blank before the launcher printed anything, and no data directory was created. The manual
+     * installer sandbox found it on 2026-10-26.
+     */
+    public function test_a_double_clicked_console_does_not_hold_the_runtime_check(): void
+    {
+        $marker = $this->installARuntimeThatSucceeds();
+
+        if ($marker === null) {
+            $this->markTestSkipped('no real php.exe was found to stand in for the runtime');
+        }
+
+        $cmd = $this->installTheRealScript();
+
+        $result = $this->runCmdWithOpenStdin('cmd.exe /c '.escapeshellarg($cmd));
+
+        $this->assertFalse(
+            $result['waited'],
+            'Papyrus.cmd waited for input with a console stdin, so the runtime check never returned',
+        );
+
+        $this->assertSame(0, $result['status'], 'the script must finish successfully when the runtime works');
+
+        $this->assertFileExists($marker, 'the runtime check must let the launcher run');
     }
 }

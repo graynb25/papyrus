@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Support\Registration;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -95,28 +96,33 @@ class UsersCreate extends Command
             $name = Str::before($email, '@');
         }
 
-        $user = User::create([
-            'name' => $name,
-            'email' => $email,
-            'password' => $password,
-        ]);
+        $user = app(Registration::class)->createAccount(function () use ($name, $email, $password): User {
+            $user = User::create([
+                'name' => $name,
+                'email' => $email,
+                'password' => $password,
+            ]);
 
-        /*
-         * `role` and `status` are deliberately absent from the model's fillable list, so
-         * passing them to create() is silently dropped and the column default applies.
-         * That is the right posture for a web request, where nobody should be able to
-         * hand themselves an admin role by posting a field. A console command is the one
-         * place where setting it deliberately is the whole point, so it is written here
-         * rather than by widening the model's fillable list for everyone.
-         *
-         * `password` goes in unhashed because the model casts it with 'hashed', so
-         * hashing it here as well would double-hash it.
-         */
-        $user->forceFill([
-            'role' => $this->option('admin') ? 'admin' : 'user',
-            'status' => 'active',
-            'email_verified_at' => now(),
-        ])->save();
+            /*
+             * `status` and `email_verified_at` are deliberately absent from the model's
+             * fillable list, so passing them to create() would drop them. A console command
+             * is the one place where setting them deliberately is the point, so they are
+             * written here rather than by widening the model's fillable list for everyone.
+             *
+             * The role is not written here. `Registration::createAccount()` applies the same
+             * owner rule as browser sign-up, with the explicit `--admin` flag passed to it.
+             * No command line value chooses a role, and `role` stays out of fillable.
+             *
+             * `password` goes in unhashed because the model casts it with 'hashed', so
+             * hashing it here as well would double-hash it.
+             */
+            $user->forceFill([
+                'status' => 'active',
+                'email_verified_at' => now(),
+            ])->save();
+
+            return $user;
+        }, (bool) $this->option('admin'));
 
         $this->components->twoColumnDetail('Created', $user->email);
         $this->components->twoColumnDetail('Name', $user->name);

@@ -95,6 +95,62 @@ class TachibkStreamTest extends TestCase
         );
     }
 
+    /**
+     * A length is read before its value, so this is the only place a cap can stop an
+     * allocation rather than measure one after it happened. The check is against the
+     * declared length, which is why a field that claims far more than the payload holds
+     * is refused as too large rather than as cut short.
+     */
+    public function test_a_field_longer_than_the_cap_is_refused_before_it_is_read(): void
+    {
+        config(['papyrus.import.max_field_bytes' => 16]);
+
+        $stream = TachibkStream::open($this->buildTachibkBackup());
+        $this->assertNotNull($stream);
+
+        try {
+            foreach ($stream->fields([TachibkSchema::BACKUP_SERIES]) as $field) {
+                $this->fail('a field over the cap should not have produced a value');
+            }
+
+            $this->fail('the walk should have refused the oversized field');
+        } catch (MalformedProto $e) {
+            $this->assertStringContainsString(
+                'larger than the 16 B this server reads in a single field',
+                $e->getMessage(),
+            );
+            $this->assertStringContainsString('Nothing has been changed', $e->getMessage());
+        } finally {
+            $stream->close();
+        }
+    }
+
+    public function test_a_field_that_claims_more_than_the_cap_is_refused_before_allocating(): void
+    {
+        config(['papyrus.import.max_field_bytes' => 16]);
+
+        $this->declaredSeriesBytes = 64 * 1024 * 1024;
+
+        $stream = TachibkStream::open($this->buildTachibkBackup());
+        $this->assertNotNull($stream);
+
+        try {
+            foreach ($stream->fields([TachibkSchema::BACKUP_SERIES]) as $field) {
+                $this->fail('a field that claims 64MB should not have produced a value');
+            }
+
+            $this->fail('the walk should have refused the declared length');
+        } catch (MalformedProto $e) {
+            $this->assertStringContainsString(
+                'larger than the 16 B this server reads in a single field',
+                $e->getMessage(),
+                'the cap has to be checked against the declared length, not after reading it',
+            );
+        } finally {
+            $stream->close();
+        }
+    }
+
     public function test_a_payload_that_stops_mid_field_is_refused(): void
     {
         $this->withCutPayload = true;

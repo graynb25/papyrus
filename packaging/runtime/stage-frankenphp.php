@@ -46,14 +46,9 @@ declare(strict_types=1);
 
 namespace Papyrus\Runtime\Stage;
 
-// Pinned deliberately, for the same reason stage-runtime.php pins its two. A floating "latest"
-// makes two builds of the same commit differ.
-const FRANKENPHP_VERSION = '1.13.0';
-const FRANKENPHP_ARCHIVE = 'frankenphp-windows-x86_64.zip';
-const FRANKENPHP_SHA256 = '64f4bfef3772b657bc1ec93f9174da87f19ddd0056de01c9a35021ebcf62fb88';
+use Papyrus\Runtime\RuntimePins;
 
-const FRANKENPHP_URL = 'https://github.com/php/frankenphp/releases/download/'
-    .'v'.FRANKENPHP_VERSION.'/'.FRANKENPHP_ARCHIVE;
+require_once __DIR__.DIRECTORY_SEPARATOR.'RuntimePins.php';
 
 $repo = dirname(__DIR__, 2);
 $cache = $repo.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'.tools'.DIRECTORY_SEPARATOR.'build-inputs';
@@ -71,8 +66,8 @@ foreach (array_slice($argv, 1) as $argument) {
     }
 }
 
-report('version', FRANKENPHP_VERSION);
-report('archive', FRANKENPHP_ARCHIVE);
+report('version', RuntimePins::FRANKENPHP_VERSION);
+report('archive', RuntimePins::FRANKENPHP_ARCHIVE);
 
 if (! is_dir($cache) && ! mkdir($cache, 0o777, true) && ! is_dir($cache)) {
     report('cache', 'could not create '.$cache);
@@ -80,7 +75,7 @@ if (! is_dir($cache) && ! mkdir($cache, 0o777, true) && ! is_dir($cache)) {
     exit(1);
 }
 
-$archive = rtrim($cache, '\\/').DIRECTORY_SEPARATOR.FRANKENPHP_ARCHIVE;
+$archive = rtrim($cache, '\\/').DIRECTORY_SEPARATOR.RuntimePins::FRANKENPHP_ARCHIVE;
 
 /*
  * Already here and already correct.
@@ -92,7 +87,7 @@ $archive = rtrim($cache, '\\/').DIRECTORY_SEPARATOR.FRANKENPHP_ARCHIVE;
 if (! $force && is_file($archive)) {
     $existing = hash_file('sha256', $archive);
 
-    if ($existing === FRANKENPHP_SHA256) {
+    if ($existing === RuntimePins::FRANKENPHP_SHA256) {
         report('cached', round(filesize($archive) / 1048576).' MB, digest matches');
 
         exit(0);
@@ -120,7 +115,7 @@ if (! $force && is_file($archive)) {
     }
 }
 
-report('downloading', FRANKENPHP_URL);
+report('downloading', RuntimePins::frankenphpUrl());
 
 $handle = fopen($archive, 'wb');
 
@@ -136,7 +131,7 @@ if ($handle === false) {
  * The archive is 57MB. `file_get_contents` on a URL would hold it all in memory alongside the
  * unzip that follows, and the failure mode of running out is a build that dies without saying why.
  */
-$source = @fopen(FRANKENPHP_URL, 'rb');
+$source = @fopen(RuntimePins::frankenphpUrl(), 'rb');
 
 if ($source === false) {
     fclose($handle);
@@ -189,10 +184,10 @@ if ($digest === false) {
     exit(1);
 }
 
-if ($digest !== FRANKENPHP_SHA256) {
+if ($digest !== RuntimePins::FRANKENPHP_SHA256) {
     @unlink($archive);
 
-    report('mismatch', 'expected '.FRANKENPHP_SHA256);
+    report('mismatch', 'expected '.RuntimePins::FRANKENPHP_SHA256);
     report('got', $digest);
     report('deleted', 'the archive, so a later run cannot pick it up by mistake');
 

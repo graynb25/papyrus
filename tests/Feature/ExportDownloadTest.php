@@ -39,7 +39,7 @@ class ExportDownloadTest extends TestCase
 
     private string $scratch;
 
-    private User $reader;
+    private User $owner;
 
     protected function setUp(): void
     {
@@ -68,8 +68,13 @@ class ExportDownloadTest extends TestCase
 
         $this->fakeTheExportLedgerQueries();
 
-        $this->reader = User::factory()->create();
-        $this->actingAs($this->reader);
+        $this->owner = User::factory()->create(['role' => User::ROLE_INSTALL_OWNER]);
+        $this->owner->refresh();
+
+        $this->assertSame(User::ROLE_INSTALL_OWNER, $this->owner->role);
+        $this->assertTrue($this->owner->isInstallOwner());
+
+        $this->actingAs($this->owner);
     }
 
     protected function tearDown(): void
@@ -85,9 +90,9 @@ class ExportDownloadTest extends TestCase
      */
     private function exportRun(): LiveExportRun
     {
-        $this->arrangeTheRoundTrip($this->reader);
+        $this->arrangeTheRoundTrip($this->owner);
 
-        (new RunLiveExport($this->reader->getKey()))->handle(app(TachibkExport::class));
+        (new RunLiveExport($this->owner->getKey()))->handle(app(TachibkExport::class));
 
         return LiveExportRun::query()->sole();
     }
@@ -143,7 +148,7 @@ class ExportDownloadTest extends TestCase
         $run = $this->exportRun();
 
         $row = LiveExportRun::create([
-            'started_by_user_id' => $this->reader->getKey(),
+            'started_by_user_id' => $this->owner->getKey(),
             'state' => LiveExportRun::RUNNING,
             'file_name' => $run->file_name,
             'file_bytes' => $run->file_bytes,
@@ -158,6 +163,48 @@ class ExportDownloadTest extends TestCase
         $this->get(route('backups.export', ['run' => 99]))->assertNotFound();
     }
 
+    public function test_a_reader_cannot_download_an_export_even_by_walking_run_ids(): void
+    {
+        $run = $this->exportRun();
+
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertSame(User::ROLE_READER, $reader->role);
+        $this->assertFalse($reader->isInstallOwner());
+
+        $this->actingAs($reader);
+
+        $last = (int) $run->getKey() + 2;
+
+        for ($id = 1; $id <= $last; $id++) {
+            $this->get(route('backups.export', ['run' => $id]))->assertForbidden();
+        }
+    }
+
+    /**
+     * The controller's own gate, with the route's middleware taken out of the way.
+     *
+     * The walking test above proves the route refuses a reader before the controller runs.
+     * This one removes that first layer so the controller has to refuse on its own, which is
+     * what keeps a future route change from turning the download back into a run-id walk.
+     */
+    public function test_the_controller_refuses_a_reader_when_the_route_middleware_is_bypassed(): void
+    {
+        $run = $this->exportRun();
+
+        $reader = User::factory()->create();
+        $reader->refresh();
+
+        $this->assertFalse($reader->isInstallOwner());
+
+        $this->actingAs($reader);
+
+        $this->withoutMiddleware()
+            ->get(route('backups.export', ['run' => $run]))
+            ->assertForbidden();
+    }
+
     /**
      * The name check is the thing being proved, so a file sits exactly where a name that
      * left the folder would resolve to. The receipt matches it byte for byte, meaning the
@@ -170,7 +217,7 @@ class ExportDownloadTest extends TestCase
         File::put($outside, 'not an export this install produced');
 
         $row = LiveExportRun::create([
-            'started_by_user_id' => $this->reader->getKey(),
+            'started_by_user_id' => $this->owner->getKey(),
             'state' => LiveExportRun::COMPLETE,
             'file_name' => '..'.DIRECTORY_SEPARATOR.basename($outside),
             'file_bytes' => filesize($outside),

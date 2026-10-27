@@ -12,8 +12,8 @@ use Tests\TestCase;
  *
  * Registration is closed there by design, which left a fresh install with no way to make
  * its first account at all. These hold the command honest about the two things it has to get
- * right: the credentials it writes have to work, and it must not quietly hand out an admin
- * role or drop the one it was asked for.
+ * right: the credentials it writes have to work, and it has to follow the same owner rule as
+ * the browser while still honouring an explicit `--admin`.
  */
 class UsersCreateCommandTest extends TestCase
 {
@@ -106,13 +106,55 @@ class UsersCreateCommandTest extends TestCase
         $this->assertSame('admin', User::query()->where('email', 'boss@example.test')->firstOrFail()->role);
     }
 
-    public function test_an_account_is_a_reader_without_the_admin_flag(): void
+    public function test_the_admin_flag_creates_an_owner_even_when_one_exists(): void
     {
+        $this->artisan('users:create', ['--email' => 'first@example.test'])->assertSuccessful();
         $this->artisan('users:create', [
-            '--email' => 'reader@example.test',
+            '--email' => 'second@example.test',
+            '--admin' => true,
         ])->assertSuccessful();
 
-        $this->assertSame('user', User::query()->where('email', 'reader@example.test')->firstOrFail()->role);
+        $this->assertSame('admin', User::query()->where('email', 'first@example.test')->firstOrFail()->role);
+        $this->assertSame('admin', User::query()->where('email', 'second@example.test')->firstOrFail()->role);
+    }
+
+    public function test_the_first_account_is_the_owner_without_the_admin_flag(): void
+    {
+        /*
+         * The documented install path does not pass `--admin`. If that path leaves the
+         * install with no owner, the owner-only surfaces have no account that can open them.
+         */
+        $this->artisan('users:create', ['--email' => 'first@example.test'])->assertSuccessful();
+
+        $user = User::query()->where('email', 'first@example.test')->firstOrFail();
+
+        $this->assertSame('admin', $user->role);
+        $this->assertTrue($user->isInstallOwner());
+    }
+
+    public function test_a_later_account_is_a_reader_without_the_admin_flag(): void
+    {
+        $this->artisan('users:create', ['--email' => 'first@example.test'])->assertSuccessful();
+        $this->artisan('users:create', ['--email' => 'second@example.test'])->assertSuccessful();
+
+        $this->assertSame('admin', User::query()->where('email', 'first@example.test')->firstOrFail()->role);
+        $this->assertSame('user', User::query()->where('email', 'second@example.test')->firstOrFail()->role);
+        $this->assertSame(1, User::query()->where('role', 'admin')->count());
+    }
+
+    public function test_the_command_promotes_the_earliest_account_when_the_install_has_no_owner(): void
+    {
+        $first = User::factory()->create();
+        $second = User::factory()->create();
+
+        $this->assertSame(0, User::query()->where('role', 'admin')->count());
+
+        $this->artisan('users:create', ['--email' => 'third@example.test'])->assertSuccessful();
+
+        $this->assertSame('admin', $first->refresh()->role);
+        $this->assertSame('user', $second->refresh()->role);
+        $this->assertSame('user', User::query()->where('email', 'third@example.test')->firstOrFail()->role);
+        $this->assertSame(1, User::query()->where('role', 'admin')->count());
     }
 
     // It refuses rather than half-succeeding ------------------------------

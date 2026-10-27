@@ -41,7 +41,8 @@ targeted PHP parser for one site, as a last resort.
 | PHP | 8.4.25, served by Herd. On this machine Herd's own `php.bat` is the one on PATH. |
 | Node / npm | 26.7.0 / 11.19.0 |
 | JRE | 26.0.2 Oracle JDK, which satisfies Suwayomi's JRE 21+ requirement |
-| Virtualization | **OFF.** No WSL2, no Hyper-V, no Docker. Suwayomi runs as a **JAR**. |
+| Virtualization | **ON** (corrected 2026-10-26). `HypervisorPresent: True`; WSL 3.0.3.0 with kernel 6.18.54.1-1, Ubuntu 26.04.1 and Docker Desktop 4.96.0 are installed. The old `VirtualizationFirmwareEnabled: False` reading did not mean the hypervisor was off. Suwayomi still runs as a native **JAR**; Docker is a test harness. |
+| Docker | Docker Desktop 4.96.0, per-user install. The Linux engine is stopped when not in use. Last used 2026-10-20 for the 45 minute soak in section 16.2. |
 | CPU | i7-12700K x64, so the ARM64 JCEF segfault does not apply |
 | Suwayomi | **v2.4.2366**, running, `AuthMode=UI_LOGIN`, `127.0.0.1:4567`. Upgraded from v2.3.2243; H2 schema migrated 59 to 65 with no errors and all 82 extensions intact. |
 | JAR | `..\.tools\suwayomi\Suwayomi-Server-v2.4.2366.jar`, SHA256 verified against the release's `Checksums.sha256`. The v2.3.2243 jar is kept beside it so a rollback is one move. |
@@ -2209,7 +2210,7 @@ before proposing to collapse them.
 | Cross language dedupe | **Deferred to AniList in Phase 6 (M3)** | Measured: a transliteration library yields the *reading*, since ワンピース becomes "wanpisu", scoring **0.40** against "One Piece" (進撃の巨人 scores 0.14). It cannot bridge to the translation. Only AniList or MAL canonical IDs can, so no dependency goes in now. |
 | Dashboard grain | **Grouped by site, drill down to sources** | Measured: 82 installed sources are 15 distinct `home_url` values, and MangaDex alone is 61 language variants of one site. A per-source list would repeat one site 61 times, which answers nothing. A site inherits the *worst* state of its variants, because one unusable language region is still a source the reader cannot use. |
 | Extension trust | **Per user, enforced in the action** | Suwayomi keeps its own trusted repo list in server config and exposes no trust surface through GraphQL, so the gate is ours. It is refused in the action rather than only hidden in the template, because anyone can call a Livewire method from the console. |
-| Suwayomi deployment | **Native Windows JAR, no Docker** | The machine has virtualization switched off for a macOS dual boot. A container would need it. Enabling it was declined: zero benefit today and asymmetric risk. |
+| Suwayomi deployment | **Native Windows JAR; Docker only for tests** | The supported desktop deployment is the JAR the installer ships. WSL2 and Docker are available (measured 2026-10-26) and were used for a Linux soak, but a container would add a second runtime and a second support story for no reader benefit. The original "virtualization is off" premise was wrong. |
 | Explanation style | **Explain decisions, skip framework basics** | Cover the reasoning behind each choice. Do not stop to teach Livewire, Flux, Alpine or modern Laravel patterns. |
 | Fan-out shape | **No site collapse. Every source, every time.** | Measured, and the measurement reversed the plan. The 61 MangaDex variants return the same 51 manga in different scripts: EN gives 15 Latin titles, JA gives 6 Latin and 9 Japanese. Each variant is the only route to its own script. Collapsing to one variant per site keeps 64% of titles. Set cover says 25 variants reach the full union, but which 25 are redundant is a fact about one query, not about the catalogue, so nothing is collapsed. The 30.8s is a background run and is acceptable. |
 | Dedupe threshold | **0.95** | Measured, not guessed. At 0.92 "One Piece G" folded into its parent. The measurements are in `config/papyrus.php`. |
@@ -7346,4 +7347,234 @@ job now stores `progress_stage` beside `progress_note`, and the page maps that k
 checkpoints. The browser proof staged a running row at the manga restore step, read 3 of 6 with the
 first three checkpoints complete and the fourth running, then deleted that row after reloading the
 page. No real restore was pressed.
+
+---
+
+## 16. Clean-machine and Linux test evidence (2026-10-26 and 2026-10-27)
+
+This section records the verification state at the 1.5.0 close. It exists because the
+documents claimed for months that virtualization was off and Docker was unavailable, and
+because a green startup line was allowed to stand in for a reader path. The measurements
+below are read from the artifacts named, not inferred from a command exiting zero.
+
+### 16.1 Windows Sandbox: run 19 passed, with the installer payload proven separately
+
+The Windows Sandbox gate produced its first final report for the 1.5.0 build on run 15, and its
+source-access section reached a real page on run 19, both on 2026-10-26. Run 19 ended with
+`PASS, every check held`: 86 checks passed and none failed. The report is
+`build\sandbox-results\sandbox-report.txt`, 10,056 bytes, SHA-256
+`02413c0cdfb47475ffc681033d2d3eb02362208a7934008d7eb335267b94d650`. The screenshot is
+`screen-after-start.png`, 1,556,164 bytes, SHA-256
+`c0926a1af1d5fd3adf31c6f421eff1ab0645e6c818b0125c359b4cbc19cd42df`; it shows Edge on the
+Papyrus login page at `localhost:8402` inside the guest. Both were copied to
+`%TEMP%\opencode\run19-20261026\`, with `source-summary.txt`, `source-pages.csv`,
+`source-page-0.bin` and the console log.
+
+The run found no host PHP or Java and no Java installed. It copied `build\install` to
+`C:\Program Files\Papyrus` (about 620 MB), checked that no database, `.env` or logs shipped,
+and started the install through the reader shortcut, which passes `--open`. The bundled PHP
+reported 8.5.12; Suwayomi answered GraphQL as 2.4.2366 on loopback; the database was current;
+the app reported ready on 8402; the queue worker and scheduler started; Edge appeared; and
+`/ready` and `/up` returned 200. The gate created the first account through `/register`,
+opened `/sources` and got 200 with the page's eyebrow and no failure callout, and checked the
+app's data directory with a space in its path, the diagnostics bundle, and HTTPS through the
+bundled trust store. It then added the Keiyoushi protobuf store (signing key prefix
+`9add655a78e96c4ec7a5`, 1,431 extensions), installed
+`eu.kanade.tachiyomi.extension.all.mangataro`, mirrored two sources, fetched One Piece (manga
+id 1) with 1,202 chapters, and called `fetchChapterPages` for chapter id 1, "Chapter 001:
+Romance Dawn", which returned 53 page paths. Page 0 was requested through the app proxy at
+`/suwayomi/api/v1/manga/1/chapter/1/page/0`: 200, `image/webp`, 175,432 bytes, SHA-256
+`9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`. That is the same hash as
+the first page of WSL run 3, so the Windows path reproduced the Linux one byte for byte.
+`/sources` returned 200 with no failure callout after the catalogue was populated, and
+`/series/1` rendered One Piece. The stop released 8402 and 4571 and left no Papyrus process.
+
+The twelve earlier deaths were `0x80370106`, a Windows Sandbox failure on this host. Run 13
+had enumerated `AMD Radeon RX 6600` inside the guest despite `<VGpu>Disable</VGpu>`. The fix
+was a host policy, not a code change: `HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox`
+`AllowVGPU` set to DWORD 0. The policy key did not exist before the run. The host is Windows
+11 Pro 26H2 build 26300.9711 with Sandbox app 0.8.107.0 and an RX 6600. The same failure and
+the same fix are reported for this build and Sandbox version in Microsoft's Windows Sandbox
+issue #88, and the local symptom matched: the per-file `<VGpu>Disable</VGpu>` did not stop
+the host GPU from reaching the guest. With the policy in place the guest stayed up past four
+minutes, wrote the screenshot and the report, and passed every check.
+
+One limit remains: the gate copies `build\install`; it does not run the setup executable, so it
+proves the install tree and the launcher, not the installer payload. A Windows source read is no
+longer a limit. The separate manual sandbox (`build\sandbox\launch-manual.ps1`) runs the real
+`build\dist\Papyrus-1.5.0-setup.exe` and records the install, its shortcuts, registration and
+the reader pages. Its first run on 2026-10-26 installed the payload and recorded the reader flow,
+and found the shortcut preflight defect recorded in section 16.5. It is manual evidence, not a
+gate pass.
+
+Operationally, the gate killed the Sandbox client but `vmmemWindowsSandbox` was still up
+after its 90 second wait on runs 15, 18 and 19. On runs 18 and 19 only an elevated `hcsdiag
+kill` of the running WindowsSandbox compute system released it; stopping
+`WindowsSandboxServer` and `WindowsSandboxRemoteSession` did not. On run 19 the kill came after
+the report had been written. Check for `vmmemWindowsSandbox` before the next launch, as the
+gate's own warning says.
+
+### 16.2 Docker soak, 2026-10-20
+
+A differential soak ran the 1.3.0 packaged application tree on Linux, served by FrankenPHP
+8.5.11, with Suwayomi 2.4.2366 in a separate container. It ran 90 beats at 30 second
+intervals from 09:31:49 to 10:08:46, 45 minutes. All 279 HTTP probes returned 200: `/login`,
+`/up` and `/sources`, 93 of each. The in-container `suwayomi:check` returned 0 on 34
+consecutive even beats from 09:45:28 to 10:08:46; the 13 earlier even beats failed because
+the probe omitted `-p papyrus-soak` and Compose looked for a project under another name.
+Free RAM stayed between 3.95 and 4.31 GB.
+
+What it proves: the application payload served pages and read Suwayomi back for 45 minutes
+under a container stack without a crash. What it does not prove: it is the 1.3.0 payload,
+not the 1.5.0 tree; the host-side probes only cover `/login`, `/up` and `/sources`, not a
+chapter read; Suwayomi's CEF could not initialise in the container (`libXext.so.6` is
+absent), so a Cloudflare-protected source was never exercised; and the Linux stack is not
+the Windows installer. The artifacts are under
+`%TEMP%\opencode\papyrus-docker-soak-20261020\` (`http-probes.csv`, `cli-probes.csv`,
+`compose-logs.txt`, `probe-soak.ps1`) and are scratch, not tracked.
+
+### 16.3 WSL2 test plan
+
+WSL2 is available: WSL 3.0.3.0, kernel 6.18.54.1-1, Ubuntu 26.04.1, 20 CPUs and about 7.8 GB
+RAM inside the distro. Docker Desktop 4.96.0 is installed per user; its Linux engine is
+currently stopped. The native Windows JAR remains the deployment under test for the
+installer, so WSL is a substitute only for the parts of the gate that do not depend on the
+Windows launcher, shortcuts, paths with spaces, or the bundled Windows runtime.
+
+Planned run, in order, all scratch:
+
+1. Start Ubuntu and check `uname -r`, free RAM and the WSL version. Record them.
+2. Install PHP 8.4 or newer with `pdo_sqlite`, `sqlite3`, `mbstring`, `xml`, `curl`, `zip`,
+   `intl` and the CLI extensions, plus a JRE 21 or newer if Suwayomi is to run inside the
+   distro. `intl` is not optional: the Sources page formats byte counts through
+   `Illuminate\Support\Number` and returns 500 without it. Record the package versions. Do
+   not use the checkout's Herd PHP.
+3. Copy the application payload (the checkout or `build/install` without `runtime\` and
+   `suwayomi\`) into a scratch directory under `/tmp` or the WSL home. Never point it at
+   `%LOCALAPPDATA%\Papyrus` or the checkout database.
+4. Start a scratch Suwayomi on a loopback port with a fresh data directory and the pinned
+   jar. Set `SUWAYOMI_URL` to that port, a fresh `APP_KEY`, `APP_ENV=production`,
+   `APP_DEBUG=false` and a scratch SQLite file.
+5. Run `php artisan migrate --force`, `php artisan suwayomi:check`, then the app on a
+   loopback port.
+6. Create the first account through `/register`, open `/sources`, and require the page's own
+   catalogue sentence rather than a 200. If the run is the source-access substitute, add one
+   source and read one chapter through `/suwayomi/api/v1/*`; record the exact source, title
+   and byte count.
+7. Run a short soak (at least 30 minutes) with `/login`, `/up`, `/sources` and
+   `suwayomi:check` every 30 seconds. Keep the CSV as the evidence.
+8. Stop everything, confirm the ports are released and no scratch process survives, and
+   delete the scratch data only after the evidence is copied out.
+
+What this proves: the current source tree runs on a clean Linux userland, can read Suwayomi
+and can serve the reader pages. What it does not prove: the Windows installer, the reader
+shortcut, the bundled Windows PHP/JRE/FrankenPHP, paths with spaces, Windows file locking,
+or a clean Windows machine. A WSL pass must never be recorded as a Windows Sandbox pass.
+
+The Windows Sandbox gate remains the bar for 1.5.0. It passed on run 19 (section 16.1), and
+that run's first page hash matched WSL run 3's. The WSL runs remain supplemental evidence for
+the Linux userland, not a substitute for the Windows run.
+
+### 16.4 WSL2 substitute runs, 2026-10-26 and 2026-10-27
+
+Three scratch runs measured the 1.5.0 payload on the WSL2 userland. All used Ubuntu 26.04.1,
+WSL 3.0.3.0, kernel 6.18.54.1-1, PHP 8.5.4 CLI, OpenJDK 25.0.4.1 and Suwayomi 2.4.2366. The
+payload was `build/install` without `runtime\` and `suwayomi\`, copied to `/root/papyrus-wsl`
+with a fresh `APP_KEY`, `APP_ENV=production`, `APP_DEBUG=false`, a scratch SQLite database
+and a fresh Suwayomi data directory. The app ran on 8903 under `php artisan serve`; Suwayomi
+ran on 4568. The harness is `%TEMP%\opencode\wsl-run-20261026\run-wsl-test.sh`.
+
+Run 1, 17:34 to 18:02 UTC, 58 beats at 30 seconds, stopped by the owner at beat 58 of 60:
+registration returned 200 and the app answered `/login` and `/up` on all 58 probes. `/sources` returned 500 on all 58 authenticated
+probes. `laravel.log` named the cause: `The "intl" PHP extension is required to use the
+[format] method`, thrown from the Sources view through `Illuminate\Support\Number`. The
+`suwayomi:check` command exited 0 on all 29 even beats. The run also exposed a harness bug:
+the script assigned curl's `time_total` to bash's reserved integer `SECONDS`, so every probe
+printed an arithmetic error and the CSV's last column is 0, not request time. The fix renames
+the variable to `DURATION`.
+
+Run 2, 00:04 to 00:08 UTC on 2026-10-27, 6 beats at 10 seconds, after installing
+`php8.5-intl` 8.5.4-0ubuntu1.5: `/sources` returned 200 with the page's eyebrow, no failure
+callout and no error markers. `/search`, `/library`, `/settings/import`,
+`/settings/backups` and `/migrate/sources` each returned 200 with no error markers. All 18
+HTTP probes returned 200 and `suwayomi:check` exited 0 on all 3 even beats.
+
+Run 3, 00:17 to 00:21 UTC on 2026-10-27, was the source-access probe. It added the Keiyoushi
+protobuf store (`index.pb`, signing key prefix `9add655a78e96c4ec7a5`, 1,431 extensions),
+installed `eu.kanade.tachiyomi.extension.all.mangataro`, and mirrored two sources: Suwayomi's
+Local source and MangaTaro (id `8358097306709528603`, English). A popular fetch returned One
+Piece (manga id 1) with 1,202 chapters. Suwayomi's chapter index is 1-based: index 0 is an
+empty placeholder that returns 404 with an empty page list, and index 1 is Chapter 001:
+Romance Dawn with 53 pages. All 53 pages were read through the authenticated app proxy
+`/suwayomi/api/v1/manga/1/chapter/1/page/{0..52}`: 53 of 53 returned 200 `image/webp`,
+between 58,228 and 356,424 bytes each, 7,766,490 bytes in total. The first page is 1456x1072,
+SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`; the last is
+725x1100, SHA-256 `4a8bdcc66df8d2a4c52759c2cb9b2afc82c42e8d70f639bf7706c677746c0b69`.
+`/sources` and `/series/1` returned 200 and showed MangaTaro and One Piece.
+
+The first run's 58 beat soak covers 28 minutes 42 seconds and is the longer stability
+evidence; the second is the page evidence; the third is the source access. The first two
+runs did not install an extension store or a source. The third did, and it read one full
+chapter, so it meets the plan's source-access substitute for this Linux userland.
+`/series/{manga}` was walked for that one series at desktop width only. The app was served by
+PHP's built-in server, not FrankenPHP, and nothing here touches the Windows launcher, the
+bundled Windows runtime, the installer or Windows Sandbox. The shipped Windows runtime does
+load `intl`: `runtime\php\php.ini` lists `php_intl.dll` and
+`build\install\runtime\bin\php.exe` reports `intl loaded` with that extension directory.
+
+Artifacts: run 1 under `%TEMP%\opencode\wsl-run-20261026\results-run1-58beats\`, run 2 under
+`results-run2-intl\` (`checks.txt`, `soak.csv`, `soak-cli.csv`, `sources.html`, the route
+pages), and run 3 under `results-source\` (`store.txt`, `extensions.json`,
+`sources-sync.txt`, `popular.json`, `chapters.json`, `chapter-pages.csv`,
+`chapter-summary.txt`, `page-0.webp`, `page-52.webp`, `sources-after.html`, `series.html`),
+with the console logs `console-run1.txt`, `console-run2.txt`, `console-source.txt`,
+`console-source-finish.txt` and `console-chapter.txt`. They are scratch, not tracked.
+
+Verdict: this proves the 1.5.0 payload starts, migrates, registers the first account, serves
+the reader pages, installs a source store and one extension, mirrors the catalogue, fetches
+a manga, and reads every page of a 53 page chapter through its authenticated proxy on a
+clean Linux userland. It does not prove the Windows installer, the reader shortcut, the
+bundled Windows runtime, Windows file locking, a desktop or mobile visual walk, or a clean
+Windows machine, and it is not a Windows Sandbox pass.
+
+### 16.5 Manual installer sandbox, 2026-10-26
+
+The manual sandbox ran the real `build\dist\Papyrus-1.5.0-setup.exe` in a fresh Windows Sandbox,
+not `build\install`. The guest verified the copied installer as 275,084,054 bytes with SHA-256
+`87e514aa4639bf8b19c43567fccc6c6cfee9f2568014c30bbec8ebf616e2ddd0`, matching
+`build\dist\manifest.json`. The setup completed as a per-user install at
+`%LOCALAPPDATA%\Programs\Papyrus`; `version.txt` read 1.5.0 at commit `6572ba0`, and the install
+tree held no database, `.env` or logs. This is the first proof that the setup executable itself
+lays down the 1.5.0 payload.
+
+The reader's shortcut did not start it. The installer's post-install launch and a double-click on
+the shortcut each opened a blank console, printed nothing and created no data directory. The
+cause was line 91: `php -n` with no script reads the script from stdin, and a console leaves stdin
+open, so the runtime check waited forever. The gate and `PapyrusCmdTest` had both redirected stdin
+from an empty file, which made PHP exit at once and hid the defect. The check is now `php -n -v`,
+and a regression test runs the real script with an open stdin and fails if it waits. The fix is in
+the tree; the rebuilt installer needs a fresh manual run.
+
+To separate the defect from the rest of the payload, the guest ran the launcher directly
+(`start-direct.cmd`, without `Papyrus.cmd`). It created `%LOCALAPPDATA%\Papyrus` with 11
+directories, started Suwayomi 2.4.2366 on loopback, found the database current, served on 8000,
+started the queue worker and scheduler, and opened Edge at `http://localhost:8000`. The log is
+`papyrus-direct.txt` in the session folder. The person then registered the first account, added
+the Keiyoushi store, installed MangaTaro, searched One Piece (14 results; 2 of 2 runnable sources
+answered), opened the series (1,202 chapters), read Chapter 001: Romance Dawn at `/read/1/1`, and
+returned to the series where the chapter showed read.
+
+The diagnostics copied at the end of the flow show `127.0.0.1:4567` and `127.0.0.1`/`[::1]:8000`
+listening and the running `java.exe` (Suwayomi), `frankenphp.exe`, queue worker and scheduler. The
+data root held `database.sqlite` at 577,536 bytes with its WAL, `.env`, logs, `suwayomi` and
+`frankenphp`. The run also found a separate diagnostic defect: `papyrus.php status` said "This
+session has nothing running" while the app was up, because `Supervisor::status()` only reports the
+processes started by that launcher process; `stop` does find processes across launchers. That is
+recorded for 1.5.1.
+
+Verdict: the installer payload and the reader flow are proven on the real setup executable, but
+the reader's shortcut was not. This is manual evidence, not a gate pass, and 1.5.0 must not ship
+until the rebuilt installer passes a fresh manual shortcut run. Artifacts are in
+`build\manual-sandbox-results\session-20261026-210533\`: `installer-verified.txt`,
+`papyrus-direct.txt`, `diag\`, the 171 `shot-*.png` frames, and `screenshots.log`.
 

@@ -195,7 +195,7 @@ final class Faq
             new FaqEntry(
                 question: __('How do I make a backup?'),
                 answer: [
-                    __('Open Settings, choose Backups, and press "Back up now". Papyrus saves your library and manga data while it keeps running, checks the copy, and puts it in the backups folder. Restore puts that copy back, and Export for another reader app creates a file Mihon and its forks can open.'),
+                    __('The install owner can open Settings, choose Backups, and press "Back up now". Papyrus saves your library and manga data while it keeps running, checks the copy, and puts it in the backups folder. Restore puts that copy back, and Export for another reader app creates a file Mihon and its forks can open.'),
                     __('There is no cloud copy. There is no sync service, so the backups folder is your copy. If you want protection from a lost or damaged computer, copy that folder to another drive.'),
                     __('If you copy it by hand, close Papyrus first and copy the whole folder. The library keeps recent changes in a small file beside the main database, so copying only one file can lose the last few chapters you read.'),
                 ],

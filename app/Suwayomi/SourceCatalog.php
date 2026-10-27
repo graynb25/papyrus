@@ -28,6 +28,7 @@ class SourceCatalog
     public function __construct(
         private readonly Gateway $gateway,
         private readonly Timestamps $timestamps,
+        private readonly StoreUrlPolicy $storeUrlPolicy,
     ) {}
 
     /**
@@ -67,10 +68,16 @@ class SourceCatalog
     /**
      * Add a store to the server and mirror the result.
      *
+     * The address is judged here rather than on the page because the page is only one
+     * caller and the server, not the browser, fetches the index. See {@see StoreUrlPolicy}
+     * for what an address is judged against.
+     *
      * @throws SuwayomiException
      */
     public function addStore(string $indexUrl): ExtensionStore
     {
+        $this->storeUrlPolicy->assertAllowed($indexUrl);
+
         $data = $this->gateway->execute(
             'mutation Add($u: String!) { addExtensionStore(input: {indexUrl: $u}) { extensionStore { indexUrl name badgeLabel signingKey contactWebsite contactDiscord isLegacy extensionListUrl } } }',
             ['u' => $indexUrl],

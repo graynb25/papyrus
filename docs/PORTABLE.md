@@ -7,14 +7,18 @@ rights.
 
 ## Status: locally built, clean-machine read not verified
 
-The portable builder produced a 1.4.0 zip and matching SHA256 sidecar on 2026-10-25. The archive
-has 12,957 entries, includes the launcher and bundled runtimes, and contains no `.env` or reader
-databases. It is not published, and it has not been launched on a clean machine. The latest Sandbox
-attempt showed startup but wrote no final report and did not prove source access. See
+The portable builder produced a 1.5.0 zip and matching SHA256 sidecar on 2026-10-26. The archive
+has 12,963 entries, includes the launcher and bundled runtimes, and contains no `.env` or reader
+databases. It is not published, and it has not been launched on a clean machine. The install tree
+passed the Windows Sandbox gate on run 19 (86 checks, 0 failures, including a real source page
+read), but the portable shape was not the thing tested, and the gate copies `build/install`
+rather than running the setup executable. The separate manual sandbox ran the real installer on
+2026-10-26: it installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight
+hung, and the fix is in the tree. The portable archive itself has still not been launched. See
 [What is not proven yet](#what-is-not-proven-yet).
 
 ```text
-sha256  8a2c604ab03ceb617767b121fcfac2c7acad24a9e7b18d87d424ad19963a3a2e
+sha256  6534d5398f8d1176f1ef59d503db0f6b04c87fb3bda664981dd12c150f986f4b
 ```
 
 What is true today:
@@ -22,7 +26,7 @@ What is true today:
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The archive builder | built and content/hash verified on 2026-10-25 |
+| The archive builder | built and content/hash verified on 2026-10-26 |
 | An archive anyone can download | **no** |
 | A clean first launch with source reading | **not proven** |
 

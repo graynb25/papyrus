@@ -2,6 +2,7 @@
 
 namespace App\Import\Tachibk;
 
+use Illuminate\Support\Number;
 use RuntimeException;
 
 /**
@@ -23,6 +24,19 @@ use RuntimeException;
 final class MalformedProto extends RuntimeException
 {
     /**
+     * @param  bool  $fieldCapExceeded  Whether this is the configured field ceiling rather than a
+     *                                  file that is not this format. Only {@see self::fieldTooLarge()}
+     *                                  passes true, so recognition can tell the two apart without
+     *                                  matching on the message.
+     */
+    public function __construct(
+        string $message,
+        public readonly bool $fieldCapExceeded = false,
+    ) {
+        parent::__construct($message);
+    }
+
+    /**
      * A length ran past the end of the buffer.
      *
      * Almost always a truncated file rather than a foreign one, because a foreign file that
@@ -33,6 +47,23 @@ final class MalformedProto extends RuntimeException
         return new self(
             'it stops in the middle of a field. The file looks cut short, so export it again '
             .'and nothing needs to change on this server.'
+        );
+    }
+
+    /**
+     * A declared field length above the ceiling this server reads.
+     *
+     * The length is read before the value, so this is refused before the allocation
+     * happens rather than after it. Measured real backups carry their largest field at
+     * 91,005 bytes, so a field past this cap is not a library record a phone wrote; it is
+     * a claim this server will not turn into memory.
+     */
+    public static function fieldTooLarge(int $limit): self
+    {
+        return new self(
+            'one field claims a length larger than the '.Number::fileSize($limit, precision: 0)
+            .' this server reads in a single field. Nothing has been changed.',
+            fieldCapExceeded: true,
         );
     }
 

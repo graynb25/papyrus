@@ -3,8 +3,12 @@
 Installing and configuring the engine Papyrus sits on. Papyrus itself is set up in
 `README.md`.
 
-Docker is not an option here. `VirtualizationFirmwareEnabled` is `False`, so WSL2, Hyper-V and
-Docker Desktop are all unavailable. The JAR/bundle path is simpler for a single-user desktop setup anyway.
+Papyrus runs Suwayomi as a native Windows JAR or bundle on this machine. An earlier version of
+this page said Docker was unavailable because `VirtualizationFirmwareEnabled` read `False`. That
+inference was wrong: `HypervisorPresent` is `True`, WSL2 (Ubuntu 26.04.1, kernel 6.18.54.1) runs,
+and Docker Desktop 4.96 is installed. Docker is a test harness here, not the supported desktop
+deployment. The JAR/bundle path is still simpler for a single-user setup and is what the packaged
+install ships.
 
 Your JRE 26.0.2 already satisfies Suwayomi's JRE 21+ requirement, but prefer the **Windows bundle**
 over the bare JAR: it ships its own JRE, which isolates you from your system Java.
