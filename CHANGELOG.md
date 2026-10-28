@@ -49,6 +49,11 @@ in the local database instead of claiming it collects nothing, and a Cookies sec
 `papyrus-session`, `XSRF-TOKEN` and the optional `remember_web_` cookie with the flags the
 browser receives. `82974f2`
 
+**The login wall no longer publishes library titles to guests.** The showcase payload
+carries the manga id and cover URL only, and the controller no longer asks Suwayomi for a
+title batch. The cache key moves to v2, so a payload cached before the shape change cannot
+outlive it. `089b341`
+
 ### Fixed
 
 **Uninstall removes the extension and its source.** The Sources page sent `install: false`,
