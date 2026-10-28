@@ -56,16 +56,19 @@ credential lasts until the reader revokes it or the token expires, which AniList
 about a year, and the app deletes the row on a rejected token rather than trying to
 refresh it.
 
-## A backup holds the whole database, secrets included
+## A backup holds the library and some secrets
 
-A backup pair is not a library-only copy. Its reader half is a copy of the whole application
-database, so it carries live `sessions` rows, the `cache` table where the Suwayomi bearer and
-refresh tokens live, the plaintext AniList OAuth token in `anilist_accounts`, password hashes
-and remember tokens from `users`, and every reader's library rows.
+A backup pair is not a library-only copy. Its reader half carries the plaintext AniList OAuth
+token in `anilist_accounts`, password hashes and remember tokens from `users`, and every
+reader's library rows.
+
+It does not carry live session rows or the `cache` table where the Suwayomi bearer and refresh
+tokens live. Both tables stay in the copy so its schema matches the live database, but their
+rows are removed and the file is vacuumed before it is kept.
 
 Treat the backups folder as a secret, the same as the database itself. Copy a backup only to
-a place you trust, and delete one you no longer need. Version 1.5.0 does not exclude those
-tables or encrypt the AniList token inside a backup.
+a place you trust, and delete one you no longer need. The reader half still does not encrypt
+the AniList token inside a backup.
 
 ## Suwayomi answers on loopback only
 

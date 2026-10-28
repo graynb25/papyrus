@@ -49,6 +49,13 @@ use JsonException;
  * why the copy is taken while the app is down rather than through `VACUUM INTO` against a live one:
  * one stop covers both halves, and the counts cannot drift.
  *
+ * ## What the copy leaves out
+ *
+ * The live database holds the app's session rows and its cache, where the Suwayomi bearer and
+ * refresh tokens live. A pair that a reader copies must not carry either. The child keeps both
+ * tables so the copy still has the live schema, empties their rows, and vacuums the copy so the
+ * deleted bytes are not left in free pages.
+ *
  * ## Why the target is refused if it already exists
  *
  * Because SQLite refuses to overwrite one, which is convenient, and because the refusal has to arrive
@@ -306,6 +313,26 @@ try {
     }
 
     $pdo->exec('VACUUM INTO '.$pdo->quote($target));
+
+    // The copy is made whole by VACUUM INTO, then the two tables that carry live credentials
+    // are emptied. VACUUM again is what removes their deleted pages rather than leaving the
+    // session payload or cached token in the file's free space.
+    $copy = new PDO('sqlite:'.$target, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $copy->exec('PRAGMA secure_delete = ON');
+    $copy->exec('PRAGMA journal_mode = DELETE');
+
+    foreach (['sessions', 'cache'] as $table) {
+        $exists = (int) $copy->query(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ".$copy->quote($table)
+        )->fetchColumn();
+
+        if ($exists > 0) {
+            $copy->exec('DELETE FROM "'.$table.'"');
+        }
+    }
+
+    $copy->exec('VACUUM');
+    $copy = null;
 
     echo json_encode(['counts' => $counts, 'bytes' => filesize($target)]), PHP_EOL;
 } catch (Throwable $e) {

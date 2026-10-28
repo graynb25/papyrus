@@ -861,8 +861,14 @@ extension, which is recoverable through the drift callout and is recorded there 
 
 Security remaining:
 
-- M1: exclude `sessions` and `cache` from the reader-half backup, or replace them with empty
-  tables. Keep the 1.5.0 warning until this lands. Add a restore round-trip test.
+- M1, fixed on 2026-10-28: both reader-half writers empty `sessions` and `cache` and vacuum
+  the copy. `ReaderHalfCapture` covers the in-app backup and `papyrus:snapshot`; the launcher's
+  `ReaderSnapshot` child covers `papyrus snapshot` while the app is stopped. Live session ids
+  and cached Suwayomi tokens do not travel. Both tables stay in the copy so the restore schema
+  check still matches. The backups page warning now names what is left out and still calls the
+  folder a secret. `RunLiveRestoreJobTest` seeds both, proves the pair carries neither, and
+  proves a round trip preserves the live rows; `SnapshotDatabaseTest` and `ReaderSnapshotTest`
+  prove both snapshot writers scrub.
 - M4: add an `encrypted` cast to `anilist_accounts.access_token`, migrate existing rows,
   and document that disconnecting does not revoke a token unless AniList exposes a
   revocation endpoint. Check the API before promising revocation.
@@ -949,10 +955,10 @@ Walk remaining:
   sizes, not a guess, and report the cap in the refusal.
 - M7 host checks can be bypassed by a redirect or a DNS rebind after the check. Owner-only
   access is the primary control. Do not claim the request is fully SSRF-proof.
-- M1 and M4 are deferred to 1.5.1. Until then, a copied backup still carries live session
-  rows, the Suwayomi token cache and the plaintext AniList token. If the owner approves the
-  copy-only M1 warning for 1.5.0, it must say so; otherwise the 1.5.1 backup change carries
-  the warning.
+- M1 is fixed in the reader-half copy: `sessions` and `cache` are emptied and the file is
+  vacuumed, so a copied backup no longer carries live session rows or the Suwayomi token cache.
+  It still carries the plaintext AniList token and password hashes, so the backups page still
+  calls the folder a secret. M4 remains deferred to 1.5.1.
 
 ## Verification matrix
 

@@ -159,6 +159,76 @@ class RunLiveRestoreJobTest extends TestCase
     }
 
     /**
+     * A pair leaves the live session and cache rows behind, and a restore leaves them alone.
+     *
+     * The reader half used to be a whole database copy, so a backup invited the reader to
+     * carry a still-valid session id and the Suwayomi token cache off the machine. The copy
+     * keeps both tables, because the swap checks the schemas match, but their rows are emptied
+     * and the file is vacuumed so deleted bytes are not left in free pages. The live tables are
+     * preserved by the swap, so the restore must not put the pair's empty tables over them.
+     */
+    public function test_a_round_trip_keeps_live_sessions_and_cached_tokens_out_of_the_pair(): void
+    {
+        DB::table('sessions')->insert([
+            'id' => 'live-session',
+            'user_id' => 1,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'the round trip test',
+            'payload' => 'session-secret-that-must-not-travel',
+            'last_activity' => 1,
+        ]);
+
+        DB::table('cache')->insert([
+            'key' => 'suwayomi.tokens',
+            'value' => 'cache-secret-that-must-not-travel',
+            'expiration' => 4102444800,
+        ]);
+
+        $token = $this->writePair();
+
+        $reader = BackupLibrary::forThisInstall()->directory().DIRECTORY_SEPARATOR.'papyrus-'.$token.'.sqlite';
+        $copy = new PDO('sqlite:'.$reader);
+
+        $this->assertSame(
+            1,
+            (int) $copy->query("select count(*) from sqlite_master where type='table' and name='sessions'")->fetchColumn(),
+            'the pair keeps the schema the live database has, so the swap can still compare it',
+        );
+        $this->assertSame(0, (int) $copy->query('select count(*) from sessions')->fetchColumn(), 'no live session rows travel in the pair');
+        $this->assertSame(0, (int) $copy->query('select count(*) from cache')->fetchColumn(), 'no cached manga server tokens travel in the pair');
+
+        $copy = null;
+
+        $this->assertFileDoesNotExist($reader.'-wal', 'the scrub left no write ahead log beside the pair');
+        $this->assertFileDoesNotExist($reader.'-shm', 'the scrub left no shared memory file beside the pair');
+        $this->assertFileDoesNotExist($reader.'-journal', 'the scrub left no rollback journal beside the pair');
+
+        $bytes = (string) file_get_contents($reader);
+
+        $this->assertStringNotContainsString('session-secret-that-must-not-travel', $bytes, 'the deleted session bytes are not left in free pages');
+        $this->assertStringNotContainsString('cache-secret-that-must-not-travel', $bytes, 'the deleted cache bytes are not left in free pages');
+
+        DB::table('sessions')->where('id', 'live-session')->update(['payload' => 'session-live-after-backup']);
+        DB::table('cache')->where('key', 'suwayomi.tokens')->update(['value' => 'cache-live-after-backup']);
+
+        $this->damageLive();
+
+        (new RunLiveRestore(1, $token))->handle(app(LiveRestore::class));
+
+        $this->assertSame(LiveRestoreRun::COMPLETE, LiveRestoreRun::query()->sole()->state);
+        $this->assertSame(
+            'session-live-after-backup',
+            (string) DB::table('sessions')->where('id', 'live-session')->value('payload'),
+            'the live session is preserved rather than replaced by the pair\'s empty table',
+        );
+        $this->assertSame(
+            'cache-live-after-backup',
+            (string) DB::table('cache')->where('key', 'suwayomi.tokens')->value('value'),
+            'the live cache is preserved rather than replaced by the pair\'s empty table',
+        );
+    }
+
+    /**
      * The reader half must hold what its manifest records, verified before anything moves:
      * a file whose rows disagree with its own manifest is not the pair it claims to be, and
      * the run refuses without ever asking the server for anything.

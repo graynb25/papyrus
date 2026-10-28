@@ -143,6 +143,58 @@ class SnapshotDatabaseTest extends TestCase
     }
 
     /**
+     * The command is the other caller of the shared capture seam, so it must not carry the
+     * live session or cache rows either. The tables stay for schema compatibility; the rows
+     * and their deleted bytes do not.
+     */
+    public function test_a_snapshot_leaves_live_sessions_and_cached_tokens_out(): void
+    {
+        DB::table('sessions')->insert([
+            'id' => 'snapshot-session',
+            'user_id' => 1,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'the snapshot test',
+            'payload' => 'snapshot-session-secret-that-must-not-travel',
+            'last_activity' => 1,
+        ]);
+
+        DB::table('cache')->insert([
+            'key' => 'suwayomi.tokens',
+            'value' => 'snapshot-cache-secret-that-must-not-travel',
+            'expiration' => 4102444800,
+        ]);
+
+        $directory = $this->scratch.'/private';
+
+        $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+
+        $files = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+        $this->assertCount(1, $files);
+
+        $copy = new \PDO('sqlite:'.$files[0]);
+
+        $this->assertSame(
+            1,
+            (int) $copy->query("select count(*) from sqlite_master where type='table' and name='sessions'")->fetchColumn(),
+            'the snapshot keeps the schema the restore checks against',
+        );
+        $this->assertSame(0, (int) $copy->query('select count(*) from sessions')->fetchColumn(), 'no live session rows travel in the snapshot');
+        $this->assertSame(0, (int) $copy->query('select count(*) from cache')->fetchColumn(), 'no cached manga server tokens travel in the snapshot');
+
+        $copy = null;
+
+        $this->assertFileDoesNotExist($files[0].'-wal', 'the scrub left no write ahead log beside the snapshot');
+        $this->assertFileDoesNotExist($files[0].'-shm', 'the scrub left no shared memory file beside the snapshot');
+        $this->assertFileDoesNotExist($files[0].'-journal', 'the scrub left no rollback journal beside the snapshot');
+
+        $bytes = (string) file_get_contents($files[0]);
+
+        $this->assertStringNotContainsString('snapshot-session-secret-that-must-not-travel', $bytes, 'the deleted session bytes are not left in free pages');
+        $this->assertStringNotContainsString('snapshot-cache-secret-that-must-not-travel', $bytes, 'the deleted cache bytes are not left in free pages');
+    }
+
+    /**
      * Retention keeps the newest and drops the oldest.
      */
     public function test_retention_keeps_the_newest_and_drops_the_oldest(): void

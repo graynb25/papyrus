@@ -135,13 +135,13 @@ class SecurityDocumentTest extends TestCase
         $text = $this->text();
 
         $this->assertStringContainsString('A backup pair is not a library-only copy', $text);
-        $this->assertStringContainsString('live `sessions` rows', $text);
-        $this->assertStringContainsString('the `cache` table where the Suwayomi bearer and refresh tokens live', $text);
         $this->assertStringContainsString('the plaintext AniList OAuth token', $text);
         $this->assertStringContainsString('password hashes and remember tokens', $text);
+        $this->assertStringContainsString('It does not carry live session rows or the `cache` table', $text);
+        $this->assertStringContainsString('their rows are removed and the file is vacuumed', $text);
         $this->assertStringContainsString('Treat the backups folder as a secret', $text);
         $this->assertStringContainsString(
-            'Version 1.5.0 does not exclude those tables or encrypt the AniList token inside a backup',
+            'still does not encrypt the AniList token inside a backup',
             $text,
         );
     }

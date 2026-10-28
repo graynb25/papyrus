@@ -7317,6 +7317,13 @@ rows 1 to 7 all on manga 10, bulk runs 1 to 19 with run 7's seven pending offers
  three live run tables with `live_backup_runs` at 1 and the other two at 0. All six gates green on
  the final tree at **2,344 of 2,344 tests with 6,388 assertions**.
 
+**Two writers take a reader half.** `ReaderHalfCapture` covers the in-app backup and
+`papyrus:snapshot`; the launcher's `ReaderSnapshot` child covers `papyrus snapshot` while the app
+is stopped, because the launcher's own interpreter has no `pdo_sqlite`. A change to what a reader
+half may carry has to land in both, or the path a reader thinks about least keeps the old
+contents. M1 is the worked example: both now empty `sessions` and `cache` and vacuum the copy,
+while the tables stay so the restore's schema check still matches.
+
 ### Trap 334: Internal names are not reader copy
 
 A backup page can be structurally clear and still sound like a log file. The first humanization pass

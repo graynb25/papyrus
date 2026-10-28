@@ -393,19 +393,19 @@ class BackupsPageTest extends TestCase
     /**
      * The copy is not library-only, and the page says so before inviting the reader to copy it.
      *
-     * Its reader half is a copy of the whole application database, so it carries live session
-     * rows, the Suwayomi token cache, the plaintext AniList token and password hashes. The
-     * warning is copy only in 1.5.0; the table exclusion is later work.
+     * Its reader half still carries the plaintext AniList token and password hashes, so the
+     * folder is still a secret. The live session rows and the Suwayomi token cache are emptied
+     * from the copy, and the warning names both sides of that line rather than leaving the
+     * reader to guess.
      */
-    public function test_it_warns_that_a_backup_carries_live_secrets(): void
+    public function test_it_warns_that_a_backup_carries_secrets_and_names_what_is_left_out(): void
     {
         $this->writePair();
 
         $this->get('/settings/backups')
-            ->assertSee('A backup pair contains the whole application database')
-            ->assertSee('live session rows')
-            ->assertSee('the tokens the manga server has cached')
+            ->assertSee('A backup pair contains your library')
             ->assertSee('an AniList token and password hashes')
+            ->assertSee("Live session rows and the manga server's cached tokens are left out.")
             ->assertSee('Treat this folder as a secret.');
     }
 

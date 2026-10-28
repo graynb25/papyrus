@@ -451,6 +451,45 @@ class ReaderSnapshotTest extends TestCase
     }
 
     /**
+     * The stopped-app snapshot is the other reader-half writer, so it must not carry the live
+     * session or cache rows either. The tables stay for schema compatibility; the rows and
+     * their deleted bytes do not.
+     */
+    public function test_a_snapshot_leaves_live_sessions_and_cached_tokens_out(): void
+    {
+        $database = $this->database(2, 2);
+
+        $pdo = new \PDO('sqlite:'.$database, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+        $pdo->exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, payload TEXT NOT NULL)');
+        $pdo->exec('CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+        $pdo->exec("INSERT INTO sessions (id, payload) VALUES ('snapshot-session', 'launcher-session-secret-that-must-not-travel')");
+        $pdo->exec("INSERT INTO cache (key, value) VALUES ('suwayomi.tokens', 'launcher-cache-secret-that-must-not-travel')");
+
+        unset($pdo);
+
+        $target = $this->target();
+
+        (new ReaderSnapshot)->capture($database, $target, $this->php(), $this->ini());
+
+        $copy = new \PDO('sqlite:'.$target, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+
+        $this->assertSame(
+            1,
+            (int) $copy->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sessions'")->fetchColumn(),
+            'the snapshot keeps the schema the restore checks against',
+        );
+        $this->assertSame(0, (int) $copy->query('SELECT COUNT(*) FROM sessions')->fetchColumn(), 'no live session rows travel in the snapshot');
+        $this->assertSame(0, (int) $copy->query('SELECT COUNT(*) FROM cache')->fetchColumn(), 'no cached manga server tokens travel in the snapshot');
+
+        unset($copy);
+
+        $bytes = (string) file_get_contents($target);
+
+        $this->assertStringNotContainsString('launcher-session-secret-that-must-not-travel', $bytes, 'the deleted session bytes are not left in free pages');
+        $this->assertStringNotContainsString('launcher-cache-secret-that-must-not-travel', $bytes, 'the deleted cache bytes are not left in free pages');
+    }
+
+    /**
      * Taking the same database twice produces the same bytes both times.
      *
      * A snapshot that varies run to run is a snapshot nobody can check, and the digest in the manifest
