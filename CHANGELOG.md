@@ -54,6 +54,13 @@ carries the manga id and cover URL only, and the controller no longer asks Suway
 title batch. The cache key moves to v2, so a payload cached before the shape change cannot
 outlive it. `089b341`
 
+**The readiness page's proxy blind spot is documented.** `/ready` answers only a loopback
+transport address, which is right for the launcher's direct connection. Behind a reverse
+proxy on the same machine every remote request arrives from loopback, so every remote client
+receives the readiness body. The controller and `docs/SECURITY.md` now say so and tell an
+operator not to forward `/ready`. A launcher secret or a separate loopback-only listener is
+deferred to a later release. `e10d8fa`
+
 ### Fixed
 
 **Uninstall removes the extension and its source.** The Sources page sent `install: false`,
