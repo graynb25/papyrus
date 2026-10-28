@@ -7,8 +7,9 @@ reader flow worked, but the shortcut preflight hung; the fix is in `86e033a`, th
 rebuilt from it, and the fresh manual run on the rebuilt installer passed on 2026-10-27,
 including the shortcut double-click. Batch H is recorded and committed
 locally; 1.5.1 is not started. The H3 behaviour change is committed locally on 2026-10-27 and
-is not pushed. H3 remains open until the manual proof below passes on a fresh disposable
-scratch install. This plan turns the walk in
+is not pushed; its manual proof passed on a fresh disposable scratch install on 2026-10-28. The
+`86e033a` artifacts predate the change, so anything built from them still carries the old
+behaviour. This plan turns the walk in
 `walk.md` and the security assessment in `security.md` into release work for 1.5.0 and 1.5.1.
 The audit was read at HEAD `6572ba0`; the batch changes and the audit documents themselves are
 committed in `86e033a`.
@@ -104,11 +105,12 @@ the behaviour changes or the deployment posture makes it irrelevant.
   `tools/make-walkthrough.ps1` regenerates the images from the session folder, which git
   ignores, so the committed images are the record.
 - [x] Batch H, release close-out
-- [ ] H3 behaviour change, import review before extension install. Committed locally on
+- [x] H3 behaviour change, import review before extension install. Committed locally on
   2026-10-27, not pushed. Every import that installs extensions surveys the backup
   first, shows the stores and signing keys, and installs only from stores the reader trusts at
-  install time. Stored uploads have a 24 hour life cycle. H3 stays open High until the manual
-  proof on a fresh disposable scratch install in the section below.
+  install time. Stored uploads have a 24 hour life cycle. The manual proof passed on a fresh
+  disposable scratch install on 2026-10-28; the evidence is in the section below. The
+  `86e033a` artifacts predate the change.
 - [ ] 1.5.1, remaining hardening and reader copy
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
@@ -770,8 +772,9 @@ accepted. M1 ships as a warning only, and L1 waits for 1.5.1.
 
 ### H3 behaviour change, 2026-10-27
 
-Status: committed locally on 2026-10-27, not pushed, no manual proof yet. H3 remains an
-open High finding, now scoped to the unproven end-to-end path rather than the missing gate.
+Status: committed locally on 2026-10-27, not pushed. The manual proof passed on a fresh
+disposable scratch install on 2026-10-28 and is recorded below, so H3 closes as a finding. The
+`86e033a` artifacts predate the change.
 
 What changed:
 
@@ -804,10 +807,55 @@ reuse, trust re-read, and expiry and sweep; trust, held and catalogue failure ca
 The mutation check that matters: an install that ignores the trust list, or a confirm that
 takes its path or limit from the request, fails these tests.
 
-Not proven yet: the manual pass. It must run on a fresh disposable scratch install, never the
-live checkout, and record: import a small synthetic backup, see the review with a store and
-its key, tick it, confirm, read a page from the installed source, and check the upload is
-gone. Until that is read back, H3 stays open.
+### H3 manual walk, 2026-10-28
+
+Environment: a fresh disposable packaged install built from `0a2407d`, reported as version
+1.5.0, in a scratch directory outside the checkout and outside the reader's data. The scratch
+Suwayomi used its own ports and data directory. A scratch-only first account was created; no
+reader data or credential from the live install was used.
+
+Setup before the review: the Keiyoushi store was added and trusted through `/sources`, the
+catalogue refreshed to 1,431 extensions, and MangaTaro 1.6.0 installed and browsed. One Piece
+opened, its chapters loaded, and chapter 1 rendered 53 pages with the first page image at
+1,364 by 1,004 pixels. The extension was then removed from the scratch Suwayomi and the
+scratch trust row deleted, so the review began with no MangaTaro source and no trusted store.
+Those two setup mutations were applied to the disposable services directly.
+
+The backup was synthetic: one library series, One Piece, on the MangaTaro package, with two
+chapters, one marked read, in an `Imported` category. It was uploaded through
+`/settings/import` with "Read the file first and report" cleared.
+
+The review showed "Needs your answer", "1 source in this backup needs an extension this server
+does not have", the Keiyoushi store with its index URL and full signing key, the MangaTaro
+package at 1.6.0 with one series, and the store box unchecked. Before the answer the run row was
+`awaiting`, its stored upload was present at 1,710 bytes, the database held zero trust rows, and
+Suwayomi held no MangaTaro source. That is the fail-closed state: a reader who closes the page
+gets nothing installed.
+
+A first review, opened before the source mirror had been resynced after the direct uninstall,
+reported the extension as already present. It was discarded through the page: the row became
+`declined`, `file_path` was null, and the stored upload was removed. That is the discard arm of
+the upload life cycle, measured rather than inferred.
+
+The second review was answered by ticking Keiyoushi and pressing Import. The same row moved
+through `running` to `complete`: the page showed all four phases done and "1 series imported, 0
+already up to date." The trust row was written, Suwayomi installed MangaTaro again, the One
+Piece mapping resolved to Suwayomi manga id 1 with two chapters seen and one applied, and the
+stored upload was gone.
+
+Read-back after the import: the library showed One Piece at 1 of 1,202 read, marked Imported
+and attributed to MangaTaro EN; `/series/1` showed it in the library with Continue reading; and
+`/read/1/1` rendered the 53-page chapter, with the first page image 1,364 by 1,004 pixels
+through `/suwayomi/api/v1/`. The Sources page did not list the new source until it was synced,
+but its existing callout said "1 installed extension is missing from the source list below" and
+offered Sync sources, so the drift was named and recoverable.
+
+Found alongside the walk, outside H3: `ExtensionManager::setInstalled($pkg, false)` sends
+`patch: {install: false}`. Suwayomi 2.4.2366 accepted the mutation and left `isInstalled` true;
+`patch: {uninstall: true}` removed it and dropped the source. The Sources page Uninstall
+control therefore does nothing on this server. This was not changed under H3; it is recorded
+in 1.5.1 below. The import also leaves the source mirror one sync behind after it installs an
+extension, which is recoverable through the drift callout and is recorded there too.
 
 ## Release 1.5.1: remaining hardening and reader copy
 
@@ -834,6 +882,14 @@ Security remaining:
 - I2: update the build and test Node toolchain and clear the npm advisories. This is not
   shipped runtime code, but the build machines should not carry known criticals.
 
+Functional fixes found during the H3 walk:
+
+- Extension uninstall: send `patch: {uninstall: true}`, not `install: false`. Measured on
+  2026-10-28 against Suwayomi 2.4.2366: `install: false` returned success and left the package
+  installed. Add a test that asserts the uninstall patch, then re-check the live server.
+- Refresh the source mirror after an import installs extensions, so `/sources` does not open
+  one sync behind. The drift callout names it and the Sync sources button recovers it today.
+
 Walk remaining:
 
 - W-M1: library check summary grammar and the disabled "Check 0 series" control.
@@ -856,12 +912,10 @@ Walk remaining:
 
 ## Accepted risks and deferred items
 
-- H3 remains open High, no longer as accepted import behaviour. The install now requires the
-  reader's trust at run time and the survey shows the stores first; the H3 behaviour change
-  section records the code and the tests. The remaining acceptance is the manual proof on a
-  fresh disposable scratch install (import a small synthetic backup, answer the review, read a
-  page from an installed source, check the upload is gone). Until that is read back the finding
-  stays open. Revisit if `shared` or `public` mode is promoted beyond an experiment.
+- H3 for anything built from `86e033a`: those artifacts predate the behaviour change, so the
+  old automatic install remains in them. The tree is fixed and its manual proof passed on
+  2026-10-28; a build from the tree carries the review. Revisit if `shared` or `public` mode is
+  promoted beyond an experiment.
 - L4 guest session rows: 1.5.1 or later, unless public mode is promoted.
 - L5 reader GET creates a reading session: data quality, not security. Schedule separately.
 - I3 Suwayomi 2.4.2366 has no published advisory. No change.
