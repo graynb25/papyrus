@@ -11,6 +11,8 @@ use App\Search\TitleNormalizer;
 use App\Support\ReadingState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -158,6 +160,15 @@ class AniListTrackingTest extends TestCase
         $this->assertSame(4242, $account->anilist_user_id);
         $this->assertSame('Reader', $account->anilist_user_name);
         $this->assertNotNull($account->token_expires_at);
+
+        $stored = (string) DB::table('anilist_accounts')->where('user_id', $this->user->id)->value('access_token');
+
+        $this->assertNotSame('anilist-token-1', $stored, 'the column holds ciphertext, not the bearer token');
+        $this->assertSame(
+            'anilist-token-1',
+            Crypt::decryptString($stored),
+            'the stored value is the Laravel ciphertext for the token',
+        );
     }
 
     public function test_a_state_mismatch_connects_nobody(): void

@@ -14,6 +14,11 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
  * search page makes: those only read public data, this one acts as the reader.
  * It is why the row exists at all and why the token is never rendered anywhere.
  *
+ * The column holds ciphertext through Laravel's `encrypted` cast, so a database
+ * copy or a backup does not yield a usable bearer token without the install's
+ * `APP_KEY`. The model decrypts it when a caller reads the attribute, and
+ * `$hidden` keeps it out of serialized output.
+ *
  * Owned by a user, unlike {@see AniListMedia}, because a token is not reference
  * data. It is one person's authorisation.
  *
@@ -41,6 +46,7 @@ class AniListAccount extends OwnedModel
     protected function casts(): array
     {
         return [
+            'access_token' => 'encrypted',
             'anilist_user_id' => 'integer',
             'token_expires_at' => 'datetime',
         ];

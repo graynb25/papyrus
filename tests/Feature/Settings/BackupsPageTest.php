@@ -393,7 +393,7 @@ class BackupsPageTest extends TestCase
     /**
      * The copy is not library-only, and the page says so before inviting the reader to copy it.
      *
-     * Its reader half still carries the plaintext AniList token and password hashes, so the
+     * Its reader half still carries the encrypted AniList token and password hashes, so the
      * folder is still a secret. The live session rows and the Suwayomi token cache are emptied
      * from the copy, and the warning names both sides of that line rather than leaving the
      * reader to guess.
@@ -404,7 +404,7 @@ class BackupsPageTest extends TestCase
 
         $this->get('/settings/backups')
             ->assertSee('A backup pair contains your library')
-            ->assertSee('an AniList token and password hashes')
+            ->assertSee('an encrypted AniList token and password hashes')
             ->assertSee("Live session rows and the manga server's cached tokens are left out.")
             ->assertSee('Treat this folder as a secret.');
     }

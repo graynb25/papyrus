@@ -114,4 +114,18 @@ class ConnectionsTest extends TestCase
             ->assertSee('Reader')
             ->assertDontSee('secret-token-value');
     }
+
+    /**
+     * Disconnecting deletes the row, but AniList publishes no token revocation endpoint.
+     * The page has to say that rather than imply the credential dies here.
+     */
+    public function test_disconnecting_says_anilist_cannot_revoke_the_token(): void
+    {
+        app(Tracking::class)->connect($this->user, 'tok', 1, 'Reader', null);
+
+        $this->get(route('connections.edit'))
+            ->assertOk()
+            ->assertSee('AniList does not publish a way for this app to revoke it')
+            ->assertSee('the token stays valid on AniList until it expires');
+    }
 }

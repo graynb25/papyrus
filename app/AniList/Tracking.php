@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Cache;
  * Connecting hands the app a token that acts as that reader on AniList. What
  * the app does with it is deliberately one thing: when a chapter becomes read,
  * the series' progress number on AniList moves to match. Nothing else is
- * written, nothing is read back beyond who the token belongs to, and a reader
- * who disconnects leaves nothing of ours behind, because there is no refresh
- * token to revoke and the row is deleted outright.
+ * written, and nothing is read back beyond who the token belongs to. A reader
+ * who disconnects leaves no row behind; AniList publishes no revocation
+ * endpoint, so the token itself lasts until its own expiry.
  *
  * ## The key the join runs on
  *
@@ -82,8 +82,9 @@ class Tracking
     }
 
     /**
-     * Forget the connection. The token dies on AniList's own expiry; there is
-     * nothing here to revoke it against.
+     * Forget the connection. AniList publishes no revocation endpoint, so deleting
+     * the row ends this app's use of the token but does not invalidate it on
+     * AniList's side; it remains valid there until its own expiry.
      */
     public function disconnect(User|int $user): void
     {

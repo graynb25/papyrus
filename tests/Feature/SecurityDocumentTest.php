@@ -135,14 +135,26 @@ class SecurityDocumentTest extends TestCase
         $text = $this->text();
 
         $this->assertStringContainsString('A backup pair is not a library-only copy', $text);
-        $this->assertStringContainsString('the plaintext AniList OAuth token', $text);
+        $this->assertStringContainsString('the encrypted AniList OAuth token', $text);
         $this->assertStringContainsString('password hashes and remember tokens', $text);
         $this->assertStringContainsString('It does not carry live session rows or the `cache` table', $text);
         $this->assertStringContainsString('their rows are removed and the file is vacuumed', $text);
         $this->assertStringContainsString('Treat the backups folder as a secret', $text);
         $this->assertStringContainsString(
-            'still does not encrypt the AniList token inside a backup',
+            'The AniList token in the pair is ciphertext',
             $text,
         );
+    }
+
+    public function test_the_anilist_token_is_encrypted_and_disconnect_is_honest(): void
+    {
+        $text = $this->text();
+
+        $this->assertStringContainsString('AniList tokens are encrypted at rest', $text);
+        $this->assertStringContainsString("Laravel's `encrypted` cast", $text);
+        $this->assertStringContainsString('AniList publishes no token revocation endpoint', $text);
+        $this->assertStringContainsString('does not invalidate the token on AniList', $text);
+        $this->assertStringContainsString('The token remains valid there until it expires', $text);
+        $this->assertStringContainsString('restored on an install with a different `APP_KEY`', $text);
     }
 }

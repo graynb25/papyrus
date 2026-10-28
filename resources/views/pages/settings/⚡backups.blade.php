@@ -1442,7 +1442,7 @@ new #[Title('Backups')] class extends Component {
         <p class="mb-2 font-mono text-sm break-all text-gray-700 dark:text-gray-300">{{ $this->directory() }}</p>
 
         <p class="mb-2 text-sm text-amber-700 dark:text-amber-300">
-            {{ __('A backup pair contains your library, an AniList token and password hashes. Live session rows and the manga server\'s cached tokens are left out. Treat this folder as a secret.') }}
+            {{ __('A backup pair contains your library, an encrypted AniList token and password hashes. Live session rows and the manga server\'s cached tokens are left out. Treat this folder as a secret.') }}
         </p>
 
         <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">

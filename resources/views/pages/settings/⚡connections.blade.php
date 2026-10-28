@@ -42,9 +42,10 @@ new #[Title('Connection settings')] class extends Component {
     /**
      * Forget the connection.
      *
-     * The row is deleted outright. AniList issues no refresh token, so there is
-     * nothing stored here that could be revoked remotely anyway; what this ends
-     * is this app's ability to act as the reader.
+     * The row is deleted outright. AniList publishes no token revocation endpoint,
+     * so this app cannot invalidate the token on AniList's side; what this ends is
+     * this app's ability to act as the reader, and the token itself lasts until its
+     * own expiry.
      */
     public function disconnect(): void
     {
@@ -219,6 +220,10 @@ new #[Title('Connection settings')] class extends Component {
                 </div>
 
                 @if ($this->account !== null)
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('Disconnecting deletes the saved token here. AniList does not publish a way for this app to revoke it, so the token stays valid on AniList until it expires.') }}
+                    </p>
+
                     @php($import = $this->importState)
 
                     {{--

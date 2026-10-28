@@ -869,9 +869,12 @@ Security remaining:
   folder a secret. `RunLiveRestoreJobTest` seeds both, proves the pair carries neither, and
   proves a round trip preserves the live rows; `SnapshotDatabaseTest` and `ReaderSnapshotTest`
   prove both snapshot writers scrub.
-- M4: add an `encrypted` cast to `anilist_accounts.access_token`, migrate existing rows,
-  and document that disconnecting does not revoke a token unless AniList exposes a
-  revocation endpoint. Check the API before promising revocation.
+- M4, fixed on 2026-10-28: `anilist_accounts.access_token` uses Laravel's `encrypted`
+  cast and a data migration encrypts existing rows. The token is ciphertext in the database
+  and in a backup; `APP_KEY` is the key. AniList publishes no token revocation endpoint, so
+  disconnecting deletes the row but does not invalidate the token on AniList's side; the
+  connections page says so. Tests cover the stored ciphertext, the upgrade migration and
+  the page copy.
 - M5: add AniList title lookup and mail to `Outbound::routes()`. Correct "collects nothing",
   "Nothing", "Three things" and "no cookie". Add a test that the rendered privacy page and
   the outbound list agree.
@@ -955,10 +958,10 @@ Walk remaining:
   sizes, not a guess, and report the cap in the refusal.
 - M7 host checks can be bypassed by a redirect or a DNS rebind after the check. Owner-only
   access is the primary control. Do not claim the request is fully SSRF-proof.
-- M1 is fixed in the reader-half copy: `sessions` and `cache` are emptied and the file is
-  vacuumed, so a copied backup no longer carries live session rows or the Suwayomi token cache.
-  It still carries the plaintext AniList token and password hashes, so the backups page still
-  calls the folder a secret. M4 remains deferred to 1.5.1.
+- M1 and M4 are fixed in the reader-half copy: `sessions` and `cache` are emptied and the
+  file is vacuumed, and the AniList token is encrypted at rest. A copied backup still
+  carries the token's ciphertext, password hashes and remember tokens, so the backups page
+  still calls the folder a secret.
 
 ## Verification matrix
 
