@@ -413,6 +413,23 @@ class ExtensionManagerTest extends TestCase
         $this->assertSame(['install' => true], $last['variables']['patch']);
     }
 
+    /**
+     * Suwayomi 2.4.2366 accepts `install: false` and leaves the package installed,
+     * so the mutation has to name the operation the reader asked for. Measured on
+     * the scratch server: `uninstall: true` removed the package and its source.
+     */
+    public function test_uninstalling_an_extension_sends_the_uninstall_patch(): void
+    {
+        $this->fakeSuwayomi();
+
+        app(ExtensionManager::class)->setInstalled('eu.kanade.tachiyomi.extension.en.example', false);
+
+        $last = end($this->sent);
+
+        $this->assertSame('eu.kanade.tachiyomi.extension.en.example', $last['variables']['id']);
+        $this->assertSame(['uninstall' => true], $last['variables']['patch']);
+    }
+
     public function test_extension_count_asks_the_server_rather_than_counting_rows(): void
     {
         $this->fakeSuwayomi();

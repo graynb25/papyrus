@@ -233,13 +233,19 @@ class ExtensionManager
      * The id is the pkgName string, not a numeric id. Verified against the
      * schema: UpdateExtensionInput.id is a String!.
      *
+     * Uninstall names `uninstall`, not `install: false`. Suwayomi 2.4.2366
+     * accepts the latter and returns success while leaving the package
+     * installed, so the reader's Uninstall control appeared to work and the
+     * source stayed. Measured on the scratch server: `uninstall: true`
+     * removed the package and dropped its source.
+     *
      * @throws SuwayomiException
      */
     public function setInstalled(string $pkgName, bool $installed): void
     {
         $this->gateway->execute(
             'mutation Set($id: String!, $patch: UpdateExtensionPatchInput!) { updateExtension(input: {id: $id, patch: $patch}) { clientMutationId } }',
-            ['id' => $pkgName, 'patch' => ['install' => $installed]],
+            ['id' => $pkgName, 'patch' => $installed ? ['install' => true] : ['uninstall' => true]],
         );
     }
 
