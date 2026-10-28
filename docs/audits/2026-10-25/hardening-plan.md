@@ -875,9 +875,13 @@ Security remaining:
   disconnecting deletes the row but does not invalidate the token on AniList's side; the
   connections page says so. Tests cover the stored ciphertext, the upgrade migration and
   the page copy.
-- M5: add AniList title lookup and mail to `Outbound::routes()`. Correct "collects nothing",
-  "Nothing", "Three things" and "no cookie". Add a test that the rendered privacy page and
-  the outbound list agree.
+- M5, fixed on 2026-10-28: `Outbound::routes()` lists five connections: AniList title
+  matching, AniList tracking, the manga source, an extension repository, and mail on a shared
+  or public install. The privacy page describes the local account, library and session data
+  instead of claiming it collects nothing, and a Cookies section names `papyrus-session`,
+  `XSRF-TOKEN` and the optional `remember_web_` cookie with their flags. `LegalPagesTest`
+  compares the rendered page with the outbound list and measures the guest and remember
+  cookie flags; `FaqTest` holds the two AniList paths apart.
 - L1: remove the `title` key from the showcase payload. Keep the cover URL and manga id.
 - L2: document that `REMOTE_ADDR` is not a client identity behind a same-host proxy. Decide
   between a launcher secret and a separate listener in a later release.
