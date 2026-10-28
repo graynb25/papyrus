@@ -266,6 +266,7 @@ class BackupImporterTest extends TestCase
             installer: new ExtensionInstaller($this->app->make(ExtensionManager::class), $locator),
             resolver: new SeriesResolver($locator),
             writer: new SeriesWriter($this->app->make(ReadingState::class), $this->app->make(SeriesGateway::class)),
+            extensions: $this->app->make(ExtensionManager::class),
         );
 
         $importer->onProgress(function (string $line): void {

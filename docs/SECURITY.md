@@ -118,11 +118,16 @@ cannot tell you whether an extension is well behaved, because nobody can without
 the source.
 
 The Sources page asks for an explicit trust decision per store, and names the signing key
-before anything is installed from it. Import is not the same decision. A backup names the
-extensions it needs, and unless you clear "Install the extensions this backup needs" before
-you start, Papyrus installs them by default without the per-store trust step. That is a
-known risk, accepted for this release. Clear the checkbox before importing a backup you did
-not make yourself.
+before anything is installed from it. Import asks the same question. A backup names the
+extensions it needs, so when "Install the extensions this backup needs" is on, the import
+first shows every store those packages come from, with its signing key and the packages it
+would install. Nothing installs until you tick a store and confirm. The install then asks
+the database which stores you trust at that moment, so a store revoked after the review
+holds its packages. Ticking a store records that trust even if the import later fails.
+"Import without extensions" imports the library and changes nothing on the server, and
+Discard removes the review and its upload. An unanswered review expires after 24 hours and
+its upload is deleted. Clear the checkbox, or choose "Import without extensions", for a
+backup you did not make yourself.
 
 Treat the store URL as the trust decision it is: paste one you have looked at.
 

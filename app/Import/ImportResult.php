@@ -26,6 +26,10 @@ namespace App\Import;
  * {@see self::$refusedPackages} is the third: what did not land, and why. One package out of 32
  * that will not install must not abandon the other 31, so this is a count and a list rather than
  * an exception.
+ *
+ * {@see self::$heldPackages} is the fourth, and it is not a failure: nothing was attempted
+ * because no store the reader trusts offers the package. Keeping it apart from `refused` means
+ * a report can say "trust a store" rather than "this extension is broken".
  */
 final class ImportResult
 {
@@ -38,6 +42,7 @@ final class ImportResult
      * @param  int  $obsoleteSeries  Series on sources the reader's own app had marked gone.
      * @param  array<string, string>  $refusedPackages  Package to the message it refused with.
      * @param  bool  $installAttempted  False when the run was told not to install.
+     * @param  array<string, string>  $heldPackages  Package to why it was not offered to a store at all.
      */
     public function __construct(
         public readonly array $series,
@@ -48,6 +53,7 @@ final class ImportResult
         public readonly int $obsoleteSeries,
         public readonly array $refusedPackages = [],
         public readonly bool $installAttempted = true,
+        public readonly array $heldPackages = [],
     ) {}
 
     public function applied(): int

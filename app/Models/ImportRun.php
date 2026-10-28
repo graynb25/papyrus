@@ -31,7 +31,9 @@ use Illuminate\Support\Collection;
  * @property string $format
  * @property int|null $schema_version
  * @property string|null $file_name
- * @property string $state running|complete|failed|refused
+ * @property string|null $file_path The file a review read, never rendered.
+ * @property array<string, mixed>|null $review What the survey showed, so a confirm can reuse it.
+ * @property string $state running|awaiting|complete|failed|refused|declined|expired
  * @property string|null $refusal_reason
  * @property int|null $series_in_file
  * @property int|null $library_series
@@ -61,6 +63,8 @@ use Illuminate\Support\Collection;
     'format',
     'schema_version',
     'file_name',
+    'file_path',
+    'review',
     'state',
     'refusal_reason',
     'series_in_file',
@@ -98,6 +102,7 @@ class ImportRun extends OwnedModel
     {
         return [
             'schema_version' => 'integer',
+            'review' => 'array',
             'series_in_file' => 'integer',
             'library_series' => 'integer',
             'series_processed' => 'integer',
@@ -123,12 +128,34 @@ class ImportRun extends OwnedModel
 
     public const RUNNING = 'running';
 
+    /*
+     * A survey is finished and the install has not been agreed to yet.
+     *
+     * Stored as `awaiting` rather than the constant's full name because the state column
+     * has held short words since it was created, and the value is what a query names.
+     */
+    public const AWAITING_CONFIRMATION = 'awaiting';
+
     public const COMPLETE = 'complete';
 
     public const FAILED = 'failed';
 
     /** The file was readable but not importable. The reader's sentence says why. */
     public const REFUSED = 'refused';
+
+    /** The reader closed the review without importing. */
+    public const DECLINED = 'declined';
+
+    /** The review sat unconfirmed past the retention period and its upload was removed. */
+    public const EXPIRED = 'expired';
+
+    /**
+     * How long a review and its upload are kept.
+     *
+     * Long enough for a reader to be called away and come back the next day, short enough
+     * that an abandoned 40MB backup does not live on the server for ever.
+     */
+    public const REVIEW_TTL_HOURS = 24;
 
     /** @return HasMany<ImportedSeries, $this> */
     public function series(): HasMany
@@ -148,6 +175,14 @@ class ImportRun extends OwnedModel
     public function isRunning(): bool
     {
         return $this->state === self::RUNNING;
+    }
+
+    /**
+     * Whether the install is waiting for the reader to choose stores.
+     */
+    public function isAwaitingConfirmation(): bool
+    {
+        return $this->state === self::AWAITING_CONFIRMATION;
     }
 
     /**

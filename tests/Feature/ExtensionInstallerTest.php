@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Import\BackupSource;
 use App\Import\ExtensionInstaller;
+use App\Models\ExtensionStore;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\Gateway;
 use App\Suwayomi\SeriesLocator;
@@ -65,6 +66,16 @@ class ExtensionInstallerTest extends TestCase
     private array $refuses = [];
 
     /**
+     * Packages the catalogue will not place in any store this server knows.
+     *
+     * @var array<int, string>
+     */
+    private array $unplaceable = [];
+
+    /** Make the catalogue query fail the way an unreachable server does. */
+    private bool $catalogueFails = false;
+
+    /**
      * Every payload sent to Suwayomi, in order.
      *
      * @var array<int, array<string, mixed>>
@@ -73,12 +84,23 @@ class ExtensionInstallerTest extends TestCase
 
     private ?ExtensionInstaller $subject = null;
 
+    /**
+     * The store id the fake catalogue places every package in, and the installer trusts.
+     *
+     * Built by the fake so each test has the same store the installation is compared against.
+     *
+     * @var array<int, int>
+     */
+    private array $trustedStoreIds = [];
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->sent = [];
         $this->refuses = [];
+        $this->unplaceable = [];
+        $this->catalogueFails = false;
     }
 
     /*
@@ -102,6 +124,14 @@ class ExtensionInstallerTest extends TestCase
 
     private function fake(): ExtensionInstaller
     {
+        $store = ExtensionStore::create([
+            'index_url' => 'https://example.test/index.pb',
+            'name' => 'Example store',
+            'signing_key' => 'abc123',
+        ]);
+
+        $this->trustedStoreIds = [$store->id];
+
         Http::fake(function (Request $request) {
             $body = json_decode((string) $request->body(), true) ?: [];
             $this->sent[] = $body;
@@ -111,6 +141,31 @@ class ExtensionInstallerTest extends TestCase
             // No closing paren in the needle: the document reads `login(input: $input)`.
             if (str_contains($document, 'login(input')) {
                 return Http::response(['data' => ['login' => ['accessToken' => 'a-token']]]);
+            }
+
+            /*
+             * The catalogue lookup the trust partition uses. Every package the test asks about
+             * is offered by the one store, which is what makes a package installable here and
+             * gives the untrusted-store tests something to withhold.
+             */
+            if (str_contains($document, 'query Packages')) {
+                if ($this->catalogueFails) {
+                    return Http::response(['errors' => [['message' => 'catalogue unavailable']]]);
+                }
+
+                $names = (array) ($body['variables']['filter']['and'][0]['pkgName']['in'] ?? []);
+
+                return Http::response(['data' => ['extensions' => ['nodes' => array_map(
+                    fn (mixed $name): array => [
+                        'pkgName' => (string) $name,
+                        'name' => (string) $name,
+                        'versionName' => '1.0',
+                        'storeIndexUrl' => in_array((string) $name, $this->unplaceable, true)
+                            ? 'https://example.test/unknown/index.pb'
+                            : 'https://example.test/index.pb',
+                    ],
+                    $names,
+                )]]]);
             }
 
             // The install, one package per mutation.
@@ -245,7 +300,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
         ]));
 
-        $result = $this->installer()->install($sources);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(1, $result['already']);
         $this->assertSame(1, $result['installed'], 'the one that was missing landed');
@@ -270,7 +325,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.de.onepiece', 0, false],
         ]));
 
-        $this->installer()->install($sources);
+        $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(
             ['eu.kanade.tachiyomi.extension.en.sanascans'],
@@ -287,7 +342,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
         ]));
 
-        $this->installer()->install($sources);
+        $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(1, $this->installCalls());
 
@@ -311,7 +366,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
         ]));
 
-        $result = $this->installer()->install($sources);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(0, $result['installed']);
         $this->assertSame(0, $this->installCalls());
@@ -323,7 +378,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
         ]));
 
-        $result = $this->installer()->install($sources, dryRun: true);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds, dryRun: true);
 
         $this->assertSame(1, $result['attempted'], 'it says what it would have done');
         $this->assertSame(0, $result['installed']);
@@ -342,7 +397,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.utoon', 117, true],
         ]));
 
-        $result = $this->installer()->install($sources);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(0, $this->installCalls());
         $this->assertSame(0, $result['attempted']);
@@ -357,11 +412,136 @@ class ExtensionInstallerTest extends TestCase
             new BackupSource(2, 'eu.kanade.tachiyomi.extension.en.utoon', 117, obsolete: true),
         ]));
 
-        $result = $this->installer()->install($sources);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
 
         $this->assertSame(1, $result['still_missing'], 'no package and not obsolete is its own case');
         $this->assertSame(117, $result['obsolete']);
         $this->assertSame(0, $this->installCalls(), 'there is nothing here the server could be asked to install');
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     * Trust, holding, and a catalogue that cannot be read.
+     * ---------------------------------------------------------------------------
+     */
+
+    public function test_no_trusted_stores_installs_nothing_and_holds_every_package(): void
+    {
+        /*
+         * The H3 property in its shortest form. The review a reader saw is a snapshot; the
+         * install acts on the rows in the database. An empty list means "install nothing",
+         * never "install everything the catalogue offers".
+         */
+        $sources = $this->installer()->survey($this->sources([
+            ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
+            ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
+        ]));
+
+        $result = $this->installer()->install($sources, []);
+
+        $this->assertSame(0, $result['attempted']);
+        $this->assertSame(0, $result['installed']);
+        $this->assertSame(0, $this->installCalls());
+        $this->assertSame(2, $result['still_missing']);
+
+        $this->assertSame(
+            [
+                'eu.kanade.tachiyomi.extension.en.thunderscans' => 'from Example store, a store you have not trusted',
+                'eu.kanade.tachiyomi.extension.en.sanascans' => 'from Example store, a store you have not trusted',
+            ],
+            $result['held'],
+        );
+    }
+
+    public function test_a_package_no_known_store_offers_is_held_rather_than_installed(): void
+    {
+        $this->unplaceable = ['eu.kanade.tachiyomi.extension.en.sanascans'];
+
+        $sources = $this->installer()->survey($this->sources([
+            ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
+            ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
+        ]));
+
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
+
+        $this->assertSame(['eu.kanade.tachiyomi.extension.en.thunderscans'], $this->installedTargets());
+        $this->assertSame(
+            ['eu.kanade.tachiyomi.extension.en.sanascans' => 'not in a store this server knows'],
+            $result['held'],
+        );
+        $this->assertSame(1, $result['installed']);
+        $this->assertSame(1, $result['still_missing']);
+    }
+
+    public function test_a_catalogue_failure_holds_every_package_and_does_not_abort_the_import(): void
+    {
+        $this->catalogueFails = true;
+
+        $sources = $this->installer()->survey($this->sources([
+            ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
+            ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
+        ]));
+
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
+
+        $this->assertSame(0, $result['attempted'], 'nothing is installed on the strength of a catalogue we could not read');
+        $this->assertSame(0, $this->installCalls());
+        $this->assertSame(2, $result['still_missing']);
+        $this->assertSame(
+            [
+                'eu.kanade.tachiyomi.extension.en.thunderscans' => 'the extension catalogue could not be read',
+                'eu.kanade.tachiyomi.extension.en.sanascans' => 'the extension catalogue could not be read',
+            ],
+            $result['held'],
+        );
+    }
+
+    public function test_a_review_names_each_store_and_each_package_without_one(): void
+    {
+        $this->unplaceable = ['eu.kanade.tachiyomi.extension.en.sanascans'];
+
+        $review = $this->installer()->review($this->sources([
+            ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
+            ['eu.kanade.tachiyomi.extension.en.sanascans', 83, false],
+        ]));
+
+        $this->assertNull($review['catalogue_error']);
+        $this->assertSame(2, $review['wanted']);
+        $this->assertSame(2, $review['missing_sources']);
+        $this->assertSame(0, $review['already']);
+        $this->assertSame(0, $review['obsolete']);
+
+        $this->assertCount(1, $review['stores']);
+        $this->assertSame('Example store', $review['stores'][0]['name']);
+        $this->assertSame('https://example.test/index.pb', $review['stores'][0]['index_url']);
+        $this->assertSame('abc123', $review['stores'][0]['signing_key']);
+        $this->assertSame(
+            'eu.kanade.tachiyomi.extension.en.thunderscans',
+            $review['stores'][0]['packages'][0]['pkg_name'],
+        );
+        $this->assertSame(332, $review['stores'][0]['packages'][0]['series']);
+
+        $this->assertCount(1, $review['unresolved']);
+        $this->assertSame('eu.kanade.tachiyomi.extension.en.sanascans', $review['unresolved'][0]['pkg_name']);
+        $this->assertSame('not in a store this server knows', $review['unresolved'][0]['reason']);
+        $this->assertSame(0, $this->installCalls(), 'a review changes nothing');
+    }
+
+    public function test_a_review_reports_a_catalogue_failure_instead_of_throwing(): void
+    {
+        $this->catalogueFails = true;
+
+        $review = $this->installer()->review($this->sources([
+            ['eu.kanade.tachiyomi.extension.en.thunderscans', 332, false],
+        ]));
+
+        $this->assertSame([], $review['stores']);
+        $this->assertSame('catalogue unavailable', $review['catalogue_error']);
+        $this->assertSame(
+            'the extension catalogue could not be read',
+            $review['unresolved'][0]['reason'],
+            'a failure reads as a sentence rather than a transport message',
+        );
     }
 
     /*
@@ -379,7 +559,7 @@ class ExtensionInstallerTest extends TestCase
             ['eu.kanade.tachiyomi.extension.en.broken', 40, false],
         ]));
 
-        $result = $this->installer()->install($sources);
+        $result = $this->installer()->install($sources, $this->trustedStoreIds);
 
         /*
          * 31 of 32 installs and one refusal must not become 0 installed. The alternative is a

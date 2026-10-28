@@ -2,8 +2,10 @@
 
 namespace App\Import;
 
+use App\Models\ExtensionStore;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SeriesLocator;
+use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Collection;
 
 /**
@@ -90,13 +92,25 @@ final class ExtensionInstaller
     }
 
     /**
-     * Install what the backup needs and this server lacks.
+     * Install what the backup needs and this server lacks, from stores the reader trusts.
      *
      * Takes the collection by reference in effect, because {@see self::survey()} marks the
      * sources in place. That is the point: after this returns, every source in the caller's
      * collection carries the truth about this server, and a caller reporting "32 sources are
      * still missing" reads that off the same objects rather than a second list that could
      * disagree with the first.
+     *
+     * ## Trust is required and fails closed
+     *
+     * `$trustedStoreIds` has no default and no null arm. A package installs only when the
+     * catalogue places it in a store whose id is in the list; every other package is held
+     * with a reason. An empty list therefore installs nothing rather than everything, which
+     * is the whole point of the H3 fix: the survey a reader saw is not the permission the
+     * install acts on.
+     *
+     * A package past the catalogue bound, or a catalogue that cannot be read, is held
+     * rather than dropped or installed. An import with no extensions is still an import:
+     * failing to read the store list must not abandon the library.
      *
      * ## Failures are counted, not thrown
      *
@@ -107,30 +121,12 @@ final class ExtensionInstaller
      * stopping.
      *
      * @param  Collection<int, BackupSource>  $sources  Already surveyed, so the caller knows the gap.
-     * @return array{installed: int, refused: array<string, string>, already: int, attempted: int, still_missing: int, obsolete: int}
+     * @param  array<int, int>  $trustedStoreIds  The importing reader's trusted store ids at run time.
+     * @return array{installed: int, refused: array<string, string>, already: int, attempted: int, still_missing: int, obsolete: int, held: array<string, string>}
      */
-    public function install(Collection $sources, bool $dryRun = false): array
+    public function install(Collection $sources, array $trustedStoreIds, bool $dryRun = false): array
     {
-        /*
-         * Only sources that carry series are installed.
-         *
-         * The backup names 279 sources in total and 52 of them carry shelf series, but
-         * `ImportedBackup::$sources` is already filtered to the shelf, so this only excludes the
-         * zero-count case that a source row can still hold. Installing an extension for a source
-         * no series sit on costs a request and leaves the reader with an extension they did not
-         * ask for, on a server where every installed extension is scanned on every search.
-         */
-        $wanted = $sources
-            ->filter(
-                fn (BackupSource $s): bool => $s->seriesCount > 0
-                    && ! $s->isInstalled
-                    && $s->isRecoverable()
-                    && $s->package !== null,
-            )
-            ->map(fn (BackupSource $s): string => $s->package)
-            ->unique()
-            ->values()
-            ->all();
+        $wanted = $this->wanted($sources);
 
         $already = $sources->filter(fn (BackupSource $s): bool => $s->isInstalled)->count();
 
@@ -138,18 +134,28 @@ final class ExtensionInstaller
             'installed' => 0,
             'refused' => [],
             'already' => $already,
-            'attempted' => count($wanted),
+            'attempted' => 0,
             'still_missing' => $sources
                 ->reject(fn (BackupSource $s): bool => $s->isInstalled || $s->obsolete)
                 ->count(),
             'obsolete' => $sources->where('obsolete', true)->sum(fn (BackupSource $s): int => $s->seriesCount),
+            'held' => [],
         ];
 
-        if ($dryRun || $wanted === []) {
+        if ($wanted === []) {
             return $result;
         }
 
-        $installed = $this->extensions->installMany($wanted);
+        [$allowed, $held] = $this->partition($wanted, $trustedStoreIds);
+
+        $result['attempted'] = count($allowed);
+        $result['held'] = $held;
+
+        if ($dryRun || $allowed === []) {
+            return $result;
+        }
+
+        $installed = $this->extensions->installMany($allowed);
 
         /*
          * Invalidate before re-surveying.
@@ -174,6 +180,222 @@ final class ExtensionInstaller
             ->count();
 
         return $result;
+    }
+
+    /**
+     * What a review would show: the stores the missing packages come from, and what has no store.
+     *
+     * The survey is a snapshot and the review says so. Nothing here grants trust, and the
+     * install re-derives it: a store revoked between this call and the install holds its
+     * packages even though the reader ticked it on the page.
+     *
+     * @param  Collection<int, BackupSource>  $sources
+     * @return array{
+     *     stores: array<int, array{id: int, name: string, index_url: string, signing_key: string|null, packages: array<int, array{pkg_name: string, name: string|null, version: string|null, series: int}>}>,
+     *     unresolved: array<int, array{pkg_name: string, name: string|null, series: int, reason: string}>,
+     *     already: int,
+     *     obsolete: int,
+     *     missing_sources: int,
+     *     wanted: int,
+     *     catalogue_error: string|null
+     * }
+     */
+    public function review(Collection $sources): array
+    {
+        $this->survey($sources);
+
+        $wanted = $this->wanted($sources);
+
+        $labels = [];
+        $counts = [];
+
+        foreach ($sources as $source) {
+            if ($source->package === null || $source->seriesCount <= 0) {
+                continue;
+            }
+
+            $labels[$source->package] ??= $source->name;
+            $counts[$source->package] = ($counts[$source->package] ?? 0) + $source->seriesCount;
+        }
+
+        $catalogueError = null;
+
+        try {
+            $catalogue = $this->extensions->catalogueForPackages($wanted);
+        } catch (SuwayomiException $e) {
+            // The reader gets a sentence, not a transport message that may name the server.
+            $catalogue = collect();
+            $catalogueError = $e->getMessage();
+        }
+
+        $stores = [];
+        $unresolved = [];
+
+        foreach ($wanted as $package) {
+            $nodes = $catalogue->get($package, []);
+            $placed = false;
+
+            foreach ($nodes as $node) {
+                $store = $this->extensions->storeFor($node);
+
+                if ($store === null) {
+                    continue;
+                }
+
+                $placed = true;
+
+                $stores[$store->id] ??= [
+                    'id' => $store->id,
+                    'name' => $store->name,
+                    'index_url' => $store->index_url,
+                    'signing_key' => $store->signing_key,
+                    'packages' => [],
+                ];
+
+                $stores[$store->id]['packages'][] = [
+                    'pkg_name' => $package,
+                    'name' => $this->stringOrNull($node['name'] ?? null),
+                    'version' => $this->stringOrNull($node['versionName'] ?? null),
+                    'series' => $counts[$package] ?? 0,
+                ];
+            }
+
+            if (! $placed) {
+                $unresolved[] = [
+                    'pkg_name' => $package,
+                    'name' => $labels[$package] ?? null,
+                    'series' => $counts[$package] ?? 0,
+                    'reason' => $catalogueError === null
+                        ? 'not in a store this server knows'
+                        : 'the extension catalogue could not be read',
+                ];
+            }
+        }
+
+        $stores = array_values($stores);
+
+        usort($stores, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        foreach ($stores as &$store) {
+            usort($store['packages'], static fn (array $a, array $b): int => strcasecmp((string) ($a['name'] ?? $a['pkg_name']), (string) ($b['name'] ?? $b['pkg_name'])));
+        }
+
+        unset($store);
+
+        return [
+            'stores' => $stores,
+            'unresolved' => $unresolved,
+            'already' => $sources->filter(fn (BackupSource $s): bool => $s->isInstalled)->count(),
+            'obsolete' => $sources->where('obsolete', true)->sum(fn (BackupSource $s): int => $s->seriesCount),
+            'missing_sources' => $sources
+                ->reject(fn (BackupSource $s): bool => $s->isInstalled || $s->obsolete)
+                ->count(),
+            'wanted' => count($wanted),
+            'catalogue_error' => $catalogueError,
+        ];
+    }
+
+    /**
+     * The packages this run could install: on the shelf, not here yet, not known dead.
+     *
+     * @param  Collection<int, BackupSource>  $sources
+     * @return array<int, string>
+     */
+    private function wanted(Collection $sources): array
+    {
+        return $sources
+            ->filter(
+                fn (BackupSource $s): bool => $s->seriesCount > 0
+                    && ! $s->isInstalled
+                    && $s->isRecoverable()
+                    && $s->package !== null,
+            )
+            ->map(fn (BackupSource $s): string => (string) $s->package)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Split the wanted packages into the ones a trusted store offers and the ones it does not.
+     *
+     * The catalogue is the authority on which store a package comes from; trust is compared
+     * by store id, not by the name or URL the page rendered. Any trusted offer allows the
+     * package, because the same code can be published by more than one store.
+     *
+     * @param  array<int, string>  $wanted
+     * @param  array<int, int>  $trustedStoreIds
+     * @return array{0: array<int, string>, 1: array<string, string>}
+     */
+    private function partition(array $wanted, array $trustedStoreIds): array
+    {
+        try {
+            $catalogue = $this->extensions->catalogueForPackages($wanted);
+        } catch (SuwayomiException $e) {
+            return [[], array_fill_keys($wanted, 'the extension catalogue could not be read')];
+        }
+
+        $trusted = array_fill_keys(
+            array_map(static fn (mixed $id): int => (int) $id, $trustedStoreIds),
+            true,
+        );
+
+        /** @var array<string, ExtensionStore|null> $storesByUrl */
+        $storesByUrl = [];
+
+        $allowed = [];
+        $held = [];
+
+        foreach ($wanted as $package) {
+            $allowedHere = false;
+            $storeName = null;
+
+            foreach ($catalogue->get($package, []) as $node) {
+                $url = $node['storeIndexUrl'] ?? null;
+
+                if (! is_string($url) || $url === '') {
+                    continue;
+                }
+
+                if (! array_key_exists($url, $storesByUrl)) {
+                    $storesByUrl[$url] = $this->extensions->storeFor($node);
+                }
+
+                $store = $storesByUrl[$url];
+
+                if ($store === null) {
+                    continue;
+                }
+
+                $storeName ??= $store->name;
+
+                if (isset($trusted[$store->id])) {
+                    $allowedHere = true;
+
+                    break;
+                }
+            }
+
+            if ($allowedHere) {
+                $allowed[] = $package;
+
+                continue;
+            }
+
+            $held[$package] = $storeName === null
+                ? 'not in a store this server knows'
+                : sprintf('from %s, a store you have not trusted', $storeName);
+        }
+
+        return [$allowed, $held];
+    }
+
+    /**
+     * A catalogue string, or null. The server sends nulls for fields it has not filled.
+     */
+    private function stringOrNull(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

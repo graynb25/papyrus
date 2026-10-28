@@ -2,6 +2,7 @@
 
 use App\Jobs\CheckLibrary;
 use App\Jobs\SyncDownloads;
+use App\Import\ImportReviewExpiry;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -88,3 +89,18 @@ Schedule::call(function (): void {
 
     Artisan::call('papyrus:snapshot');
 })->dailyAt('03:17')->name('database-snapshot')->withoutOverlapping()->onOneServer();
+
+/*
+ * Closes import reviews nobody answered, and removes their uploads.
+ *
+ * Hourly because a review has a twenty four hour life and the point is that an abandoned
+ * backup does not stay on disk. The exact hour is not a promise to the reader; the page says
+ * the review expires after a day, and this is what makes that true.
+ *
+ * Two guards, for the same reasons as the checks above: a second sweep racing the first would
+ * fight over the same files, and with one shared database there is no reason for every app
+ * instance to run it.
+ */
+Schedule::call(function (): void {
+    app(ImportReviewExpiry::class)->expire();
+})->hourly()->name('import-review-expiry')->withoutOverlapping()->onOneServer();

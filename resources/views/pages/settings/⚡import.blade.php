@@ -1,9 +1,12 @@
 <?php
 
+use App\Import\ImportUploads;
 use App\Jobs\RunBackupImport;
+use App\Models\ExtensionStore;
 use App\Models\ImportRun;
 use App\Support\Duration;
 use App\Support\UploadLimit;
+use App\Suwayomi\ExtensionManager;
 use Flux\Flux;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -51,6 +54,27 @@ new #[Title('Import a backup')] class extends Component
     public int $limit = 0;
 
     public bool $installExtensions = true;
+
+    /**
+     * The stores the reader ticked on a review, as ids.
+     *
+     * Starts empty on every review, deliberately. The earlier flow had one checkbox that
+     * installed everything the backup named, and its default was on; a review whose boxes
+     * arrived pre-ticked would be the same decision wearing a longer sentence.
+     *
+     * @var array<int, int|string>
+     */
+    public array $selectedStoreIds = [];
+
+    /**
+     * Whether the reader has answered a review and a worker is expected to pick it up.
+     *
+     * A review sits in `awaiting` until the worker claims it, so polling cannot be driven by
+     * state alone: that would either stop before the claim or run for ever while the reader
+     * thinks. This flag is the difference between "waiting for the reader" and "waiting for
+     * the worker".
+     */
+    public bool $reviewSubmitted = false;
 
     /**
      * Read the file and report, writing nothing.
@@ -128,6 +152,14 @@ new #[Title('Import a backup')] class extends Component
         }
 
         /*
+         * A reader who asked for extensions, and not only an inspection, gets a review before
+         * anything installs. Every other combination keeps the behaviour it had: an inspection
+         * reads and reports, and an import with extensions off writes the library without
+         * touching the extension list.
+         */
+        $survey = ! $this->inspectOnly && $this->installExtensions;
+
+        /*
          * The run row is created by the worker, not by this request. Remember the newest id
          * before dispatch, or the first poll finds the previous run and stops watching.
          */
@@ -141,6 +173,7 @@ new #[Title('Import a backup')] class extends Component
             inspectOnly: $this->inspectOnly,
             force: $this->force,
             originalName: $originalName,
+            surveyForConfirmation: $survey,
         );
 
         $this->runFloorId = $floor;
@@ -150,12 +183,20 @@ new #[Title('Import a backup')] class extends Component
         $this->modalRunId = null;
         $this->modalOpen = true;
         $this->polling = true;
+        $this->reviewSubmitted = false;
+        $this->selectedStoreIds = [];
 
         Flux::toast(
-            text: $this->inspectOnly
-                ? __('Reading the file. The result is below in a moment.')
-                : __('Import started. This takes about ten minutes for a large library.'),
-            heading: $this->inspectOnly ? __('Inspecting') : __('Started'),
+            text: match (true) {
+                $this->inspectOnly => __('Reading the file. The result is below in a moment.'),
+                $survey => __('Reading the file. Nothing is installed until you have seen what it needs and chosen the stores you trust.'),
+                default => __('Import started. This takes about ten minutes for a large library.'),
+            },
+            heading: match (true) {
+                $this->inspectOnly => __('Inspecting'),
+                $survey => __('Checking what it needs'),
+                default => __('Started'),
+            },
             variant: 'success',
         );
 
@@ -191,7 +232,17 @@ new #[Title('Import a backup')] class extends Component
             return true;
         }
 
-        return $run->state === ImportRun::RUNNING && ! $this->abandoned($run);
+        if ($run->state === ImportRun::RUNNING && ! $this->abandoned($run)) {
+            return true;
+        }
+
+        /*
+         * A confirmation is dispatched before the worker claims the row, so for a moment the
+         * run still reads `awaiting`. Polling through that gap is what carries the modal from
+         * the review to the progress it starts. An unanswered review does not poll: it is
+         * waiting for the reader, not for a worker.
+         */
+        return $run->state === ImportRun::AWAITING_CONFIRMATION && $this->reviewSubmitted;
     }
 
     /**
@@ -377,6 +428,8 @@ new #[Title('Import a backup')] class extends Component
     {
         $this->modalRunId = $runId;
         $this->modalOpen = true;
+        $this->reviewSubmitted = false;
+        $this->selectedStoreIds = [];
 
         $run = ImportRun::query()->forUser(auth()->id())->find($runId);
         $this->polling = $run !== null
@@ -396,6 +449,8 @@ new #[Title('Import a backup')] class extends Component
         $this->modalOpen = false;
         $this->modalRunId = null;
         $this->polling = false;
+        $this->reviewSubmitted = false;
+        $this->selectedStoreIds = [];
         $this->runFloorId = null;
         $this->startedFileName = null;
     }
@@ -403,6 +458,173 @@ new #[Title('Import a backup')] class extends Component
     public function closeImportRunModal(): void
     {
         $this->closeRunModal();
+    }
+
+    /**
+     * Trust the ticked stores, then continue the reviewed run with the install enabled.
+     *
+     * The ticked ids are narrowed against the review payload before anything is written. A
+     * crafted request can add an id to the Livewire property; it cannot add one to the review,
+     * so a store this review did not name is ignored rather than trusted by a page action.
+     */
+    public function confirmImport(): void
+    {
+        $run = $this->awaitingReview();
+
+        if ($run === null) {
+            return;
+        }
+
+        $this->recordAgreedTrust($run);
+        $this->continueReviewedRun($run, installExtensions: true);
+
+        Flux::toast(
+            text: __('Import started. The stores you ticked are recorded as trusted.'),
+            heading: __('Started'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Import the library without installing or trusting anything.
+     */
+    public function importWithoutExtensions(): void
+    {
+        $run = $this->awaitingReview();
+
+        if ($run === null) {
+            return;
+        }
+
+        $this->continueReviewedRun($run, installExtensions: false);
+
+        Flux::toast(
+            text: __('Import started without installing extensions.'),
+            heading: __('Started'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * Close the review without importing, and remove the file it was holding.
+     */
+    public function discardReview(): void
+    {
+        $run = $this->awaitingReview();
+
+        if ($run === null) {
+            return;
+        }
+
+        $path = $run->file_path;
+
+        $claimed = ImportRun::query()
+            ->forUser(auth()->id())
+            ->whereKey($run->id)
+            ->where('state', ImportRun::AWAITING_CONFIRMATION)
+            ->update([
+                'state' => ImportRun::DECLINED,
+                'file_path' => null,
+                'finished_at' => now(),
+                'progress_note' => 'You discarded this review without importing the file.',
+            ]);
+
+        if ($claimed !== 1) {
+            // Another tab answered it first. Show whatever it became rather than pretending.
+            $this->polling = false;
+            $this->reviewSubmitted = false;
+
+            return;
+        }
+
+        app(ImportUploads::class)->forget($path);
+
+        $this->closeRunModal();
+
+        Flux::toast(
+            text: __('The review was discarded and any stored upload was removed.'),
+            heading: __('Discarded'),
+            variant: 'success',
+        );
+    }
+
+    /**
+     * The run the open modal is showing, only when it is still waiting for an answer.
+     *
+     * Scoped to this reader by the query, so a modal id supplied from a crafted request cannot
+     * answer somebody else's review.
+     */
+    private function awaitingReview(): ?ImportRun
+    {
+        $run = $this->modalRun();
+
+        if ($run === null || ! $run->isAwaitingConfirmation() || $run->file_path === null) {
+            return null;
+        }
+
+        return $run;
+    }
+
+    /**
+     * Dispatch the import for a reviewed run, reusing its row.
+     *
+     * The path, limit and force come from the row, never from the request. Ticking happened
+     * before this, but the install reads trust from the database again when it runs, so a
+     * revoked or unticked store cannot ride a stale decision through.
+     */
+    private function continueReviewedRun(ImportRun $run, bool $installExtensions): void
+    {
+        $review = $run->review ?? [];
+
+        RunBackupImport::dispatch(
+            userId: (int) auth()->id(),
+            path: (string) $run->file_path,
+            limit: (int) ($review['limit'] ?? 0),
+            installExtensions: $installExtensions,
+            force: (bool) ($review['force'] ?? false),
+            originalName: $run->file_name,
+            reuseRunId: $run->id,
+        );
+
+        $this->modalRunId = $run->id;
+        $this->modalOpen = true;
+        $this->runFloorId = null;
+        $this->startedFileName = null;
+        $this->polling = true;
+        $this->reviewSubmitted = true;
+        $this->selectedStoreIds = [];
+    }
+
+    /**
+     * Record trust for the stores the reader ticked, and only those the review named.
+     */
+    private function recordAgreedTrust(ImportRun $run): void
+    {
+        $review = $run->review ?? [];
+
+        $named = collect($review['stores'] ?? [])
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $chosen = array_values(array_unique(array_map('intval', $this->selectedStoreIds)));
+        $chosen = array_values(array_intersect($chosen, $named));
+
+        if ($chosen === []) {
+            return;
+        }
+
+        $user = auth()->user();
+
+        if ($user === null) {
+            return;
+        }
+
+        $manager = app(ExtensionManager::class);
+
+        foreach (ExtensionStore::query()->whereKey($chosen)->get() as $store) {
+            $manager->trust($user, $store);
+        }
     }
 
     /**
@@ -623,6 +845,9 @@ new #[Title('Import a backup')] class extends Component
             $this->abandoned($run) => __('This run stopped without finishing. Nothing after its last line was applied, and running the import again costs nothing for what it already did.'),
             $run->state === ImportRun::REFUSED, $run->state === ImportRun::FAILED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
             $run->state === ImportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
+            $run->state === ImportRun::AWAITING_CONFIRMATION => (string) ($run->progress_note ?? __('This review is waiting for you to choose which stores to trust.')),
+            $run->state === ImportRun::DECLINED => (string) ($run->progress_note ?? __('You discarded this review without importing the file.')),
+            $run->state === ImportRun::EXPIRED => (string) ($run->progress_note ?? __('This review expired before it was answered, and any stored upload was removed.')),
             /*
              * An inspect, not an import.
              *
@@ -721,6 +946,9 @@ new #[Title('Import a backup')] class extends Component
             $run->state === ImportRun::RUNNING => 'blue',
             $run->state === ImportRun::FAILED => 'red',
             $run->state === ImportRun::REFUSED => 'orange',
+            $run->state === ImportRun::AWAITING_CONFIRMATION => 'amber',
+            $run->state === ImportRun::DECLINED => 'zinc',
+            $run->state === ImportRun::EXPIRED => 'orange',
             default => 'zinc',
         };
     }
@@ -733,6 +961,9 @@ new #[Title('Import a backup')] class extends Component
             $run->state === ImportRun::RUNNING => __('Running'),
             $run->state === ImportRun::FAILED => __('Stopped'),
             $run->state === ImportRun::REFUSED => __('Refused'),
+            $run->state === ImportRun::AWAITING_CONFIRMATION => __('Needs your answer'),
+            $run->state === ImportRun::DECLINED => __('Discarded'),
+            $run->state === ImportRun::EXPIRED => __('Expired'),
             default => $run->state,
         };
     }
@@ -950,7 +1181,7 @@ new #[Title('Import a backup')] class extends Component
                 />
 
                 <p class="-mt-2 text-xs text-amber-700 dark:text-amber-300">
-                    {{ __('This box is on by default. An extension is code that runs inside the manga server with the access that process has, and the import installs the extensions the backup names without asking you to trust the store they came from first. If you did not make the backup, clear this box before importing it.') }}
+                    {{ __('This box is on by default. Extensions are code that runs inside the manga server with the access that process has. Nothing is installed when you start: you will see the stores this backup needs, with their signing keys, and tick the ones you trust first. Ticking a store records that trust even if the import later fails. If you did not make the backup, clear this box before importing it.') }}
                 </p>
 
                 <flux:checkbox
@@ -973,7 +1204,7 @@ new #[Title('Import a backup')] class extends Component
                     wire:click="start"
                     wire:target="start"
                 >
-                    {{ $this->inspectOnly ? __('Inspect') : __('Import') }}
+                    {{ $this->inspectOnly ? __('Inspect') : ($this->installExtensions ? __('Review and import') : __('Import without extensions')) }}
                 </flux:button>
             </flux:card>
 
@@ -1057,6 +1288,10 @@ new #[Title('Import a backup')] class extends Component
                         ];
 
                         $isInspection = $run !== null && $this->wasInspection($run);
+                        $isSurveyQueued = $isQueued && ! $this->inspectOnly && $this->installExtensions;
+                        $isReview = $run !== null && $run->isAwaitingConfirmation();
+                        $isClosedReview = $run !== null && in_array($run->state, [ImportRun::DECLINED, ImportRun::EXPIRED], true);
+                        $review = $isReview ? ($run->review ?? []) : [];
 
                         if ($run === null) {
                             $isAbandoned = false;
@@ -1066,7 +1301,7 @@ new #[Title('Import a backup')] class extends Component
                         } else {
                             $note = (string) ($run->progress_note ?? '');
                             $isAbandoned = $this->abandoned($run);
-                            $isFinished = in_array($run->state, [ImportRun::COMPLETE, ImportRun::FAILED, ImportRun::REFUSED], true) || $isAbandoned;
+                            $isFinished = in_array($run->state, [ImportRun::COMPLETE, ImportRun::FAILED, ImportRun::REFUSED, ImportRun::DECLINED, ImportRun::EXPIRED], true) || $isAbandoned;
                             $isRunning = $run->state === ImportRun::RUNNING && ! $isAbandoned;
 
                             if ($run->library_series === null) {
@@ -1088,12 +1323,16 @@ new #[Title('Import a backup')] class extends Component
 
                             $statuses = [];
 
-                            if ($isInspection) {
+                            if ($isInspection || $isClosedReview) {
                                 /*
                                  * An inspection reads the file and stops. Measured on the real
                                  * 41MB backup: the modal ticked "Installing what it needs",
                                  * "Bringing your series across" and "Filing your shelves",
                                  * none of which an inspect performs.
+                                 *
+                                 * A discarded or expired review has the same shape: the file
+                                 * was read and answered without an import, so the other three
+                                 * phases never ran and must not read as done.
                                  */
                                 $statuses = ['reading' => 'done'];
                             } else {
@@ -1118,7 +1357,7 @@ new #[Title('Import a backup')] class extends Component
                          * run has no row yet, so its mode comes from the page; a finished one
                          * is recognised from its counters.
                          */
-                        $visiblePhases = ($isQueued ? $this->inspectOnly : $isInspection)
+                        $visiblePhases = ($isQueued ? ($this->inspectOnly || $this->installExtensions) : ($isInspection || $isClosedReview))
                             ? ['reading']
                             : $phaseOrder;
                     @endphp
@@ -1137,7 +1376,9 @@ new #[Title('Import a backup')] class extends Component
                                 </p>
 
                                 <p class="mt-4 text-sm" aria-live="polite">
-                                    {{ __('The file will be read in a moment.') }}
+                                    {{ $isSurveyQueued
+                                        ? __('The file will be read in a moment, then you will see what it needs before anything installs.')
+                                        : __('The file will be read in a moment.') }}
                                 </p>
 
                                 @if ($this->queueStalled())
@@ -1156,6 +1397,8 @@ new #[Title('Import a backup')] class extends Component
                                             $run->state === ImportRun::RUNNING => 'animate-pulse bg-zinc-400',
                                             $run->state === ImportRun::FAILED => 'bg-red-500',
                                             $run->state === ImportRun::REFUSED => 'bg-amber-500',
+                                            $run->state === ImportRun::AWAITING_CONFIRMATION => 'bg-amber-500',
+                                            $run->state === ImportRun::EXPIRED => 'bg-amber-500',
                                             default => 'bg-zinc-400',
                                         } }}"
                                         aria-hidden="true"
@@ -1176,8 +1419,10 @@ new #[Title('Import a backup')] class extends Component
                                     @endif
                                 </p>
 
-                                @if (! $this->wasInspection($run) && $run->library_series !== null)
-                                    @php($pct = $this->percent($run) ?? 0)
+                                @if (! $isReview && ! $this->wasInspection($run) && $run->library_series !== null)
+                                    @php
+                                        $pct = $this->percent($run) ?? 0;
+                                    @endphp
 
                                     <div
                                         class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
@@ -1200,9 +1445,149 @@ new #[Title('Import a backup')] class extends Component
                                 @endif
                             @endif
 
+                            @if ($isReview)
+                                @php
+                                    $stores = $review['stores'] ?? [];
+                                    $unresolved = $review['unresolved'] ?? [];
+                                    $already = (int) ($review['already'] ?? 0);
+                                    $obsolete = (int) ($review['obsolete'] ?? 0);
+                                    $missingSources = (int) ($review['missing_sources'] ?? 0);
+                                @endphp
+
+                                <div class="mt-4 space-y-2 text-sm">
+                                    <p>
+                                        {{ trans_choice(
+                                            '{1}:count source in this backup needs an extension this server does not have.|[2,*]:count sources in this backup need an extension this server does not have.',
+                                            $missingSources,
+                                            ['count' => number_format($missingSources)],
+                                        ) }}
+                                    </p>
+
+                                    <p class="text-zinc-600 dark:text-zinc-300">
+                                        {{ __('Nothing is installed yet. Tick the stores you trust, then press Import. Unticked stores are held back, and their series are filed by title so you can fill them in later.') }}
+                                    </p>
+
+                                    @if ($already > 0)
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ __(':count sources already have an extension here and need nothing.', ['count' => number_format($already)]) }}
+                                        </p>
+                                    @endif
+
+                                    @if ($obsolete > 0)
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ __(':count series sit on sources the backup itself marks gone. No store can bring those back.', ['count' => number_format($obsolete)]) }}
+                                        </p>
+                                    @endif
+                                </div>
+
+                                @if (($review['catalogue_error'] ?? null) !== null)
+                                    <flux:callout variant="danger" icon="exclamation-triangle" class="mt-4">
+                                        {{ __('The extension catalogue could not be read, so this review cannot offer a store to trust. You can still import without extensions.') }}
+                                    </flux:callout>
+                                @endif
+
+                                <div class="mt-4 space-y-3">
+                                    @forelse ($stores as $store)
+                                        <div class="rounded-lg border border-zinc-200 p-3 dark:border-white/10">
+                                            <label class="flex items-start gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    value="{{ $store['id'] }}"
+                                                    wire:model="selectedStoreIds"
+                                                    class="mt-0.5 size-4 rounded border-zinc-300 text-vermilion-600 focus:ring-vermilion-500 dark:border-zinc-600 dark:bg-zinc-900"
+                                                />
+
+                                                <span class="min-w-0">
+                                                    <span class="block text-sm font-medium">{{ $store['name'] }}</span>
+                                                    <span class="block break-all text-xs text-zinc-500 dark:text-zinc-400">{{ $store['index_url'] }}</span>
+                                                </span>
+                                            </label>
+
+                                            <p class="mt-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">{{ __('Signing key') }}</p>
+                                            <code class="mt-1 block break-all font-mono text-xs">{{ $store['signing_key'] ?? __('This store publishes no signing key.') }}</code>
+
+                                            <ul class="mt-3 space-y-1">
+                                                @foreach ($store['packages'] as $package)
+                                                    <li class="flex items-start justify-between gap-3 text-xs">
+                                                        <span class="min-w-0">
+                                                            <span class="font-medium">{{ $package['name'] ?? $package['pkg_name'] }}</span>
+                                                            <span class="block break-all text-zinc-500 dark:text-zinc-400">
+                                                                {{ $package['pkg_name'] }}@if (($package['version'] ?? null) !== null) {{ __('version') }} {{ $package['version'] }}@endif
+                                                            </span>
+                                                        </span>
+                                                        <span class="flex-none text-zinc-500 dark:text-zinc-400">
+                                                            {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => number_format((int) $package['series'])]) }}
+                                                        </span>
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        </div>
+                                    @empty
+                                        <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                                            {{ __('No store this server knows offers the extensions this backup needs.') }}
+                                        </p>
+                                    @endforelse
+                                </div>
+
+                                @if ($unresolved !== [])
+                                    <div class="mt-4 rounded-lg border border-amber-300 p-3 dark:border-amber-500/40">
+                                        <p class="text-sm font-medium">
+                                            {{ trans_choice(
+                                                '{1}:count package is in no store this server knows.|[2,*]:count packages are in no store this server knows.',
+                                                count($unresolved),
+                                                ['count' => number_format(count($unresolved))],
+                                            ) }}
+                                        </p>
+
+                                        <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                                            {{ __('These cannot be installed from here. Their series will be filed by title and filled in if a store offers them later.') }}
+                                        </p>
+
+                                        <ul class="mt-2 space-y-1">
+                                            @foreach ($unresolved as $package)
+                                                <li class="flex items-start justify-between gap-3 text-xs">
+                                                    <span class="min-w-0">
+                                                        <span class="font-medium">{{ $package['name'] ?? $package['pkg_name'] }}</span>
+                                                        <span class="block break-all text-zinc-500 dark:text-zinc-400">{{ $package['pkg_name'] }}</span>
+                                                    </span>
+                                                    <span class="flex-none text-zinc-500 dark:text-zinc-400">
+                                                        {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => number_format((int) $package['series'])]) }}
+                                                    </span>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
+                                @endif
+
+                                <p class="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+                                    {{ __('Ticking a store records your trust even if the import fails later. You can revoke it on the sources page. This review and any stored upload are removed after 24 hours if you do not choose.') }}
+                                </p>
+
+                                <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        class="mr-auto text-sm font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+                                        wire:click="discardReview"
+                                    >
+                                        {{ __('Discard') }}
+                                    </button>
+
+                                    <flux:button variant="filled" wire:click="importWithoutExtensions">
+                                        {{ __('Import without extensions') }}
+                                    </flux:button>
+
+                                    <flux:button variant="primary" wire:click="confirmImport">
+                                        {{ __('Import') }}
+                                    </flux:button>
+                                </div>
+                            @endif
+
+                            @if (! $isReview)
                             <ol class="mt-4 space-y-2" role="list">
                                 @foreach ($visiblePhases as $key)
-                                    @php($status = $statuses[$key] ?? 'pending')
+                                    @php
+                                        $status = $statuses[$key] ?? 'pending';
+                                    @endphp
 
                                     <li role="listitem" class="flex items-center gap-3 py-2">
                                         <span
@@ -1240,7 +1625,7 @@ new #[Title('Import a backup')] class extends Component
 
                                 <div class="mt-6 flex justify-end gap-2">
                                     @if ($isFinished)
-                                        @if ($run->state === ImportRun::COMPLETE)
+                                        @if (in_array($run->state, [ImportRun::COMPLETE, ImportRun::DECLINED, ImportRun::EXPIRED], true))
                                             <flux:modal.close>
                                                 <flux:button variant="primary">{{ __('Done') }}</flux:button>
                                             </flux:modal.close>
@@ -1265,6 +1650,7 @@ new #[Title('Import a backup')] class extends Component
                                         <flux:button variant="filled">{{ __('Close') }}</flux:button>
                                     </flux:modal.close>
                                 </div>
+                            @endif
                             @endif
                         </div>
                     @endif

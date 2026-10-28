@@ -36,6 +36,18 @@ class ExtensionManager
      */
     public const LANGUAGE_SCAN_LIMIT = 5000;
 
+    /**
+     * How many package names one catalogue lookup asks for.
+     *
+     * The `pkgName in` filter takes a list, and a backup names at most a few hundred
+     * packages. Chunking keeps the request shape bounded even when a lesson from a future
+     * format is larger than the measured one, and the total bound is the same ceiling the
+     * language scan uses.
+     */
+    public const PACKAGE_QUERY_CHUNK = 500;
+
+    public const PACKAGE_QUERY_LIMIT = 5000;
+
     public function __construct(
         private readonly Gateway $gateway,
     ) {}
@@ -70,6 +82,69 @@ class ExtensionManager
         $nodes = $data['extensions']['nodes'] ?? [];
 
         return collect($nodes);
+    }
+
+    /**
+     * The catalogue entries for a named set of packages, grouped by package.
+     *
+     * ## Why this is a separate query from `extensions()`
+     *
+     * An import knows the packages its backup names, not the filters a page browses by.
+     * `pkgName` is a `StringFilterInput` and supports `in`, verified against the schema
+     * dump (`StringFilterInput$in`), so the server narrows 1,400-odd extensions before
+     * they reach PHP. The result is grouped rather than keyed because one package can be
+     * offered by more than one store, and the trust decision has to see every offer.
+     *
+     * Names past {@see self::PACKAGE_QUERY_LIMIT} are not queried. The caller treats a
+     * missing package as untrusted, so the bound fails closed rather than installing it.
+     *
+     * @param  array<int, string>  $pkgNames
+     * @return Collection<string, non-empty-list<array<string, mixed>>> Package to the nodes offering it.
+     *
+     * @throws SuwayomiException
+     */
+    public function catalogueForPackages(array $pkgNames): Collection
+    {
+        $names = array_values(array_unique(array_filter(
+            $pkgNames,
+            static fn (string $name): bool => $name !== '',
+        )));
+
+        $names = array_slice($names, 0, self::PACKAGE_QUERY_LIMIT);
+        $found = [];
+
+        foreach (array_chunk($names, self::PACKAGE_QUERY_CHUNK) as $chunk) {
+            $data = $this->gateway->execute(
+                'query Packages($first: Int, $filter: ExtensionFilterInput) {
+                    extensions(first: $first, filter: $filter) {
+                        nodes { pkgName name versionName storeIndexUrl }
+                    }
+                }',
+                [
+                    'first' => self::PACKAGE_QUERY_LIMIT,
+                    'filter' => ['and' => [['pkgName' => ['in' => $chunk]]]],
+                ],
+            );
+
+            /*
+             * The payload is untyped until it is read, so the contract is stated here the same
+             * way `extensions()` states it: the query asks for exactly these four fields.
+             */
+            /** @var array<int, array<string, mixed>> $nodes */
+            $nodes = $data['extensions']['nodes'] ?? [];
+
+            foreach ($nodes as $node) {
+                $package = $node['pkgName'] ?? null;
+
+                if (! is_string($package) || $package === '') {
+                    continue;
+                }
+
+                $found[$package][] = $node;
+            }
+        }
+
+        return collect($found);
     }
 
     /**
@@ -291,9 +366,9 @@ class ExtensionManager
      *
      * @return array<int, int>
      */
-    public function trustedStoreIds(User $user): array
+    public function trustedStoreIds(User|int $user): array
     {
-        return UserExtensionStore::forUser($user->id)
+        return UserExtensionStore::forUser($user)
             ->whereNotNull('trusted_at')
             ->pluck('extension_store_id')
             ->all();

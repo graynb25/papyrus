@@ -9,6 +9,7 @@ use App\Import\ExtensionInstaller;
 use App\Import\SeriesResolver;
 use App\Import\SeriesWriter;
 use App\Import\Tachimanga\TachimangaReader;
+use App\Models\ExtensionStore;
 use App\Models\ImportRun;
 use App\Models\User;
 use App\Support\ReadingState;
@@ -198,6 +199,27 @@ class ImportBackupCommandTest extends TestCase
                 return Http::response(['data' => ['fetchExtensions' => ['extensions' => []]]]);
             }
 
+            /*
+             * The catalogue the trust check reads. Every package is offered by the one store,
+             * which is what lets the console distinguish "no store offers this" from "a store
+             * offers it and the reader has not trusted it".
+             */
+            if (str_contains($document, 'query Packages')) {
+                $names = (array) ($body['variables']['filter']['and'][0]['pkgName']['in'] ?? []);
+
+                $nodes = array_map(
+                    static fn (mixed $name): array => [
+                        'pkgName' => (string) $name,
+                        'name' => (string) $name,
+                        'versionName' => '1.0',
+                        'storeIndexUrl' => 'https://example.test/index.pb',
+                    ],
+                    $names,
+                );
+
+                return Http::response(['data' => ['extensions' => ['nodes' => $nodes]]]);
+            }
+
             if (str_contains($document, 'query Series')) {
                 $mangaId = (int) ($body['variables']['id'] ?? 0);
 
@@ -250,6 +272,7 @@ class ImportBackupCommandTest extends TestCase
             installer: new ExtensionInstaller($this->app->make(ExtensionManager::class), $locator),
             resolver: new SeriesResolver($locator),
             writer: new SeriesWriter($this->app->make(ReadingState::class), $this->app->make(SeriesGateway::class)),
+            extensions: $this->app->make(ExtensionManager::class),
         ));
     }
 
@@ -504,6 +527,54 @@ class ImportBackupCommandTest extends TestCase
             $this->latestRun()->sources_missing,
             'nothing was installed, so the sources that were missing are still missing and must be recorded as such',
         );
+    }
+
+    public function test_a_held_extension_tells_the_reader_to_trust_its_store(): void
+    {
+        $this->fake([], installedPackages: []);
+
+        ExtensionStore::create([
+            'name' => 'Example store',
+            'index_url' => 'https://example.test/index.pb',
+            'signing_key' => 'abc123',
+        ]);
+
+        /*
+         * Both sentences are one line and one write. `expectsOutputToContain` gives each written
+         * line to one expectation only, so splitting this into two needles leaves the second
+         * unmatched even though the line plainly carries it.
+         */
+        $this->artisan('import:run', ['path' => $this->backup()])
+            ->expectsOutputToContain(
+                '1 extension was held back because no store this reader trusts offers it. '
+                .'Trust the store that offers it on the sources page, then run this again.',
+            )
+            ->assertSuccessful();
+
+        Http::assertNotSent(fn (Request $r): bool => str_contains(
+            (string) (json_decode((string) $r->body(), true)['query'] ?? ''),
+            'updateExtension',
+        ));
+    }
+
+    public function test_a_trusted_store_installs_from_the_console_too(): void
+    {
+        $this->fake([], installedPackages: []);
+
+        $store = ExtensionStore::create([
+            'name' => 'Example store',
+            'index_url' => 'https://example.test/index.pb',
+            'signing_key' => 'abc123',
+        ]);
+
+        $this->app->make(ExtensionManager::class)->trust($this->user, $store);
+
+        $this->artisan('import:run', ['path' => $this->backup()])->assertSuccessful();
+
+        Http::assertSent(fn (Request $r): bool => str_contains(
+            (string) (json_decode((string) $r->body(), true)['query'] ?? ''),
+            'updateExtension',
+        ));
     }
 
     public function test_it_imports_into_the_user_it_is_told_to(): void

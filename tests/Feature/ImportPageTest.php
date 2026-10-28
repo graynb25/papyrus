@@ -4,12 +4,15 @@ namespace Tests\Feature;
 
 use App\Import\BackupImporter;
 use App\Jobs\RunBackupImport;
+use App\Models\ExtensionStore;
 use App\Models\ImportRun;
 use App\Models\User;
+use App\Models\UserExtensionStore;
 use App\Support\UploadLimit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
@@ -301,7 +304,7 @@ class ImportPageTest extends TestCase
      * ---------------------------------------------------------------------------
      */
 
-    public function test_a_good_path_dispatches_the_import_for_the_signed_in_reader(): void
+    public function test_a_good_path_dispatches_a_survey_rather_than_an_import(): void
     {
         Queue::fake();
 
@@ -310,18 +313,24 @@ class ImportPageTest extends TestCase
             ->set('inspectOnly', false)
             ->call('start');
 
+        /*
+         * Nothing installs on the press any more. The queued modal shows only the reading
+         * checkpoint, because the run's next step is a review, not an import.
+         */
         $component
             ->assertSee(__('Reading the file'))
-            ->assertSee(__('Bringing your series across'));
+            ->assertSee(__('The file will be read in a moment, then you will see what it needs before anything installs.'))
+            ->assertDontSee(__('Bringing your series across'));
 
         Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
             return $job->userId === (int) $this->user->id
                 && $job->path === $this->file
-                && $job->inspectOnly === false;
+                && $job->inspectOnly === false
+                && $job->surveyForConfirmation === true;
         });
     }
 
-    public function test_inspect_is_the_default_and_still_dispatches(): void
+    public function test_inspect_wins_over_the_install_box(): void
     {
         Queue::fake();
 
@@ -329,10 +338,12 @@ class ImportPageTest extends TestCase
             ->set('path', (string) $this->file)
             ->call('start');
 
-        Queue::assertPushed(RunBackupImport::class, fn (RunBackupImport $job): bool => $job->inspectOnly === true);
+        Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
+            return $job->inspectOnly === true && $job->surveyForConfirmation === false;
+        });
     }
 
-    public function test_the_options_reach_the_job(): void
+    public function test_turning_extensions_off_imports_without_a_survey(): void
     {
         Queue::fake();
 
@@ -344,24 +355,30 @@ class ImportPageTest extends TestCase
             ->call('start');
 
         Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job): bool {
-            return $job->limit === 25 && $job->installExtensions === false;
+            return $job->limit === 25
+                && $job->installExtensions === false
+                && $job->surveyForConfirmation === false;
         });
     }
 
     /**
      * The install box is on by default, and the page says what that means.
      *
-     * Import installs the extensions a backup names without the per-store trust step the
-     * Sources page asks for. That is accepted for this release rather than hidden, so the
-     * default and the consequence are on the page beside the box that controls it.
+     * The box no longer means "install everything the backup names". It means "show me the
+     * stores first", and the copy has to say that beside the control or the old warning would
+     * be describing a flow that no longer exists.
      */
     public function test_the_install_checkbox_carries_its_warning(): void
     {
         $this->page()
             ->assertSee('This box is on by default.')
-            ->assertSee('An extension is code that runs inside the manga server with the access that process has')
-            ->assertSee('without asking you to trust the store they came from first')
-            ->assertSee('If you did not make the backup, clear this box before importing it.');
+            ->assertSee('Extensions are code that runs inside the manga server with the access that process has')
+            ->assertSee('Nothing is installed when you start')
+            ->assertSee('with their signing keys')
+            ->assertSee('tick the ones you trust first')
+            ->assertSee('Ticking a store records that trust even if the import later fails.')
+            ->assertSee('If you did not make the backup, clear this box before importing it.')
+            ->assertDontSee('without asking you to trust the store they came from first');
     }
 
     public function test_the_force_flag_reaches_the_job(): void
@@ -1059,6 +1076,261 @@ class ImportPageTest extends TestCase
 
     /*
      * ---------------------------------------------------------------------------
+     * Answering a review.
+     * ---------------------------------------------------------------------------
+     *
+     * The review is the run row's `awaiting` state. These exercise the page as the reader
+     * sees it: which stores the modal names, what ticking one records, and what the three
+     * actions dispatch. The install is tested at job level; this is the decision, not the
+     * install.
+     */
+
+    public function test_a_review_shows_every_store_with_its_signing_key_and_packages(): void
+    {
+        $store = $this->store('Example store');
+        $run = $this->awaitingReviewRun([$this->storePayload($store, series: 12)]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee(__('Needs your answer'))
+            ->assertSee('Example store')
+            ->assertSee('https://example.test/example-store/index.pb')
+            ->assertSee(__('Signing key'))
+            ->assertSee('abc123')
+            ->assertSee('Thunder Scans')
+            ->assertSee('12 series')
+            ->assertSee(__('Import without extensions'))
+            ->assertSee(__('Discard'))
+            ->assertSee(__('Import'))
+            ->assertSet('selectedStoreIds', []);
+    }
+
+    public function test_a_review_with_no_store_named_says_so(): void
+    {
+        $run = $this->awaitingReviewRun([], overrides: [
+            'review' => [
+                'stores' => [],
+                'unresolved' => [[
+                    'pkg_name' => 'eu.kanade.tachiyomi.extension.en.unknown',
+                    'name' => 'Unknown scans',
+                    'series' => 4,
+                    'reason' => 'not in a store this server knows',
+                ]],
+                'already' => 0,
+                'obsolete' => 0,
+                'missing_sources' => 1,
+                'wanted' => 1,
+                'catalogue_error' => null,
+                'limit' => 0,
+                'force' => false,
+            ],
+        ]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee(__('No store this server knows offers the extensions this backup needs.'))
+            ->assertSee('Unknown scans')
+            ->assertSee('1 package is in no store this server knows.');
+    }
+
+    public function test_a_review_whose_catalogue_failed_offers_the_no_extension_route(): void
+    {
+        $run = $this->awaitingReviewRun([], overrides: [
+            'review' => [
+                'stores' => [],
+                'unresolved' => [],
+                'already' => 0,
+                'obsolete' => 0,
+                'missing_sources' => 1,
+                'wanted' => 1,
+                'catalogue_error' => 'The extension catalogue could not be read.',
+                'limit' => 0,
+                'force' => false,
+            ],
+        ]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee(__('The extension catalogue could not be read, so this review cannot offer a store to trust. You can still import without extensions.'))
+            ->assertSee(__('Import without extensions'));
+    }
+
+    public function test_confirm_trusts_only_the_ticked_stores_the_review_named(): void
+    {
+        Queue::fake();
+
+        $named = $this->store('Named store', url: 'https://example.test/named/index.pb');
+        $crafted = $this->store('Crafted store', url: 'https://example.test/crafted/index.pb');
+
+        $run = $this->awaitingReviewRun([$this->storePayload($named)]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->set('selectedStoreIds', [$named->id, $crafted->id])
+            ->call('confirmImport');
+
+        $this->assertTrue($this->isTrusted($named), 'the store the review named and the reader ticked is trusted');
+        $this->assertFalse($this->isTrusted($crafted), 'a store id added to the request but not to the review is ignored');
+
+        Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job) use ($run): bool {
+            return $job->reuseRunId === $run->id
+                && $job->path === $run->file_path
+                && $job->limit === 7
+                && $job->force === true
+                && $job->installExtensions === true
+                && $job->surveyForConfirmation === false;
+        });
+    }
+
+    public function test_confirm_does_not_trust_a_store_the_reader_did_not_tick(): void
+    {
+        Queue::fake();
+
+        $named = $this->store('Named store');
+        $run = $this->awaitingReviewRun([$this->storePayload($named)]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->call('confirmImport');
+
+        $this->assertFalse($this->isTrusted($named), 'an empty answer records nothing');
+    }
+
+    public function test_import_without_extensions_reuses_the_run_and_records_no_trust(): void
+    {
+        Queue::fake();
+
+        $store = $this->store('Named store');
+        $run = $this->awaitingReviewRun([$this->storePayload($store)]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->set('selectedStoreIds', [$store->id])
+            ->call('importWithoutExtensions');
+
+        $this->assertFalse($this->isTrusted($store));
+
+        Queue::assertPushed(RunBackupImport::class, function (RunBackupImport $job) use ($run): bool {
+            return $job->reuseRunId === $run->id
+                && $job->installExtensions === false
+                && $job->surveyForConfirmation === false;
+        });
+    }
+
+    public function test_an_answered_review_cannot_be_confirmed_again(): void
+    {
+        Queue::fake();
+
+        $run = $this->awaitingReviewRun([]);
+        $run->update(['state' => ImportRun::COMPLETE, 'file_path' => null]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->call('confirmImport');
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_another_readers_review_cannot_be_answered(): void
+    {
+        Queue::fake();
+
+        $other = User::factory()->create();
+
+        $run = ImportRun::createFor($other, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::AWAITING_CONFIRMATION,
+            'file_name' => 'theirs.tmb',
+            'file_path' => 'C:/Papyrus/backups/theirs.tmb',
+            'review' => ['stores' => [], 'limit' => 0, 'force' => false],
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $this->page()
+            ->set('modalOpen', true)
+            ->set('modalRunId', $run->id)
+            ->call('confirmImport')
+            ->call('discardReview');
+
+        $this->assertSame(ImportRun::AWAITING_CONFIRMATION, $run->fresh()->state);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_discard_closes_the_review_and_deletes_the_upload(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $path = Storage::disk('local')->path('imports/review.tmb');
+        File::ensureDirectoryExists(dirname($path));
+        file_put_contents($path, 'backup bytes');
+
+        $run = $this->awaitingReviewRun([], path: $path);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->call('discardReview');
+
+        $this->assertSame(ImportRun::DECLINED, $run->fresh()->state);
+        $this->assertNull($run->fresh()->file_path);
+        $this->assertFalse(is_file($path), 'the upload the review was holding is gone');
+        Queue::assertNothingPushed();
+    }
+
+    public function test_an_unanswered_review_does_not_poll_but_a_confirm_is_followed(): void
+    {
+        Queue::fake();
+
+        $run = $this->awaitingReviewRun([], path: 'C:/Papyrus/backups/library.tmb');
+
+        $component = $this->page()->call('openRunModal', $run->id);
+
+        $this->assertFalse(
+            $component->instance()->shouldPoll(),
+            'the review is waiting for the reader, not for a worker',
+        );
+
+        $component->call('confirmImport');
+
+        $this->assertTrue(
+            $component->instance()->shouldPoll(),
+            'the confirm is followed through the gap before the worker claims the row',
+        );
+    }
+
+    public function test_a_discarded_review_reads_as_discarded(): void
+    {
+        $run = $this->awaitingReviewRun([]);
+        $run->update(['state' => ImportRun::DECLINED, 'progress_note' => null]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee(__('Discarded'))
+            ->assertSee(__('You discarded this review without importing the file.'))
+            ->assertSee(__('Reading the file'))
+            ->assertDontSee(__('Installing what it needs'))
+            ->assertDontSee(__('Bringing your series across'))
+            ->assertDontSee(__('Filing your shelves'));
+    }
+
+    public function test_an_expired_review_reads_as_expired(): void
+    {
+        $run = $this->awaitingReviewRun([]);
+        $run->update(['state' => ImportRun::EXPIRED, 'file_path' => null, 'progress_note' => null]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee(__('Expired'))
+            ->assertSee(__('This review expired before it was answered, and any stored upload was removed.'))
+            ->assertSee(__('Reading the file'))
+            ->assertDontSee(__('Installing what it needs'))
+            ->assertDontSee(__('Bringing your series across'))
+            ->assertDontSee(__('Filing your shelves'));
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
      * Helpers.
      * ---------------------------------------------------------------------------
      */
@@ -1107,5 +1379,83 @@ class ImportPageTest extends TestCase
             'available_at' => $since->getTimestamp(),
             'created_at' => $since->getTimestamp(),
         ]);
+    }
+
+    private function store(
+        string $name,
+        string $signingKey = 'abc123',
+        string $url = 'https://example.test/example-store/index.pb',
+    ): ExtensionStore {
+        return ExtensionStore::create([
+            'name' => $name,
+            'index_url' => $url,
+            'signing_key' => $signingKey,
+        ]);
+    }
+
+    /**
+     * One store as the review payload carries it.
+     *
+     * @return array<string, mixed>
+     */
+    private function storePayload(
+        ExtensionStore $store,
+        string $package = 'eu.kanade.tachiyomi.extension.en.thunderscans',
+        int $series = 12,
+    ): array {
+        return [
+            'id' => $store->id,
+            'name' => $store->name,
+            'index_url' => $store->index_url,
+            'signing_key' => $store->signing_key,
+            'packages' => [[
+                'pkg_name' => $package,
+                'name' => 'Thunder Scans',
+                'version' => '1.0',
+                'series' => $series,
+            ]],
+        ];
+    }
+
+    /**
+     * A review row, built by hand so the page is tested without an importer.
+     *
+     * @param  array<int, array<string, mixed>>  $stores
+     * @param  array<string, mixed>  $overrides
+     */
+    private function awaitingReviewRun(
+        array $stores,
+        ?string $path = 'C:/Papyrus/backups/library.tmb',
+        array $overrides = [],
+    ): ImportRun {
+        return ImportRun::createFor($this->user, $overrides + [
+            'format' => 'tachimanga',
+            'state' => ImportRun::AWAITING_CONFIRMATION,
+            'file_name' => 'library.tmb',
+            'file_path' => $path,
+            'library_series' => 3,
+            'review' => [
+                'stores' => $stores,
+                'unresolved' => [],
+                'already' => 0,
+                'obsolete' => 0,
+                'missing_sources' => 1,
+                'wanted' => 1,
+                'catalogue_error' => null,
+                'limit' => 7,
+                'force' => true,
+            ],
+            'started_at' => now(),
+            'finished_at' => now(),
+            'progress_note' => 'Waiting for you to choose which extension stores to trust.',
+        ]);
+    }
+
+    private function isTrusted(ExtensionStore $store): bool
+    {
+        return UserExtensionStore::forUser($this->user)
+            ->where('extension_store_id', $store->id)
+            ->whereNotNull('trusted_at')
+            ->exists();
     }
 }

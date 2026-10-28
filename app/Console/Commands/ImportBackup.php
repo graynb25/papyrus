@@ -312,7 +312,29 @@ class ImportBackup extends Command
             $this->line('  '.ExtensionInstaller::describeRefusals($result->refusedPackages));
         }
 
+        if ($result->heldPackages !== []) {
+            $this->line(trans_choice(
+                '  :count extension was held back because no store this reader trusts offers it. '
+                .'Trust the store that offers it on the sources page, then run this again.'
+                .'|  :count extensions were held back because no store this reader trusts offers them. '
+                .'Trust the stores that offer them on the sources page, then run this again.',
+                count($result->heldPackages),
+                ['count' => number_format(count($result->heldPackages))],
+            ));
+        }
+
         if ($result->stillMissing === 0) {
+            return;
+        }
+
+        /*
+         * Held sources are already named above, with the action that would install them. Counting
+         * them again here would read as "nothing offers this" for an extension a store does
+         * offer, and the reader would have no way to tell the two situations apart.
+         */
+        $unavailable = max(0, $result->stillMissing - count($result->heldPackages));
+
+        if ($unavailable === 0) {
             return;
         }
 
@@ -328,9 +350,9 @@ class ImportBackup extends Command
             .'can be imported.|[2,*]:count sources carrying your library are still not available here, out of '
             .':attempted this backup needed. Nothing in this server offers them, so they have to come back '
             .'before those series can be imported.',
-            $result->stillMissing,
+            $unavailable,
             [
-                'count' => number_format($result->stillMissing),
+                'count' => number_format($unavailable),
                 'attempted' => number_format($result->attempted),
             ],
         ));

@@ -99,15 +99,18 @@ class SecurityDocumentTest extends TestCase
         );
     }
 
-    public function test_the_extension_section_states_the_import_default_and_the_trust_bypass(): void
+    public function test_the_extension_section_states_the_import_review_and_runtime_trust(): void
     {
         $text = $this->text();
 
         $this->assertStringContainsString('The Sources page asks for an explicit trust decision per store', $text);
+        $this->assertStringContainsString('Import asks the same question', $text);
         $this->assertStringContainsString('A backup names the extensions it needs', $text);
-        $this->assertStringContainsString('Papyrus installs them by default without the per-store trust step', $text);
-        $this->assertStringContainsString('known risk, accepted for this release', $text);
-        $this->assertStringContainsString('Clear the checkbox before importing a backup you did not make yourself', $text);
+        $this->assertStringContainsString('Nothing installs until you tick a store and confirm', $text);
+        $this->assertStringContainsString('The install then asks the database which stores you trust at that moment', $text);
+        $this->assertStringContainsString('An unanswered review expires after 24 hours', $text);
+        $this->assertStringContainsString('Clear the checkbox, or choose "Import without extensions"', $text);
+        $this->assertStringNotContainsString('known risk, accepted for this release', $text);
         $this->assertStringNotContainsString('nothing installs itself quietly', $text);
     }
 

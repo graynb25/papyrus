@@ -8,6 +8,7 @@ use App\Models\ImportRun;
 use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
+use App\Suwayomi\ExtensionManager;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -60,22 +61,47 @@ final class BackupImporter
         private readonly ExtensionInstaller $installer,
         private readonly SeriesResolver $resolver,
         private readonly SeriesWriter $writer,
+        private readonly ExtensionManager $extensions,
     ) {}
 
     /**
      * Import one backup file for one reader.
      *
+     * ## Why a run can be handed in
+     *
+     * The page shows a review before it installs anything, and that review is a run row in
+     * `AWAITING_CONFIRMATION`. Confirming has to continue that row rather than create a second
+     * one, or the history would show a review nobody ever answered beside an import nobody
+     * asked for. The caller owns the check that the row is still awaiting and belongs to this
+     * reader; this method only puts it back into `RUNNING`.
+     *
      * @param  int  $limit  Stop after this many series. Zero means all of them.
      * @param  string|null  $fileName  The name the reader chose, when it differs from the path's.
+     * @param  ImportRun|null  $run  An awaiting run to continue, or null to start a new one.
      */
-    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true, bool $force = false, ?string $fileName = null): ImportResult
+    public function import(User|int $user, string $path, int $limit = 0, bool $installExtensions = true, bool $force = false, ?string $fileName = null, ?ImportRun $run = null): ImportResult
     {
-        $run = ImportRun::createFor($user, [
-            'format' => 'unknown',
-            'state' => ImportRun::RUNNING,
-            'file_name' => $fileName ?? basename($path),
-            'started_at' => now(),
-        ]);
+        if ($run === null) {
+            $run = ImportRun::createFor($user, [
+                'format' => 'unknown',
+                'state' => ImportRun::RUNNING,
+                'file_name' => $fileName ?? basename($path),
+                'started_at' => now(),
+            ]);
+        } else {
+            /*
+             * A resumed run keeps its own label unless the caller has a better one. The review
+             * already wrote the file's name, and the confirm request does not carry it.
+             */
+            $run->forceFill([
+                'state' => ImportRun::RUNNING,
+                'file_name' => $fileName ?? $run->file_name ?? basename($path),
+                'started_at' => now(),
+                'finished_at' => null,
+                'refusal_reason' => null,
+                'progress_note' => null,
+            ])->save();
+        }
 
         $this->activeRun = $run;
 
@@ -141,14 +167,22 @@ final class BackupImporter
             obsoleteSeries: $extensions['obsolete'],
             refusedPackages: $extensions['refused'],
             installAttempted: $extensions['allowed'],
+            heldPackages: $extensions['held'],
         );
     }
 
     /**
      * Install what the backup needs, and record what came across.
      *
+     * ## Trust is read here, not passed in from the page
+     *
+     * The ids come from the reader's own rows at the moment the install runs. A review is a
+     * snapshot that may be minutes or hours old, and the page's ticking is only a request to
+     * trust; the install asks the database what is true now. A store revoked between the
+     * review and this call holds its packages rather than installing them.
+     *
      * @param  Collection<int, BackupSource>  $sources
-     * @return array{already: int, attempted: int, installed: int, still_missing: int, obsolete: int, refused: array<string, string>, allowed: bool}
+     * @return array{already: int, attempted: int, installed: int, still_missing: int, obsolete: int, refused: array<string, string>, held: array<string, string>, allowed: bool}
      */
     private function installExtensions(User|int $user, ImportRun $run, Collection $sources, bool $allowed): array
     {
@@ -191,11 +225,12 @@ final class BackupImporter
                 'still_missing' => $missing,
                 'obsolete' => $surveyed->where('obsolete', true)->sum(fn (BackupSource $s): int => $s->seriesCount),
                 'refused' => [],
+                'held' => [],
                 'allowed' => false,
             ];
         }
 
-        $outcome = $this->installer->install($sources);
+        $outcome = $this->installer->install($sources, $this->extensions->trustedStoreIds($user));
 
         /*
          * Counted after the install, so this is the remainder rather than the attempt.
@@ -219,6 +254,14 @@ final class BackupImporter
             $outcome['obsolete'],
         ));
 
+        if ($outcome['held'] !== []) {
+            $this->say(sprintf(
+                '  %d held back because no trusted store offers them: %s',
+                count($outcome['held']),
+                implode(', ', array_keys($outcome['held'])),
+            ));
+        }
+
         $refusals = ExtensionInstaller::describeRefusals($outcome['refused']);
 
         if ($refusals !== '') {
@@ -232,6 +275,7 @@ final class BackupImporter
             'still_missing' => $stillMissing,
             'obsolete' => $outcome['obsolete'],
             'refused' => $outcome['refused'],
+            'held' => $outcome['held'],
             'allowed' => true,
         ];
     }

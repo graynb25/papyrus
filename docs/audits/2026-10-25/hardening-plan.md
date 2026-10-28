@@ -6,9 +6,12 @@ read. The real setup executable installed 1.5.0 in the manual sandbox on 2026-10
 reader flow worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were
 rebuilt from it, and the fresh manual run on the rebuilt installer passed on 2026-10-27,
 including the shortcut double-click. Batch H is recorded and committed
-locally; 1.5.1 is not started. This plan turns the walk in `walk.md` and the security
-assessment in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD
-`6572ba0`; the batch changes and the audit documents themselves are committed in `86e033a`.
+locally; 1.5.1 is not started. The H3 behaviour change is committed locally on 2026-10-27 and
+is not pushed. H3 remains open until the manual proof below passes on a fresh disposable
+scratch install. This plan turns the walk in
+`walk.md` and the security assessment in `security.md` into release work for 1.5.0 and 1.5.1.
+The audit was read at HEAD `6572ba0`; the batch changes and the audit documents themselves are
+committed in `86e033a`.
 
 The owner accepted the recommended defaults: keep the server-path import field for the owner
 only, include the copy-only M1 backup warning in 1.5.0, hold L1 for 1.5.1, and approve the
@@ -101,6 +104,11 @@ the behaviour changes or the deployment posture makes it irrelevant.
   `tools/make-walkthrough.ps1` regenerates the images from the session folder, which git
   ignores, so the committed images are the record.
 - [x] Batch H, release close-out
+- [ ] H3 behaviour change, import review before extension install. Committed locally on
+  2026-10-27, not pushed. Every import that installs extensions surveys the backup
+  first, shows the stores and signing keys, and installs only from stores the reader trusts at
+  install time. Stored uploads have a 24 hour life cycle. H3 stays open High until the manual
+  proof on a fresh disposable scratch install in the section below.
 - [ ] 1.5.1, remaining hardening and reader copy
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
@@ -760,6 +768,47 @@ the suite's to prove. The owner's restore was not exercised: it would re-prove a
 is allowed by design and would destroy the probe state mid sitting. H3 stays open as
 accepted. M1 ships as a warning only, and L1 waits for 1.5.1.
 
+### H3 behaviour change, 2026-10-27
+
+Status: committed locally on 2026-10-27, not pushed, no manual proof yet. H3 remains an
+open High finding, now scoped to the unproven end-to-end path rather than the missing gate.
+
+What changed:
+
+- A submission that installs extensions no longer imports directly. `RunBackupImport` gains
+  `surveyForConfirmation`, which reads the file under the same guards as inspect, groups the
+  missing packages by catalogue store, and writes the run as `awaiting` with the store list,
+  signing keys, unresolved packages, and the reader's limit and force choices. The survey
+  installs nothing.
+- The review shows every store with its signing key and packages, with the boxes unchecked,
+  and offers Import, Import without extensions, and Discard. Import records trust only for
+  store ids the review payload names; a crafted extra id is ignored.
+- The confirm continues the same run through a conditional `awaiting` to `running` claim. The
+  file path and the limit and force choices come from the run row, never from the request, and
+  the account's path rule is checked again at run time.
+- `ExtensionInstaller::install()` now requires the importing reader's trusted store ids. A
+  package installs only when the catalogue places it in a trusted store. An empty list
+  installs nothing, a catalogue failure holds every package, and held packages are reported
+  separately from attempted ones. `BackupImporter` reads the ids from the database at install
+  time, so a store revoked after the review is not used.
+- Stored uploads are deleted on confirm, on Import without extensions, and on Discard. An
+  hourly `ImportReviewExpiry` closes reviews older than 24 hours as `expired`, deletes their
+  stored uploads, and sweeps unreferenced uploads older than the same period. Expiry and
+  confirm both use a conditional state update, so one cannot overwrite the other.
+
+Tests added: `ImportReviewTest` for the survey row, refusal cleanup, path guard, confirm
+reuse, trust re-read, and expiry and sweep; trust, held and catalogue failure cases in
+`ExtensionInstallerTest`; and the request shape and trust read in `ExtensionManagerTest`.
+`ImportPageTest` covers the review rendering, trust narrowing, and the three actions.
+
+The mutation check that matters: an install that ignores the trust list, or a confirm that
+takes its path or limit from the request, fails these tests.
+
+Not proven yet: the manual pass. It must run on a fresh disposable scratch install, never the
+live checkout, and record: import a small synthetic backup, see the review with a store and
+its key, tick it, confirm, read a page from the installed source, and check the upload is
+gone. Until that is read back, H3 stays open.
+
 ## Release 1.5.1: remaining hardening and reader copy
 
 Security remaining:
@@ -775,7 +824,10 @@ Security remaining:
 - L1: remove the `title` key from the showcase payload. Keep the cover URL and manga id.
 - L2: document that `REMOTE_ADDR` is not a client identity behind a same-host proxy. Decide
   between a launcher secret and a separate listener in a later release.
-- L3: delete an imported upload in a `finally`, or add a bounded retention command.
+- L3: covered by the H3 behaviour change. Stored uploads are removed on confirm, on Import
+  without extensions, on Discard, and by the hourly expiry after 24 hours. A run that throws
+  keeps its file for retry, and the same sweep is the backstop. The `finally` form was
+  rejected because it would delete a file a retry still needs.
 - L6: add a security-header middleware with `frame-ancestors 'none'`, `Referrer-Policy:
   same-origin`, `Permissions-Policy` and a global `X-Content-Type-Options: nosniff`. Add
   HSTS only on a secure request.
@@ -804,9 +856,12 @@ Walk remaining:
 
 ## Accepted risks and deferred items
 
-- H3 remains open. Import installs the extensions a backup names, by default, without the
-  per-user store trust check. The owner accepted this on 2026-10-25. Revisit if `shared` or
-  `public` mode is promoted beyond an experiment.
+- H3 remains open High, no longer as accepted import behaviour. The install now requires the
+  reader's trust at run time and the survey shows the stores first; the H3 behaviour change
+  section records the code and the tests. The remaining acceptance is the manual proof on a
+  fresh disposable scratch install (import a small synthetic backup, answer the review, read a
+  page from an installed source, check the upload is gone). Until that is read back the finding
+  stays open. Revisit if `shared` or `public` mode is promoted beyond an experiment.
 - L4 guest session rows: 1.5.1 or later, unless public mode is promoted.
 - L5 reader GET creates a reading session: data quality, not security. Schedule separately.
 - I3 Suwayomi 2.4.2366 has no published advisory. No change.
