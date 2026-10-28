@@ -73,6 +73,16 @@ trait BuildsTachimangaBackups
     protected bool $withUnreachableSources = false;
 
     /**
+     * Add one shelf series on an obsolete source, and nothing else unreachable.
+     *
+     * `withUnreachableSources` carries two shapes at once, which is what tells an obsolete
+     * source apart from a source with no extension row. That also always counts two filed
+     * series, so the console's singular "filed by title" line never runs. This adds only
+     * the obsolete shape, so a real run prints the singular branch.
+     */
+    protected bool $withSingleUnreachableSource = false;
+
+    /**
      * Give the empty shelf a member the default fixture cannot reach a skip for.
      *
      * Snowflakes carries no members as the default fixture models the real file, so every
@@ -522,9 +532,14 @@ trait BuildsTachimangaBackups
         $extension->execute([8, 'MangaSee', 'eu.kanade.tachiyomi.extension.en.mangasee', '1.4.7', 'en', 1, 0]);
         $source->execute([1_000_000_000_000_000_001, 'MangaSee', 'en', 8]);
 
-        if (! $this->withUnreachableSources) {
+        if (! $this->withUnreachableSources && ! $this->withSingleUnreachableSource) {
             return;
         }
+
+        $manga = $pdo->prepare(
+            'insert into Manga (id, url, title, in_library, in_library_at, source, real_url)
+             values (?, ?, ?, 1, ?, ?, null)'
+        );
 
         /*
          * Marked obsolete by the reader's own app, so the site has shut down. Nothing installs
@@ -533,6 +548,11 @@ trait BuildsTachimangaBackups
          */
         $extension->execute([9, 'Utoon', 'eu.kanade.tachiyomi.extension.en.utoon', '1.4.2', 'en', 1, 1]);
         $source->execute([2_848_420_679_472_350_099, 'Utoon', 'en', 9]);
+        $manga->execute([9266, '/comics/gone-forever', 'Gone Forever', $this->timestamps['in_library_at'], 2_848_420_679_472_350_099]);
+
+        if ($this->withSingleUnreachableSource) {
+            return;
+        }
 
         /*
          * No extension row at all, so the join yields a null package. Measured on the real
@@ -540,12 +560,6 @@ trait BuildsTachimangaBackups
          * deleted the extension and the Source row outliving it.
          */
         $source->execute([2_848_420_679_472_350_100, 'Nameless', 'en', null]);
-
-        $manga = $pdo->prepare(
-            'insert into Manga (id, url, title, in_library, in_library_at, source, real_url)
-             values (?, ?, ?, 1, ?, ?, null)'
-        );
-        $manga->execute([9266, '/comics/gone-forever', 'Gone Forever', $this->timestamps['in_library_at'], 2_848_420_679_472_350_099]);
         $manga->execute([9267, '/comics/nameless-source', 'Nameless Source', $this->timestamps['in_library_at'], 2_848_420_679_472_350_100]);
     }
 

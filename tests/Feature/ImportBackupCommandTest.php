@@ -368,6 +368,28 @@ class ImportBackupCommandTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_it_files_one_series_in_the_singular(): void
+    {
+        $this->withSingleUnreachableSource = true;
+        $this->fake([]);
+
+        $out = new BufferedOutput;
+        $this->app->make(Kernel::class)->call('import:run', ['path' => $this->backup()], $out);
+
+        $printed = $out->fetch();
+
+        $this->assertStringContainsString(
+            '1 series was filed by title alone, with no source behind it.',
+            $printed,
+            'one series on an obsolete source is filed by title',
+        );
+        $this->assertStringNotContainsString(
+            '{1}',
+            $printed,
+            'the singular branch must not print its condition marker',
+        );
+    }
+
     public function test_it_says_a_second_run_has_nothing_to_do(): void
     {
         $catalogue = [self::FIRST => 1768, self::SECOND => 1769];
@@ -424,6 +446,11 @@ class ImportBackupCommandTest extends TestCase
             '1 series already matches this backup',
             $printed,
             'the count is what this run skipped',
+        );
+        $this->assertStringNotContainsString(
+            '{1}',
+            $printed,
+            'the singular branch must not print its condition marker',
         );
         $this->assertStringContainsString(
             'not all 2',
@@ -569,7 +596,21 @@ class ImportBackupCommandTest extends TestCase
 
         $this->app->make(ExtensionManager::class)->trust($this->user, $store);
 
-        $this->artisan('import:run', ['path' => $this->backup()])->assertSuccessful();
+        $out = new BufferedOutput;
+        $this->app->make(Kernel::class)->call('import:run', ['path' => $this->backup()], $out);
+
+        $printed = $out->fetch();
+
+        $this->assertStringContainsString(
+            'Installed 1 extension this server did not have.',
+            $printed,
+            'one installed package uses the singular branch',
+        );
+        $this->assertStringNotContainsString(
+            '{1}',
+            $printed,
+            'the singular branch must not print its condition marker',
+        );
 
         Http::assertSent(fn (Request $r): bool => str_contains(
             (string) (json_decode((string) $r->body(), true)['query'] ?? ''),

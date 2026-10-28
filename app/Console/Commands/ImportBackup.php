@@ -224,7 +224,7 @@ class ImportBackup extends Command
             $this->components->info('Nothing to do.');
 
             $this->line(trans_choice(
-                '  {1}:count series already matches this backup.|[2,*]:count series already match this backup.',
+                '  :count series already matches this backup.|  :count series already match this backup.',
                 $result->count('unchanged'),
                 ['count' => number_format($result->count('unchanged'))],
             ));
@@ -268,8 +268,8 @@ class ImportBackup extends Command
 
         if ($result->count('filed') > 0) {
             $this->line(trans_choice(
-                '  {1}:count series was filed by title alone, with no source behind it. It will sit in '
-                .'your library until the source comes back.|[2,*]:count series were filed by title alone, '
+                '  :count series was filed by title alone, with no source behind it. It will sit in '
+                .'your library until the source comes back.|  :count series were filed by title alone, '
                 .'with no source behind them. They will sit in your library until those sources come back.',
                 $result->count('filed'),
                 ['count' => number_format($result->count('filed'))],
@@ -302,7 +302,7 @@ class ImportBackup extends Command
     {
         if ($result->installed > 0) {
             $this->line(trans_choice(
-                '  Installed {1}:count extension this server did not have.|[2,*]:count extensions',
+                '  Installed :count extension this server did not have.|  Installed :count extensions this server did not have.',
                 $result->installed,
                 ['count' => number_format($result->installed)],
             ));
