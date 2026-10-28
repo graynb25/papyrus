@@ -180,6 +180,23 @@ throttled: it serves public cache and its expensive step is a thumbnail on the
 loopback-bound server. The Fortify endpoints have their own login, two-factor and passkey
 limiters.
 
+## The readiness endpoint and a same-host proxy
+
+`/ready` is how the packaged launcher waits for the app key, the database and the pending
+migrations. It answers only when `REMOTE_ADDR` is loopback, which is the direct connection
+the launcher makes.
+
+`REMOTE_ADDR` is the transport's answer, not the client's identity. If you put Papyrus behind
+a reverse proxy on the same machine, every remote request reaches PHP from the proxy's
+loopback address, so every remote client gets the readiness body. The body reports whether
+the app key is set, whether the database answers and how many migrations are pending. It is
+not a credential, but it is information worth withholding.
+
+Do not forward `/ready` through a proxy. Keep it on the loopback listener the launcher polls,
+or answer it from a separate loopback-only listener the proxy does not know about. A launcher
+secret in a header is the other shape; it is deferred to a later release, so the route stays
+loopback-gated with this caveat until one of the two lands.
+
 ## Reporting
 
 This is a personal project with no published support channel. If you find something that

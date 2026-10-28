@@ -886,8 +886,12 @@ Security remaining:
   title. The controller no longer asks Suwayomi for a title batch, and the cache key moves to
   v2 so a payload cached before the shape change cannot outlive it. `ShowcaseTest` asserts
   the key set, the absent titles, and the absent `mangas(` request.
-- L2: document that `REMOTE_ADDR` is not a client identity behind a same-host proxy. Decide
-  between a launcher secret and a separate listener in a later release.
+- L2, fixed on 2026-10-28: the readiness controller and `docs/SECURITY.md` say that
+  `REMOTE_ADDR` is the transport's answer, not the client's identity, so a same-host reverse
+  proxy makes every remote client look local and receive the readiness body. The page tells
+  an operator not to forward `/ready` and to keep it on the loopback listener the launcher
+  polls. A launcher secret or a separate loopback-only listener is deferred to a later
+  release; the route stays loopback-gated until one of the two lands.
 - L3: covered by the H3 behaviour change. Stored uploads are removed on confirm, on Import
   without extensions, on Discard, and by the hourly expiry after 24 hours. A run that throws
   keeps its file for retry, and the same sweep is the backstop. The `finally` form was

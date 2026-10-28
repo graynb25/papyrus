@@ -57,7 +57,14 @@ use Throwable;
  * The check reads `REMOTE_ADDR` rather than `$request->ip()`, deliberately. `ip()` honours
  * `X-Forwarded-For` for trusted proxies, which means a remote client behind a misconfigured
  * proxy could make itself look local. `REMOTE_ADDR` is the transport's own answer and cannot
- * be set by the client.
+ * be set by the client, though a proxy on this machine supplies its own loopback address.
+ *
+ * That is the caveat: `REMOTE_ADDR` is the transport's answer, not the client's identity. A
+ * same-host reverse proxy makes every remote request arrive from loopback, so every remote
+ * client gets the readiness body. The check is correct for the direct connection the launcher
+ * makes and wrong for that proxy shape. Do not forward `/ready` through one. A launcher
+ * secret or a separate loopback-only listener is the later fix; `docs/SECURITY.md` carries
+ * the operator-facing version.
  *
  * A non-loopback request gets 404 rather than 403, so the endpoint does not confirm its own
  * existence to someone probing for it.
