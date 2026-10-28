@@ -889,8 +889,11 @@ Functional fixes found during the H3 walk:
   the package installed on Suwayomi 2.4.2366. The new test asserts the patch, and
   the fixed manager removed MangaTaro from the scratch server, which then listed
   only the local source.
-- Refresh the source mirror after an import installs extensions, so `/sources` does not open
-  one sync behind. The drift callout names it and the Sync sources button recovers it today.
+- Source mirror after an import installs, fixed on 2026-10-28: `BackupImporter`
+  calls `SourceCatalog::syncSources()` when an install landed. A refresh failure is
+  reported on the run's progress line and does not fail the import; the drift
+  callout still offers Sync sources. The test seeds a stale mirror row and confirms
+  it flips back to installed.
 
 Walk remaining:
 

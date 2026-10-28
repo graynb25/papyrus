@@ -8,6 +8,7 @@ use App\Jobs\RunBackupImport;
 use App\Models\ExtensionStore;
 use App\Models\ImportedSeries;
 use App\Models\ImportRun;
+use App\Models\Source;
 use App\Models\User;
 use App\Models\UserExtensionStore;
 use App\Suwayomi\ExtensionManager;
@@ -246,6 +247,40 @@ class ImportReviewTest extends TestCase
         $this->assertSame(ImportRun::COMPLETE, $run->fresh()->state);
     }
 
+    /**
+     * The install changes what Suwayomi offers but not what the mirror believes.
+     *
+     * Measured on the H3 walk: after the confirm installed MangaTaro, `/sources` opened
+     * one sync behind and named the new source missing until Sync sources was pressed.
+     */
+    public function test_a_confirm_that_installs_an_extension_refreshes_the_source_mirror(): void
+    {
+        $this->backup = $this->buildTachimangaBackup();
+
+        $package = 'eu.kanade.tachiyomi.extension.en.thunderscans';
+
+        Source::query()->create([
+            'suwayomi_source_id' => (string) crc32($package),
+            'name' => 'Thunder Scans',
+            'display_name' => 'Thunder Scans (EN)',
+            'extension_pkg_name' => $package,
+            'lang' => 'en',
+            'is_installed' => false,
+        ]);
+
+        app(ExtensionManager::class)->trust($this->owner, $this->store);
+
+        $run = $this->awaitingRun($this->owner, $this->backup);
+
+        $this->job($this->owner, 'C:/no/such/backup.tmb', reuseRunId: $run->id)
+            ->handle($this->app->make(BackupImporter::class));
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => (string) crc32($package),
+            'is_installed' => true,
+        ]);
+    }
+
     public function test_a_store_revoked_after_the_review_holds_its_packages(): void
     {
         $this->backup = $this->buildTachimangaBackup();
@@ -466,6 +501,37 @@ class ImportReviewTest extends TestCase
                 );
 
                 return Http::response(['data' => ['sources' => ['nodes' => $nodes]]]);
+            }
+
+            /*
+             * The mirror sync, which is a different query from the installed-package
+             * lookup above: this one carries totalCount, and its answer is what the
+             * Sources page would see after a refresh.
+             */
+            if (str_contains($query, 'sources {')) {
+                $nodes = array_map(
+                    fn (string $package): array => [
+                        'id' => (string) crc32($package),
+                        'name' => $package,
+                        'displayName' => $package,
+                        'lang' => 'en',
+                        'contentWarning' => 'SAFE',
+                        'homeUrl' => null,
+                        'iconUrl' => null,
+                        'supportsLatest' => false,
+                        'isConfigurable' => false,
+                        'extension' => [
+                            'pkgName' => $package,
+                            'isInstalled' => true,
+                        ],
+                    ],
+                    array_keys($this->installed),
+                );
+
+                return Http::response(['data' => ['sources' => [
+                    'totalCount' => count($nodes),
+                    'nodes' => $nodes,
+                ]]]);
             }
 
             if (str_contains($query, 'query Packages')) {

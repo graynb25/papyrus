@@ -18,6 +18,7 @@ use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\Gateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SeriesLocator;
+use App\Suwayomi\SourceCatalog;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -521,6 +522,7 @@ class ImportProgressTest extends TestCase
             resolver: new SeriesResolver($locator),
             writer: new SeriesWriter($this->app->make(ReadingState::class), $this->app->make(SeriesGateway::class)),
             extensions: $this->app->make(ExtensionManager::class),
+            catalog: $this->app->make(SourceCatalog::class),
         );
     }
 
@@ -540,6 +542,7 @@ class ImportProgressTest extends TestCase
             resolver: new SeriesResolver($locator),
             writer: new SeriesWriter($this->app->make(ReadingState::class), $this->app->make(SeriesGateway::class)),
             extensions: $this->app->make(ExtensionManager::class),
+            catalog: $this->app->make(SourceCatalog::class),
         );
     }
 

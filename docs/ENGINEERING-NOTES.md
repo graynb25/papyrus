@@ -1151,6 +1151,10 @@ Each of these cost real time. Do not repeat them.
      tidying our own install button reaches it. Both halves are needed: mirror on install and
      uninstall, and say what is missing.
 
+     The import installs through its own path, so `BackupImporter` calls the same
+     `syncSources()` when an install landed. Without it the confirm opens `/sources` one sync
+     behind and names the source it just installed as missing.
+
      The second half has to be cheap enough to run on every render, and it nearly was not.
      Asking the server how many sources it has is one query and costs a measured 185ms median,
      1,945ms on the first call. Asking which extensions are installed is the same one query for

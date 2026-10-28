@@ -9,6 +9,8 @@ use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
 use App\Suwayomi\ExtensionManager;
+use App\Suwayomi\SourceCatalog;
+use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -62,6 +64,7 @@ final class BackupImporter
         private readonly SeriesResolver $resolver,
         private readonly SeriesWriter $writer,
         private readonly ExtensionManager $extensions,
+        private readonly SourceCatalog $catalog,
     ) {}
 
     /**
@@ -253,6 +256,22 @@ final class BackupImporter
             $stillMissing,
             $outcome['obsolete'],
         ));
+
+        /*
+         * The install changes what Suwayomi offers but not what the mirror believes.
+         *
+         * Measured on the H3 walk: after a confirm installed MangaTaro, `/sources` opened
+         * one sync behind and named the new source missing until Sync sources was pressed.
+         * A refresh failure must not fail the import: the library is already installed, and
+         * the drift callout names the gap and offers the same sync.
+         */
+        if ($outcome['installed'] > 0) {
+            try {
+                $this->catalog->syncSources();
+            } catch (SuwayomiException $e) {
+                $this->say('  installed, but the source list could not be refreshed: '.$e->getMessage());
+            }
+        }
 
         if ($outcome['held'] !== []) {
             $this->say(sprintf(
