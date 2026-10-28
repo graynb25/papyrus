@@ -42,7 +42,7 @@ class ShowcaseTest extends TestCase
         ]);
     }
 
-    public function test_single_mode_with_a_library_serves_covers_and_titles(): void
+    public function test_single_mode_with_a_library_serves_covers_without_titles(): void
     {
         $this->fakeSuwayomi();
         $this->addSeries(116, 'One Piece');
@@ -64,8 +64,15 @@ class ShowcaseTest extends TestCase
          */
         $byManga = collect($covers)->keyBy('manga');
 
-        $this->assertSame('One Piece', $byManga[116]['title']);
+        $this->assertEqualsCanonicalizing(['manga', 'url'], array_keys($byManga[116]));
         $this->assertStringContainsString('/showcase/cover/116', $byManga[116]['url']);
+
+        /*
+         * The wall is art, not a readable list. The fake server knows both
+         * titles, so a payload that asks for them and prints them fails here.
+         */
+        $this->assertStringNotContainsString('One Piece', (string) $response->getContent());
+        $this->assertStringNotContainsString('Berserker', (string) $response->getContent());
 
         /*
          * The payload must never carry a raw server URL: the guest browser has
@@ -73,6 +80,26 @@ class ShowcaseTest extends TestCase
          * to the login page for every image on the wall.
          */
         $this->assertStringNotContainsString('suwayomi/api/v1', (string) $response->getContent());
+    }
+
+    /**
+     * The payload is art and ids, so it asks the manga server for nothing.
+     *
+     * The wall used to fetch a title batch to fill a key the login page never
+     * read. Keeping the round trip out is part of the payload shape: a future
+     * title field would have to bring the call back, and this test would say
+     * so.
+     */
+    public function test_the_payload_does_not_ask_suwayomi_for_titles(): void
+    {
+        $this->fakeSuwayomi();
+        $this->addSeries(116, 'One Piece');
+
+        $this->getJson('/showcase')->assertOk();
+
+        Http::assertNotSent(function (Request $request): bool {
+            return str_contains((string) ($request->data()['query'] ?? ''), 'mangas(');
+        });
     }
 
     public function test_favourites_come_before_the_rest(): void

@@ -6,8 +6,6 @@ use App\Covers\CoverStore;
 use App\Models\SeriesState;
 use App\Support\Deployment;
 use App\Suwayomi\AuthManager;
-use App\Suwayomi\SeriesGateway;
-use App\Suwayomi\SuwayomiException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -29,20 +27,29 @@ use Throwable;
  * and the login page falls back to generative art without a trace of a real
  * collection.
  *
+ * The payload carries the manga id and the cover URL, and no title. A wall of
+ * art is what the login screen is for; a readable list of the reader's series
+ * is more than the effect needs, and a guest who can reach the listener should
+ * not be able to read the collection as a list.
+ *
  * ## Cost shape
  *
- * One grouped query resolves the primary reader, one query lists their
- * library rows, and titles come from the same `fetchMany` batch the library
- * page uses (measured 246ms for 300 ids; this asks for at most
- * `papyrus.showcase.count`). No call is made per cover. The payload is
- * cached for `showcase.cache_seconds`, so a browser refresh of the login
- * screen costs no Suwayomi round trip at all; a cover added a minute ago
- * joins the wall when the cache turns over, which is the right trade for a
- * page nobody stares at under deadline.
+ * One grouped query resolves the primary reader and one query lists their
+ * library rows. The payload carries no titles, so it asks Suwayomi for
+ * nothing; each cover is fetched from the cover route, which streams one
+ * thumbnail and caches it publicly. The payload is cached for
+ * `showcase.cache_seconds`, so a browser refresh of the login screen costs no
+ * Suwayomi round trip at all; a cover added a minute ago joins the wall when
+ * the cache turns over, which is the right trade for a page nobody stares at
+ * under deadline.
  */
 class ShowcaseController extends Controller
 {
-    private const CACHE_KEY = 'showcase:payload:v1';
+    /**
+     * The version suffix is deliberate: a payload cached before a shape change
+     * must not outlive it. The title key was removed under v2.
+     */
+    private const CACHE_KEY = 'showcase:payload:v2';
 
     /**
      * Thumbnail cache window. Public, because the reader is signed out here
@@ -54,14 +61,14 @@ class ShowcaseController extends Controller
 
     private const CUSTOM_CACHE = 'public, max-age=600';
 
-    public function __invoke(Request $request, Deployment $deployment, SeriesGateway $gateway, CoverStore $covers): mixed
+    public function __invoke(Request $request, Deployment $deployment): mixed
     {
         $this->ensureVisible($deployment);
 
         $payload = Cache::remember(
             self::CACHE_KEY,
             (int) config('papyrus.showcase.cache_seconds', 300),
-            fn (): array => $this->payload($gateway, $covers),
+            fn (): array => $this->payload(),
         );
 
         return response()->json($payload);
@@ -141,9 +148,9 @@ class ShowcaseController extends Controller
      * has never heard of stay in the list, because a custom cover can still
      * exist for one; the login page hides whatever the cover route 404s on.
      *
-     * @return array{covers: array<int, array{manga: int, title: string, url: string}>}
+     * @return array{covers: array<int, array{manga: int, url: string}>}
      */
-    private function payload(SeriesGateway $gateway, CoverStore $covers): array
+    private function payload(): array
     {
         $userId = $this->primaryUserId();
 
@@ -169,37 +176,16 @@ class ShowcaseController extends Controller
             return ['covers' => []];
         }
 
-        $titles = $this->titles($gateway, $ids);
-
         $rows = [];
 
         foreach ($ids as $id) {
             $rows[] = [
                 'manga' => $id,
-                'title' => (string) ($titles[$id]['title'] ?? ''),
                 'url' => route('showcase.cover', ['manga' => $id]),
             ];
         }
 
         return ['covers' => $rows];
-    }
-
-    /**
-     * Titles in one batch, and only that. The map is keyed by manga id and a
-     * dropped id is normal: the server silently omits what it does not know.
-     *
-     * @param  array<int, int>  $ids
-     * @return array<int, array<string, mixed>>
-     */
-    private function titles(SeriesGateway $gateway, array $ids): array
-    {
-        try {
-            return $gateway->fetchMany($ids);
-        } catch (SuwayomiException) {
-            // The wall renders art first and titles when it can. A server
-            // that is down still leaves the login page a beautiful place.
-            return [];
-        }
     }
 
     /**

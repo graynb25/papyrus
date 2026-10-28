@@ -882,7 +882,10 @@ Security remaining:
   `XSRF-TOKEN` and the optional `remember_web_` cookie with their flags. `LegalPagesTest`
   compares the rendered page with the outbound list and measures the guest and remember
   cookie flags; `FaqTest` holds the two AniList paths apart.
-- L1: remove the `title` key from the showcase payload. Keep the cover URL and manga id.
+- L1, fixed on 2026-10-28: the showcase payload carries the manga id and cover URL, and no
+  title. The controller no longer asks Suwayomi for a title batch, and the cache key moves to
+  v2 so a payload cached before the shape change cannot outlive it. `ShowcaseTest` asserts
+  the key set, the absent titles, and the absent `mangas(` request.
 - L2: document that `REMOTE_ADDR` is not a client identity behind a same-host proxy. Decide
   between a launcher secret and a separate listener in a later release.
 - L3: covered by the H3 behaviour change. Stored uploads are removed on confirm, on Import
