@@ -22,8 +22,8 @@ use Tests\TestCase;
  * The claims have to be the ones the code supports, because a privacy
  * statement is the easiest thing in a program to let rot. The list of what
  * reaches the internet is the sharpest of them, and the privacy page and the
- * FAQ have to carry the same three, so the test reads both and compares them
- * rather than trusting that nobody copied the list twice.
+ * FAQ have to carry the same five connections, so the test reads both and
+ * compares them rather than trusting that nobody copied the list twice.
  *
  * And the copy has to carry no em or en dashes, because this copy ships to
  * readers, the same rule the FAQ's own dash check holds.
@@ -37,8 +37,10 @@ class LegalPagesTest extends TestCase
         $this->get('/privacy')
             ->assertOk()
             ->assertSee('Privacy')
-            ->assertSee('This application collects nothing and reports nothing.')
-            ->assertSee('What the application collects')
+            ->assertSee('Papyrus keeps what it knows in files on this computer and reports nothing to anyone.')
+            ->assertSee('What the application keeps')
+            ->assertSee('What reaches the internet')
+            ->assertSee('Cookies')
             ->assertSee('Your rights, and what they mean here');
     }
 
@@ -58,7 +60,8 @@ class LegalPagesTest extends TestCase
 
         Livewire::actingAs($user)->test('pages::settings.privacy')
             ->assertOk()
-            ->assertSee('What the application collects')
+            ->assertSee('What the application keeps')
+            ->assertSee('Cookies')
             ->assertSee('Your rights, and what they mean here');
 
         Livewire::actingAs($user)->test('pages::settings.terms')
@@ -66,15 +69,17 @@ class LegalPagesTest extends TestCase
             ->assertSee('What you are responsible for');
     }
 
-    public function test_the_privacy_page_names_the_three_things_that_reach_the_internet(): void
+    public function test_the_privacy_page_names_the_five_connections_that_can_leave(): void
     {
         $this->get('/privacy')
+            ->assertSee('AniList title matching, when you turn it on in Search')
             ->assertSee('AniList, if you connect your AniList account in Settings')
             ->assertSee('The manga source, when you download or read a chapter')
-            ->assertSee('The extension repository, when you install a source or a store');
+            ->assertSee('The extension repository, when you install a source or a store')
+            ->assertSee('The mail server, when you sign up or ask for a password reset on a shared or public install');
     }
 
-    public function test_the_privacy_page_and_the_faq_carry_the_same_three_things(): void
+    public function test_the_privacy_page_and_the_faq_carry_the_same_five_connections(): void
     {
         /*
          * The one list, read from both places.
@@ -92,8 +97,8 @@ class LegalPagesTest extends TestCase
             $this->assertStringContainsString($route['what'], $privacy);
         }
 
-        $this->assertCount(3, $faq);
-        $this->assertCount(3, app(Outbound::class)->routes());
+        $this->assertCount(5, $faq);
+        $this->assertCount(5, app(Outbound::class)->routes());
     }
 
     public function test_the_privacy_page_says_the_application_reports_nothing(): void
@@ -134,6 +139,92 @@ class LegalPagesTest extends TestCase
             ->assertDontSee('a welcome note if your account was made from the command line');
     }
 
+    /**
+     * The cookies a guest actually receives, against the cookies the page names.
+     *
+     * The page used to say no cookie existed. The fix is not a sentence that
+     * admits cookies exist; it is the names and flags of the cookies a reader
+     * will find in their browser. A guest response carries both the session
+     * and the form token, so it is the one that can be measured without
+     * signing in.
+     */
+    public function test_the_privacy_page_names_the_cookies_a_guest_actually_receives(): void
+    {
+        $response = $this->get('/privacy');
+
+        $response->assertOk()
+            ->assertSee('Cookies')
+            ->assertSee('papyrus-session')
+            ->assertSee('XSRF-TOKEN')
+            ->assertSee('remember_web_')
+            ->assertSee('HTTP-only')
+            ->assertSee('SameSite=Lax')
+            ->assertSee('120 minutes')
+            ->assertSee('400 days')
+            ->assertSee('None of these is marked Secure on the default install');
+
+        $this->assertSame('papyrus-session', config('session.cookie'));
+
+        $cookies = [];
+
+        foreach ($response->baseResponse->headers->getCookies() as $cookie) {
+            $cookies[$cookie->getName()] = $cookie;
+        }
+
+        $this->assertEqualsCanonicalizing(
+            ['papyrus-session', 'XSRF-TOKEN'],
+            array_keys($cookies),
+            'a guest page sets the two cookies the page names, and no others',
+        );
+
+        $this->assertArrayHasKey('papyrus-session', $cookies, 'a guest page starts a session, so the session cookie must be on the response');
+        $this->assertTrue($cookies['papyrus-session']->isHttpOnly());
+        $this->assertSame('lax', $cookies['papyrus-session']->getSameSite());
+        $this->assertFalse($cookies['papyrus-session']->isSecure());
+
+        $this->assertArrayHasKey('XSRF-TOKEN', $cookies, 'the form token cookie is what makes the CSRF check work');
+        $this->assertFalse($cookies['XSRF-TOKEN']->isHttpOnly(), 'the page script has to read this one');
+        $this->assertSame('lax', $cookies['XSRF-TOKEN']->getSameSite());
+        $this->assertFalse($cookies['XSRF-TOKEN']->isSecure());
+
+        foreach (array_keys($cookies) as $name) {
+            $this->assertStringStartsNotWith('remember_web_', $name, 'a guest has not ticked Remember me, so the recaller cookie must not be set');
+        }
+    }
+
+    /**
+     * The optional recaller cookie, measured on the response that sets it.
+     *
+     * The privacy page names it as optional and gives its flags. A page that
+     * names a cookie the sign in does not set, or gives it flags it does not
+     * have, would be describing a browser state that never happens.
+     */
+    public function test_the_privacy_page_describes_the_remember_cookie_the_sign_in_sets(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'password',
+            'remember' => true,
+        ]);
+
+        $response->assertRedirect(route('dashboard', absolute: false));
+
+        $recaller = null;
+
+        foreach ($response->baseResponse->headers->getCookies() as $cookie) {
+            if (str_starts_with($cookie->getName(), 'remember_web_')) {
+                $recaller = $cookie;
+            }
+        }
+
+        $this->assertNotNull($recaller, 'ticking Remember me has to set the recaller cookie the privacy page names');
+        $this->assertTrue($recaller->isHttpOnly());
+        $this->assertSame('lax', $recaller->getSameSite());
+        $this->assertFalse($recaller->isSecure());
+    }
+
     public function test_the_public_pages_carry_no_dashes(): void
     {
         foreach (['/privacy', '/terms'] as $url) {
@@ -169,7 +260,8 @@ class LegalPagesTest extends TestCase
     {
         $legal = app(Legal::class);
 
-        $this->assertStringContainsString('collects nothing', $legal->privacy()->promise);
+        $this->assertStringContainsString('reports nothing to anyone', $legal->privacy()->promise);
+        $this->assertStringContainsString('files on this computer', $legal->privacy()->promise);
         $this->assertStringContainsString('own machine', $legal->terms()->promise);
     }
 }

@@ -50,7 +50,7 @@ new #[Title('Privacy')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('Privacy') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Privacy')" :subheading="__('What this application collects, and what it does not')">
+    <x-pages::settings.layout :heading="__('Privacy')" :subheading="__('What this application keeps, and what leaves this computer')">
         <x-legal.document
             :document="$this->document()->privacy()"
             :outbound="$this->outbound()"

@@ -9,28 +9,30 @@ namespace App\Support;
  *
  * Because that is the question, and because the answer is not the one most people expect. A
  * self-hosted app that reaches out to nobody is rare enough to be worth stating plainly, but the
- * statement is only worth anything if it survives contact with the code, and three things do contact
- * the internet. So the page says what does not, then names what does, and a reader who disagrees with
- * the trade can see exactly which line to disagree with.
+ * statement is only worth anything if it survives contact with the code, and five connections can
+ * leave the machine. So the page says what does not, then names what does, and a reader who
+ * disagrees with the trade can see exactly which line to disagree with.
  *
  * ## Where each claim was checked
  *
- * Every outbound destination in `app/` and `config/` was listed and read: `anilist.co` and
- * `graphql.anilist.co`, both behind an OAuth flow the reader starts themselves; `lhtranslation.net`
- * and `tachimanga.app`, both inside import fixtures for bringing a library in from another app;
- * `sqs.us-east-1.amazonaws.com`, an unused default in the queue config. There is no analytics, no
- * telemetry, no crash reporting and no error reporting service anywhere in the application.
+ * Every outbound destination in `app/` and `config/` was listed and read: `graphql.anilist.co`,
+ * used for title matching without a connection and for tracking after one; `anilist.co`, the OAuth
+ * site; `lhtranslation.net` and `tachimanga.app`, both inside import fixtures for bringing a library
+ * in from another app; `sqs.us-east-1.amazonaws.com`, an unused default in the queue config. There
+ * is no analytics, no telemetry, no crash reporting and no error reporting service anywhere in the
+ * application. Mail is the other path that can leave, and only on a shared or public install whose
+ * operator has configured a transport.
  *
  * The store side needed the server's own account of itself. The extension repositories live here
  * as rows a reader adds rather than in `config`, and the bundled manga server re-reads the index
  * of every registered store when it starts up on its own, which was measured from the server's own
- * log on 2026-10-19. The third exception names that re-read rather than claiming the repository
+ * log on 2026-10-19. The store exception names that re-read rather than claiming the repository
  * only moves when an install does.
  *
- * That check is why the exceptions list has three entries rather than one. The first draft of this
+ * That check is why the exceptions list has five entries rather than one. The first draft of this
  * file said AniList and moved on, and the test below failed, because a claim with an unlisted
  * exception is the exact failure this page is for. The list itself now lives in
- * {@see Outbound}, because the privacy page carries the same three facts.
+ * {@see Outbound}, because the privacy page carries the same five facts.
  *
  * ## Where the mechanism answers were checked
  *
@@ -50,10 +52,10 @@ namespace App\Support;
 final class Faq
 {
     /**
-     * The three things that genuinely contact the internet.
+     * The five connections that can leave the machine.
      *
      * The list itself is in {@see Outbound}, because the privacy page
-     * carries the same three facts and a second copy of the list is a second
+     * carries the same five facts and a second copy of the list is a second
      * copy that can drift from the first. The measurement that produced it is
      * recorded there.
      *
@@ -75,9 +77,9 @@ final class Faq
             new FaqEntry(
                 question: __('Does anything leave my computer?'),
                 answer: [
-                    __('No. Papyrus has no telemetry or analytics, no crash reporting or error reporting, and sends no page views, device IDs or automatic checks to anyone. There is no company or service waiting for them.'),
-                    __('What Papyrus knows about you stays in files on this computer. You can open them, copy them, back them up or delete them yourself.'),
-                    __('The only internet connections come from things you choose to set up, such as sources, extension stores and AniList. If you use none of them, nothing leaves this computer.'),
+                    __('Papyrus has no telemetry or analytics, no crash reporting or error reporting, and sends no page views, device IDs or automatic checks to anyone. There is no company or service waiting for them.'),
+                    __('What Papyrus knows about you stays in files on this computer. You can open them, copy them, back them up or delete them yourself. The browser also keeps a session cookie so you stay signed in; the privacy page names every cookie.'),
+                    __('Five connections can leave this machine: AniList title matching, AniList tracking, the manga source, an extension repository, and mail on a shared or public install. The first four are yours to start or stop. Mail belongs to the operator of that install. If none of them applies to you, nothing leaves this computer.'),
                 ],
                 exceptions: array_column($this->outbound(), 'who'),
                 isPrivacy: true,

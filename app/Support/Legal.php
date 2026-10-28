@@ -16,16 +16,18 @@ namespace App\Support;
  * ## What was measured, and where each claim comes from
  *
  * Every outbound destination in `app/` and `config/` was listed and read. The
- * hosts that appear are `graphql.anilist.co` and `anilist.co`, both behind an
- * OAuth flow the reader starts themselves; `lhtranslation.net` and
- * `tachimanga.app`, both inside import fixtures for bringing a library in from
- * another app; and `sqs.us-east-1.amazonaws.com`, an unused default in the
- * queue config. **There is no analytics, no telemetry, no crash reporting and
- * no error reporting service anywhere in the application.** The mailers are all
- * driven by the environment and the default one writes to a local log file.
+ * hosts that appear are `graphql.anilist.co`, used for title matching without a
+ * connection and for tracking after one; `anilist.co`, the OAuth site;
+ * `lhtranslation.net` and `tachimanga.app`, both inside import fixtures for
+ * bringing a library in from another app; and `sqs.us-east-1.amazonaws.com`,
+ * an unused default in the queue config. **There is no analytics, no telemetry,
+ * no crash reporting and no error reporting service anywhere in the
+ * application.** The mailers are all driven by the environment and the default
+ * one writes to a local log file.
  *
- * The three exceptions below are therefore the whole of the network side. Mail
- * is the fourth thing that can leave, and only on a shared or public install
+ * The exceptions below are therefore the whole of the network side. AniList has
+ * two paths: a title lookup that needs no connection, and tracking after one.
+ * Mail is the other path that can leave, and only on a shared or public install
  * whose operator has configured a transport; it is named separately because it
  * leaves under different conditions.
  *
@@ -36,17 +38,20 @@ namespace App\Support;
  * section, because a page that cannot determine where its reader lives cannot
  * honestly map itself onto a legal instrument written for somebody who can.
  * They say what the application does in relation to those laws, which is the
- * part that is true everywhere: nothing is collected by the application and
- * nothing is transmitted by it, so there is nothing to opt out of, to sell or
- * to share.
+ * part that is true everywhere: the application has no company behind it and
+ * no service to report to, so there is nothing for it to sell, share or
+ * disclose. What it keeps is named on the page, and so is every connection
+ * that leaves the machine.
  *
  * ## Who the reader meets
  *
  * The third parties the reader reaches are their own responsibility and not
  * this project's. A manga site sees the reader's address and the titles they
  * ask for. An extension repository sees the address. AniList sees the titles
- * that are searched. No page here can speak for any of them, and a page that
- * tried would be the one dishonest sentence on it.
+ * that are searched and, after a connection, the series and chapter progress.
+ * A mail server, where an operator has configured one, sees the address a
+ * verification or reset message goes to. No page here can speak for any of
+ * them, and a page that tried would be the one dishonest sentence on it.
  */
 final class Legal
 {
@@ -57,23 +62,35 @@ final class Legal
     {
         return new LegalDocument(
             title: __('Privacy'),
-            promise: __('This application collects nothing and reports nothing. What is here stays on this computer.'),
+            promise: __('Papyrus keeps what it knows in files on this computer and reports nothing to anyone. The few connections that leave are named below.'),
             sections: [
                 new LegalSection(
-                    heading: __('What the application collects'),
+                    heading: __('What the application keeps'),
                     paragraphs: [
-                        __('Nothing. There is no telemetry, no analytics, no crash reporting and no error reporting service in it, because there is no company behind it to receive any of it. No usage data, no page views, no device identifiers, no phone-home check.'),
-                        __('The account is a display name, an email address and a password, and the password is stored as a hash in the same local database as everything else. The address is never sent anywhere and is never checked against a list of addresses; it exists so the sign in form can ask for it and so a password reset has somewhere to go.'),
+                        __('It keeps what it needs to work: your account, your library and your reading history. The account is a display name, an email address and a password, and the password is stored as a hash in the same local database as everything else. The address is never sent anywhere except a verification or reset message you start on a shared or public install.'),
                         __('The rest is what you read and what you do: your library and your read progress, your shelves, your notes, your ratings and tags, your search history, your reading sessions, the pages you have downloaded, the backups you have imported and the licences you have acknowledged. All of it is a row in a database file on this machine.'),
+                        __('While you are signed in, the database also holds a session row and your browser holds a session cookie, so the application can tell your browser from someone else\'s. The Cookies section below names every cookie it sets.'),
+                        __('There is no telemetry, no analytics, no crash reporting and no error reporting service in it, because there is no company behind it to receive any of it. No usage data, no page views, no device identifiers, no phone-home check.'),
                     ],
                 ),
 
                 new LegalSection(
                     heading: __('What reaches the internet'),
                     paragraphs: [
-                        __('Three things, and all three are things you set up yourself. If you use none of them, nothing is sent anywhere.'),
+                        __('Five connections can leave this machine. Four are yours to start or stop, and the fifth belongs to the operator of a shared or public install. If none of them applies to you, nothing is sent anywhere.'),
                     ],
                     exceptions: true,
+                ),
+
+                new LegalSection(
+                    heading: __('Cookies'),
+                    paragraphs: [
+                        __('Papyrus sets no advertising or tracking cookie. It sets the cookies it needs to keep you signed in and to protect forms from another site. A cookie is a small file your browser stores for this address.'),
+                        __('papyrus-session holds the identifier for your session. It is HTTP-only, so page scripts cannot read it, and SameSite=Lax, so another site cannot send it with a form. It expires after 120 minutes of inactivity by default.'),
+                        __('XSRF-TOKEN holds the token that proves a form came from a page Papyrus served. It is not HTTP-only, because the page\'s own script reads it and sends it back in a header, and it is SameSite=Lax. It lasts as long as the session.'),
+                        __('A cookie whose name begins remember_web_ is set only when you tick Remember me at sign in. It is HTTP-only and SameSite=Lax, and it lets the browser sign you in again after the session has expired. It lasts up to 400 days.'),
+                        __('None of these is marked Secure on the default install, because the default install serves over plain HTTP on your own machine. An operator who serves Papyrus over HTTPS can mark them Secure.'),
+                    ],
                 ),
 
                 new LegalSection(
@@ -96,7 +113,7 @@ final class Legal
                 new LegalSection(
                     heading: __('Your rights, and what they mean here'),
                     paragraphs: [
-                        __('The GDPR in the European Union and the United Kingdom, and the CCPA in California, give people rights over personal data. This application collects no personal data and transmits none, so there is nothing for it to sell, share or disclose, and no cookie, no advertising identifier and no profile of you exists for anyone to act on.'),
+                        __('The GDPR in the European Union and the United Kingdom, and the CCPA in California, give people rights over personal data. This application has no company behind it and no service to send data to, so there is nothing for it to sell, share or disclose. It sets no advertising identifier and builds no profile of you, and the only cookies it sets are the ones named above.'),
                         __('The rights still make sense, and they are answered locally. To see what is held, open the database file or the pages that show it. To take a copy, use the Backups page, which writes it while everything keeps running. To have it erased, delete the file, or the rows in it; the application does not keep a copy anywhere else, because there is nowhere else for it to keep one.'),
                         __('The one thing this page cannot do is speak for the third parties you meet. A manga site, an extension repository and AniList each handle your address and the titles you ask them for under their own terms, and a reader who wants to know what they do with it has to read their terms, not this one.'),
                     ],

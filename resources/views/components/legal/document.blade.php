@@ -54,7 +54,7 @@
             @if ($section->exceptions)
                 <div class="mt-4 rounded-lg border border-amber-300/60 bg-amber-50/40 p-4 dark:border-amber-500/30 dark:bg-amber-500/5">
                     <p class="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                        {{ __('The three of them, one by one') }}
+                        {{ __('Each connection, one by one') }}
                     </p>
 
                     <ul class="mt-2 space-y-2">

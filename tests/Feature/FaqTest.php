@@ -143,15 +143,16 @@ class FaqTest extends TestCase
     /**
      * The one that matters most, and the one the first draft got wrong.
      *
-     * A privacy page that says nothing leaves your machine is false in three specific ways. Each of
-     * them is the reader's own doing, and each of them has to be named, because a reader deciding
-     * whether to trust a self-hosted app is entitled to know exactly where the trust stops.
+     * A privacy page that says nothing leaves your machine is false in five specific ways. Four of
+     * them are the reader's own doing, and the fifth belongs to the operator of a shared install.
+     * Each has to be named, because a reader deciding whether to trust a self-hosted app is
+     * entitled to know exactly where the trust stops.
      */
     public function test_it_names_every_thing_that_does_contact_the_internet(): void
     {
         $outbound = $this->faq()->outbound();
 
-        $this->assertCount(3, $outbound, 'three things genuinely reach the internet, and the count is the claim');
+        $this->assertCount(5, $outbound, 'five connections can leave the machine, and the count is the claim');
 
         $privacy = $this->faq()->privacy();
 
@@ -172,17 +173,57 @@ class FaqTest extends TestCase
 
     /**
      * Each exception has to say who started it. "Your data may be sent" is not information; "you start
-     * this yourself, and here is how to stop it" is.
+     * this yourself, and here is how to stop it" is. Mail is the exception: its actor is the operator
+     * of a shared or public install, and the entry has to say so rather than imply the reader chose it.
      */
-    public function test_each_exception_says_the_reader_started_it(): void
+    public function test_each_exception_says_who_started_it(): void
     {
         foreach ($this->faq()->outbound() as $route) {
             $this->assertMatchesRegularExpression(
-                '/you|your/i',
+                '/\b(you|your|operator)\b/i',
                 $route['who'],
-                "an exception must say the reader initiated it: {$route['what']}",
+                "an exception must say who started it: {$route['what']}",
             );
         }
+    }
+
+    /**
+     * The two AniList paths are not the same path.
+     *
+     * Title matching is a search-only lookup that needs no account and stops when the reader turns
+     * matching off. Tracking needs a connection. The old list described only tracking, which made
+     * the lookup invisible to a reader who had never connected an account.
+     */
+    public function test_the_title_matching_exception_is_not_described_as_tracking(): void
+    {
+        foreach ($this->faq()->outbound() as $route) {
+            if (str_contains($route['what'], 'title matching')) {
+                $this->assertStringContainsStringIgnoringCase('does not need an AniList account', $route['who']);
+                $this->assertStringContainsStringIgnoringCase('stops when you turn matching off', $route['who']);
+                $this->assertStringNotContainsStringIgnoringCase('connect', $route['who']);
+
+                return;
+            }
+        }
+
+        $this->fail('AniList title matching is one of the five outbound routes');
+    }
+
+    /**
+     * Mail belongs to the operator, not the reader.
+     */
+    public function test_the_mail_exception_names_the_operator(): void
+    {
+        foreach ($this->faq()->outbound() as $route) {
+            if (str_contains($route['what'], 'mail server')) {
+                $this->assertStringContainsStringIgnoringCase('default install sends no mail', $route['who']);
+                $this->assertStringContainsStringIgnoringCase('operator', $route['who']);
+
+                return;
+            }
+        }
+
+        $this->fail('the mail server is one of the five outbound routes');
     }
 
     /**
@@ -248,7 +289,7 @@ class FaqTest extends TestCase
             }
         }
 
-        $this->fail('the extension repository is one of the three outbound routes');
+        $this->fail('the extension repository is one of the five outbound routes');
     }
 
     // The rest of the content -------------------------------------------
