@@ -15,6 +15,54 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## Unreleased
+
+The 1.5.1 hardening release, in progress. It closes the remaining Medium and Low findings
+from the [2026-10-25 audit](docs/audits/2026-10-25/security.md) and the functional defects
+the H3 manual walk found.
+
+### Security
+
+**An import asks before it installs extensions.** An import that carries the "Install the
+extensions this backup needs" choice now surveys the backup first and stops at a review
+grouped by catalogue store: signing keys, packages, unresolved packages, and the reader's
+limit and force choices. Nothing installs until the reader ticks a store and confirms, and
+the boxes start unchecked. Stored uploads are deleted on confirm, Import without extensions,
+Discard, and expiry. The manual walk passed on the fixed installer. `8d5c94e` `0840723`
+
+**A backup's reader half no longer carries live sessions or cached tokens.** Both reader-half
+writers empty `sessions` and `cache` and vacuum the copy: the in-app backup and
+`papyrus:snapshot` share one capture, and the stopped-app snapshot uses the launcher's child.
+The tables stay in the copy so the restore schema check still matches, and a round trip
+preserves the live rows. `658efb0`
+
+**AniList tokens are encrypted at rest.** The token uses Laravel's encrypted cast, and a data
+migration encrypts the plaintext rows written by earlier releases. The token is ciphertext in
+the database and in a backup, and `APP_KEY` is the key. AniList publishes no token revocation
+endpoint, so disconnecting deletes the row but leaves the token valid on AniList until it
+expires; the connections page says so. `ff271bd`
+
+**The privacy page names every outbound path and cookie.** It now lists five connections:
+AniList title matching, AniList tracking, the manga source, an extension repository, and mail
+on a shared or public install. The page describes the account, library and session data kept
+in the local database instead of claiming it collects nothing, and a Cookies section names
+`papyrus-session`, `XSRF-TOKEN` and the optional `remember_web_` cookie with the flags the
+browser receives. `82974f2`
+
+### Fixed
+
+**Uninstall removes the extension and its source.** The Sources page sent `install: false`,
+which Suwayomi accepted and ignored, so the extension stayed installed. It now sends
+`uninstall: true`, which removed MangaTaro on the scratch server. `18a2f31`
+
+**An import that installs extensions refreshes the source mirror.** The new sources appear
+without a manual sync, instead of leaving the mirror one sync behind. `440c271`
+
+**The console import says one extension in the singular.** A run that installed a single
+extension printed the plural line. `0a2407d`
+
+---
+
 ## 1.5.0 - 2026-10-26
 
 The security release after 1.4.0. Whole-install actions now belong to the install owner, the
@@ -79,6 +127,7 @@ The remaining Medium, Low and copy findings from the audit are scheduled for 1.5
 
 ---
 
+## 1.4.0 - 2026-10-25
 
 The release after 1.3.0: the last UI/UX audit findings, time and navigation in plainer words, a
 library check that can be stopped, reading time carried in from a backup, and backup uploads as
