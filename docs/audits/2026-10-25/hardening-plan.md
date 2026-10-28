@@ -896,9 +896,14 @@ Security remaining:
   without extensions, on Discard, and by the hourly expiry after 24 hours. A run that throws
   keeps its file for retry, and the same sweep is the backstop. The `finally` form was
   rejected because it would delete a file a retry still needs.
-- L6: add a security-header middleware with `frame-ancestors 'none'`, `Referrer-Policy:
-  same-origin`, `Permissions-Policy` and a global `X-Content-Type-Options: nosniff`. Add
-  HSTS only on a secure request.
+- L6, fixed on 2026-10-28: `SecurityHeaders` is global, so guest and authenticated pages,
+  `/ready`, downloads, covers and the Suwayomi proxy all carry `Content-Security-Policy:
+  frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+  `Permissions-Policy` with the unused device features off, and
+  `X-Content-Type-Options: nosniff`. HSTS is added only when the request is secure. The
+  exception handler applies the same headers through `respond`, because Laravel renders a
+  404 or 500 outside the middleware pipeline. `SecurityHeadersTest` covers a guest page, an
+  authenticated page, `/ready`, a 404 and the HTTPS-only HSTS case.
 - I2: update the build and test Node toolchain and clear the npm advisories. This is not
   shipped runtime code, but the build machines should not carry known criticals.
 

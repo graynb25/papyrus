@@ -163,6 +163,15 @@ Worth knowing before deciding what to add in front of it:
 - **The AniList callback sits behind `auth` and `verified`, and compares the OAuth state
   with `hash_equals()`**, so a crafted callback cannot bind somebody else's AniList
   account to a signed-in reader.
+- **Every response carries security headers.** `Content-Security-Policy:
+  frame-ancestors 'none'` and `X-Frame-Options: DENY` refuse framing,
+  `Referrer-Policy: same-origin` keeps reader URLs out of cross-origin `Referer` headers,
+  `Permissions-Policy` turns off camera, microphone, geolocation, payment, USB and the other
+  device features the app never uses, and `X-Content-Type-Options: nosniff` stops type
+  guessing. `Strict-Transport-Security` is added only on an HTTPS request, because the
+  default install is loopback HTTP. The packaged `php.ini` sets `expose_php = Off`, so a
+  packaged install does not send `X-Powered-By`; a development checkout may still show the
+  PHP and web-server versions in `X-Powered-By` and `Server`.
 
 ## Deployment modes
 

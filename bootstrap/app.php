@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\ReadinessController;
 use App\Http\Middleware\RegistrationMustBeAllowed;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpFoundation\Response;
 
 /*
  * The environment file, named by the launcher.
@@ -54,10 +56,30 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             RegistrationMustBeAllowed::class,
         ]);
+
+        /*
+         * Global rather than web-grouped, because the headers belong on the responses the web
+         * group never sees: `/ready`, `/up`, downloads, covers and the Suwayomi proxy. The
+         * middleware also has to run last, so a controller that sets one of the same headers
+         * cannot leave a page without the rest.
+         */
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
+        );
+
+        /*
+         * An exception response is rendered outside the middleware pipeline, so without this a
+         * 404 or a 500 would be the one response with no security headers. The callback shares
+         * the middleware's `apply()` rather than repeating the header list.
+         */
+        $exceptions->respond(
+            fn (Response $response, Throwable $e, Request $request): Response => SecurityHeaders::apply(
+                $response,
+                $request->isSecure(),
+            ),
         );
     })
     ->create();
