@@ -15,8 +15,9 @@ failures, including a real source page read), but the portable shape was not the
 and the gate copies `build/install` rather than running the setup executable. The separate manual
 sandbox ran the 1.5.0 installer on 2026-10-26: it installed 1.5.0 per-user and the reader flow
 passed, but the shortcut preflight hung; the fix is committed in `86e033a` and the 1.5.0 archive
-was rebuilt from it. Those runs prove 1.5.0, not 1.5.1. The 1.5.1 portable archive itself has
-still not been launched. See [What is not proven yet](#what-is-not-proven-yet).
+was rebuilt from it. Those runs prove 1.5.0. The 1.5.1 setup passed the manual sandbox on
+2026-10-29, but the 1.5.1 portable archive itself has still not been launched. See
+[What is not proven yet](#what-is-not-proven-yet).
 
 ```text
 sha256  80bd002a8d84fb59370f399c91873f1daa4fc100b244ddef2e9ad30b6f37c61a

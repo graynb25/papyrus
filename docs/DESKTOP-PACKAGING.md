@@ -3,8 +3,9 @@
 Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox
 gate on run 19 with a real Windows source read, and the rebuilt 1.5.0 installer passed the manual
 sandbox on 2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run. The
-1.5.1 artifacts were rebuilt from `7f964a1` on 2026-10-29, but no 1.5.1 sandbox or manual install
-has proven that payload.** Run 19 copied `build/install` to a fresh guest and started it through
+1.5.1 artifacts were rebuilt from `7f964a1` on 2026-10-29, and the 1.5.1 setup passed the manual
+sandbox on 2026-10-29: per-user install, registration, Keiyoushi, MangaTaro, an One Piece search
+and a chapter read.** Run 19 copied `build/install` to a fresh guest and started it through
 the reader shortcut. All 86 checks held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app
 reported ready on 8402, Edge opened, the first account was created, `/sources` rendered, the
 Keiyoushi store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
@@ -45,8 +46,10 @@ at 12,963 files with 138 licence texts. The unsigned installer compiled at 275,0
 (262.3MB) with SHA-256
 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and the portable archive
 compiled at 321,034,734 bytes (306.2MB) with 12,964 entries and a matching sidecar hash. The
-staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. No 1.5.1 sandbox or
-manual install has run, so the 1.5.1 payload is not proven.
+staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The 1.5.1 setup passed
+the manual sandbox on 2026-10-29. The guest verified the copied installer at 275,072,638 bytes
+with the hash above, installed it per-user, registered, trusted the Keiyoushi store, installed
+MangaTaro, searched One Piece, and read chapter 1 of 1,202. The portable archive was not launched.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

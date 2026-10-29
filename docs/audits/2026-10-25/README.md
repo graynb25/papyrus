@@ -5,8 +5,10 @@ and Batch H recorded and committed locally. 1.4.0 remains the latest published r
 release is committed in `86e033a`; its artifacts were rebuilt from that commit, and the real setup
 installed in the manual sandbox on 2026-10-27 with the reader flow passing, so the 1.5.0 installer
 payload is proven. The 1.5.1 release is committed locally, and its unsigned setup and portable
-were rebuilt from `7f964a1` on 2026-10-29; no manual install or sandbox run has proven the 1.5.1
-payload, so 1.5.1 is not closed. Nothing is pushed.**
+were rebuilt from `7f964a1` on 2026-10-29. The 1.5.1 setup passed the manual sandbox on
+2026-10-29 with a per-user install, registration, Keiyoushi, MangaTaro, an One Piece search and a
+chapter read, so the 1.5.1 installer payload is proven. The portable archive was not launched, so
+the portable shape is not closed. Nothing is pushed.**
 
 This folder records the post-1.4.0 walk, the security and privacy assessment, and the hardening
 plan. The work is deliberately split. The walk looks at the app as a reader does. The security

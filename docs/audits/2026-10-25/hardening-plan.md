@@ -113,8 +113,9 @@ the behaviour changes or the deployment posture makes it irrelevant.
   disposable scratch install on 2026-10-28; the evidence is in the section below. The
   `86e033a` artifacts predate the change.
 - [x] 1.5.1, remaining hardening and reader copy. Committed locally on 2026-10-28. Its unsigned
-  setup and portable were rebuilt from `7f964a1` on 2026-10-29; no sandbox or manual install has
-  proven the 1.5.1 payload.
+  setup and portable were rebuilt from `7f964a1` on 2026-10-29. The setup passed the manual
+  sandbox on 2026-10-29: per-user install, registration, Keiyoushi, MangaTaro, an One Piece
+  search and a chapter read. The portable archive was not launched.
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
 documents are committed as `86e033a` on `main`; nothing is pushed. The shelf re-import, the
@@ -270,6 +271,21 @@ installer's payload, post-install launch, shortcut preflight and reader flow are
 real setup executable. This is manual evidence, not a gate pass. Full evidence is in
 `docs/ENGINEERING-NOTES.md` section 16.5; artifacts are in
 `build\manual-sandbox-results\session-20261027-103455\`.
+
+### Manual installer sandbox, 1.5.1, 2026-10-29
+
+The 1.5.1 run used the unsigned setup from `7f964a1`, 275,072,638 bytes with SHA-256
+`056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`. The launcher verified it
+against the manifest before the guest started, and the guest verified its copy again
+(`installer-verified.txt`, `match=True`, `version=1.5.1`). The setup completed as a per-user
+install; the post-install launch opened the browser, and the console reported "Papyrus is running
+at http://localhost:8000" with the data directory under `%LOCALAPPDATA%\Papyrus`. The first
+account registered, the Keiyoushi store was trusted, MangaTaro installed, a One Piece search
+returned 14 results deduplicated from 2 of 2 runnable sources, and Chapter 1 of 1,202 rendered at
+`/read/1/1/1`. The watcher took 39 frames and stopped on the stop marker. Verdict: the 1.5.1
+installer payload and reader flow are proven on the real setup executable. The portable archive
+was not launched. This is manual evidence, not a gate pass. Artifacts are in
+`build\manual-sandbox-results\session-20261029-093709\`.
 
 ### Final gates, 2026-10-26
 

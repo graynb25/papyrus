@@ -23,9 +23,12 @@ page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP.
 `build/install` rather than running the setup executable. The separate manual sandbox ran the
 1.5.0 setup executable: the first run installed 1.5.0 per-user and the reader flow passed, but
 found the shortcut preflight hang, and the fresh run on the rebuilt installer passed on
-2026-10-27, including the shortcut double-click. Those runs prove 1.5.0, not 1.5.1. No sandbox or
-manual install has run against the 1.5.1 payload. macOS and Linux packaging below remain
-proposals, not available downloads.
+2026-10-27, including the shortcut double-click. Those runs prove 1.5.0. The separate manual
+sandbox then ran the 1.5.1 setup on 2026-10-29: the guest verified the copied installer at
+275,072,638 bytes with the hash above, installed it per-user, registered, trusted the Keiyoushi
+store, installed MangaTaro, searched One Piece, and read chapter 1 of 1,202. The 1.5.1 installer
+payload is proven. The portable zip was not launched, so the portable shape remains unproven.
+macOS and Linux packaging below remain proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship
 
