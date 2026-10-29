@@ -4,10 +4,10 @@
 # ## Why this is not the gate
 #
 # `run-in-sandbox.ps1` copies `build/install` and tests it. That proves the install tree, and it never
-# runs `Papyrus-1.5.0-setup.exe`. This script exists for the part the gate cannot prove: a person
-# running the actual installer, accepting its choices, launching the installed app from its own
-# shortcut, registering, adding a source, searching, and reading a chapter. Its evidence is manual
-# acceptance, not a gate pass.
+# runs the setup executable. This script exists for the part the gate cannot prove: a person running
+# the actual installer, accepting its choices, launching the installed app from its own shortcut,
+# registering, adding a source, searching, and reading a chapter. Its evidence is manual acceptance,
+# not a gate pass.
 #
 # ## What the person sees
 #
@@ -25,9 +25,6 @@ $ErrorActionPreference = 'Continue'
 $results = 'C:\results'
 $desktop = [Environment]::GetFolderPath('Desktop')
 $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$installerName = 'Papyrus-1.5.0-setup.exe'
-$installerSource = Join-Path 'C:\installer' $installerName
-$installer = Join-Path $desktop $installerName
 
 New-Item -ItemType Directory -Force -Path $results | Out-Null
 
@@ -79,28 +76,38 @@ if (Test-Path -LiteralPath $expectedPath) {
     }
 }
 
-# The version is pinned in the shortcut and the README, but a build folder can contain several
-# installers. Fall back to the newest one rather than showing a person an empty desktop.
-if (-not (Test-Path -LiteralPath $installerSource)) {
-    $candidate = Get-ChildItem -Path 'C:\installer' -Filter 'Papyrus-*-setup.exe' -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
+# The host writes the file name and version from VERSION, so the guest never guesses which
+# installer to test. A build folder can hold several versions, and picking the newest once
+# selected a payload the host had not verified.
+$expectedFile = if ($expected.ContainsKey('file')) { [string]$expected['file'] } else { '' }
+$runVersion = if ($expected.ContainsKey('version')) { [string]$expected['version'] } else { 'unknown' }
 
-    if ($null -ne $candidate) {
-        $installerSource = $candidate.FullName
-        $installerName = $candidate.Name
-        $installer = Join-Path $desktop $installerName
-        Say "pinned installer missing, using $installerSource"
-    }
-}
-
-if (-not (Test-Path -LiteralPath $installerSource)) {
-    Say 'NO INSTALLER: nothing named Papyrus-*-setup.exe is in C:\installer'
+if ($expectedFile -eq '') {
+    Say 'NO EXPECTED INSTALLER: expected-installer.txt has no file entry'
     Save-SetupLog
 
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.MessageBox]::Show(
-        "No Papyrus installer was found in C:\installer.`n`nThe host mapping is wrong, so this session cannot test anything.",
+        "expected-installer.txt has no file entry.`n`nThe host did not record which installer this session should test, so nothing is launched.",
+        'Papyrus manual run',
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    ) | Out-Null
+
+    exit 1
+}
+
+$installerName = $expectedFile
+$installerSource = Join-Path 'C:\installer' $installerName
+$installer = Join-Path $desktop $installerName
+
+if (-not (Test-Path -LiteralPath $installerSource)) {
+    Say "NO INSTALLER: $installerSource is not in C:\installer"
+    Save-SetupLog
+
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show(
+        "The expected installer $installerName was not found in C:\installer.`n`nThe host mapping is wrong, so this session cannot test anything.",
         'Papyrus manual run',
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Error
@@ -128,6 +135,21 @@ Say "installer sha256 $hash"
     "match=$match"
 ) | Set-Content -Path (Join-Path $results 'installer-verified.txt') -Encoding UTF8
 
+if ($match -ne $true) {
+    Say 'REFUSING TO CONTINUE: the copied installer does not match expected-installer.txt'
+    Save-SetupLog
+
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show(
+        "The copied installer does not match the hash the host recorded.`n`nNothing was installed. Check installer-verified.txt in the results folder.",
+        'Papyrus manual run',
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    ) | Out-Null
+
+    exit 1
+}
+
 $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
 
 @(
@@ -135,6 +157,7 @@ $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
     "user=$env:USERNAME"
     "computer=$env:COMPUTERNAME"
     "os=$($os.Caption) $($os.Version)"
+    "version=$runVersion"
     "installer=$installerName"
     "installer_size=$size"
     "installer_sha256=$hash"
@@ -143,7 +166,7 @@ $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
 ) | Set-Content -Path (Join-Path $results 'session.txt') -Encoding UTF8
 
 $readme = @"
-Papyrus 1.5.0 manual acceptance run
+Papyrus $runVersion manual acceptance run
 
 This guest has the real installer, not a copy of the built install tree. Nothing else is installed.
 The point is to do what a reader does, in the order a reader does it, and let the screenshots record
@@ -212,7 +235,7 @@ Set-Content -Path $readmePath -Value $readme -Encoding UTF8
 Set-Content -Path $readmeDesktop -Value $readme -Encoding UTF8
 
 New-Shortcut -Path (Join-Path $desktop 'Install Papyrus.lnk') -Target $installer `
-    -WorkingDirectory $desktop -Description 'Install Papyrus 1.5.0'
+    -WorkingDirectory $desktop -Description "Install Papyrus $runVersion"
 
 New-Shortcut -Path (Join-Path $desktop 'Capture a step.lnk') -Target $powershell `
     -Arguments '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\sandbox\capture-step.ps1"' `
