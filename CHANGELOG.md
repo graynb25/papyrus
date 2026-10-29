@@ -67,6 +67,12 @@ deferred to a later release. `e10d8fa`
 `X-Content-Type-Options: nosniff` is sent everywhere. HSTS appears only on an HTTPS request,
 and error pages carry the same headers. `dffc531`
 
+**The build toolchain's npm tree has no open advisories.** Every build and test package is
+a dev dependency, so a production install carries no Node tree at all. `vite-plus` moves to
+1.4.0 with `vite` resolved to its core package, and `concurrently` moves to 10.0.6.
+`npm audit` and `npm audit --omit=dev` report zero vulnerabilities, down from eleven
+packages and twelve advisories, and the asset build was verified on Node 26.12.1. `3de8e13`
+
 ### Fixed
 
 **Uninstall removes the extension and its source.** The Sources page sent `install: false`,
