@@ -1,0 +1,18 @@
+{
+    "version": "1.5.1",
+    "released": "2026-10-29T03:44:49+00:00",
+    "commit": "7f964a1",
+    "requires": {
+        "suwayomi": ">=2.4.0",
+        "jvm": ">=25.0.5"
+    },
+    "signed": false,
+    "signature": null,
+    "artifacts": [
+        {
+            "file": "Papyrus-1.5.1-setup.exe",
+            "sha256": "056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae",
+            "size": 275072638
+        }
+    ]
+}
