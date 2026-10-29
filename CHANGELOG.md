@@ -61,6 +61,12 @@ receives the readiness body. The controller and `docs/SECURITY.md` now say so an
 operator not to forward `/ready`. A launcher secret or a separate loopback-only listener is
 deferred to a later release. `e10d8fa`
 
+**Every response carries browser security headers.** Framing is refused with
+`frame-ancestors 'none'` and `X-Frame-Options: DENY`, reader URLs stay out of cross-origin
+`Referer` headers, unused device features are turned off with `Permissions-Policy`, and
+`X-Content-Type-Options: nosniff` is sent everywhere. HSTS appears only on an HTTPS request,
+and error pages carry the same headers. `dffc531`
+
 ### Fixed
 
 **Uninstall removes the extension and its source.** The Sources page sent `install: false`,
