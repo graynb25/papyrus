@@ -39,10 +39,12 @@ use Illuminate\Support\Facades\File;
  * ## What it found, which is the reason the page exists
  *
  * 448 packages. Exactly one of them, `livewire/flux`, names itself proprietary, and it is the
- * component library every page in this application is built from. Twenty two record no licence at
+ * component library every page in this application is built from. Twenty two recorded no licence at
  * all, which is a different problem and is reported separately rather than being folded into the
  * first. The first version of this reader folded them together and called all twenty three closed,
- * which was a false accusation about twenty two packages that ship nothing on this platform.
+ * which was a false accusation about twenty two packages that ship nothing on this platform. The
+ * 1.5.1 toolchain update removed those binaries, so the checkout lockfile now records every
+ * licence, but the page still keeps the two counts apart for a future gap.
  */
 final class Licences
 {
@@ -327,8 +329,9 @@ final class Licences
      * How many record no licence at all.
      *
      * Counted separately rather than folded into the above, because an absent licence is a gap in the
-     * record and not a statement about the package. These are all platform specific prebuilt binaries
-     * for darwin, freebsd and arm, none of which ship on a Windows install.
+     * record and not a statement about the package. The gap is usually a platform specific prebuilt
+     * binary for a platform this install does not use; the 1.5.1 toolchain update removed the last of
+     * them from the checkout lockfile, but a future dependency can add one back.
      */
     public function unrecordedCount(): int
     {

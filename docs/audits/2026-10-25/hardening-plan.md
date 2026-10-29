@@ -904,8 +904,13 @@ Security remaining:
   exception handler applies the same headers through `respond`, because Laravel renders a
   404 or 500 outside the middleware pipeline. `SecurityHeadersTest` covers a guest page, an
   authenticated page, `/ready`, a 404 and the HTTPS-only HSTS case.
-- I2: update the build and test Node toolchain and clear the npm advisories. This is not
-  shipped runtime code, but the build machines should not carry known criticals.
+- I2, fixed on 2026-10-28: every build and test package is now a `devDependency`, so a
+  production install has no Node tree at all. `vite-plus` moves from 0.3.0 to 1.4.0,
+  `vite` points at `npm:@voidzero-dev/vite-plus-core@1.4.0` with a matching override
+  because 1.4.0 refuses a plain Vite, and `concurrently` moves to 10.0.6. `npm audit` and
+  `npm audit --omit=dev` both report zero vulnerabilities, down from eleven packages and
+  twelve advisories, and `npm run build` succeeds on Node 26.12.1. The machine-wide
+  `node` is still 26.7.0; NVM holds 26.12.1 and the build was verified with it directly.
 
 Functional fixes found during the H3 walk:
 

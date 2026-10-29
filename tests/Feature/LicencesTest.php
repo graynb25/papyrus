@@ -161,7 +161,6 @@ class LicencesTest extends TestCase
         $l = $this->licences();
 
         $this->assertSame(1, $l->proprietaryCount(), 'exactly one package names itself proprietary');
-        $this->assertGreaterThan(0, $l->unrecordedCount(), 'some npm entries record no licence');
 
         $both = array_filter(
             $l->all(),
@@ -169,6 +168,27 @@ class LicencesTest extends TestCase
         );
 
         $this->assertSame([], $both, 'a package cannot be both closed and unrecorded');
+
+        /*
+         * The real lockfile no longer has a gap: the 1.5.1 toolchain dropped the platform
+         * binaries that recorded no licence. The rule still needs a case that exercises it,
+         * so the gap is made here rather than left to whatever the registry happens to ship.
+         */
+        $root = $this->scratchPath('licences-counts');
+
+        file_put_contents($root.'/package-lock.json', (string) json_encode([
+            'lockfileVersion' => 3,
+            'packages' => [
+                'node_modules/stub/open' => ['version' => '1.0.0', 'license' => 'MIT'],
+                'node_modules/stub/closed' => ['version' => '1.0.0', 'license' => 'Proprietary'],
+                'node_modules/stub/gap' => ['version' => '1.0.0'],
+            ],
+        ]));
+
+        $fixture = new Licences($root);
+
+        $this->assertSame(1, $fixture->proprietaryCount(), 'the closed entry is counted once');
+        $this->assertSame(1, $fixture->unrecordedCount(), 'the entry with no licence is counted apart');
     }
 
     public function test_the_summary_adds_up_to_the_total(): void
