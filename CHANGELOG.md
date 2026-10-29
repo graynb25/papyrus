@@ -86,6 +86,49 @@ without a manual sync, instead of leaving the mirror one sync behind. `440c271`
 **The console import says one extension in the singular.** A run that installed a single
 extension printed the plural line. `0a2407d`
 
+**The library's check summary says what is actually true.** It separates series that are due,
+series never fetched, series checked recently and series with no source, and the button says
+`Checking...` while a pass runs and `Nothing to check` when nothing is due. A series filed from
+a backup has no source, so it can never be checked; it is named instead of being counted as up
+to date. `8afa652`
+
+**Two imports of the same file can be told apart.** Each history row now carries an absolute
+date and time and the run's own result sentence, so a recent run and an older one no longer
+look identical until opened. `8afa652`
+
+**The source migration picker can be filtered.** The installed list measured 238 destinations,
+which is a scroll rather than a choice. A filter narrows it by the label each checkbox shows,
+the language is written once instead of twice, and every checkbox carries its label as its
+accessible name. `8afa652`
+
+**Browser tabs name the page they show.** Browse and series tabs used one static word each, so
+two open catalogues or two series were indistinguishable in the tab strip. They now carry the
+source or series name, and a series the server cannot name falls back to its id. `8afa652`
+
+**The backups page names the folder instead of printing its path.** It says the folder is named
+`backups` beside the database, and the column that shows whether a backup still matches is
+called Health rather than Files. `8afa652`
+
+**The confirm-password page says what the password is for.** It explains that Papyrus needs the
+password again before the change, and offers a link back to the library for a reader who did
+not mean to be there. `8afa652`
+
+**The import guide points at the picker below it.** It said to pick the file above while the
+file input sits below the guide. `8afa652`
+
+**A search link carries no filter until the reader chooses one.** The default rating filter was
+written into the address bar on every search, so a shared link carried filters the reader never
+set. `8afa652`
+
+**The shell has a main landmark and a skip link.** The page content is a native `main` with a
+stable id, and the first link in the body jumps to it, so keyboard and screen-reader readers no
+longer traverse the whole navigation on every page. `8afa652`
+
+**Cover links and inputs have accessible names.** Library and search cover links say
+`Open {title}` instead of being hidden from assistive technology, the series cover upload and
+tag inputs are named, and a scanlator whose name is only whitespace or a zero-width space is
+treated as no scanlator rather than as an unnamed group. `8afa652`
+
 ---
 
 ## 1.5.0 - 2026-10-26

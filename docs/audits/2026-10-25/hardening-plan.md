@@ -926,7 +926,7 @@ Functional fixes found during the H3 walk:
   callout still offers Sync sources. The test seeds a stale mirror row and confirms
   it flips back to installed.
 
-Walk remaining:
+Walk findings, fixed on 2026-10-28:
 
 - W-M1: library check summary grammar and the disabled "Check 0 series" control.
 - W-M2: import history rows with date, counts and a distinguishable identity.
@@ -945,6 +945,10 @@ Walk remaining:
   name to the checker.
 - W-L5: the search result cover links' accessible name is the content badge, not the series
   title.
+
+All thirteen are in `8afa652`. The full suite passed with 2,671 tests and 7,896 assertions,
+and PHPStan, Pint, the dash check, the machine-detail check and its self-tests were clean on
+the changed tree.
 
 ## Accepted risks and deferred items
 
