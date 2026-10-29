@@ -112,7 +112,9 @@ the behaviour changes or the deployment posture makes it irrelevant.
   install time. Stored uploads have a 24 hour life cycle. The manual proof passed on a fresh
   disposable scratch install on 2026-10-28; the evidence is in the section below. The
   `86e033a` artifacts predate the change.
-- [ ] 1.5.1, remaining hardening and reader copy
+- [x] 1.5.1, remaining hardening and reader copy. Committed locally on 2026-10-28. Its unsigned
+  setup and portable were rebuilt from `7f964a1` on 2026-10-29; no sandbox or manual install has
+  proven the 1.5.1 payload.
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
 documents are committed as `86e033a` on `main`; nothing is pushed. The shelf re-import, the

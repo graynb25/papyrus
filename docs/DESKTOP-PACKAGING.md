@@ -1,20 +1,21 @@
 # Packaging Papyrus for Windows
 
-Status: **the 1.5.0 Windows installer builds; the install tree passed the Windows Sandbox gate on
-run 19 with a real Windows source read, and the rebuilt installer passed the manual sandbox on
-2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run.** Run 19
-copied `build/install` to a fresh guest and started it through the reader shortcut. All 86 checks
-held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app reported ready on 8402, Edge opened,
-the first account was created, `/sources` rendered, the Keiyoushi store and MangaTaro were
-installed, One Piece was fetched, and page 0 of chapter 1 was read through the authenticated
-proxy as a 175,432-byte WebP. The gate does not run the setup executable;
-`launch-manual.ps1` is the separate manual run: its first run installed the payload and found
-the shortcut defect, and its second run proved the rebuilt installer end to end. Earlier
-completed runs found thirteen defects, including three visible only off the development machine. Item 0.9, the unified logging that makes any of this diagnosable, is
-designed in
-[`LOGGING.md`](LOGGING.md). Distribution, signing, platforms, backup and publishing are in
-[`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this machine,
-and the upstream projects it would ship.
+Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox
+gate on run 19 with a real Windows source read, and the rebuilt 1.5.0 installer passed the manual
+sandbox on 2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run. The
+1.5.1 artifacts were rebuilt from `7f964a1` on 2026-10-29, but no 1.5.1 sandbox or manual install
+has proven that payload.** Run 19 copied `build/install` to a fresh guest and started it through
+the reader shortcut. All 86 checks held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app
+reported ready on 8402, Edge opened, the first account was created, `/sources` rendered, the
+Keiyoushi store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
+read through the authenticated proxy as a 175,432-byte WebP. The gate does not run the setup
+executable; `launch-manual.ps1` is the separate manual run: its first run installed the 1.5.0
+payload and found the shortcut defect, and its second run proved the rebuilt 1.5.0 installer end
+to end. Earlier completed runs found thirteen defects, including three visible only off the
+development machine. Item 0.9, the unified logging that makes any of this diagnosable, is
+designed in [`LOGGING.md`](LOGGING.md). Distribution, signing, platforms, backup and publishing
+are in [`DISTRIBUTION.md`](DISTRIBUTION.md). Written after investigating this repository, this
+machine, and the upstream projects it would ship.
 
 The shipped configs live in `packaging/`, and the build steps are:
 
@@ -38,6 +39,14 @@ separate manual sandbox ran the first `Papyrus-1.5.0-setup.exe` (275,084,054 byt
 check is now `php -n -v`, with a regression test. The fresh manual run on the rebuilt installer
 (275,084,375 bytes) passed on 2026-10-27: post-install launch, shortcut double-click,
 registration, store, MangaTaro, search and a chapter read.
+
+The 1.5.1 build on 2026-10-29 ran from `7f964a1`. The install payload passed its built-in checks
+at 12,963 files with 138 licence texts. The unsigned installer compiled at 275,072,638 bytes
+(262.3MB) with SHA-256
+`056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and the portable archive
+compiled at 321,034,734 bytes (306.2MB) with 12,964 entries and a matching sidecar hash. The
+staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. No 1.5.1 sandbox or
+manual install has run, so the 1.5.1 payload is not proven.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

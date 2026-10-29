@@ -7,22 +7,25 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-10-27
+## Current delivery status, 2026-10-29
 
-The working tree is 1.5.0, committed as `86e033a`, and the artifacts were rebuilt from that commit.
-The local build produced an unsigned 262.3MB installer and a 306.2MB
-portable zip with 12,963 entries; required files, privacy exclusions and the sidecar SHA256 were
-verified. No 1.5.0 artifact is published. A local release record exists at
-`releases/1.5.0.json`; the 1.4.0
-record remains the latest published release. The install tree passed the Windows Sandbox gate on
+The 1.5.1 release is committed locally, and the artifacts were built from `7f964a1` on
+2026-10-29. The local build produced an unsigned 275,072,638-byte (262.3MB) installer with
+SHA-256 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and a
+321,034,734-byte (306.2MB) portable zip with 12,964 entries and SHA-256
+`80bd002a8d84fb59370f399c91873f1daa4fc100b244ddef2e9ad30b6f37c61a`; the sidecar matches. The
+install tree holds 12,963 files and 138 licence texts, and its built-in checks passed. No 1.5.1
+artifact is published. A local release record exists at `releases/1.5.1.json`; the 1.4.0 record
+remains the latest published release. The 1.5.0 install tree passed the Windows Sandbox gate on
 run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`, first account
 created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and
 page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The gate copies
 `build/install` rather than running the setup executable. The separate manual sandbox ran the
-setup executable: the first run installed 1.5.0 per-user and the reader flow passed, but found
-the shortcut preflight hang, and the fresh run on the rebuilt installer passed on 2026-10-27,
-including the shortcut double-click. macOS and Linux
-packaging below remain proposals, not available downloads.
+1.5.0 setup executable: the first run installed 1.5.0 per-user and the reader flow passed, but
+found the shortcut preflight hang, and the fresh run on the rebuilt installer passed on
+2026-10-27, including the shortcut double-click. Those runs prove 1.5.0, not 1.5.1. No sandbox or
+manual install has run against the 1.5.1 payload. macOS and Linux packaging below remain
+proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship
 

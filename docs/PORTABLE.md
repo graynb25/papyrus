@@ -7,20 +7,19 @@ rights.
 
 ## Status: locally built, clean-machine read not verified
 
-The portable builder rebuilt the 1.5.0 zip and matching SHA256 sidecar on 2026-10-27 from commit
-`86e033a`. The archive
-has 12,963 entries, includes the launcher and bundled runtimes, and contains no `.env` or reader
-databases. It is not published, and it has not been launched on a clean machine. The install tree
-passed the Windows Sandbox gate on run 19 (86 checks, 0 failures, including a real source page
-read), but the portable shape was not the thing tested, and the gate copies `build/install`
-rather than running the setup executable. The separate manual sandbox ran the real installer on
-2026-10-26: it installed 1.5.0 per-user and the reader flow passed, but the shortcut preflight
-hung; the fix is committed in `86e033a` and the archive was rebuilt from it. The portable archive
-itself has still not been launched. See
-[What is not proven yet](#what-is-not-proven-yet).
+The portable builder rebuilt the 1.5.1 zip and matching SHA256 sidecar on 2026-10-29 from commit
+`7f964a1`. The archive has 12,964 entries, includes the launcher and bundled runtimes, and
+contains no `.env` or reader databases. It is not published, and it has not been launched on a
+clean machine. The 1.5.0 install tree passed the Windows Sandbox gate on run 19 (86 checks, 0
+failures, including a real source page read), but the portable shape was not the thing tested,
+and the gate copies `build/install` rather than running the setup executable. The separate manual
+sandbox ran the 1.5.0 installer on 2026-10-26: it installed 1.5.0 per-user and the reader flow
+passed, but the shortcut preflight hung; the fix is committed in `86e033a` and the 1.5.0 archive
+was rebuilt from it. Those runs prove 1.5.0, not 1.5.1. The 1.5.1 portable archive itself has
+still not been launched. See [What is not proven yet](#what-is-not-proven-yet).
 
 ```text
-sha256  6d938c4988c440d04c3ab068627abe428ca7c092c97ccd81fda322aab09f43e7
+sha256  80bd002a8d84fb59370f399c91873f1daa4fc100b244ddef2e9ad30b6f37c61a
 ```
 
 What is true today:
@@ -28,7 +27,7 @@ What is true today:
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The archive builder | built and content/hash verified on 2026-10-27 |
+| The archive builder | built and content/hash verified on 2026-10-29 |
 | An archive anyone can download | **no** |
 | A clean first launch with source reading | **not proven** |
 
