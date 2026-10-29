@@ -1,18 +1,18 @@
 # Hardening plan, 2026-10-25
 
-Status: approved and in progress. Batches A, B, C, D, E, F and G are committed in `86e033a`. The
-1.5.0 install tree passed the Windows Sandbox gate on run 19, including a Windows source page
-read. The real setup executable installed 1.5.0 in the manual sandbox on 2026-10-26 and the
-reader flow worked, but the shortcut preflight hung; the fix is in `86e033a`, the artifacts were
-rebuilt from it, and the fresh manual run on the rebuilt installer passed on 2026-10-27,
-including the shortcut double-click. Batch H is recorded and committed
-locally; 1.5.1 is not started. The H3 behaviour change is committed locally on 2026-10-27 and
-is not pushed; its manual proof passed on a fresh disposable scratch install on 2026-10-28. The
-`86e033a` artifacts predate the change, so anything built from them still carries the old
-behaviour. This plan turns the walk in
-`walk.md` and the security assessment in `security.md` into release work for 1.5.0 and 1.5.1.
-The audit was read at HEAD `6572ba0`; the batch changes and the audit documents themselves are
-committed in `86e033a`.
+Status: approved and complete in the tree. Batches A, B, C, D, E, F and G are committed in
+`86e033a`. The 1.5.0 install tree passed the Windows Sandbox gate on run 19, including a
+Windows source page read. The real setup executable installed 1.5.0 in the manual sandbox on
+2026-10-26 and the reader flow worked, but the shortcut preflight hung; the fix is in
+`86e033a`, the artifacts were rebuilt from it, and the fresh manual run on the rebuilt
+installer passed on 2026-10-27, including the shortcut double-click. Batch H is recorded and
+committed locally. The 1.5.1 hardening release is committed locally on 2026-10-28 and is not
+pushed; no artifact is rebuilt from it. The H3 behaviour change is committed locally on
+2026-10-27 and is not pushed; its manual proof passed on a fresh disposable scratch install
+on 2026-10-28. The `86e033a` artifacts predate the change, so anything built from them still
+carries the old behaviour. This plan turns the walk in `walk.md` and the security assessment
+in `security.md` into release work for 1.5.0 and 1.5.1. The audit was read at HEAD `6572ba0`;
+the batch changes and the audit documents themselves are committed in `86e033a`.
 
 The owner accepted the recommended defaults: keep the server-path import field for the owner
 only, include the copy-only M1 backup warning in 1.5.0, hold L1 for 1.5.1, and approve the

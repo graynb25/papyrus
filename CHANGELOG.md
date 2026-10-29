@@ -15,11 +15,11 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.5.1 - 2026-10-28
 
-The 1.5.1 hardening release, in progress. It closes the remaining Medium and Low findings
-from the [2026-10-25 audit](docs/audits/2026-10-25/security.md) and the functional defects
-the H3 manual walk found.
+The hardening release after 1.5.0. It closes the remaining Medium and Low findings from the
+[2026-10-25 audit](docs/audits/2026-10-25/security.md) and the functional, copy and
+accessibility defects the H3 manual walk found.
 
 ### Security
 
