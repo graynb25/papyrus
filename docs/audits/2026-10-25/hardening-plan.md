@@ -910,7 +910,8 @@ Security remaining:
   because 1.4.0 refuses a plain Vite, and `concurrently` moves to 10.0.6. `npm audit` and
   `npm audit --omit=dev` both report zero vulnerabilities, down from eleven packages and
   twelve advisories, and `npm run build` succeeds on Node 26.12.1. The machine-wide
-  `node` is still 26.7.0; NVM holds 26.12.1 and the build was verified with it directly.
+  `node` moved from 26.7.0 to 26.12.1 with winget, and the build and both audits were
+  re-run on the default path.
 
 Functional fixes found during the H3 walk:
 

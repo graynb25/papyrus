@@ -71,7 +71,8 @@ and error pages carry the same headers. `dffc531`
 a dev dependency, so a production install carries no Node tree at all. `vite-plus` moves to
 1.4.0 with `vite` resolved to its core package, and `concurrently` moves to 10.0.6.
 `npm audit` and `npm audit --omit=dev` report zero vulnerabilities, down from eleven
-packages and twelve advisories, and the asset build was verified on Node 26.12.1. `3de8e13`
+packages and twelve advisories. The machine-wide Node install moves from 26.7.0 to
+26.12.1, the October security release, and the asset build was verified on it. `3de8e13`
 
 ### Fixed
 

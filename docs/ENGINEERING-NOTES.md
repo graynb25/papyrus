@@ -39,7 +39,7 @@ targeted PHP parser for one site, as a last resort.
 | Thing | State |
 |---|---|
 | PHP | 8.4.25, served by Herd. On this machine Herd's own `php.bat` is the one on PATH. |
-| Node / npm | 26.7.0 / 11.19.0 |
+| Node / npm | 26.12.1 / 11.20.0 |
 | JRE | 26.0.2 Oracle JDK, which satisfies Suwayomi's JRE 21+ requirement |
 | Virtualization | **ON** (corrected 2026-10-26). `HypervisorPresent: True`; WSL 3.0.3.0 with kernel 6.18.54.1-1, Ubuntu 26.04.1 and Docker Desktop 4.96.0 are installed. The old `VirtualizationFirmwareEnabled: False` reading did not mean the hypervisor was off. Suwayomi still runs as a native **JAR**; Docker is a test harness. |
 | Docker | Docker Desktop 4.96.0, per-user install. The Linux engine is stopped when not in use. Last used 2026-10-20 for the 45 minute soak in section 16.2. |
