@@ -198,6 +198,31 @@ class ReadPathTest extends TestCase
     }
 
     /**
+     * The tab names the series, not every series the same word.
+     *
+     * The static `#[Title('Series')]` made every one of the reader's series the same
+     * browser tab.
+     */
+    public function test_the_browser_tab_names_the_series(): void
+    {
+        $this->get('/series/76')
+            ->assertOk()
+            ->assertSee("The Berserker's Second Playthrough - ".config('app.name'));
+    }
+
+    /**
+     * A series the server cannot name still says which page the tab is.
+     */
+    public function test_the_browser_tab_falls_back_to_the_series_id(): void
+    {
+        $this->overrides['query Series'] = ['data' => ['manga' => null]];
+
+        $this->get('/series/76')
+            ->assertOk()
+            ->assertSee('Series 76 - '.config('app.name'));
+    }
+
+    /**
      * One number, no source segment, because manga ids are global. Verified
      * against the live server: manga 174 is One Piece on MangaDex and 76 is a
      * Berserker title on Asura Scans, and both resolve from the bare id.
@@ -378,6 +403,67 @@ class ReadPathTest extends TestCase
         $this->series()->set('excludedScanlators', ['Group A', 'Nonexistent']);
 
         $this->assertSame(2, $this->series()->instance()->visibleCount);
+    }
+
+    /**
+     * An invisible scanlator is no scanlator.
+     *
+     * Measured: one source sends a zero-width space. `filled()` counts it as present, so
+     * it rendered a fourth group button labelled with nothing and a chapter row with an
+     * invisible name. Whitespace-only names are the same shape.
+     */
+    public function test_an_invisible_scanlator_is_treated_as_no_scanlator(): void
+    {
+        $chapters = [
+            $this->chapter(1, 1.0, 1, 'Group A', '1767000000000'),
+            $this->chapter(2, 1.0, 2, 'Group B', '1767100000000'),
+            $this->chapter(3, 2.0, 3, "\u{200B}", '1767198093000'),
+        ];
+
+        $this->overrides['query Series'] = ['data' => ['manga' => $this->manga() + [
+            'chapters' => ['totalCount' => 3, 'nodes' => $chapters],
+        ]]];
+
+        $component = $this->series();
+
+        $component->assertSee('2 groups')
+            ->assertDontSee("\u{200B}");
+
+        // Excluding both real groups leaves the invisible one, because it is not a
+        // group at all and its chapter is never dropped.
+        $component->set('excludedScanlators', ['Group A', 'Group B'])
+            ->assertDontSee('Chapter 1')
+            ->assertSee('Chapter 2');
+    }
+
+    /**
+     * The cover upload and the tag input are named.
+     *
+     * The cover input sits inside a visible label, and the tag input has an sr-only
+     * label, but the sweep found both unnamed. The explicit names match what the page
+     * shows, so the browser and the walk agree.
+     */
+    public function test_the_cover_and_tag_inputs_are_named(): void
+    {
+        $html = $this->series()->assertOk()->html();
+
+        $doc = new \DOMDocument;
+        $doc->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><body>'.$html.'</body>',
+            LIBXML_NOERROR | LIBXML_NOWARNING,
+        );
+
+        $xpath = new \DOMXPath($doc);
+        $cover = $xpath->query('//input[@id="cover-upload"]');
+        $tags = $xpath->query('//input[@id="series-tags"]');
+
+        $this->assertNotFalse($cover);
+        $this->assertNotFalse($tags);
+        $this->assertSame(1, $cover->length);
+        $this->assertSame(1, $tags->length);
+
+        $this->assertSame('Use your own cover', $cover->item(0)?->getAttribute('aria-label'));
+        $this->assertSame('Add a tag', $tags->item(0)?->getAttribute('aria-label'));
     }
 
     // Ordering -------------------------------------------------------------

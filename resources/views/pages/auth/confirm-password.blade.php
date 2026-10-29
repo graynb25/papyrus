@@ -2,7 +2,7 @@
     <div class="flex flex-col gap-6">
         <x-auth-header
             :title="__('Confirm password')"
-            :description="__('This is a secure area of the application. Please confirm your password before continuing.')"
+            :description="__('For your security, Papyrus needs your password again before this change.')"
         />
 
         <x-auth-session-status class="text-center" :status="session('status')" />
@@ -32,5 +32,15 @@
                 {{ __('Confirm') }}
             </flux:button>
         </form>
+
+        <p class="text-center text-sm text-zinc-500 dark:text-zinc-400">
+            <a
+                href="{{ route('library') }}"
+                wire:navigate
+                class="font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+            >
+                {{ __('Back to your library') }}
+            </a>
+        </p>
     </div>
 </x-layouts::auth>

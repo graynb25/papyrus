@@ -208,6 +208,22 @@ class BrowsePageTest extends TestCase
     }
 
     /**
+     * The tab says which source's catalogue it is.
+     *
+     * The static `#[Title('Browse')]` made every source the same tab, so a reader with
+     * two catalogues open could not tell them apart.
+     */
+    public function test_the_browser_tab_names_the_source(): void
+    {
+        $source = $this->source();
+
+        $this->actingAs($this->user)
+            ->get(route('browse', $source))
+            ->assertOk()
+            ->assertSee('Browse Test Scans (EN) - '.config('app.name'));
+    }
+
+    /**
      * The cover is not the only way into a series.
      *
      * The cover anchor is hidden from assistive technology on purpose, and

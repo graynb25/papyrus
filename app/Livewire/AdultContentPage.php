@@ -51,7 +51,7 @@ abstract class AdultContentPage extends Component
      *
      * @var array<int, string>
      */
-    #[Url(as: 'content', except: '')]
+    #[Url(as: 'content', except: [Source::SAFE, Source::MIXED])]
     public array $content = [Source::SAFE, Source::MIXED];
 
     /**

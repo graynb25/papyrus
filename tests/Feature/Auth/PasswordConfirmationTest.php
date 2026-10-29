@@ -18,4 +18,20 @@ class PasswordConfirmationTest extends TestCase
 
         $response->assertOk();
     }
+
+    /**
+     * The page says what the password is for, and a reader who did not mean to be here
+     * has a way back instead of only the browser's back button.
+     */
+    public function test_it_says_why_the_password_is_needed_again_and_offers_a_way_back(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('password.confirm'))
+            ->assertOk()
+            ->assertSee('For your security, Papyrus needs your password again before this change.')
+            ->assertSee('Back to your library')
+            ->assertSee('href="'.route('library').'"', false);
+    }
 }

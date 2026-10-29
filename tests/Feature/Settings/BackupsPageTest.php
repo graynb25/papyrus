@@ -380,13 +380,21 @@ class BackupsPageTest extends TestCase
 
     /**
      * The folder is named, because a backup on a disk the reader cannot see is one they do not have.
+     *
+     * Its absolute path was on the page, which is machine detail a reader does not need and
+     * the one thing the walk asked to remove. The folder's name and its neighbour are enough
+     * to find it, and the column that used to be called "Files" shows health, so it says so.
      */
     public function test_it_says_where_the_backups_are(): void
     {
         $this->writePair();
 
         $this->get('/settings/backups')
-            ->assertSee($this->folder)
+            ->assertSee('Health')
+            ->assertSee('folder named')
+            ->assertSee('backups')
+            ->assertSee('beside its database.')
+            ->assertDontSee($this->folder)
             ->assertSee('papyrus restore');
     }
 

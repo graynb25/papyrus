@@ -1,11 +1,15 @@
 <x-layouts::app.sidebar :title="$title ?? null">
     {{-- The main region is what wire:navigate crossfades between pages, and the
          max width keeps 60-cover grids breathable on very wide screens. The
-         important modifiers beat flux:main's own default padding. --}}
-    <flux:main
+         important modifiers beat Flux's own default padding. A native main keeps
+         the landmark the walk asked for; data-flux-main and [grid-area:main] are
+         what Flux's grid CSS keys off, so they replace what flux:main added. --}}
+    <main
+        id="main-content"
+        data-flux-main
         wire:transition.navigate
-        class="mx-auto w-full max-w-[110rem]! px-4! py-7! sm:px-6! lg:px-10! lg:py-10!"
+        class="[grid-area:main] mx-auto w-full max-w-[110rem]! px-4! py-7! sm:px-6! lg:px-10! lg:py-10!"
     >
         {{ $slot }}
-    </flux:main>
+    </main>
 </x-layouts::app.sidebar>

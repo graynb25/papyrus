@@ -183,6 +183,65 @@ class BulkMigrationTest extends TestCase
             ->assertSee("toggleTarget('".self::TO_SOURCE."')", false);
     }
 
+    /**
+     * The installed list measured 238 destinations, which is a scroll, not a choice.
+     *
+     * A reader looking for one source had to scan every language variant of every other
+     * one. The filter narrows the list by the same label the checkbox shows, so what is
+     * typed is what is seen.
+     */
+    public function test_the_destination_picker_filters_installed_sources_by_name(): void
+    {
+        $this->seriesOnFrom(76, 'One Piece', 2442);
+        $this->source('MangaDex', 901, self::SECOND_TARGET);
+        $this->source('MangaTaro', 902, '6247824327199706800');
+
+        $this->page()
+            ->assertSee("toggleTarget('".self::SECOND_TARGET."')", false)
+            ->assertSee("toggleTarget('6247824327199706800')", false)
+            ->set('destinationFilter', 'taro')
+            ->assertSee("toggleTarget('6247824327199706800')", false)
+            ->assertDontSee("toggleTarget('".self::SECOND_TARGET."')", false);
+    }
+
+    /**
+     * The filter cannot resurrect the source being left as a destination.
+     *
+     * The render skips it, but a filter is a second path to the same list and must not
+     * become a way around that refusal.
+     */
+    public function test_the_destination_filter_does_not_offer_the_source_being_left(): void
+    {
+        $this->seriesOnFrom(76, 'One Piece', 2442);
+
+        $this->page()
+            ->set('from', self::TO_SOURCE)
+            ->set('destinationFilter', 'MangaFire')
+            ->assertDontSee("toggleTarget('".self::TO_SOURCE."')", false)
+            ->assertSee('No installed source matches that.');
+    }
+
+    /**
+     * A language is written once, and every checkbox names what it shows.
+     *
+     * Measured on the installed app: the mirror's display names already carried the
+     * language, and this page appended the lang column anyway, so labels read
+     * "MangaDex (ES-419) (es-419)". The checkbox also had no accessible name of its own.
+     */
+    public function test_a_destination_label_carries_its_language_once_and_names_its_checkbox(): void
+    {
+        $this->seriesOnFrom(76, 'One Piece', 2442);
+        $mangaDex = $this->source('MangaDex (ES-419)', 903, self::SECOND_TARGET);
+        $mangaDex->update(['lang' => 'es-419']);
+
+        $this->page()
+            ->assertSee('MangaDex (ES-419)')
+            ->assertDontSee('MangaDex (ES-419) (es-419)')
+            ->assertSee('aria-label="MangaDex (ES-419)"', false)
+            ->assertSee('MangaFire (en)')
+            ->assertSee('aria-label="MangaFire (en)"', false);
+    }
+
     /*
      * ---------------------------------------------------------------------------
      * Comparing.

@@ -88,6 +88,15 @@ new #[Title('Move a whole source')] class extends Component
     public int $limit = 0;
 
     /**
+     * What the reader typed into the destination picker's filter.
+     *
+     * The installed list measured 238 checkboxes on this machine, which is a scroll rather
+     * than a choice: finding MangaDex meant scanning every language variant of every source.
+     * Page state only, never in the URL, so opening the page starts from the whole list.
+     */
+    public string $destinationFilter = '';
+
+    /**
      * Which series are ticked, as from_manga_id => bool.
      *
      * Only the reader's own explicit choices are stored here. A row the reader has not touched
@@ -182,6 +191,61 @@ new #[Title('Move a whole source')] class extends Component
                 'display_name' => (string) ($source->display_name ?? $source->suwayomi_source_id),
                 'lang' => (string) ($source->lang ?? ''),
             ]);
+    }
+
+    /**
+     * The installed sources the destination picker shows, narrowed by the filter.
+     *
+     * Matched against {@see sourceLabel()}, which is the text the checkbox shows and the
+     * name it announces, so what a reader types is what they see and hear. The source being
+     * left is dropped here rather than at the render, because a filter must not bring it
+     * back as a destination.
+     *
+     * @return \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string}>
+     */
+    #[Computed]
+    public function filteredDestinations(): \Illuminate\Support\Collection
+    {
+        $needle = mb_strtolower(trim($this->destinationFilter));
+
+        return $this->installedSources
+            ->reject(fn (array $source): bool => $source['source_id'] === $this->from)
+            ->when(
+                $needle !== '',
+                fn (\Illuminate\Support\Collection $sources): \Illuminate\Support\Collection => $sources
+                    ->filter(fn (array $source): bool => str_contains(
+                        mb_strtolower($this->sourceLabel($source)),
+                        $needle,
+                    ))
+                    ->values(),
+            );
+    }
+
+    /**
+     * A source's name as the pickers show it, with its language written once.
+     *
+     * Measured on the installed app: the destination list had 238 entries and labels such
+     * as "MangaDex (ES-419) (es-419)", because this page appended the lang column even when
+     * the mirror's display name already carried it. The language is only added when the name
+     * does not already hold it as a bracketed token, compared without case so "(EN)" and
+     * "(en)" are one thing.
+     *
+     * @param  array{display_name: string, lang?: string}  $source
+     */
+    public function sourceLabel(array $source): string
+    {
+        $name = (string) $source['display_name'];
+        $lang = (string) ($source['lang'] ?? '');
+
+        if ($lang === '') {
+            return $name;
+        }
+
+        if (preg_match('/[\(\[]\s*'.preg_quote($lang, '/').'\s*[\)\]]/iu', $name) === 1) {
+            return $name;
+        }
+
+        return $name.' ('.$lang.')';
     }
 
     /** The run this page is showing. The newest one, unless the reader pinned another. */
@@ -732,11 +796,12 @@ new #[Title('Move a whole source')] class extends Component
 
         if ($match === null) {
             // A source that has since left the reader's library. The id is shown rather than
-            // a blank button, because a blank picker next to a filled one is unreadable.
+            // a blank picker next to a filled one, because a blank picker next to a filled
+            // one is unreadable.
             return __('Source :id', ['id' => $sourceId]);
         }
 
-        return $match['display_name'].' ('.$match['lang'].')';
+        return $this->sourceLabel($match);
     }
 
     public function stateLabel(BulkMigration $run): string
@@ -868,8 +933,7 @@ new #[Title('Move a whole source')] class extends Component
                             <flux:menu class="max-h-80 overflow-y-auto">
                                 @foreach ($sources as $one)
                                     <flux:menu.item wire:click="$set('from', '{{ $one['source_id'] }}')">
-                                        {{ $one['display_name'] }}
-                                        <span class="text-zinc-500">({{ $one['lang'] }})</span>
+                                        {{ $this->sourceLabel($one) }}
                                         <span class="ms-auto tabular-nums text-zinc-500">{{ $one['count'] }}</span>
                                     </flux:menu.item>
                                 @endforeach
@@ -887,24 +951,39 @@ new #[Title('Move a whole source')] class extends Component
                     {{-- A checklist rather than a menu. Picking several destinations is the
                          normal case, and the old single value was where the stale picker came
                          from: one value shared by every leaving side makes one reader's
-                         previous choice look like this one's. --}}
-                    <div class="max-h-40 w-56 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 p-1.5">
-                        <div class="flex flex-col">
-                            @foreach ($this->installedSources as $one)
-                                @continue($one['source_id'] === $this->from)
+                         previous choice look like this one's. The filter is what makes 238
+                         installed sources a choice rather than a scroll. --}}
+                    <div class="w-56 space-y-1.5">
+                        <flux:input
+                            wire:model.live.debounce.300ms="destinationFilter"
+                            placeholder="{{ __('Filter destinations') }}"
+                            aria-label="{{ __('Filter destinations') }}"
+                            icon="magnifying-glass"
+                            size="sm"
+                        />
 
-                                <label class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium text-zinc-800 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600/60 cursor-pointer select-none">
-                                    <input
-                                        type="checkbox"
-                                        @checked(in_array($one['source_id'], $this->targets))
-                                        wire:click="toggleTarget('{{ $one['source_id'] }}')"
-                                        class="text-(--primary) rounded-[.25rem] border-zinc-300 dark:border-zinc-500"
-                                    />
+                        <div class="max-h-40 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 p-1.5">
+                            <div class="flex flex-col">
+                                @forelse ($this->filteredDestinations as $one)
+                                    @php($label = $this->sourceLabel($one))
 
-                                    {{ $one['display_name'] }}
-                                    <span class="text-zinc-500">({{ $one['lang'] }})</span>
-                                </label>
-                            @endforeach
+                                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium text-zinc-800 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600/60 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            aria-label="{{ $label }}"
+                                            @checked(in_array($one['source_id'], $this->targets))
+                                            wire:click="toggleTarget('{{ $one['source_id'] }}')"
+                                            class="text-(--primary) rounded-[.25rem] border-zinc-300 dark:border-zinc-500"
+                                        />
+
+                                        {{ $label }}
+                                    </label>
+                                @empty
+                                    <p class="px-2 py-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                                        {{ __('No installed source matches that.') }}
+                                    </p>
+                                @endforelse
+                            </div>
                         </div>
                     </div>
 

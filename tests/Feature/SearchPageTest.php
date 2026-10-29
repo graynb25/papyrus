@@ -119,6 +119,26 @@ class SearchPageTest extends TestCase
     }
 
     /**
+     * The default rating filter is not written into the address bar.
+     *
+     * `except: ''` never matched the array default, because Livewire compares the two with
+     * `JSON.stringify`. Every search therefore carried `content[0]=SAFE` and
+     * `content[1]=MIXED` even when the reader had filtered nothing.
+     */
+    public function test_the_default_content_filter_is_not_written_to_the_url(): void
+    {
+        $html = $this->actingAs($this->user)->get('/search')->assertOk()->getContent();
+
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5);
+
+        $this->assertMatchesRegularExpression(
+            '/"content":\{"as":"content","use":"replace","alwaysShow":false,"except":\["SAFE","MIXED"\]\}/',
+            $html,
+            'The default ratings must be the exception on the URL binding, or every search link carries them.',
+        );
+    }
+
+    /**
      * Arriving at a search runs it, rather than showing an empty box.
      *
      * The other half of being bookmarkable. With the terms restored but no run behind them, a
@@ -509,6 +529,43 @@ class SearchPageTest extends TestCase
             // The cover must be proxied, never hotlinked to the upstream host.
             ->assertSee('/suwayomi/api/v1/manga/1/thumbnail')
             ->assertDontSee('upstream.test');
+    }
+
+    /**
+     * The cover is a link with a name, not an anonymous hidden anchor.
+     *
+     * The grid's cover link carried `aria-hidden="true"`, so a screen reader had no
+     * way into a series from the poster itself. The name matches the resume card's
+     * "Open {title}" shape.
+     */
+    public function test_the_cover_link_names_the_series_it_opens(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $this->source('Alpha Manga');
+
+        $html = Livewire::actingAs($this->user)->test('pages::search')
+            ->set('query', 'one piece')
+            ->call('search')
+            ->assertOk()
+            ->html();
+
+        $doc = new \DOMDocument;
+        $doc->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><body>'.$html.'</body>',
+            LIBXML_NOERROR | LIBXML_NOWARNING,
+        );
+
+        $links = (new \DOMXPath($doc))->query('//a[@aria-label="Open One Piece"]');
+
+        $this->assertNotFalse($links);
+        $this->assertSame(1, $links->length, 'The cover link must name the series it opens.');
+
+        $link = $links->item(0);
+
+        $this->assertNotNull($link);
+        $this->assertFalse($link->hasAttribute('aria-hidden'));
+        $this->assertSame('-1', $link->getAttribute('tabindex'), 'The title beside it is still the tab stop.');
     }
 
     public function test_the_rendered_page_reports_per_source_status(): void

@@ -14,11 +14,10 @@ use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
-new #[Title('Series')] class extends Component
+new class extends Component
 {
     /*
      * Upload progress on the cover file input, which is the reason the upload comes
@@ -51,6 +50,22 @@ new #[Title('Series')] class extends Component
         $this->hydrateOrder();
 
         $this->requestFetchIfIncomplete();
+    }
+
+    /**
+     * The browser tab names the series, or its id when the server cannot.
+     *
+     * The static `#[Title('Series')]` made every series the same tab. The name is read
+     * from the same gateway call the page already makes, and an unknown or unreachable
+     * series falls back to the id so the tab still says which page it is.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        $title = $this->series['title'] ?? null;
+
+        return $this->view()->title(
+            filled($title) ? (string) $title : __('Series :id', ['id' => $this->manga]),
+        );
     }
 
     /**
@@ -715,6 +730,32 @@ new #[Title('Series')] class extends Component
     }
 
     /**
+     * A chapter's scanlator, or null when the name is not a name.
+     *
+     * Measured: one source sends a zero-width space as its scanlator, which `filled()`
+     * counts as present. It produced a fourth group button labelled with nothing, and
+     * a chapter row with an invisible name. Whitespace-only names are the same shape.
+     *
+     * @param  array<string, mixed>  $chapter
+     */
+    public function scanlatorOf(array $chapter): ?string
+    {
+        $name = $chapter['scanlator'] ?? null;
+
+        if (! is_string($name)) {
+            return null;
+        }
+
+        $name = trim($name);
+
+        if (preg_match('/^[\p{Z}\s\x{200B}-\x{200D}\x{FEFF}\x{2060}]*$/u', $name) === 1) {
+            return null;
+        }
+
+        return $name;
+    }
+
+    /**
      * Scanlators present in this series, for the exclusion control.
      *
      * @return array<int, string>
@@ -723,7 +764,7 @@ new #[Title('Series')] class extends Component
     public function scanlators(): array
     {
         return collect($this->allChapters)
-            ->map(fn (array $c): ?string => $c['scanlator'] ?? null)
+            ->map(fn (array $c): ?string => $this->scanlatorOf($c))
             ->filter()
             ->unique()
             ->sort()
@@ -742,11 +783,11 @@ new #[Title('Series')] class extends Component
         $excluded = array_map('mb_strtolower', $this->excludedScanlators);
 
         $filtered = array_values(array_filter($this->allChapters, function (array $chapter) use ($excluded): bool {
-            $scanlator = $chapter['scanlator'] ?? null;
+            $scanlator = $this->scanlatorOf($chapter);
 
             // A chapter with no scanlator is never excluded, since there is
             // nothing to match against and dropping those would lose chapters.
-            if (! is_string($scanlator) || $scanlator === '') {
+            if ($scanlator === null) {
                 return true;
             }
 
@@ -1453,6 +1494,7 @@ new #[Title('Series')] class extends Component
                             id="cover-upload"
                             wire:model="coverUpload"
                             accept="image/jpeg,image/png,image/webp"
+                            aria-label="{{ $this->customCover ? __('Change cover') : __('Use your own cover') }}"
                             class="sr-only"
                         />
 
@@ -2020,8 +2062,8 @@ new #[Title('Series')] class extends Component
                                     {{ filled($chapter['name']) ? $chapter['name'] : __('Chapter :number', ['number' => $chapter['chapterNumber'] ?? '?']) }}
                                 </span>
 
-                                @if (filled($chapter['scanlator'] ?? null))
-                                    <span class="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">{{ $chapter['scanlator'] }}</span>
+                                @if (($scanlator = $this->scanlatorOf($chapter)) !== null)
+                                    <span class="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">{{ $scanlator }}</span>
                                 @endif
                             </a>
 

@@ -1307,7 +1307,7 @@ new #[Title('Search')] class extends AdultContentPage
                                 wire:navigate
                                 class="block"
                                 tabindex="-1"
-                                aria-hidden="true"
+                                aria-label="{{ __('Open :title', ['title' => $group->primary->title]) }}"
                             >
                                 <x-cover.art :src="$group->primary->coverUrl()" :glow="true" :vt="true">
                                     @if ($group->strictestContentWarning() !== 'SAFE')

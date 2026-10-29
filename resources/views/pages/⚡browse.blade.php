@@ -11,11 +11,10 @@ use App\Suwayomi\Gateway;
 use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Browse')] class extends Component
+new class extends Component
 {
     /**
      * Which listing is shown, matching Suwayomi's own FetchSourceMangaType.
@@ -100,6 +99,18 @@ new #[Title('Browse')] class extends Component
     public const MOUNT_PAGE_LIMIT = 12;
 
     public Source $source;
+
+    /**
+     * The browser tab says which source this is.
+     *
+     * The static `#[Title('Browse')]` made every source's catalogue the same tab, so a
+     * reader with two open could not tell them apart. The title depends on the mounted
+     * source, so it is set here rather than through the attribute.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Browse :source', ['source' => $this->source->label()]));
+    }
 
     public function mount(Source $source): void
     {

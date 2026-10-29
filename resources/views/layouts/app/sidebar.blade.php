@@ -4,6 +4,18 @@
         @include('partials.head')
     </head>
     <body class="min-h-screen app-backdrop antialiased">
+        {{-- First in the body, so it is the first thing Tab reaches. Fixed even
+             while hidden: the body is a grid and an in-flow link would become a
+             grid item. The inline position beats not-sr-only's static position
+             when the link takes focus. --}}
+        <a
+            href="#main-content"
+            style="position: fixed;"
+            class="sr-only focus:not-sr-only focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-zinc-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-vermilion-500 dark:focus:bg-zinc-800 dark:focus:text-white"
+        >
+            {{ __('Skip to content') }}
+        </a>
+
         <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200/80 bg-zinc-50 dark:border-white/[0.06] dark:bg-zinc-950">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('library') }}" wire:navigate />

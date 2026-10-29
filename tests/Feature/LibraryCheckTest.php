@@ -876,7 +876,9 @@ class LibraryCheckTest extends TestCase
 
         Livewire::test('pages::library')
             ->assertOk()
-            ->assertSee('All 1 series checked');
+            ->assertSee('All 1 series are up to date')
+            ->assertSee('Nothing to check')
+            ->assertDontSee('Check 0 series');
     }
 
     public function test_the_page_says_how_many_were_never_fetched(): void
@@ -886,7 +888,8 @@ class LibraryCheckTest extends TestCase
 
         Livewire::test('pages::library')
             ->assertOk()
-            ->assertSee('2 series to check, 2 never fetched');
+            ->assertSee('2 series are due for a check')
+            ->assertSee('2 have never been fetched');
     }
 
     public function test_the_page_explains_the_floor(): void
@@ -899,8 +902,65 @@ class LibraryCheckTest extends TestCase
 
         Livewire::test('pages::library')
             ->assertOk()
-            ->assertSee('1 checked recently')
-            ->assertSee('for at least 1 day before again');
+            ->assertSee('1 was checked recently')
+            ->assertSee('Papyrus checks each one again after at least 1 day');
+    }
+
+    /**
+     * The cover is a link with a name, not an anonymous hidden anchor.
+     *
+     * The grid's cover link carried `aria-hidden="true"`, so a screen reader had no
+     * way into a series from the poster itself. The name matches the resume card's
+     * "Open {title}" shape.
+     */
+    public function test_the_cover_link_names_the_series_it_opens(): void
+    {
+        $this->addToLibrary(76);
+
+        $html = Livewire::test('pages::library')->assertOk()->html();
+
+        $doc = new \DOMDocument;
+        $doc->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><body>'.$html.'</body>',
+            LIBXML_NOERROR | LIBXML_NOWARNING,
+        );
+
+        $links = (new \DOMXPath($doc))->query('//ul[@data-bulk-grid]//a[@aria-label="Open Series 76"]');
+
+        $this->assertNotFalse($links);
+        $this->assertSame(1, $links->length, 'The cover link must name the series it opens.');
+
+        $link = $links->item(0);
+
+        $this->assertNotNull($link);
+        $this->assertFalse($link->hasAttribute('aria-hidden'));
+        $this->assertSame('-1', $link->getAttribute('tabindex'), 'The title beside it is still the tab stop.');
+    }
+
+    /**
+     * A series with no source is still in the library, but it is not up to date.
+     *
+     * `summary()['due']` excludes it because a pass cannot visit it, so the old
+     * "All N series checked" sentence was false whenever an import had filed one.
+     * The measured library had 195 of 867 in that state.
+     */
+    public function test_the_page_does_not_claim_series_without_a_source_are_up_to_date(): void
+    {
+        $state = $this->addToLibrary(76);
+        $state->chapter_list_checked_at = now();
+        $state->save();
+
+        SeriesState::createFor($this->user->id, [
+            'suwayomi_manga_id' => null,
+            'title' => 'Filed And Unreachable',
+            'in_library' => true,
+        ]);
+
+        Livewire::test('pages::library')
+            ->assertOk()
+            ->assertSee('1 series with a source is up to date')
+            ->assertSee('1 series has no source and cannot be checked')
+            ->assertDontSee('All 2 series are up to date');
     }
 
     public function test_a_zero_interval_makes_nothing_skipped(): void

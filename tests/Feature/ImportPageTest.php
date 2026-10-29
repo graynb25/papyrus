@@ -90,6 +90,30 @@ class ImportPageTest extends TestCase
     }
 
     /**
+     * The guide points at the control that is actually on the page.
+     *
+     * It said "pick it above" while the file input sits below the guide, so a reader
+     * followed the sentence upward and found the end of the page.
+     */
+    public function test_the_guide_points_at_the_picker_below_it(): void
+    {
+        $this->page()
+            ->assertOk()
+            ->assertSee('use the picker below')
+            ->assertDontSee('pick it above');
+
+        // The install owner also gets the server-path half; a reader without that
+        // permission gets the short variant, and both have to point at the same place.
+        $this->actingAs(User::factory()->create());
+
+        $this->page()
+            ->assertOk()
+            ->assertSee('use the picker below')
+            ->assertDontSee('pick it above')
+            ->assertDontSee('copy it onto the server');
+    }
+
+    /**
      * Both formats are named, and the one that cannot carry reading time says so.
      *
      * The Mihon/Tachiyomi/Suwayomi reader is built now, so the old "only Tachimanga"
@@ -940,6 +964,47 @@ class ImportPageTest extends TestCase
 
         $this->page()
             ->assertSeeInOrder(['newer.tmb', 'older.tmb']);
+    }
+
+    /**
+     * Two imports of the same file must be distinguishable without opening them.
+     *
+     * Measured on the installed app: 14 rows, all showing the same backup filename,
+     * a state badge and "Show details". A reader could not tell which run was the
+     * recent one, or whether a run wrote anything, without opening rows one at a
+     * time.
+     */
+    public function test_a_history_row_says_when_it_ran_and_what_it_wrote(): void
+    {
+        $older = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'library.tmb',
+            'applied' => 667,
+            'unchanged' => 12,
+            'series_processed' => 679,
+            'library_series' => 679,
+            'started_at' => now()->subDays(2)->setTime(14, 32),
+            'finished_at' => now()->subDays(2)->setTime(14, 40),
+        ]);
+
+        $newer = ImportRun::createFor($this->user, [
+            'format' => 'tachimanga',
+            'state' => ImportRun::COMPLETE,
+            'file_name' => 'library.tmb',
+            'applied' => 0,
+            'unchanged' => 679,
+            'series_processed' => 679,
+            'library_series' => 679,
+            'started_at' => now()->subHour()->setTime(9, 5),
+            'finished_at' => now()->subHour()->setTime(9, 6),
+        ]);
+
+        $this->page()
+            ->assertSee('667 series imported, 12 already up to date')
+            ->assertSee('0 series imported, 679 already up to date')
+            ->assertSee($older->started_at->format('j M Y, H:i'))
+            ->assertSee($newer->started_at->format('j M Y, H:i'));
     }
 
     public function test_it_says_so_when_nothing_has_been_imported(): void

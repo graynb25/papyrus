@@ -1371,7 +1371,7 @@ new #[Title('Backups')] class extends Component {
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Saved') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('What it contains') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Size') }}</th>
-                            <th scope="col" class="px-3 py-2 font-medium">{{ __('Files') }}</th>
+                            <th scope="col" class="px-3 py-2 font-medium">{{ __('Health') }}</th>
                             <th scope="col" class="px-3 py-2 font-medium">{{ __('Restore') }}</th>
                         </tr>
                     </thead>
@@ -1422,7 +1422,7 @@ new #[Title('Backups')] class extends Component {
                                             {{ __('Restore') }}
                                         </flux:button>
                                     @endif
-                                    {{-- The Files cell beside this one names why the button is not here. --}}
+                                    {{-- The Health cell beside this one names why the button is not here. --}}
                                 </td>
                             </tr>
                         @endforeach
@@ -1439,7 +1439,13 @@ new #[Title('Backups')] class extends Component {
         --}}
         <flux:heading level="3" class="mb-3 text-base">{{ __('Where they are') }}</flux:heading>
 
-        <p class="mb-2 font-mono text-sm break-all text-gray-700 dark:text-gray-300">{{ $this->directory() }}</p>
+        {{-- The folder's name, not its absolute path: the path is machine detail a reader
+             does not need, and the name plus its neighbour is enough to find it. --}}
+        <p class="mb-2 text-sm text-gray-700 dark:text-gray-300">
+            {{ __('Papyrus keeps its backups in a folder named') }}
+            <code class="font-mono">backups</code>
+            {{ __('beside its database.') }}
+        </p>
 
         <p class="mb-2 text-sm text-amber-700 dark:text-amber-300">
             {{ __('A backup pair contains your library, an encrypted AniList token and password hashes. Live session rows and the manga server\'s cached tokens are left out. Treat this folder as a secret.') }}

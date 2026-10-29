@@ -1119,11 +1119,17 @@ new #[Title('Library')] class extends Component
                     :disabled="$this->checkSchedule['due'] === 0 || ($progress['running'] ?? false)"
                     class="group/check"
                 >
-                    {{ trans_choice(
-                        'Check :count series|Check :count series',
-                        $this->checkSchedule['due'],
-                        ['count' => $this->checkSchedule['due']],
-                    ) }}
+                    @if ($progress['running'] ?? false)
+                        {{ __('Checking...') }}
+                    @elseif ($this->checkSchedule['due'] === 0)
+                        {{ __('Nothing to check') }}
+                    @else
+                        {{ trans_choice(
+                            'Check :count series|Check :count series',
+                            $this->checkSchedule['due'],
+                            ['count' => $this->checkSchedule['due']],
+                        ) }}
+                    @endif
                 </flux:button>
             @endif
 
@@ -1320,36 +1326,56 @@ new #[Title('Library')] class extends Component
                 <span class="inline-flex items-center gap-2" aria-live="polite">
                     <span
                         class="inline-block size-1.5 rounded-full {{
-                            $this->checkSchedule['due'] === 0
-                                ? 'bg-moss-500 animate-breathe'
-                                : 'bg-vermilion-500 animate-breathe'
+                            $this->checkSchedule['due'] > 0
+                                ? 'bg-vermilion-500 animate-breathe'
+                                : ($this->checkSchedule['unreachable'] > 0
+                                    ? 'bg-amber-500'
+                                    : 'bg-moss-500 animate-breathe')
                         }}"
                         aria-hidden="true"
                     ></span>
 
                     @if ($this->checkSchedule['due'] === 0)
-                        {{
-                            trans_choice(
-                                'All :count series checked|All :count series checked',
-                                $this->checkSchedule['total'],
-                                ['count' => $this->checkSchedule['total']],
-                            )
-                        }}
+                        {{-- A library of only unreachable series has nothing to call
+                             up to date, and the amber line below is the whole answer. --}}
+                        @if ($this->checkSchedule['unreachable'] > 0)
+                            @if ($this->checkSchedule['skipped'] > 0)
+                                {{
+                                    trans_choice(
+                                        ':count series with a source is up to date|:count series with a source are up to date',
+                                        $this->checkSchedule['skipped'],
+                                        ['count' => $this->checkSchedule['skipped']],
+                                    )
+                                }}
+                            @endif
+                        @else
+                            {{
+                                trans_choice(
+                                    'All :count series are up to date|All :count series are up to date',
+                                    $this->checkSchedule['total'],
+                                    ['count' => $this->checkSchedule['total']],
+                                )
+                            }}
+                        @endif
                     @elseif ($this->checkSchedule['never'] > 0)
                         {{
                             trans_choice(
-                                ':count series to check, :never never fetched|:count series to check, :never never fetched',
+                                ':count series is due for a check|:count series are due for a check',
                                 $this->checkSchedule['due'],
-                                [
-                                    'count' => $this->checkSchedule['due'],
-                                    'never' => $this->checkSchedule['never'],
-                                ],
+                                ['count' => $this->checkSchedule['due']],
+                            )
+                        }}
+                        {{
+                            trans_choice(
+                                ':count has never been fetched.|:count have never been fetched.',
+                                $this->checkSchedule['never'],
+                                ['count' => $this->checkSchedule['never']],
                             )
                         }}
                     @else
                         {{
                             trans_choice(
-                                ':count series to check|:count series to check',
+                                ':count series is due for a check|:count series are due for a check',
                                 $this->checkSchedule['due'],
                                 ['count' => $this->checkSchedule['due']],
                             )
@@ -1359,25 +1385,38 @@ new #[Title('Library')] class extends Component
 
                 @if ($this->checkSchedule['skipped'] > 0)
                     <span class="text-xs text-zinc-400 dark:text-zinc-500">
-                        {{
-                            trans_choice(
-                                ':skipped checked recently|:skipped checked recently',
-                                $this->checkSchedule['skipped'],
-                                ['skipped' => $this->checkSchedule['skipped']],
-                            )
-                        }}
-
                         @if ($this->checkSchedule['interval_days'] === 0)
-                            {{ __('every pass checks everything') }}
+                            {{
+                                trans_choice(
+                                    ':count was checked recently. Papyrus checks them on every pass.|:count were checked recently. Papyrus checks them on every pass.',
+                                    $this->checkSchedule['skipped'],
+                                    ['count' => $this->checkSchedule['skipped']],
+                                )
+                            }}
                         @else
                             {{
                                 trans_choice(
-                                    'for at least :days day before again|for at least :days days before again',
-                                    $this->checkSchedule['interval_days'],
-                                    ['days' => $this->checkSchedule['interval_days']],
+                                    ':count was checked recently. Papyrus checks each one again after at least :days day.|:count were checked recently. Papyrus checks each one again after at least :days days.',
+                                    $this->checkSchedule['skipped'],
+                                    [
+                                        'count' => $this->checkSchedule['skipped'],
+                                        'days' => $this->checkSchedule['interval_days'],
+                                    ],
                                 )
                             }}
                         @endif
+                    </span>
+                @endif
+
+                @if ($this->checkSchedule['unreachable'] > 0)
+                    <span class="text-xs text-amber-700 dark:text-amber-300">
+                        {{
+                            trans_choice(
+                                ':count series has no source and cannot be checked.|:count series have no source and cannot be checked.',
+                                $this->checkSchedule['unreachable'],
+                                ['count' => $this->checkSchedule['unreachable']],
+                            )
+                        }}
                     </span>
                 @endif
             </div>
@@ -1692,7 +1731,7 @@ new #[Title('Library')] class extends Component
                             wire:navigate
                             class="block"
                             tabindex="-1"
-                            aria-hidden="true"
+                            aria-label="{{ __('Open :title', ['title' => $entry['title']]) }}"
                         >
                     @else
                         <div class="block">

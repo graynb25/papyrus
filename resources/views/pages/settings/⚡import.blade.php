@@ -1086,9 +1086,9 @@ new #[Title('Import a backup')] class extends Component
 
                     <p>
                         @can('manage-install')
-                            {{ __('Then send that file here: pick it above, or if it is too big to upload, copy it onto the server and give its path below.') }}
+                            {{ __('Then send that file here: use the picker below, or if it is too big to upload, copy it onto the server and give its path below.') }}
                         @else
-                            {{ __('Then send that file here: pick it above.') }}
+                            {{ __('Then send that file here: use the picker below.') }}
                         @endcan
                     </p>
 
@@ -1231,24 +1231,43 @@ new #[Title('Import a backup')] class extends Component
                 @else
                     <ul class="space-y-2">
                         @foreach ($this->runs() as $run)
-                            <li class="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 pt-2 first:border-0 first:pt-0 dark:border-white/10">
-                                <span class="truncate text-sm font-medium">
-                                    {{ $run->file_name ?? __('unnamed file') }}
-                                </span>
+                            @php
+                                $ranAt = $run->started_at ?? $run->created_at;
+                            @endphp
 
-                                <div class="flex items-center gap-2">
-                                    <flux:badge size="sm" :color="$this->badgeColour($run)">
-                                        {{ $this->stateLabel($run) }}
-                                    </flux:badge>
+                            <li class="border-t border-zinc-200 pt-2 first:border-0 first:pt-0 dark:border-white/10">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="truncate text-sm font-medium">
+                                        {{ $run->file_name ?? __('unnamed file') }}
+                                    </span>
 
-                                    <button
-                                        type="button"
-                                        class="text-sm font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
-                                        wire:click="openRunModal({{ $run->id }})"
-                                    >
-                                        {{ __('Show details') }}
-                                    </button>
+                                    <div class="flex items-center gap-2">
+                                        @if ($ranAt !== null)
+                                            <time
+                                                class="text-xs text-zinc-500 dark:text-zinc-400"
+                                                datetime="{{ $ranAt->toIso8601String() }}"
+                                            >
+                                                {{ $ranAt->format('j M Y, H:i') }}
+                                            </time>
+                                        @endif
+
+                                        <flux:badge size="sm" :color="$this->badgeColour($run)">
+                                            {{ $this->stateLabel($run) }}
+                                        </flux:badge>
+
+                                        <button
+                                            type="button"
+                                            class="text-sm font-medium text-vermilion-600 hover:text-vermilion-500 dark:text-vermilion-400 dark:hover:text-vermilion-300"
+                                            wire:click="openRunModal({{ $run->id }})"
+                                        >
+                                            {{ __('Show details') }}
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                                    {{ $this->summary($run) }}
+                                </p>
                             </li>
                         @endforeach
                     </ul>
