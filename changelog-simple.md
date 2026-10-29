@@ -5,6 +5,124 @@ No commit hashes, no file names, no jargon.
 
 ---
 
+## Version 1.5.1, 28 October 2026
+
+This release closes the remaining security and privacy findings from the October audit and the
+copy and accessibility defects found by walking the app as a reader. It also makes the library
+check, import history and source migration pages say what is actually true.
+
+### An import asks before it installs extensions
+
+An import that carries the "install the extensions this backup needs" choice now surveys the
+backup first and stops at a review grouped by extension store. Nothing installs until you tick a
+store and confirm, and the boxes start unchecked. The uploaded file is deleted on confirm,
+Import without extensions, Discard, and expiry.
+
+### Backups carry less, and the AniList token is encrypted
+
+A backup no longer carries live sessions or cached manga-server tokens. The backup keeps the
+empty placeholders so a restore still works, and your live sessions and tokens are left where
+they are. Your AniList connection token is now encrypted in the database and in a backup.
+Disconnecting removes it from Papyrus, but AniList has no way to revoke a token, so it stays
+valid there until it expires; the connections page says so.
+
+### Privacy names every connection and cookie
+
+Privacy now lists the five connections Papyrus can make: AniList title matching, AniList
+tracking, your manga source, an extension repository, and mail on a shared or public install. It
+describes the account, library and session data kept in the local database instead of claiming
+Papyrus collects nothing, and a Cookies section names the session cookie, the cross-site request
+cookie and the optional remember-me cookie with the flags your browser receives.
+
+### The login page stops publishing library titles
+
+The login page used to show real library titles to anyone who reached it. It now shows only the
+manga id and cover, and no longer asks your manga server for a title list.
+
+### Browser responses carry security headers
+
+Every page now refuses to be framed by another site, does not send the address of the page you
+are reading to other sites, turns off camera, microphone, location and other device features
+Papyrus never uses, and stops browsers guessing a file's type. Error pages carry the same rules,
+and browsers are told to use HTTPS for a year, but only when the page was already loaded over
+HTTPS.
+
+### The library and import pages say what is true
+
+The library's check line now separates series that are due, series never fetched, series checked
+recently and series with no source, and the button says Checking... while a pass runs and Nothing
+to check when nothing is due. A series filed from a backup has no source, so it is named instead
+of being counted as up to date. Each import in the history shows when it ran and what it did, so
+two imports of the same file can be told apart. The destination picker for moving series can be
+filtered by name, writes a language once, and names every checkbox. Browser tabs name the source
+or series instead of just Browse or Series. The backups page says the folder is named backups
+beside the database instead of printing its full path, and its Files column is now Health. The
+password confirmation page says why it needs the password again and offers a way back to the
+library, and the import guide points at the file picker below it. A search link no longer carries
+the default content filter unless you change it.
+
+### Keyboard and screen-reader fixes
+
+The page now has a main landmark and a skip link, so keyboard and screen-reader readers can jump
+past the navigation. Cover links in the library and search results say which series they open,
+the cover upload and tag inputs are named, and a scanlator whose name is only whitespace or an
+invisible character is treated as no scanlator rather than an unnamed group.
+
+### Smaller security fixes
+
+The readiness page now explains that another web server on the same machine can make remote
+requests look local, and the security page says not to expose it that way. The tools used to
+build Papyrus have no open security advisories and are no longer part of a release, and the
+Node.js install used for builds moved to the October security release.
+
+## Version 1.5.0, 26 October 2026
+
+This is the security release after 1.4.0. Actions that affect the whole install now belong to
+the first account, imports and extension stores refuse the cases the audit measured, and the
+bundled runtimes move to the October security releases. The two High findings from the walk are
+fixed.
+
+### One account owns the install
+
+The first account, whether created in the browser or on the command line, becomes the install
+owner. Backups, a restore, a library export, and adding or removing an extension store now
+belong to that account. Every other reader keeps the rest of the app, and the Backups link is no
+longer offered to an account that cannot use it.
+
+### Imports and stores are safer
+
+The server-path import field is owner only, uploads stay inside the import folder, and a staged
+archive is capped at 256MB per entry and 384MB in total, with a 16MB cap per field inside a
+`.tachibk` file. An extension store address must be http or https and cannot point at the machine,
+the local network or a disguised address for the machine itself. Adding or removing a store is
+owner only.
+
+### The bundled runtime is current
+
+The PHP, web server and Java runtimes bundled with the Windows install move to the October
+security releases, and four compromised certificate authorities are removed from the Java trust
+store. An update to a package Papyrus uses also closes an authorization bypass, though Papyrus
+did not use the affected feature.
+
+### A backup is a secret
+
+The Backups page now says plainly that a backup contains the whole application database,
+including live session rows, cached manga-server tokens, an AniList token and password hashes,
+and that the folder must be treated as one. The 1.5.1 release removes sessions and cached tokens
+from the backup.
+
+### Imports can install extensions
+
+An import can still install the source extensions the backup names so its series can resolve.
+The import page says so before the run.
+
+### Smaller fixes
+
+Search now says that it checks up to 40 sources, how many are runnable and how many the cap
+leaves out, instead of claiming it searched every installed source. Download unread now sees a
+chapter you read on any page, not just the 50 chapters on screen. Double-clicking the reader's
+shortcut no longer leaves a blank window before the launcher prints anything.
+
 ## Version 1.4.0, 24 October 2026
 
 This release makes a real 41MB backup importable, keeps the reading time a Tachimanga backup
