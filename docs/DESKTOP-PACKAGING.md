@@ -45,7 +45,7 @@ The 1.5.1 build on 2026-10-29 ran from `7f964a1`. The install payload passed its
 at 12,963 files with 138 licence texts. The unsigned installer compiled at 275,072,638 bytes
 (262.3MB) with SHA-256
 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and the portable archive
-compiled at 321,034,734 bytes (306.2MB) with 12,964 entries and a matching sidecar hash. The
+compiled at 321,034,739 bytes (306.2MB) with 12,964 entries and a matching sidecar hash. The
 staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The 1.5.1 setup passed
 the manual sandbox on 2026-10-29. The guest verified the copied installer at 275,072,638 bytes
 with the hash above, installed it per-user, registered, trusted the Keiyoushi store, installed

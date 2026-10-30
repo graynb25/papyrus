@@ -348,12 +348,26 @@ class PortableBuildTest extends TestCase
             $names[] = $archive->getNameIndex($i);
         }
 
+        $readme = (string) $archive->getFromName('PAPYRUS-PORTABLE.txt');
+
         $archive->close();
 
         $this->assertContains('PAPYRUS-PORTABLE.txt', $names, 'a portable has to explain itself');
         $this->assertContains('Papyrus.cmd', $names);
         $this->assertContains('app/Support/Licences.php', $names);
         $this->assertContains('licences/node/manifest.json', $names, 'the npm declarations travel with the install');
+
+        $this->assertStringContainsString(
+            'papyrus-data',
+            $readme,
+            'the readme must name the data directory the launcher creates',
+        );
+
+        $this->assertStringNotContainsString(
+            'directory called "Papyrus"',
+            $readme,
+            'the readme must not send the reader to a directory that is never created',
+        );
 
         // The hash sidecar, in the format both `sha256sum -c` and certutil accept.
         $sidecar = $zip.'.sha256';

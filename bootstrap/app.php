@@ -113,9 +113,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
  * replacement. The dotenv repository is immutable by default in this framework version, so the
  * already-loaded values are replaced rather than merely skipped.
  */
-if (($packagedEnvironment = getenv('PAPYRUS_ENV')) !== false
-    && $packagedEnvironment !== ''
-    && is_file($packagedEnvironment)) {
+$packagedEnvironment = getenv('PAPYRUS_ENV');
+
+if (is_string($packagedEnvironment) && $packagedEnvironment !== '') {
     /*
      * Point the framework's own environment *path* at the data directory, rather than trying to
      * override the file afterwards.
@@ -140,7 +140,9 @@ if (($packagedEnvironment = getenv('PAPYRUS_ENV')) !== false
      * The directory rather than the file, because `environmentFile()` appends `.<APP_ENV>` when
      * APP_ENV is set in the process environment. Naming the file would be undone by that.
      */
-    $app->useEnvironmentPath(dirname($packagedEnvironment));
+    if (is_file($packagedEnvironment)) {
+        $app->useEnvironmentPath(dirname($packagedEnvironment));
+    }
 
     /*
      * Storage goes to the data directory too, and for the same three reasons as the environment
@@ -152,6 +154,12 @@ if (($packagedEnvironment = getenv('PAPYRUS_ENV')) !== false
      * and which nothing collects. The install then looks healthy while the one file a bug report
      * needs is missing. Measured on a complete run: 0 files reached the data directory's storage
      * tree, all six directories of which `InstallLayout` had just created them.
+     *
+     * Keyed on the storage directory's existence rather than the `.env` file's, because the first
+     * run has no `.env` yet. The launcher creates this tree before `papyrus:configure`, which has
+     * to boot before it can write the file, and the portable archive carries no install storage to
+     * fall back to. Measured on the 1.5.1 portable: the first launch failed inside
+     * `papyrus:configure` with "Please provide a valid cache path" before any `.env` existed.
      *
      * Set next to `useEnvironmentPath` rather than in a service provider, because both have to be
      * in place before anything reads them, and because this file is the only place that runs

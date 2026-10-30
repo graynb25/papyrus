@@ -20,7 +20,7 @@ was rebuilt from it. Those runs prove 1.5.0. The 1.5.1 setup passed the manual s
 [What is not proven yet](#what-is-not-proven-yet).
 
 ```text
-sha256  80bd002a8d84fb59370f399c91873f1daa4fc100b244ddef2e9ad30b6f37c61a
+sha256  c30acfe0e4ec811e3a2d5a4609080923bf4cac77b1018da1dc3b45bcf7ae8d33
 ```
 
 What is true today:

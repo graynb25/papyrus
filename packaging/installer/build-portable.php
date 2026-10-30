@@ -226,8 +226,8 @@ Unpack this anywhere and run Papyrus.cmd. There is nothing to install and nothin
 Where your library goes
 -----------------------
 
-Beside this folder, in a directory called "Papyrus" next to wherever you put this. Your library,
-your read progress, your accounts and your settings all live there, and nowhere else.
+Beside this folder, in a directory called "papyrus-data" next to wherever you put this. Your
+library, your read progress, your accounts and your settings all live there, and nowhere else.
 
 This is deliberately different from the installed version. Uninstalling Papyrus from Windows leaves
 your library alone, because deleting somebody's library by accident is not a recoverable mistake.

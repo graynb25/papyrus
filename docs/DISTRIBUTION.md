@@ -12,8 +12,8 @@ measurement. Where something is a judgement call rather than a fact it says so.
 The 1.5.1 release is committed locally, and the artifacts were built from `7f964a1` on
 2026-10-29. The local build produced an unsigned 275,072,638-byte (262.3MB) installer with
 SHA-256 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and a
-321,034,734-byte (306.2MB) portable zip with 12,964 entries and SHA-256
-`80bd002a8d84fb59370f399c91873f1daa4fc100b244ddef2e9ad30b6f37c61a`; the sidecar matches. The
+321,034,739-byte (306.2MB) portable zip with 12,964 entries and SHA-256
+`c30acfe0e4ec811e3a2d5a4609080923bf4cac77b1018da1dc3b45bcf7ae8d33`; the sidecar matches. The
 install tree holds 12,963 files and 138 licence texts, and its built-in checks passed. No 1.5.1
 artifact is published. A local release record exists at `releases/1.5.1.json`; the 1.4.0 record
 remains the latest published release. The 1.5.0 install tree passed the Windows Sandbox gate on
