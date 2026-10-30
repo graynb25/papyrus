@@ -8,7 +8,7 @@ rights.
 ## Status: clean-machine C: and D: runs passed
 
 The portable builder rebuilt the 1.5.1 zip and matching SHA256 sidecar on 2026-10-29 from commit
-`461e54d`, after the first-launch storage fix in `2e4a73d`. The archive has 12,964 entries,
+`8ca2028`, after the first-launch storage fix in `2e4a73d`. The archive has 12,964 entries,
 includes the launcher and bundled runtimes, and contains no `.env` or reader databases. It is not
 published. The 1.5.1 release record lists it with that commit and hash.
 

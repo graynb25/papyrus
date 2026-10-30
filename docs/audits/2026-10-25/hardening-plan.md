@@ -7,7 +7,7 @@ Windows source page read. The real setup executable installed 1.5.0 in the manua
 `86e033a`, the artifacts were rebuilt from it, and the fresh manual run on the rebuilt
 installer passed on 2026-10-27, including the shortcut double-click. Batch H is recorded and
 committed locally. The 1.5.1 hardening release is committed locally on 2026-10-28 and is not
-pushed; its unsigned setup was built from `7f964a1` and its portable from `461e54d` after the
+pushed; its unsigned setup was built from `9dd0918` and its portable from `8ca2028` after the
 first-launch storage fix, both on 2026-10-29. The H3 behaviour change is committed locally on
 2026-10-27 and is not pushed; its manual proof passed
 on a fresh disposable scratch install on 2026-10-28. The `86e033a` artifacts predate the change,
@@ -114,7 +114,7 @@ the behaviour changes or the deployment posture makes it irrelevant.
   disposable scratch install on 2026-10-28; the evidence is in the section below. The
   `86e033a` artifacts predate the change.
 - [x] 1.5.1, remaining hardening and reader copy. Committed locally on 2026-10-28. Its unsigned
-  setup was built from `7f964a1` and its portable from `461e54d` after the first-launch storage
+  setup was built from `9dd0918` and its portable from `8ca2028` after the first-launch storage
   fix in `2e4a73d`, both on 2026-10-29. The setup passed the manual sandbox on 2026-10-29:
   per-user install, registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read.
   The portable archive passed clean-guest runs on C: and D: on 2026-10-29, including the same
@@ -278,7 +278,7 @@ real setup executable. This is manual evidence, not a gate pass. Full evidence i
 
 ### Manual installer sandbox, 1.5.1, 2026-10-29
 
-The 1.5.1 run used the unsigned setup from `7f964a1`, 275,072,638 bytes with SHA-256
+The 1.5.1 run used the unsigned setup from `9dd0918`, 275,072,638 bytes with SHA-256
 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`. The launcher verified it
 against the manifest before the guest started, and the guest verified its copy again
 (`installer-verified.txt`, `match=True`, `version=1.5.1`). The setup completed as a per-user
@@ -311,7 +311,7 @@ Windows Sandbox gate.
 
 ### Manual portable sandbox, 1.5.1, 2026-10-29
 
-The portable zip was rebuilt from `461e54d`, after the first-launch storage fix in `2e4a73d`,
+The portable zip was rebuilt from `8ca2028`, after the first-launch storage fix in `2e4a73d`,
 because the archive has no storage tree and the first start must create it. It is 321,034,901
 bytes with SHA-256
 `0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`; the sidecar matches. The

@@ -10,12 +10,12 @@ measurement. Where something is a judgement call rather than a fact it says so.
 ## Current delivery status, 2026-10-29
 
 The 1.5.1 release is committed locally. The unsigned 275,072,638-byte (262.3MB) installer was
-built from `7f964a1`, and its manual sandbox run passed on 2026-10-29: per-user install,
+built from `9dd0918`, and its manual sandbox run passed on 2026-10-29: per-user install,
 registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1 installer
 payload is proven. Both automated install harnesses also passed in a clean guest on 2026-10-29:
 the install harness proved a per-user install, data outside the program folder, `/ready` 200 and a
 byte-identical library after uninstall; the zero-write harness proved 12,965 installed files with
-0 added, removed or changed. The portable zip was rebuilt from `461e54d` after the first-launch
+0 added, removed or changed. The portable zip was rebuilt from `8ca2028` after the first-launch
 storage fix in `2e4a73d`: 321,034,901 bytes (306.2MB), 12,964 entries, SHA-256
 `0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`, and the sidecar matches. The
 rebuilt portable passed clean-guest runs on C: and D: on 2026-10-29. The C: run used
@@ -33,6 +33,20 @@ first account created, `/sources` rendered, Keiyoushi store and MangaTaro instal
 fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
+
+### History rewrite, 2026-10-30
+
+The repository history was rewritten on 2026-10-30 to remove machine detail. The
+artifact source commits were remapped:
+
+| Artifact | Pre-rewrite | Rewritten |
+| --- | --- | --- |
+| Setup | `7f964a1` | `9dd0918` |
+| Portable | `461e54d` | `8ca2028` |
+
+The trees are identical and neither artifact was rebuilt, so the SHA-256 values and
+sizes above are unchanged. The `version.txt` inside each artifact still names the
+pre-rewrite commit; compare it with this table when checking a binary's stamp.
 
 ## What we ship, and what we refuse to ship
 
