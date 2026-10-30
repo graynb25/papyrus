@@ -217,4 +217,30 @@ class SandboxRunnerTest extends TestCase
                 .'with a slower ending.',
         );
     }
+
+    /**
+     * The verify wrapper must wait for the harness, not for whatever the harness leaves behind.
+     *
+     * On 2026-10-29 the first install harness passed, then the wrapper never started the second
+     * one. `Start-Process -Wait` waits for descendants too, and a child outlived the harness while
+     * holding its redirected output open. Waiting on the process id with a bound is the property
+     * that keeps both harnesses running in one guest.
+     */
+    public function test_the_verify_wrapper_waits_for_the_harness_not_its_descendants(): void
+    {
+        $code = $this->scriptCode(self::DIR.'/verify-in-sandbox.ps1');
+
+        $this->assertStringNotContainsString(
+            '-Wait',
+            $code,
+            'the wrapper must not use Start-Process -Wait. It also waits for descendants, and a child '
+                .'that outlives the harness hangs the run before the second harness starts.',
+        );
+
+        $this->assertStringContainsString(
+            'WaitForExit',
+            $code,
+            'the wrapper must wait on the harness process itself, with a bound.',
+        );
+    }
 }

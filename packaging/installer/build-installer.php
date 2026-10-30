@@ -310,6 +310,13 @@ if ($skipSigning) {
  * evidence. A manifest assembled from state captured before the compile would carry the hash of the
  * wrong file and still look perfect.
  *
+ * ## Why an artifact can name its own commit
+ *
+ * Because a portable rebuilt after a first-launch fix can be newer than the already-proven
+ * installer. The top-level commit is the installer's, and an artifact that came from a different
+ * tree carries the commit it actually came from. A reader checking the portable hash can then see
+ * which tree produced it without assuming it matches the installer.
+ *
  * ## Why `requires` is in it at all
  *
  * Because the Suwayomi floor is a real contract that has been a sentence in a document until now. The
@@ -390,6 +397,7 @@ $manifest = [
         'file' => basename($expected),
         'sha256' => hash_file('sha256', $expected),
         'size' => filesize($expected),
+        'commit' => $stamped['commit'] ?? null,
     ]],
 ];
 

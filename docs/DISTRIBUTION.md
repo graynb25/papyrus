@@ -26,13 +26,13 @@ searched One Piece, read chapter 1 of 1,203, and passed the layout check with no
 install, no Start Menu entry and no uninstall entry. The setup and the portable zip are built from
 different commits: the install tree ships storage placeholders and did not need the first-launch
 fix, and the setup was already proven. No 1.5.1 artifact is published. A local release record
-exists at `releases/1.5.1.json`; it records the setup only. The 1.4.0 record remains the latest
-published release. The 1.5.0 install tree passed the Windows Sandbox gate on run 19: 86 checks, 0
-failures, started through the reader shortcut with `--open`, first account created, `/sources`
-rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and page 0 of chapter 1 read
-through the authenticated proxy as a 175,432-byte WebP. The gate copies `build/install` rather than
-running the setup executable. macOS and Linux packaging below remain proposals, not available
-downloads.
+exists at `releases/1.5.1.json`; it records both artifacts, each with the commit it was built from.
+The 1.4.0 record remains the latest published release. The 1.5.0 install tree passed the Windows
+Sandbox gate on run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`,
+first account created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece
+fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The
+gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
+below remain proposals, not available downloads.
 
 ## What we ship, and what we refuse to ship
 
@@ -357,10 +357,15 @@ A plain `manifest.json` per release, committed to the repository as well as atta
   "released": "2026-10-10",
   "requires": { "suwayomi": ">=2.3.0", "jvm": ">=21" },
   "artifacts": [
-    { "file": "papyrus-1.2.3-windows-x64-portable.zip", "sha256": "...", "size": 0 }
+    { "file": "papyrus-1.2.3-windows-x64-portable.zip", "sha256": "...", "size": 0, "commit": "abc1234" }
   ]
 }
 ```
+
+When one release carries artifacts built from different commits, each artifact names its own
+`commit`. The top-level `commit` is the installer's, and a portable rebuilt after a fix carries the
+commit it actually came from. A reader checking the portable hash can then see which tree produced
+it without assuming it matches the installer.
 
 Two jobs. The updater reads it to know what it is looking at, and a reader who distrusts our
 page can read it and check the hashes themselves. It also makes the compatibility requirement

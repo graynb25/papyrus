@@ -39,6 +39,7 @@ function Add-Summary([string]$line) {
 function Run-Harness([string]$name, [string]$script) {
     $out = Join-Path $results "$name.txt"
     $err = Join-Path $results "$name.err.txt"
+    $timeoutSeconds = 1200
 
     Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $err -Force -ErrorAction SilentlyContinue
@@ -51,10 +52,19 @@ function Run-Harness([string]$name, [string]$script) {
     try {
         $process = Start-Process -FilePath $powershell `
             -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Repo', $repo) `
-            -Wait -PassThru -NoNewWindow `
+            -PassThru -NoNewWindow `
             -RedirectStandardOutput $out -RedirectStandardError $err
 
-        $code = $process.ExitCode
+        # Wait for this process only, not its descendants. `Start-Process -Wait` also waits for
+        # every child, and the 2026-10-29 run showed a child outliving the harness and holding
+        # the redirected output open: the first harness passed, then the wrapper never started
+        # the second one. The bound also keeps a hung harness from consuming the host deadline.
+        if (-not $process.WaitForExit($timeoutSeconds * 1000)) {
+            taskkill /PID $process.Id /T /F 2>&1 | Out-Null
+            Add-Content -Path $err -Value ("wrapper timed out after {0}s and killed the harness process tree" -f $timeoutSeconds) -ErrorAction SilentlyContinue
+        } else {
+            $code = $process.ExitCode
+        }
     } catch {
         $code = 99
         Set-Content -Path $err -Value ("wrapper could not start the harness: " + $_.Exception.Message) -Encoding UTF8
