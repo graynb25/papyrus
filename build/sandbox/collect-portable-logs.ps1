@@ -86,9 +86,9 @@ Add-Line "volume_free_bytes=$(if ($null -ne $volume) { $volume.SizeRemaining } e
 Add-Line "disk_bus_type=$(if ($null -ne $disk) { $disk.BusType } else { '' })"
 Add-Line "disk_model=$(if ($null -ne $disk) { $disk.Model } else { '' })"
 
-$versionPath = Join-Path $appRoot 'version.txt'
+$versionPath = if ($appRoot -ne '') { Join-Path $appRoot 'version.txt' } else { '' }
 
-if (Test-Path -LiteralPath $versionPath) {
+if ($versionPath -ne '' -and (Test-Path -LiteralPath $versionPath)) {
     Get-Content -LiteralPath $versionPath | ForEach-Object { Add-Line "version_file=$_" }
 }
 

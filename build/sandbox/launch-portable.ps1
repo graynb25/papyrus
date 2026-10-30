@@ -192,7 +192,7 @@ Say "launching Windows Sandbox for the ${driveLetter}: run..."
 Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsSandbox.exe') -ArgumentList "`"$wsb`""
 
 $ready = Join-Path $session 'READY.txt'
-$deadline = (Get-Date).AddMinutes(10)
+$deadline = (Get-Date).AddMinutes(20)
 
 Say 'waiting for the guest to verify and extract the archive, then start the screenshot loop...'
 
@@ -210,7 +210,7 @@ if (Test-Path -LiteralPath $ready) {
     Say 'ok   guest ready'
     Get-Content -LiteralPath $ready | ForEach-Object { Say "  $_" }
 } else {
-    Say 'WARNING: no READY.txt after ten minutes.'
+    Say 'WARNING: no READY.txt after twenty minutes.'
     Say 'The guest may still be extracting, or the mapping or the setup script failed.'
     Say "Look in $session for portable.log and portable-verified.txt, and at the sandbox window."
 }

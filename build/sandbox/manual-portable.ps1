@@ -265,6 +265,8 @@ if ($driveKind -eq 'vhd') {
 $zipDirectory = Split-Path -Parent $appRoot
 $zip = Join-Path $zipDirectory $expectedFile
 
+New-Item -ItemType Directory -Force -Path $zipDirectory | Out-Null
+
 Say "drive $driveLetter ($driveKind), app $appRoot, data $dataRoot"
 Say "copying $zipSource to $zip"
 
@@ -310,7 +312,8 @@ if (Test-Path -LiteralPath $dataRoot) {
 Say "extracting to $appRoot"
 
 try {
-    Expand-Archive -LiteralPath $zip -DestinationPath $appRoot -Force -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $appRoot)
 } catch {
     Stop-WithError "Could not extract the archive: $($_.Exception.Message)"
 }

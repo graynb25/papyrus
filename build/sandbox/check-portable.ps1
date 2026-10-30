@@ -39,7 +39,10 @@ $driveMatches = $appDrive -eq $driveLetter -and $dataDrive -eq $driveLetter
 $kindMatches = if ($driveKind -eq 'local') { $appDrive -eq $systemDrive } else { $separateVolume }
 $localPrograms = Join-Path $env:LOCALAPPDATA 'Programs\Papyrus'
 $localData = Join-Path $env:LOCALAPPDATA 'Papyrus'
-$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+$startMenus = @(
+    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs')
+)
 
 New-Item -ItemType Directory -Force -Path $results | Out-Null
 
@@ -58,8 +61,16 @@ $localProgramsExists = Test-Path -LiteralPath $localPrograms
 $localDataExists = Test-Path -LiteralPath $localData
 $dataInsideApp = Test-Path -LiteralPath (Join-Path $appRoot 'papyrus-data')
 
-$shortcuts = @(Get-ChildItem -LiteralPath $startMenu -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like 'Papyrus*' })
+$shortcuts = @()
+
+foreach ($startMenu in $startMenus) {
+    if (-not (Test-Path -LiteralPath $startMenu)) {
+        continue
+    }
+
+    $shortcuts += @(Get-ChildItem -LiteralPath $startMenu -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like 'Papyrus*' })
+}
 
 $uninstallEntries = @()
 
