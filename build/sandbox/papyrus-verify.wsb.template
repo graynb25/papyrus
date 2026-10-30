@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+
+  <!--
+    The automated install harness sandbox.
+
+    ## Why this exists
+
+    `verify-installer.ps1` and `verify-install-immutable.ps1` install into %LOCALAPPDATA% and create
+    a real library there. On the host a live 1.4.0 install and 1.5 GB of reader data are already
+    present, so both harnesses abort at pre-flight. A fresh guest has neither, so the 1.5.1 setup can
+    be measured without moving or deleting the reader's data.
+
+    ## What is mapped
+
+    The repository is read only at C:\repo, because the harness reads VERSION and
+    build\dist\Papyrus-<version>-setup.exe. The tools folder beside the repository is read only at
+    C:\tools, because the harness scripts live there rather than in the repository. The sandbox
+    folder is read only at C:\sandbox, for the guest wrapper. The results folder is writable at
+    C:\results.
+
+    ## What the guest runs
+
+    `verify-in-sandbox.ps1` runs the install harness first. If it passes, it runs the zero-write
+    harness. It writes both outputs and a summary to C:\results, then writes DONE.txt and shows a
+    message box. The guest stays open so the output can be inspected.
+
+    ## One guest at a time
+
+    Windows Sandbox refuses a second guest while one is open, and it can do that by exiting zero with
+    no message. The host launcher checks for a running guest before it starts this.
+  -->
+
+  <VGpu>Disable</VGpu>
+  <Networking>Default</Networking>
+
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_REPO_ROOT%</HostFolder>
+      <SandboxFolder>C:\repo</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_TOOLS%</HostFolder>
+      <SandboxFolder>C:\tools</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_REPO_ROOT%\build\sandbox</HostFolder>
+      <SandboxFolder>C:\sandbox</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_VERIFY_RESULTS%</HostFolder>
+      <SandboxFolder>C:\results</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\sandbox\verify-in-sandbox.ps1</Command>
+  </LogonCommand>
+
+</Configuration>

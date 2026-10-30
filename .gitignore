@@ -97,6 +97,11 @@ yarn-error.log
 # What a manual sandbox session leaves behind: a screenshot every ten seconds, a CSV index, and
 # installer hashes. Readable from the host, useless in the repository.
 /build/manual-sandbox-results/
+# What a portable sandbox session leaves behind: the same screenshots and logs, plus the archive
+# hash and the layout check.
+/build/portable-sandbox-results/
+# What an automated install sandbox session leaves behind: the two harness outputs and the summary.
+/build/verify-sandbox-results/
 # The throwaway data directory build-install.php lays out beside the install, so it can ask the
 # launcher whether it can configure itself. Discarded by the build, but not by git if it is killed
 # midway, and it holds a real .env with a generated APP_KEY.

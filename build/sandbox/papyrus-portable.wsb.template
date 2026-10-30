@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+
+  <!--
+    The manual acceptance sandbox for the portable Papyrus archive.
+
+    ## Why this exists beside the installer run
+
+    `papyrus.wsb` runs `run-in-sandbox.ps1`, which copies `build/install` and tests it. The manual
+    installer run proves `Papyrus-<version>-setup.exe`. Neither proves the portable shape: a reader
+    unpacking the zip, running Papyrus.cmd from that folder, and getting a data directory beside it.
+    This configuration copies the real archive into the guest, verifies it against the host hash,
+    extracts it outside %LOCALAPPDATA%, and a person registers, adds a source, searches, and reads a
+    chapter.
+
+    This is manual acceptance evidence. It does not become a gate pass, because a person clicking
+    through a flow is not reproducible in the way the gate is.
+
+    ## Why the archive is copied rather than extracted from the mapped folder
+
+    The mapped folder is read only, and a reader meets a zip after copying it, not from a network
+    share. `manual-portable.ps1` copies the archive to the tested drive, verifies its size and
+    SHA-256 against `expected-portable.txt`, and extracts it there.
+
+    The host chooses the case. `-Drive C` uses `C:\Papyrus Portable\Papyrus`, so the data directory
+    is `C:\Papyrus Portable\papyrus-data` and the path contains a space. `-Drive D` creates a VHD in
+    the guest, attaches it as D:, and uses `D:\Papyrus`, so the data directory is `D:\papyrus-data`.
+    Both runs are needed: C: is the ordinary case and D: is the second-volume case a reader with a
+    USB stick has.
+
+    ## The results folder
+
+    The host creates a fresh `build/portable-sandbox-results/session-<timestamp>` folder before this
+    is launched, writes the expected archive hash into it, and maps it to `C:\results`. A missing
+    host folder is never created by Windows Sandbox: the mount fails, the logon command never runs,
+    and the window closes looking like a slow boot.
+
+    ## The screenshot loop
+
+    `capture-screen.ps1` starts hidden and writes a PNG every ten seconds to `C:\results`. The
+    `Stop screenshots` desktop shortcut writes `STOP.txt`, which ends it cleanly. The named step
+    capture is separate, so the loop is the record and the named frames are the index.
+
+    ## One guest at a time
+
+    Windows Sandbox refuses a second guest while one is open, and it can do that by exiting zero with
+    no message. The host launcher checks for a running guest before it starts this.
+  -->
+
+  <VGpu>Disable</VGpu>
+  <Networking>Default</Networking>
+
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_REPO_ROOT%\build\dist</HostFolder>
+      <SandboxFolder>C:\installer</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_REPO_ROOT%\build\sandbox</HostFolder>
+      <SandboxFolder>C:\sandbox</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>%PAPYRUS_PORTABLE_RESULTS%</HostFolder>
+      <SandboxFolder>C:\results</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\sandbox\manual-portable.ps1</Command>
+  </LogonCommand>
+
+</Configuration>
