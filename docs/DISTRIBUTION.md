@@ -9,26 +9,30 @@ measurement. Where something is a judgement call rather than a fact it says so.
 
 ## Current delivery status, 2026-10-29
 
-The 1.5.1 release is committed locally, and the artifacts were built from `7f964a1` on
-2026-10-29. The local build produced an unsigned 275,072,638-byte (262.3MB) installer with
-SHA-256 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and a
-321,034,739-byte (306.2MB) portable zip with 12,964 entries and SHA-256
-`c30acfe0e4ec811e3a2d5a4609080923bf4cac77b1018da1dc3b45bcf7ae8d33`; the sidecar matches. The
-install tree holds 12,963 files and 138 licence texts, and its built-in checks passed. No 1.5.1
-artifact is published. A local release record exists at `releases/1.5.1.json`; the 1.4.0 record
-remains the latest published release. The 1.5.0 install tree passed the Windows Sandbox gate on
-run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`, first account
-created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and
-page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The gate copies
-`build/install` rather than running the setup executable. The separate manual sandbox ran the
-1.5.0 setup executable: the first run installed 1.5.0 per-user and the reader flow passed, but
-found the shortcut preflight hang, and the fresh run on the rebuilt installer passed on
-2026-10-27, including the shortcut double-click. Those runs prove 1.5.0. The separate manual
-sandbox then ran the 1.5.1 setup on 2026-10-29: the guest verified the copied installer at
-275,072,638 bytes with the hash above, installed it per-user, registered, trusted the Keiyoushi
-store, installed MangaTaro, searched One Piece, and read chapter 1 of 1,202. The 1.5.1 installer
-payload is proven. The portable zip was not launched, so the portable shape remains unproven.
-macOS and Linux packaging below remain proposals, not available downloads.
+The 1.5.1 release is committed locally. The unsigned 275,072,638-byte (262.3MB) installer was
+built from `7f964a1`, and its manual sandbox run passed on 2026-10-29: per-user install,
+registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1 installer
+payload is proven. Both automated install harnesses also passed in a clean guest on 2026-10-29:
+the install harness proved a per-user install, data outside the program folder, `/ready` 200 and a
+byte-identical library after uninstall; the zero-write harness proved 12,965 installed files with
+0 added, removed or changed. The portable zip was rebuilt from `461e54d` after the first-launch
+storage fix in `2e4a73d`: 321,034,901 bytes (306.2MB), 12,964 entries, SHA-256
+`0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`, and the sidecar matches. The
+rebuilt portable passed clean-guest runs on C: and D: on 2026-10-29. The C: run used
+`C:\Papyrus Portable\Papyrus` with a space in the path; the D: run used `D:\Papyrus` on a 4 GB
+VHD-backed second volume. Both verified the archive, started through `Papyrus.cmd`, created
+`papyrus-data` beside the program folder, registered, trusted Keiyoushi, installed MangaTaro,
+searched One Piece, read chapter 1 of 1,203, and passed the layout check with no `%LOCALAPPDATA%`
+install, no Start Menu entry and no uninstall entry. The setup and the portable zip are built from
+different commits: the install tree ships storage placeholders and did not need the first-launch
+fix, and the setup was already proven. No 1.5.1 artifact is published. A local release record
+exists at `releases/1.5.1.json`; it records the setup only. The 1.4.0 record remains the latest
+published release. The 1.5.0 install tree passed the Windows Sandbox gate on run 19: 86 checks, 0
+failures, started through the reader shortcut with `--open`, first account created, `/sources`
+rendered, Keiyoushi store and MangaTaro installed, One Piece fetched, and page 0 of chapter 1 read
+through the authenticated proxy as a 175,432-byte WebP. The gate copies `build/install` rather than
+running the setup executable. macOS and Linux packaging below remain proposals, not available
+downloads.
 
 ## What we ship, and what we refuse to ship
 

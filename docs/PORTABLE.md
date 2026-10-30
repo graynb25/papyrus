@@ -5,22 +5,26 @@ rights.
 
 ---
 
-## Status: locally built, clean-machine read not verified
+## Status: clean-machine C: and D: runs passed
 
 The portable builder rebuilt the 1.5.1 zip and matching SHA256 sidecar on 2026-10-29 from commit
-`7f964a1`. The archive has 12,964 entries, includes the launcher and bundled runtimes, and
-contains no `.env` or reader databases. It is not published, and it has not been launched on a
-clean machine. The 1.5.0 install tree passed the Windows Sandbox gate on run 19 (86 checks, 0
-failures, including a real source page read), but the portable shape was not the thing tested,
-and the gate copies `build/install` rather than running the setup executable. The separate manual
-sandbox ran the 1.5.0 installer on 2026-10-26: it installed 1.5.0 per-user and the reader flow
-passed, but the shortcut preflight hung; the fix is committed in `86e033a` and the 1.5.0 archive
-was rebuilt from it. Those runs prove 1.5.0. The 1.5.1 setup passed the manual sandbox on
-2026-10-29, but the 1.5.1 portable archive itself has still not been launched. See
-[What is not proven yet](#what-is-not-proven-yet).
+`461e54d`, after the first-launch storage fix in `2e4a73d`. The archive has 12,964 entries,
+includes the launcher and bundled runtimes, and contains no `.env` or reader databases. It is not
+published.
+
+The rebuilt archive was run on a clean Windows Sandbox guest twice on 2026-10-29: once from
+`C:\Papyrus Portable\Papyrus`, a path with a space, and once from `D:\Papyrus` on a 4 GB
+VHD-backed second volume. Both runs verified the archive hash, extracted it, started through
+`Papyrus.cmd`, created `papyrus-data` beside the program folder, registered a reader, added the
+Keiyoushi store, installed MangaTaro, searched One Piece, read chapter 1 of 1,203, and passed the
+layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and no uninstall entry. This is
+manual acceptance evidence, not a gate pass. The local session folders
+`build\portable-sandbox-results\session-20261029-200249-c` and
+`session-20261029-201726-d` hold the screenshots and logs.
 
 ```text
-sha256  c30acfe0e4ec811e3a2d5a4609080923bf4cac77b1018da1dc3b45bcf7ae8d33
+sha256  0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab
+size    321,034,901 bytes
 ```
 
 What is true today:
@@ -30,9 +34,18 @@ What is true today:
 | The data location rule | implemented and tested |
 | The archive builder | built and content/hash verified on 2026-10-29 |
 | An archive anyone can download | **no** |
-| A clean first launch with source reading | **not proven** |
+| A clean first launch with source reading | **manual acceptance passed on C: and D:** |
 
-Do not promise a reader this works yet.
+The C: run logged the launcher's warning that temporary uploads would reach 102 characters, close
+to the 260-character limit; it did not block the run. The guest's Storage cmdlets returned no
+volume facts, so both layout files leave the volume fields blank. The D: VHD is proven by the
+diskpart output in `portable.log`, which records the create, attach, format and drive-letter
+assignment.
+
+The archive is not published. These two runs prove this build on two clean volumes; they do not
+cover every Windows configuration. The 1.5.0 install tree passed the Windows Sandbox gate on run
+19 (86 checks, 0 failures, including a real source page read), and the 1.5.1 setup passed the
+manual sandbox on 2026-10-29. Those prove the installer, not the portable zip.
 
 ---
 
@@ -93,24 +106,19 @@ through to manga pages.
 
 ## What is not proven yet
 
-Three things, in the order they would bite.
+Two things, in the order they would bite.
 
-**1. A portable first launch from a clean folder has not been proven.** The validation archive was
-inspected but not launched in a clean guest. Three defects have been found only by installing from
-nothing, and every one was invisible from a working install. A portable first launch is another
-such path.
-
-**2. Fixed ports still limit side-by-side copies.** The queue and scheduler lookups now match the
+**1. Fixed ports still limit side-by-side copies.** The queue and scheduler lookups now match the
 data directory and role, so one copy no longer claims another copy's workers. The web and Suwayomi
 health lines are port probes: a second copy can adopt the Suwayomi already on 4567 and a responding
 web server on 8000. Those lines do not prove the responding server belongs to that copy. See the
 current distinction in [ROADMAP.md](../ROADMAP.md) and the investigation in
 [ENGINEERING-NOTES.md](ENGINEERING-NOTES.md).
 
-**3. The ports are fixed.** Port 8000 for the app and 4567 for the manga server, with no way to
+**2. The ports are fixed.** Port 8000 for the app and 4567 for the manga server, with no way to
 change them. Two Windows accounts on one machine collide, and a portable copy alongside an installed
 one collides. The documented behaviour for two copies is: stop the other one. The honest behaviour
-would be to detect it and say so, which is item 2.
+would be to detect it and say so, which is item 1.
 
 ---
 

@@ -7,8 +7,9 @@ Windows source page read. The real setup executable installed 1.5.0 in the manua
 `86e033a`, the artifacts were rebuilt from it, and the fresh manual run on the rebuilt
 installer passed on 2026-10-27, including the shortcut double-click. Batch H is recorded and
 committed locally. The 1.5.1 hardening release is committed locally on 2026-10-28 and is not
-pushed; its unsigned setup and portable were rebuilt from `7f964a1` on 2026-10-29. The H3
-behaviour change is committed locally on 2026-10-27 and is not pushed; its manual proof passed
+pushed; its unsigned setup was built from `7f964a1` and its portable from `461e54d` after the
+first-launch storage fix, both on 2026-10-29. The H3 behaviour change is committed locally on
+2026-10-27 and is not pushed; its manual proof passed
 on a fresh disposable scratch install on 2026-10-28. The `86e033a` artifacts predate the change,
 so anything built from them still carries the old behaviour. This plan turns the walk in
 `walk.md` and the security assessment in `security.md` into release work for 1.5.0 and 1.5.1.
@@ -113,9 +114,12 @@ the behaviour changes or the deployment posture makes it irrelevant.
   disposable scratch install on 2026-10-28; the evidence is in the section below. The
   `86e033a` artifacts predate the change.
 - [x] 1.5.1, remaining hardening and reader copy. Committed locally on 2026-10-28. Its unsigned
-  setup and portable were rebuilt from `7f964a1` on 2026-10-29. The setup passed the manual
-  sandbox on 2026-10-29: per-user install, registration, Keiyoushi, MangaTaro, an One Piece
-  search and a chapter read. The portable archive was not launched.
+  setup was built from `7f964a1` and its portable from `461e54d` after the first-launch storage
+  fix in `2e4a73d`, both on 2026-10-29. The setup passed the manual sandbox on 2026-10-29:
+  per-user install, registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read.
+  The portable archive passed clean-guest runs on C: and D: on 2026-10-29, including the same
+  reader flow and a layout check with no install or registry entry. Both are manual evidence,
+  not gate passes.
 
 Parked on 2026-10-25 after Batch E and resumed on 2026-10-26. The batch work and the audit
 documents are committed as `86e033a` on `main`; nothing is pushed. The shelf re-import, the
@@ -284,8 +288,58 @@ account registered, the Keiyoushi store was trusted, MangaTaro installed, a One 
 returned 14 results deduplicated from 2 of 2 runnable sources, and Chapter 1 of 1,202 rendered at
 `/read/1/1/1`. The watcher took 39 frames and stopped on the stop marker. Verdict: the 1.5.1
 installer payload and reader flow are proven on the real setup executable. The portable archive
-was not launched. This is manual evidence, not a gate pass. Artifacts are in
+is covered separately below. This is manual evidence, not a gate pass. Artifacts are in
 `build\manual-sandbox-results\session-20261029-093709\`.
+
+### Automated install harnesses, 1.5.1, 2026-10-29
+
+The setup was also measured by the two automated harnesses in a fresh Windows Sandbox guest. The
+guest verified the copied installer against the manifest before either run. `verify-installer.ps1`
+exited 0: silent install in 35s, 12,965 files under `%LOCALAPPDATA%\Programs\Papyrus`, data at
+`%LOCALAPPDATA%\Papyrus`, `/ready` 200 with the key and database checks true and no pending
+migrations, readable console output, stop exit 0, uninstall exit 0 in 13s, install removed, the
+561,152-byte library byte identical, and no leftover install files or shortcuts.
+`verify-install-immutable.ps1` exited 0: install in 42s, 12,965 files and 633.4 MB, ready in 15s,
+`/ready` 200, a 30s hold, stop exit 0, 0 ports held, 0 Java processes left, 0 files added, 0
+removed and 0 changed, then uninstall exit 0 with the install and data removed.
+
+The wrapper that runs both harnesses in sequence hung after the first one because a child process
+kept its redirected output open, so the second harness was started directly in the same guest. Both
+harnesses exited 0 and their full output is in
+`build\verify-sandbox-results\session-20261029-204802\`. This is automated evidence, not the
+Windows Sandbox gate.
+
+### Manual portable sandbox, 1.5.1, 2026-10-29
+
+The portable zip was rebuilt from `461e54d`, after the first-launch storage fix in `2e4a73d`,
+because the archive has no storage tree and the first start must create it. It is 321,034,901
+bytes with SHA-256
+`0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`; the sidecar matches. The
+archive has 12,964 entries, no `.env`, no database and no storage tree, and its readme names
+`papyrus-data` as the data folder. The host first launch reproduced the fix before the guest runs:
+`.env` written, 47 migrations applied, database created, exit 0.
+
+Two clean Windows Sandbox guests ran the same archive. The C: run used
+`C:\Papyrus Portable\Papyrus`, a path with a space, with data at
+`C:\Papyrus Portable\papyrus-data`; session `session-20261029-200249-c`. The D: run created a
+4 GB VHD inside the guest with diskpart, attached it as D:, and used `D:\Papyrus` with data at
+`D:\papyrus-data`; session `session-20261029-201726-d`. Both guests verified the copied archive
+hash before extraction and again inside the guest, started through `Papyrus.cmd`, and wrote
+`papyrus-data` beside the program folder. Both registered the first account, trusted the
+Keiyoushi store, installed MangaTaro, searched One Piece, and rendered chapter 1 of 1,203 at
+`/read/1/1`. Both layout checks returned `PASS`: data beside the app, no `%LOCALAPPDATA%`
+install, no Start Menu entry and no uninstall entry. The D: layout records `drive=D`,
+`drive_kind=vhd` and `separate_volume=True`.
+
+The guest's Storage cmdlets returned no volume facts, so both layout files leave
+`volume_file_system`, `volume_size_bytes`, `disk_bus_type` and `disk_model` blank. The D: VHD is
+proven by the diskpart output in `portable.log`, which records the create, attach, format and
+drive-letter assignment. The C: run logged the launcher's warning that temporary uploads would
+reach 102 characters, close to the 260-character limit; it did not block the run. Verdict: the
+rebuilt 1.5.1 portable starts and reads on a clean machine from C: and from a separate D: volume.
+This is manual acceptance evidence, not a gate pass. Artifacts are in
+`build\portable-sandbox-results\session-20261029-200249-c\` and
+`build\portable-sandbox-results\session-20261029-201726-d\`.
 
 ### Final gates, 2026-10-26
 
@@ -1013,7 +1067,7 @@ the changed tree.
 | Batch | Focused proof | Final proof |
 | --- | --- | --- |
 | A | first and second account role tests, posted role ignored, migration backfill | six gates |
-| B | staged `php -v`, `frankenphp --version`, `java -version`, build assertions | installer and portable built; install tree passed the Windows Sandbox gate on run 19, including a source page read; source access also passed on WSL; the manual sandbox proved the setup executable installs 1.5.0 and the reader flow works, and found the shortcut preflight hang, fixed in the tree; the fresh manual run on the rebuilt installer passed on 2026-10-27, including the shortcut double-click |
+| B | staged `php -v`, `frankenphp --version`, `java -version`, build assertions | installer and portable built; install tree passed the Windows Sandbox gate on run 19, including a source page read; source access also passed on WSL; the manual sandbox proved the setup executable installs 1.5.0 and the reader flow works, and found the shortcut preflight hang, fixed in the tree; the fresh manual run on the rebuilt installer passed on 2026-10-27, including the shortcut double-click; the rebuilt 1.5.1 portable passed clean-guest runs on C: and D: on 2026-10-29 |
 | C | two-account page, action and export tests | scratch-install write probe, re-walk backups page |
 | D | non-owner path refusal, crafted archive cap, store URL refusals | scratch-install probes, re-walk import and sources |
 | E | warning copy and documentation assertions | dash and machine-detail gates |

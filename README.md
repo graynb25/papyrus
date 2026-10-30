@@ -208,7 +208,7 @@ desktop. It is the ordinary route and it is the one most people want.
 
 **The portable zip.** Unpack it anywhere and run `Papyrus.cmd`. No installer, no registry, no admin
 rights, no uninstaller. It is for trying Papyrus without committing to it, or running it from a USB
-stick. Your library lives in a `Papyrus` folder *beside* wherever you unpack it, not inside it.
+stick. Your library lives in a `papyrus-data` folder *beside* wherever you unpack it, not inside it.
 
 Uninstalling the installer deliberately leaves your library alone, because deleting somebody's library
 by accident is not a recoverable mistake. Removing the portable folder does not touch it either.
@@ -779,7 +779,7 @@ something to monetise.
 | **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The archive builder works; publication and a portable clean-machine read remain unproven |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.1 archive passed clean-machine C: and D: runs; publication remains open |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

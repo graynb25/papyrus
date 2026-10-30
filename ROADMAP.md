@@ -24,8 +24,8 @@ Severity is the project's existing scale:
 
 Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what exists: a Windows
 installer, a portable archive builder, daily backups, a diagnostics bundle, a health check that asks
-real questions, and a Suwayomi version check. A portable package is not published, and clean-machine
-source access is not proven.
+real questions, and a Suwayomi version check. A portable package is not published; the 1.5.1 archive
+passed clean-machine C: and D: runs.
 
 ---
 
@@ -135,13 +135,12 @@ Papyrus.
 
 ### 5. A verified portable download
 
-**In progress.** A 1.4.0 build on 2026-10-25 produced a 305.9MB zip with 12,957 entries; required
-files, privacy exclusions and the SHA256 sidecar were checked. No portable archive is published.
-
-The latest Sandbox run started Papyrus and Suwayomi but produced no final report and did not prove
-source access. The installer verifier also refuses to run while the reader's installed program or
-data directory already exists. A clean-machine reader path remains open until those gates can run
-safely and prove source access.
+**In progress.** A 1.5.1 build on 2026-10-29 produced a 306.2MB zip with 12,964 entries; required
+files, privacy exclusions and the SHA256 sidecar were checked. The rebuilt archive passed clean-guest
+runs on C: (a path with a space) and D: (a separate VHD-backed volume): first launch, registration,
+source install, One Piece search, chapter read, and a layout check with no install or registry entry.
+No portable archive is published. The remaining work is publication and the fixed-port limit for
+side-by-side copies.
 
 ---
 

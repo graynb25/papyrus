@@ -3,9 +3,11 @@
 Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox
 gate on run 19 with a real Windows source read, and the rebuilt 1.5.0 installer passed the manual
 sandbox on 2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run. The
-1.5.1 artifacts were rebuilt from `7f964a1` on 2026-10-29, and the 1.5.1 setup passed the manual
-sandbox on 2026-10-29: per-user install, registration, Keiyoushi, MangaTaro, an One Piece search
-and a chapter read.** Run 19 copied `build/install` to a fresh guest and started it through
+1.5.1 setup was built from `7f964a1` and passed the manual sandbox on 2026-10-29: per-user
+install, registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1
+portable zip was rebuilt from `461e54d` after the first-launch storage fix and passed clean-guest
+runs on C: and D: on 2026-10-29, including the same reader flow and a layout check with no
+install or registry entry.** Run 19 copied `build/install` to a fresh guest and started it through
 the reader shortcut. All 86 checks held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app
 reported ready on 8402, Edge opened, the first account was created, `/sources` rendered, the
 Keiyoushi store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
@@ -41,15 +43,23 @@ check is now `php -n -v`, with a regression test. The fresh manual run on the re
 (275,084,375 bytes) passed on 2026-10-27: post-install launch, shortcut double-click,
 registration, store, MangaTaro, search and a chapter read.
 
-The 1.5.1 build on 2026-10-29 ran from `7f964a1`. The install payload passed its built-in checks
-at 12,963 files with 138 licence texts. The unsigned installer compiled at 275,072,638 bytes
-(262.3MB) with SHA-256
-`056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`, and the portable archive
-compiled at 321,034,739 bytes (306.2MB) with 12,964 entries and a matching sidecar hash. The
-staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The 1.5.1 setup passed
-the manual sandbox on 2026-10-29. The guest verified the copied installer at 275,072,638 bytes
-with the hash above, installed it per-user, registered, trusted the Keiyoushi store, installed
-MangaTaro, searched One Piece, and read chapter 1 of 1,202. The portable archive was not launched.
+The 1.5.1 build on 2026-10-29 ran from `7f964a1` for the setup. The install payload passed its
+built-in checks at 12,963 files with 138 licence texts. The unsigned installer compiled at
+275,072,638 bytes (262.3MB) with SHA-256
+`056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`. The 1.5.1 setup passed the
+manual sandbox on 2026-10-29: the guest verified the copied installer at 275,072,638 bytes with
+the hash above, installed it per-user, registered, trusted the Keiyoushi store, installed
+MangaTaro, searched One Piece, and read chapter 1 of 1,202.
+
+The portable zip was rebuilt from `461e54d` after the first-launch storage fix in `2e4a73d`. It
+compiled at 321,034,901 bytes (306.2MB) with 12,964 entries and SHA-256
+`0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`; the sidecar matches. The
+staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The rebuilt portable
+passed clean-guest runs on C: and D: on 2026-10-29: extraction, first launch through
+`Papyrus.cmd`, data beside the program folder, registration, Keiyoushi, MangaTaro, One Piece,
+chapter 1 of 1,203, and a layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and
+no uninstall entry. The C: run used a path with a space; the D: run used a 4 GB VHD-backed
+second volume.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved
@@ -1097,8 +1107,11 @@ passes the number in rather than carrying a copy of it.
 **Per user, not per machine.** `PrivilegesRequired=lowest`, installing to
 `%LOCALAPPDATA%\Programs\Papyrus`. A reader app whose first act is "allow this app to make changes
 to your computer" has made a bad first impression to buy the ability for somebody else to upgrade
-it later. The install is self contained and, measured across a full install, run and uninstall,
-writes nothing at runtime: 12,641 files, 0 added, 0 removed, 0 changed.
+it later. The install is self contained and, measured in a clean Windows Sandbox guest on
+2026-10-29 across a full install, run and uninstall, writes nothing at runtime: 12,965 installed
+files, 0 added, 0 removed, 0 changed. The same guest ran `verify-installer.ps1`: silent install in
+35s, data at `%LOCALAPPDATA%\Papyrus`, `/ready` 200, uninstall in 13s, and the library byte
+identical afterwards.
 
 **The library is never inside the install.** Data lives at `%LOCALAPPDATA%\Papyrus`, which is a
 different folder from `%LOCALAPPDATA%\Programs\Papyrus`, so uninstalling removes code and leaves

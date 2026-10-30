@@ -245,8 +245,8 @@ and you point it at a list you have chosen to trust. There is a guide to this in
 
 ## Still being verified
 
-- **A portable download.** The archive builder exists, but no package is published and a
-  clean-machine first launch that reads from a source is not proven. [docs/PORTABLE.md](docs/PORTABLE.md)
+- **A portable download.** The 1.5.1 archive starts and reads on a clean machine from C: and D:, but
+  no package is published yet. [docs/PORTABLE.md](docs/PORTABLE.md)
 - **A Mac version.** On hold.
 - **In-app updates.** Papyrus will tell you a new version exists. It will not download and install
   it for you without asking.
