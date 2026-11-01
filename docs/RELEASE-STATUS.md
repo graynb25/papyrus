@@ -24,4 +24,14 @@ Updated 2026-11-01.
   release record will say `signed: false`.
 - **D5 Flux licence, 2026-11-01.** Keep `livewire/flux`. No redistributable licence text
   is staged; the in-app licences page names it proprietary.
-- **Still open.** The 1.5.2 release build and tag, and D6 to D10.
+- **PR-03 shipped-runtime gate, 2026-11-01.** The full suite passed on the install's
+  PHP 8.5.12 with a resolved copy of its `php.ini`: 2,678 tests, 2,677 passed, 1 skip,
+  7,939 assertions, exit 0. The gate runs `vendor/bin/phpunit`, not `artisan test`,
+  because the latter starts PHPUnit without the `-c` ini.
+- **PR-04 rollback guard, 2026-11-01.** The launcher snapshots the database before
+  `migrate --force` and refuses to continue when the snapshot fails. `/ready` reports
+  `schema_ahead` for migrations the build does not know, and the supervisor refuses to
+  start against that database. The checkout suite passed 2,678 tests with 7,939
+  assertions.
+- **Still open.** The 1.5.2 release build and tag, and D6 to D10. Phase 2's DEP-02,
+  DEP-03 and DEP-08 are also open; this release does not claim them.

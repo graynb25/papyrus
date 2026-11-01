@@ -66,7 +66,21 @@ class PortableBuildTest extends TestCase
      */
     private function build(?string $install, ?string $out = null): array
     {
-        $arguments = [escapeshellarg(PHP_BINARY), escapeshellarg($this->script())];
+        $arguments = [escapeshellarg(PHP_BINARY)];
+
+        /*
+         * The child must load the same ini as this process. The shipped runtime's php.ini is a
+         * template the launcher resolves and passes with -c, so PHP_BINARY alone starts without
+         * ZipArchive. The gate runs this suite under that runtime, and a child with no ini made
+         * the portable build fail for a reason the release build does not have.
+         */
+        $ini = php_ini_loaded_file();
+
+        if (is_string($ini) && $ini !== '') {
+            $arguments[] = '-c '.escapeshellarg($ini);
+        }
+
+        $arguments[] = escapeshellarg($this->script());
 
         if ($install !== null) {
             $arguments[] = '--install='.escapeshellarg($install);

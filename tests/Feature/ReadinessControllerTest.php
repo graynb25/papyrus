@@ -45,6 +45,7 @@ class ReadinessControllerTest extends TestCase
         $response->assertJsonPath('checks.key', true);
         $response->assertJsonPath('checks.database', true);
         $response->assertJsonPath('checks.pending_migrations', 0);
+        $response->assertJsonPath('checks.schema_ahead', 0);
     }
 
     /**
@@ -120,6 +121,31 @@ class ReadinessControllerTest extends TestCase
         $this->getJson('/ready')
             ->assertStatus(503)
             ->assertJsonPath('checks.pending_migrations', 1);
+    }
+
+    /**
+     * A database migrated by a newer build is not ready for this one.
+     *
+     * The pending count is zero because every file this build carries has run. The extra row is
+     * the downgrade direction: the columns it added are still in the database, and this build
+     * does not know them. Reporting ready would start the older app against a newer schema.
+     */
+    public function test_a_migration_the_build_does_not_know_is_not_ready(): void
+    {
+        DB::table('migrations')->insert([
+            'migration' => '2026_99_99_999999_future_migration',
+            'batch' => 1,
+        ]);
+
+        $this->getJson('/ready')
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'not ready')
+            ->assertJsonPath('checks.pending_migrations', 0)
+            ->assertJsonPath('checks.schema_ahead', 1);
+
+        DB::table('migrations')->where('migration', '2026_99_99_999999_future_migration')->delete();
+
+        $this->getJson('/ready')->assertOk();
     }
 
     /**

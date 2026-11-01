@@ -75,6 +75,9 @@ final class Supervisor
     /** Set once a start, so a polling loop reports an unhappy application exactly once. */
     private bool $reportedUnready = false;
 
+    /** How many migrations the database has that this build does not know. */
+    private int $schemaAhead = 0;
+
     /** Created on demand, since a `status` or `health` call never needs it. */
     private ?SummaryLog $summary = null;
 
@@ -617,6 +620,18 @@ final class Supervisor
 
     private function migrate(callable $say): void
     {
+        $say('taking a snapshot before migrating');
+
+        $snapshot = $this->runArtisan(['papyrus:snapshot', '--keep=14'], [], 'snapshot.log');
+
+        if ($snapshot !== 0) {
+            throw new RuntimeException(sprintf(
+                'Papyrus could not snapshot the database before migrating, so it will not migrate. '
+                .'The output is in %s.',
+                $this->logDirectory.DIRECTORY_SEPARATOR.'snapshot.log',
+            ));
+        }
+
         $say('checking whether the database needs migrating');
 
         $result = $this->runArtisan(['migrate', '--force']);
@@ -681,6 +696,14 @@ final class Supervisor
             'the web server to report itself ready',
             $say,
         );
+
+        if ($this->schemaAhead > 0) {
+            throw new RuntimeException(sprintf(
+                'The database has %d migration(s) this build does not know. It is newer than this build. '
+                .'Restore the previous version or a database snapshot; do not start this version against it.',
+                $this->schemaAhead,
+            ));
+        }
 
         if (! $ready) {
             throw new RuntimeException(sprintf(
@@ -937,6 +960,19 @@ final class Supervisor
         // unready app for a minute and then reported "the web server started but never reported
         // ready", while the server's log said "server running" and the answer sat in the body.
         $status = $http_response_header[0] ?? '';
+
+        $decoded = json_decode($response, true);
+
+        if (is_array($decoded) && is_array($decoded['checks'] ?? null)) {
+            $ahead = $decoded['checks']['schema_ahead'] ?? 0;
+
+            if (is_int($ahead) && $ahead > 0) {
+                $this->schemaAhead = $ahead;
+                $this->reportUnready($status, $response);
+
+                return false;
+            }
+        }
 
         if (str_contains($response, '"not ready"') || str_contains($response, '"not found"')) {
             $this->reportUnready($status, $response);

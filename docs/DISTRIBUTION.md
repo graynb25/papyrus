@@ -355,8 +355,13 @@ Four channels, in ascending order of effort. Do the first two.
 Release day, in order. Each step is there because skipping it has caused a broken release at
 some point in every project that has ever shipped one.
 
-1. Full suite green on the **packaged** runtime, not just on the developer's. Phase 0's whole
-   point is that PHP 8.5.11 and the shipped ini are what CI runs.
+1. Full suite green on the **packaged** runtime, not just on the developer's. CI runs the
+   checkout suite on PHP 8.4; the release gate runs `vendor/bin/phpunit` with the install's
+   `runtime/bin/php.exe` and a resolved copy of its `php.ini`. The template is resolved by
+   the launcher into the data directory, so the gate must resolve `{{RUNTIME}}`, `{{LOGS}}`,
+   `{{TEMP}}` and `{{TIMEZONE}}` first. `artisan test` cannot be used for this gate: it
+   spawns PHPUnit under `PHP_BINARY` without the `-c` ini, so the shipped extensions are not
+   loaded in the child. Record the PHP version, test count, assertion count and exit code.
 2. PHPStan and Pint clean.
 3. No dashes across the tree.
 4. Tag `v1.2.3`. Annotated, so the tag carries the message.

@@ -84,9 +84,13 @@ final class ReadinessController extends Controller
             'key' => $this->hasAppKey(),
             'database' => $this->databaseAnswers(),
             'pending_migrations' => $this->pendingMigrations(),
+            'schema_ahead' => $this->schemaAhead(),
         ];
 
-        $ready = $checks['key'] && $checks['database'] && $checks['pending_migrations'] === 0;
+        $ready = $checks['key']
+            && $checks['database']
+            && $checks['pending_migrations'] === 0
+            && $checks['schema_ahead'] === 0;
 
         return response()->json([
             'status' => $ready ? 'ready' : 'not ready',
@@ -137,24 +141,65 @@ final class ReadinessController extends Controller
      */
     private function pendingMigrations(): int
     {
-        $files = glob(database_path('migrations/*.php')) ?: [];
+        $expected = $this->migrationNames();
 
-        if ($files === []) {
+        if ($expected === []) {
             return 0;
         }
 
-        $expected = array_map(
+        $ran = $this->ranMigrationNames();
+
+        return $ran === null ? count($expected) : count(array_diff($expected, $ran));
+    }
+
+    /**
+     * How many migrations have run that this build does not know.
+     *
+     * This is the downgrade direction. A database carried forward by a newer build has migration
+     * rows whose files are gone from this one. `array_diff($expected, $ran)` sees none of them and
+     * reports ready, so the older build starts against columns it does not understand and fails
+     * page by page. The launcher refuses to start when this is greater than zero.
+     */
+    private function schemaAhead(): int
+    {
+        $ran = $this->ranMigrationNames();
+
+        if ($ran === null) {
+            return 0;
+        }
+
+        return count(array_diff($ran, $this->migrationNames()));
+    }
+
+    /**
+     * The migration names this build carries.
+     *
+     * @return list<string>
+     */
+    private function migrationNames(): array
+    {
+        $files = glob(database_path('migrations/*.php')) ?: [];
+
+        return array_map(
             static fn (string $file): string => basename($file, '.php'),
             $files,
         );
+    }
 
+    /**
+     * The migration names the database says have run, or null when the table is missing.
+     *
+     * @return array<int, string>|null
+     */
+    private function ranMigrationNames(): ?array
+    {
         try {
             $ran = DB::table('migrations')->pluck('migration')->all();
         } catch (Throwable) {
-            return count($expected);
+            return null;
         }
 
-        return count(array_diff($expected, $ran));
+        return array_filter($ran, 'is_string');
     }
 
     /**
