@@ -950,8 +950,8 @@ step anyone else can run. `packaging/runtime/stage-runtime.php` is: it downloads
 archive, verifies the digest before extracting anything, strips the archive's single wrapper
 directory, and then checks that `bin/java.exe` exists and `bin/javac.exe` does not. A mismatch
 deletes the download rather than leaving it for the next person to trust by accident. `--force`
-replaces an existing staged JRE, and without it the script reports what is already there and
-exits.
+replaces an existing staged JRE, and without it the script reports what is already there, checks
+the trust store and the CA bundle, and exits.
 
 It then stages the CA bundle, which the shipped ini names as `{{RUNTIME}}/cacert.pem` and which
 nothing else provides. This is not optional. Measured against the real runtime with the shipped
@@ -970,6 +970,15 @@ The bundle's digest is pinned too, and that pin is more of a liability than the 
 it changes whenever a certificate authority is added or removed. It will go stale. That is the
 correct trade: a bundle that updates itself during a build means two builds of one commit ship
 different trust decisions.
+
+The pin is a dated curl.se extract, `cacert-2026-10-20.pem`, not the moving `cacert.pem`, and
+the cached file is verified on every run. A warm build that finds a corrupt or stale bundle
+replaces it instead of reporting it as already staged.
+
+The Suwayomi jar is pinned the same way. `RuntimePins::SUWAYOMI_SHA256` is the digest GitHub
+publishes for the 2.4.2366 release asset, and `build-install.php` refuses a jar that does not
+match before it clears the layout. The jar name must carry the pinned version, and
+`packaging/suwayomi.json` must name the same tested release; the suite compares the two.
 
 ### Two defects the sandbox gate found before it ran
 

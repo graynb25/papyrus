@@ -45,5 +45,6 @@ Updated 2026-11-01.
   `090c096`, and [`releases/1.5.2.json`](../releases/1.5.2.json) carries both. The
   release page carries the installer, the portable and its sidecar; GitHub reports the
   same SHA-256 digests.
-- **Still open.** D6 to D10. Phase 2's DEP-02, DEP-03 and DEP-08 are also open; this
-  release does not claim them.
+- **Still open.** D10 and the WP2-S4 runtime drills. DEP-02, DEP-03 and DEP-08 are
+  closed on main by `178365b`, after the 1.5.2 artifacts were built; the next release
+  carries them. The WP2-S7 sandbox install was not run.
