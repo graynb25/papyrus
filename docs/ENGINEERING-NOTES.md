@@ -7631,7 +7631,7 @@ showed is the walkthrough and this text.
 
     The public history was rewritten on 2026-11-01. It removed `storage/design-review` from
     every commit and replaced the measured machine-identity classes. The old history is in
-    an owner-held offline archive. Seven things came out of it.
+    an owner-held offline archive. Eight things came out of it.
 
     **Old hashes are archive-only.** Every commit hash written before the rewrite now points
     into the archive, not the public tree. A document that says "check commit X" is wrong
@@ -7642,6 +7642,11 @@ showed is the walkthrough and this text.
     manifest, no `.env`, and no migrated `database/database.sqlite`. The full suite fails on
     view rendering and the worker tests until those are created, as `composer setup` does in
     CI. Run the setup steps before calling the suite red.
+
+    **Windows temp paths can be 8.3 short names.** The CI runner's temp directory is
+    `C:\Users\RUNNER~1\...`; production normalises the owner path with `realpath()`, so a
+    test that held the short name failed on the same file. The scratch helper now resolves
+    its base before handing it out.
 
     **Pint covers the whole repository in CI.** The local six-gate command used to run
     `pint --test app/ tests/ packaging/`, which missed `database/` and `routes/`. The first

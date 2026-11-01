@@ -126,6 +126,16 @@ abstract class TestCase extends BaseTestCase
             $this->fail('could not make a scratch directory at '.$base);
         }
 
+        /*
+         * Resolve the base before handing it out. Windows temp directories can use
+         * 8.3 short names such as `RUNNER~1`, and production normalises a path with
+         * `realpath()`. A test that holds the short name then compares it with the
+         * normalised job path and fails on the same file. Measured in CI on
+         * 2026-11-01: ImportPageTest's owner-path survey was not pushed because
+         * the job held the long path and the test held the short one.
+         */
+        $base = realpath($base) ?: $base;
+
         $this->temporaryFiles[] = $base;
 
         return $suffix === '' ? $base : $base.DIRECTORY_SEPARATOR.$suffix;
