@@ -3,9 +3,13 @@
 The same release notes as [CHANGELOG.md](CHANGELOG.md), written for a reader rather than a developer.
 No commit hashes, no file names, no jargon.
 
+> **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
+> published. The next release is 1.5.2, pending. See
+> [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+
 ---
 
-## Version 1.5.1, 28 October 2026
+## Version 1.5.1, 28 October 2026 (not published)
 
 This release closes the remaining security and privacy findings from the October audit and the
 copy and accessibility defects found by walking the app as a reader. It also makes the library

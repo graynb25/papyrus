@@ -13,9 +13,27 @@ there is no second number anywhere to drift.
 symptom rather than the cause, because the symptom is what a reader recognises. Every entry is
 checkable: each carries the commit that made the change.
 
+> **Repository history note (2026-11-01).** The public history was rewritten on
+> 2026-11-01 to remove the design-review screenshots and machine-identity values.
+> Commit hashes in entries written before that date refer to the pre-rewrite
+> history, preserved in the owner-held offline archive. New entries use the
+> rewritten hashes.
+
 ---
 
-## 1.5.1 - 2026-10-28
+## Unreleased
+
+**Release status.** 1.5.1 was built and proven locally but was not published. The
+next release is 1.5.2 from the rewritten tree, pending the owner's version decision.
+See [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+
+**Repository history.** The rewrite removed `storage/design-review` from every
+commit and replaced the measured machine-identity classes. No personal values are
+reproduced here.
+
+---
+
+## 1.5.1 - 2026-10-28 (not published)
 
 The hardening release after 1.5.0. It closes the remaining Medium and Low findings from the
 [2026-10-25 audit](docs/audits/2026-10-25/security.md) and the functional, copy and

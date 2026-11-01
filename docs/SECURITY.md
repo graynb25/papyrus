@@ -206,6 +206,14 @@ or answer it from a separate loopback-only listener the proxy does not know abou
 secret in a header is the other shape; it is deferred to a later release, so the route stays
 loopback-gated with this caveat until one of the two lands.
 
+## Repository history
+
+The public history was rewritten on 2026-11-01 to remove the design-review screenshots
+and the measured machine-identity values. The pre-rewrite history is in an owner-held
+offline archive. GitHub still exposes the closed PR #2 head ref, which contains the
+design-review commit; the rewrite reduces reachability, it is not an erasure guarantee.
+See [DISTRIBUTION.md](DISTRIBUTION.md) and [RELEASE-STATUS.md](RELEASE-STATUS.md).
+
 ## Reporting
 
 This is a personal project with no published support channel. If you find something that

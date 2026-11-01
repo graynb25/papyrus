@@ -1,5 +1,10 @@
 # Audit, 2026-10-25
 
+> **Post-audit note (2026-11-01).** The 1.5.1 build was not published. The public
+> history was rewritten on 2026-11-01; commit hashes in this audit predate the rewrite
+> and resolve in the owner-held offline archive. The next release is 1.5.2, pending.
+> See [../../RELEASE-STATUS.md](../../RELEASE-STATUS.md).
+
 Status: **walk complete with documented gaps. Security assessment done; Batches A to G accepted
 and Batch H recorded and committed locally. 1.4.0 remains the latest published release. The 1.5.0
 release is committed in `86e033a`; its artifacts were rebuilt from that commit, and the real setup

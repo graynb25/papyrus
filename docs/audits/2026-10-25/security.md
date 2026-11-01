@@ -1,5 +1,10 @@
 # Security and privacy assessment, phase 3, 2026-10-25
 
+> **Post-audit note (2026-11-01).** The 1.5.1 build was not published. The public
+> history was rewritten on 2026-11-01; commit hashes in this assessment predate the
+> rewrite and resolve in the owner-held offline archive. The next release is 1.5.2,
+> pending. See [../../RELEASE-STATUS.md](../../RELEASE-STATUS.md).
+
 Status: complete. Read-only assessment of HEAD `6572ba0` on 2026-10-25. One Blocker,
 three High, eight Medium, six Low and four Info findings. No code, test, configuration,
 install or tracked file was changed by this audit.

@@ -62,6 +62,9 @@ reader's library because those numbers are to hand: a test that inserts 22,332 r
 a time spends four minutes proving nothing the small version does not. Use a handful of rows and let a
 real install answer questions about scale.
 
+The suite runs on `DB_DATABASE=:memory:` from `phpunit.xml`. A test asserts that setting, so a
+test that reaches for `database/database.sqlite` fails before it can read the reader's library.
+
 **Every finding carries six things:** severity (S, H, M, L), phase, risk, why it should be fixed, and
 a how that has been verified. Status is one of five marks, and the two that are not obvious are worth
 naming, because the difference between them is the whole point:
@@ -181,6 +184,11 @@ Long messages are fine and preferred when the reasoning is the point. Several in
 thirty lines because the thirty lines are why the change is not going to be undone by the next person
 who cannot see the problem.
 
+**Use the public identity in a rewritten clone.** The global git identity may be the personal one.
+Set `user.name` and `user.email` to the public identity in the clone and verify `%an <%ae>` and
+`%cn <%ce>` before pushing. A follow-up commit on 2026-11-01 was authored with the personal
+identity and had to be amended before it could be pushed.
+
 ## Commits and pushes
 
 These are two permissions and only one of them is usually granted.
@@ -189,17 +197,20 @@ These are two permissions and only one of them is usually granted.
 allowance. **Commit locally until the entire body of work is finished**, not between steps and not
 between commits in one task, and ask before pushing.
 
-State the cost before anything that triggers a run. The suite takes about 11 minutes locally and
-between 45 and 80 minutes on a Windows runner, so say so in minutes rather than letting it happen.
+State the cost before anything that triggers a run. The suite takes about 11 to 12 minutes
+locally and about 10 to 14 minutes on a Windows runner. The 46 to 80 minute runs on
+2026-10-14 and 2026-10-15 were a full-database mistake, not the baseline. The suite must
+use `DB_DATABASE=:memory:` from `phpunit.xml`; a test fails if that setting drifts.
 
 `concurrency` is set with `cancel-in-progress: true`, so a second push cancels the first rather than
 stacking with it. That limits the damage of a mistake. It is not permission to push.
 
-Measured, so this is not theoretical: five commits pushed in one session started five full runs, at
-46.5, 55.2, 63.2 and 53.0 minutes. Roughly 218 minutes of a finite allowance, four of them on commits
-that were superseded within minutes. The reviewer had already asked for local commits. **A standing
-permission to commit is not a standing permission to push**, and reading it as one is the single most
-expensive mistake in this file. Lesson 264.
+Measured, so this is not theoretical: normal runs on 2026-10-13 and 2026-10-14 were
+8m24s to 13m19s. The 46 to 80 minute runs were the full-database anomaly. Five pushes in
+one session still show why a push is a separate decision, but a normal push costs about
+10 to 14 minutes, not an hour. **A standing permission to commit is not a standing
+permission to push**, and reading it as one is the single most expensive mistake in this
+file. Lesson 264.
 
 ## Pull requests
 

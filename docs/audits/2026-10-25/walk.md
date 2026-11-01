@@ -1,5 +1,10 @@
 # Reader walk, 2026-10-25
 
+> **Post-audit note (2026-11-01).** The 1.5.1 build was not published. The public
+> history was rewritten on 2026-11-01; commit hashes in this walk predate the rewrite
+> and resolve in the owner-held offline archive. The next release is 1.5.2, pending.
+> See [../../RELEASE-STATUS.md](../../RELEASE-STATUS.md).
+
 Status: **read-only walk complete, with documented coverage gaps.** Papyrus 1.4.0,
 checkout served at `http://papyrus.test`. No fixes were made. This file is the only
 artifact written.

@@ -6,6 +6,10 @@ on top of **Suwayomi-Server**, which runs the Tachiyomi/Keiyoushi extensions.
 This file is the reference for anyone picking this up, human or agent. If something here
 contradicts the code, the code is right and this file needs fixing.
 
+> **History note (2026-11-01).** Commit hashes written before this date refer to the
+> pre-rewrite history, preserved in the owner-held offline archive. The public history
+> was rewritten on 2026-11-01. New entries use the rewritten hashes.
+
 ## The three documents
 
 | File | What it is for |
@@ -38,7 +42,7 @@ targeted PHP parser for one site, as a last resort.
 
 | Thing | State |
 |---|---|
-| PHP | 8.4.25, served by Herd. On this machine Herd's own `php.bat` is the one on PATH. |
+| PHP | 8.4.27, served by Herd. On this machine Herd's own `php.bat` is the one on PATH. Composer 2.10.3. |
 | Node / npm | 26.12.1 / 11.20.0 |
 | JRE | 26.0.2 Oracle JDK, which satisfies Suwayomi's JRE 21+ requirement |
 | Virtualization | **ON** (corrected 2026-10-26). `HypervisorPresent: True`; WSL 3.0.3.0 with kernel 6.18.54.1-1, Ubuntu 26.04.1 and Docker Desktop 4.96.0 are installed. The old `VirtualizationFirmwareEnabled: False` reading did not mean the hypervisor was off. Suwayomi still runs as a native **JAR**; Docker is a test harness. |
@@ -5580,24 +5584,15 @@ were eliminated.
 264. **A standing permission to commit is not a standing permission to push, and the cost of a
     push was known before five of them were made.**
 
-    One session, five commits pushed to `main`, five full CI runs started:
+    One session, five commits pushed to `main`, five full CI runs started. The normal
+    runs on 2026-10-13 and 2026-10-14 were 8m24s to 13m19s. A seven-run anomaly on
+    2026-10-14 and 2026-10-15 reached 46m28s to 1h20m24s because the suite was pointed
+    at the full library database. That was a mistake, not the baseline.
 
-    ```
-    685e1af   46.5 min
-    6697149   55.2 min
-    2ced03c   63.2 min
-    5bb8f35   53.0 min
-    ```
-
-    Roughly **218 minutes** of a limited free allowance, four of them on commits that were superseded
-    within minutes of each other, on a machine that was not paying for any of it. The fifth never ran:
-    *"The job was not started because recent account payments have failed or your spending limit needs
-    to be increased."*
-
-    The two facts that should have stopped it were both held at the time. The suite was measured at
-    936, 1016 and 1075 seconds across three runs, and a Windows CI runner is several times slower, so
-    the cost was not a mystery. And the constraint was already known, because it had been raised when
-    code signing came up and money came with it.
+    The two facts that should have stopped it were both held at the time. The suite is
+    about 11 to 12 minutes locally and about 10 to 14 minutes on the Windows runner, so
+    the cost of a normal push was not a mystery. And the constraint was already known,
+    because it had been raised when code signing came up and money came with it.
 
     What was missing was not information. It was the step where the two facts are put next to each
     other. One question, early, would have covered it:
@@ -7631,3 +7626,41 @@ Verdict: the rebuilt installer's payload, post-install launch, shortcut prefligh
 are all proven on the real setup executable. This stays manual acceptance evidence, not a gate
 pass. The frames live under `build/`, which git ignores, so the committed record of what the run
 showed is the walkthrough and this text.
+
+265. **A history rewrite changes the documents, not just the commits.**
+
+    The public history was rewritten on 2026-11-01. It removed `storage/design-review` from
+    every commit and replaced the measured machine-identity classes. The old history is in
+    an owner-held offline archive. Seven things came out of it.
+
+    **Old hashes are archive-only.** Every commit hash written before the rewrite now points
+    into the archive, not the public tree. A document that says "check commit X" is wrong
+    unless it says which history it means. Add a history note to the changelog and to every
+    durable notes file; do not silently rewrite historical text.
+
+    **A rewritten clone is not a CI environment.** A fresh clone has no `public/build`
+    manifest, no `.env`, and no migrated `database/database.sqlite`. The full suite fails on
+    view rendering and the worker tests until those are created, as `composer setup` does in
+    CI. Run the setup steps before calling the suite red.
+
+    **Pint covers the whole repository in CI.** The local six-gate command used to run
+    `pint --test app/ tests/ packaging/`, which missed `database/` and `routes/`. The first
+    CI run on the rewritten main failed on two files in exactly that gap. Run `pint --test`
+    with no path list, or run `composer lint:check`.
+
+    **The public identity is not the global identity.** A follow-up commit on the rewritten
+    clone was authored with the personal identity and had to be amended. Set the public
+    `user.name` and `user.email` in the clone and read back both the author and committer
+    before a push.
+
+    **A full-database CI run is not a slower suite, it is the wrong suite.** The normal runs
+    are 8 to 13 minutes; the 46 to 80 minute runs were the full library. The suite uses
+    `:memory:` and a test now enforces it.
+
+    **A clone's parent directory can trip the machine-detail gate.** A clone under a parent
+    named `rehearsal` flagged the ordinary word in `docs/scratch-cleanup-plan.md`. Use a
+    neutral parent, or add the name to `GENERIC_PARENTS` with a test.
+
+    **The GitHub pull ref outlives the branch.** Deleting the dependabot branch and closing
+    the PR did not remove `refs/pull/2/head`, which still contains the design-review commit.
+    The rewrite reduces reachability; it is not erasure.

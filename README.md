@@ -46,9 +46,19 @@ this is not something to monetise.
 ## Status
 
 Discovery and the read path work in the checkout and have been walked against live Suwayomi.
-The packaged application starts, but a clean-install read from a manga source is not yet
-proven. Search, source management, health, downloads, migration between sources, the series
-page, the reader and settings are implemented.
+The 1.5.0 installer's manual sandbox run passed on 2026-10-27, and the 1.5.1 setup passed on
+2026-10-29 with the same reader flow, including a source read. The automated clean-machine gate
+is still blocked by the Windows Sandbox VM issue. Search, source management, health, downloads,
+migration between sources, the series page, the reader and settings are implemented.
+
+**Release status.** 1.5.1 was built and proven locally but was not published. The next
+release is 1.5.2 from the rewritten tree, pending the owner's version decision. See
+[docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+
+**Repository history.** The public history was rewritten on 2026-11-01 to remove the
+design-review screenshots and machine-identity values. Commit hashes in historical notes
+and changelog entries written before that date refer to the owner-held offline archive.
+The rewrite reduces reachability; it is not an erasure guarantee.
 
 | Screen | Route | What it does |
 |---|---|---|
@@ -779,7 +789,8 @@ something to monetise.
 | **[ROADMAP.md](ROADMAP.md)** | **What is not built yet, by severity, and the ideas that are not agreed** |
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.1 archive passed clean-machine C: and D: runs; publication remains open |
+| [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md) | What is published, what is not, and the current release decision |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.1 archive passed clean-machine C: and D: runs; 1.5.1 was not published |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

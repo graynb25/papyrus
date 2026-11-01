@@ -1,5 +1,10 @@
 # Hardening plan, 2026-10-25
 
+> **Post-audit note (2026-11-01).** The 1.5.1 build was not published. The public
+> history was rewritten on 2026-11-01; commit hashes in this plan predate the rewrite
+> and resolve in the owner-held offline archive. The next release is 1.5.2, pending.
+> See [../../RELEASE-STATUS.md](../../RELEASE-STATUS.md).
+
 Status: approved and complete in the tree. Batches A, B, C, D, E, F and G are committed in
 `86e033a`. The 1.5.0 install tree passed the Windows Sandbox gate on run 19, including a
 Windows source page read. The real setup executable installed 1.5.0 in the manual sandbox on

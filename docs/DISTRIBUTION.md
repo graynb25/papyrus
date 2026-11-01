@@ -7,10 +7,11 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-10-29
+## Current delivery status, 2026-11-01
 
-The 1.5.1 release is committed locally. The unsigned 275,072,638-byte (262.3MB) installer was
-built from `9dd0918`, and its manual sandbox run passed on 2026-10-29: per-user install,
+The 1.5.1 work is in the rewritten tree. The 1.5.1 release was not published. The unsigned
+275,072,638-byte (262.3MB) installer was built from `9dd0918`, and its manual sandbox run
+passed on 2026-10-29: per-user install,
 registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1 installer
 payload is proven. Both automated install harnesses also passed in a clean guest on 2026-10-29:
 the install harness proved a per-user install, data outside the program folder, `/ready` 200 and a
@@ -34,6 +35,9 @@ fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,4
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
 
+The 1.5.1 build will not be published. The next release is 1.5.2 from the rewritten tree,
+pending the owner's version decision. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+
 ### History rewrite, 2026-10-30
 
 The repository history was rewritten on 2026-10-30 to remove machine detail. The
@@ -47,6 +51,19 @@ artifact source commits were remapped:
 The trees are identical and neither artifact was rebuilt, so the SHA-256 values and
 sizes above are unchanged. The `version.txt` inside each artifact still names the
 pre-rewrite commit; compare it with this table when checking a binary's stamp.
+
+The hashes in this table predate the public rewrite on 2026-11-01. They are preserved
+in the offline archive; the artifacts were not rebuilt.
+
+### Public history rewrite, 2026-11-01
+
+The public origin history was rewritten on 2026-11-01. The force-push replaced
+`a821108` with `7df174c`, removed `storage/design-review` from every commit, and
+replaced the measured machine-identity classes. The dependabot branch was deleted and
+PR #2 closed. The pre-rewrite history is in an owner-held offline archive for 90 days.
+GitHub still exposes `refs/pull/2/head` at `f8ca2b9`, which contains the design-review
+commit, so this is a reduction in reachability, not an erasure guarantee. The
+2026-10-30 note above is the earlier local artifact remap; it is not the public rewrite.
 
 ## What we ship, and what we refuse to ship
 
