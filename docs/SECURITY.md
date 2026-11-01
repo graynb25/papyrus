@@ -149,8 +149,11 @@ Worth knowing before deciding what to add in front of it:
   `php artisan users:create` (where `--admin` names an owner explicitly), and the role is
   not settable from a web request. Readers keep their own library, imports, trust records
   and profile.
-- **Login is rate limited** to 5 attempts a minute, and there are separate limiters for
-  two-factor and passkey challenges.
+- **Login is rate limited** to 5 attempts a minute per email and address, and every auth POST
+  (login, registration, forgot-password, reset and password confirmation) shares a
+  20-per-minute per-address ceiling. A reset request answers the same whether or not the
+  address exists, so the form cannot be used to enumerate accounts. There are separate
+  limiters for two-factor and passkey challenges.
 - **Two-factor authentication** is available per account, with password confirmation to
   enable or disable it.
 - **Passkeys** are available per account, and `.well-known/passkey-endpoints` is public by

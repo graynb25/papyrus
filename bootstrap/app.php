@@ -3,6 +3,7 @@
 use App\Http\Controllers\ReadinessController;
 use App\Http\Middleware\RegistrationMustBeAllowed;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\ThrottleAuthPosts;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -55,6 +56,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
          */
         $middleware->web(append: [
             RegistrationMustBeAllowed::class,
+            ThrottleAuthPosts::class,
         ]);
 
         /*

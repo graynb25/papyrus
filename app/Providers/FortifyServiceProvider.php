@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Http\Responses\FailedPasswordResetLinkRequestResponse;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse as FailedPasswordResetLinkRequestResponseContract;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -18,7 +20,15 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        /*
+         * A failed reset request answers like a successful one, so an unknown address cannot be
+         * told apart from a registered one. Fortify's stock response is a 422 with the broker's
+         * "we cannot find a user" message, which is the enumeration oracle SEC-01 closes.
+         */
+        $this->app->singleton(
+            FailedPasswordResetLinkRequestResponseContract::class,
+            FailedPasswordResetLinkRequestResponse::class,
+        );
     }
 
     /**
