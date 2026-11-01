@@ -39,6 +39,8 @@ declare(strict_types=1);
 
 $repo = dirname(__DIR__, 2);
 
+require_once __DIR__.'/ReleaseRecord.php';
+
 $options = [];
 foreach (array_slice($argv, 1) as $argument) {
     if (str_starts_with($argument, '--install=')) {
@@ -393,6 +395,10 @@ if ($written !== $staged) {
 $bytes = filesize($target);
 $digest = hash_file('sha256', $target);
 
+if ($bytes === false) {
+    fail("could not size {$target}, so there is no size to publish");
+}
+
 if ($digest === false) {
     fail("could not hash {$target}, so there is no digest to publish");
 }
@@ -411,6 +417,16 @@ if (file_put_contents($sidecar, $digest.'  '.$name.PHP_EOL) === false) {
 
 say('sha256', $digest);
 say('sidecar', basename($sidecar));
+
+$manifest = ReleaseRecord::manifest($install, [
+    'file' => $name,
+    'sha256' => $digest,
+    'size' => $bytes,
+]);
+
+$committed = ReleaseRecord::merge($repo, $manifest);
+
+say('record', $committed);
 
 say('', 'a zip cannot carry an Authenticode signature, so this hash is how it is verified');
 

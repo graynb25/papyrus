@@ -47,6 +47,8 @@ declare(strict_types=1);
 
 $repo = dirname(__DIR__, 2);
 
+require_once __DIR__.'/ReleaseRecord.php';
+
 /*
  * Paths and the flag are kept apart, deliberately.
  *
@@ -409,21 +411,11 @@ if (file_put_contents($beside, $encoded) === false) {
     fail('could not write '.$beside);
 }
 
-$releases = $repo.DIRECTORY_SEPARATOR.'releases';
-
-if (! is_dir($releases)) {
-    mkdir($releases, 0o777, true);
-}
-
-$committed = $releases.DIRECTORY_SEPARATOR.$manifest['version'].'.json';
-
-if (file_put_contents($committed, $encoded) === false) {
-    fail('could not write '.$committed);
-}
+$committed = ReleaseRecord::merge($repo, $manifest);
 
 say('manifest', $beside);
 say('', 'sha256 '.$manifest['artifacts'][0]['sha256']);
-say('', 'also written to releases/'.$manifest['version'].'.json, which is committed');
+say('', 'also written to '.$committed.', which is committed');
 say('', 'requires suwayomi '.$manifest['requires']['suwayomi'].', jvm '.($jvm ?? 'unknown'));
 
 // --- and the one property that makes it an installer rather than an archive -----------------
