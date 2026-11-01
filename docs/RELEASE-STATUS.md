@@ -2,8 +2,9 @@
 
 Updated 2026-11-01.
 
-- **1.5.2 is built and tagged locally, not published.** `VERSION` is 1.5.2. The tag
-  and commits stay local until the owner approves the push.
+- **1.5.2 is published.** `VERSION` is 1.5.2. The tag and commits are on origin, CI
+  run `41351284012` passed, and the release is at
+  <https://github.com/graynb25/papyrus/releases/tag/v1.5.2>.
 - **1.5.1 was built and proven locally, but it was not published.** Do not publish it.
   The installer and portable runs passed manual sandbox acceptance on 2026-10-29. The
   record at [`releases/1.5.1.json`](../releases/1.5.1.json) is a local artifact record,
@@ -21,7 +22,7 @@ Updated 2026-11-01.
   a test enforces it.
 - **D4 signing, 2026-11-01.** Build 1.5.2 unsigned. The only signing material is a
   self-signed development certificate, which does not remove the Windows warning. The
-  release record will say `signed: false`.
+  release record says `signed: false`.
 - **D5 Flux licence, 2026-11-01.** Keep `livewire/flux`. No redistributable licence text
   is staged; the in-app licences page names it proprietary.
 - **PR-03 shipped-runtime gate, 2026-11-01.** The full suite passed on the install's
@@ -33,12 +34,13 @@ Updated 2026-11-01.
   `schema_ahead` for migrations the build does not know, and the supervisor refuses to
   start against that database. The checkout suite passed 2,678 tests with 7,939
   assertions.
-- **1.5.2 build and tag, 2026-11-01.** Built from `090c096` and tagged locally as
-  `v1.5.2`. The installer is 245.6 MB, SHA-256
+- **1.5.2 build and tag, 2026-11-01.** Built from `090c096` and tagged `v1.5.2`. The
+  installer is 245.6 MB, SHA-256
   `7e59891e17567a265a3a7f8e0dc263ef678dfda17fa4b211107804764f90e858`; the portable
   is 285.5 MB, SHA-256
   `dcfa1f015cb5386fd98cff51951056ac369c21689e469745cb41ef97da846161`. Both name
-  `090c096`, and [`releases/1.5.2.json`](../releases/1.5.2.json) carries both. The tag
-  and commits are local; nothing is pushed.
-- **Still open.** Publishing the tag and commits, and D6 to D10. Phase 2's DEP-02,
-  DEP-03 and DEP-08 are also open; this release does not claim them.
+  `090c096`, and [`releases/1.5.2.json`](../releases/1.5.2.json) carries both. The
+  release page carries the installer, the portable and its sidecar; GitHub reports the
+  same SHA-256 digests.
+- **Still open.** D6 to D10. Phase 2's DEP-02, DEP-03 and DEP-08 are also open; this
+  release does not claim them.
