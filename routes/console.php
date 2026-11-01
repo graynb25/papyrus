@@ -1,8 +1,8 @@
 <?php
 
+use App\Import\ImportReviewExpiry;
 use App\Jobs\CheckLibrary;
 use App\Jobs\SyncDownloads;
-use App\Import\ImportReviewExpiry;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;

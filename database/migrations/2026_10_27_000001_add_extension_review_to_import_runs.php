@@ -1,5 +1,6 @@
 <?php
 
+use App\Import\ImportReviewExpiry;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * A review that is never confirmed would otherwise pin a reader's 40MB backup on disk
  * indefinitely. The state added with this column (`awaiting`) is expired after 24 hours by
- * {@see \App\Import\ImportReviewExpiry}, which deletes any stored upload. Confirm, import
+ * {@see ImportReviewExpiry}, which deletes any stored upload. Confirm, import
  * without extensions, and discard delete it at the moment they are chosen.
  */
 return new class extends Migration
