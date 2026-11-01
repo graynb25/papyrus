@@ -57,10 +57,8 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'TrustStore.php';
 // bundle changes whenever a certificate authority is added or removed, so this digest will
 // eventually be stale. That is the correct trade. A bundle that updates itself during a build
 // means two builds of one commit ship different trust decisions, and a silently rotating trust
-// store is worse than one that needs a deliberate commit to move.
-const CACERT_SHA256 = 'a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505';
-
-const CACERT_URL = 'https://curl.se/ca/cacert.pem';
+// store is worse than one that needs a deliberate commit to move. The pin lives in RuntimePins
+// with the other build inputs, and the URL is a dated extract rather than the moving cacert.pem.
 
 /**
  * Where the launcher looks.
@@ -110,6 +108,13 @@ if (is_dir($destination) && is_file($destination.DIRECTORY_SEPARATOR.'bin'.DIREC
 
         applyTrustStore($destination);
         verifyStagedJre($destination);
+
+        /*
+         * The CA bundle is checked even when the JRE is already staged. The first version of this
+         * returned here and never reached stageCaBundle(), so a corrupt or stale bundle survived
+         * every warm build and only a clean one replaced it.
+         */
+        stageCaBundle();
 
         exit(0);
     }
@@ -202,22 +207,30 @@ function stageCaBundle(): void
     }
 
     if (is_file($target)) {
-        report('ca bundle', 'already staged');
+        $cached = hash_file('sha256', $target);
 
-        return;
+        if ($cached !== false && hash_equals(RuntimePins::CACERT_SHA256, $cached)) {
+            report('ca bundle', 'already staged and verified');
+
+            return;
+        }
+
+        report('ca bundle', 'cached bundle does not match the pin, replacing it');
+
+        @unlink($target);
     }
 
     report('ca bundle', 'downloading');
 
     $temporary = $target.'.part';
 
-    $source = @fopen(CACERT_URL, 'rb');
+    $source = @fopen(RuntimePins::CACERT_URL, 'rb');
     $sink = @fopen($temporary, 'wb');
 
     if ($source === false || $sink === false) {
         @unlink($temporary);
 
-        fwrite(STDERR, '  could not reach '.CACERT_URL."\n");
+        fwrite(STDERR, '  could not reach '.RuntimePins::CACERT_URL."\n");
 
         exit(1);
     }
@@ -231,10 +244,10 @@ function stageCaBundle(): void
 
     $digest = hash_file('sha256', $temporary);
 
-    if (! hash_equals(CACERT_SHA256, (string) $digest)) {
+    if (! hash_equals(RuntimePins::CACERT_SHA256, (string) $digest)) {
         @unlink($temporary);
 
-        fwrite(STDERR, '  expected '.CACERT_SHA256."\n");
+        fwrite(STDERR, '  expected '.RuntimePins::CACERT_SHA256."\n");
         fwrite(STDERR, "  the bundle does not match, so it has been deleted and nothing was staged\n");
 
         exit(1);

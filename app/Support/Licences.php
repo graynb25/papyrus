@@ -32,9 +32,9 @@ use Illuminate\Support\Facades\File;
  * code in the product.
  *
  * They are read from the packaged manifests rather than hardcoded, for the same reason as everything
- * else: the build asserts the jar against a digest and `packaging/suwayomi.json` records which
- * release is expected, so the licence claim should come from the thing that is verified rather than
- * from a constant written beside it.
+ * else: the build asserts the jar against the digest GitHub publishes for the release asset, and
+ * `packaging/suwayomi.json` records which release is expected, so the licence claim should come
+ * from the thing that is verified rather than from a constant written beside it.
  *
  * ## What it found, which is the reason the page exists
  *

@@ -64,6 +64,7 @@ final class RuntimePinsTest extends TestCase
         foreach ([
             [RuntimePins::FRANKENPHP_ARCHIVE, RuntimePins::FRANKENPHP_SHA256, RuntimePins::frankenphpUrl()],
             [RuntimePins::JRE_ARCHIVE, RuntimePins::JRE_SHA256, RuntimePins::jreUrl()],
+            [RuntimePins::SUWAYOMI_JAR, RuntimePins::SUWAYOMI_SHA256, RuntimePins::suwayomiUrl()],
         ] as [$archive, $digest, $url]) {
             $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $digest, $archive.' needs a SHA-256');
             $this->assertSame($archive, basename((string) parse_url($url, PHP_URL_PATH)), 'the URL must name the pinned archive');
@@ -74,6 +75,64 @@ final class RuntimePinsTest extends TestCase
             'jdk-'.str_replace('+', '%2B', RuntimePins::JRE_VERSION),
             RuntimePins::jreUrl(),
         );
+        $this->assertStringContainsString('v'.RuntimePins::SUWAYOMI_VERSION, RuntimePins::suwayomiUrl());
+    }
+
+    /**
+     * The jar pin and the compatibility file are two copies of one version, so they must agree.
+     *
+     * `packaging/suwayomi.json` is what the launcher and About page read. The jar pin is what the
+     * build verifies. If they drift, an install can carry one Suwayomi version and claim another.
+     */
+    public function test_suwayomi_pin_matches_the_declared_compatibility(): void
+    {
+        $file = dirname(__DIR__, 2).'/packaging/suwayomi.json';
+        $declared = json_decode((string) file_get_contents($file), true);
+
+        $this->assertIsArray($declared);
+        $this->assertSame(
+            RuntimePins::SUWAYOMI_VERSION,
+            $declared['tested'] ?? null,
+            'packaging/suwayomi.json must name the same Suwayomi release as the jar pin',
+        );
+    }
+
+    public function test_ca_bundle_pin_is_a_dated_file_with_a_full_digest(): void
+    {
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', RuntimePins::CACERT_SHA256);
+        $this->assertSame(
+            'cacert-'.RuntimePins::CACERT_DATE.'.pem',
+            basename((string) parse_url(RuntimePins::CACERT_URL, PHP_URL_PATH)),
+            'the CA URL must name a dated extract, not the moving cacert.pem',
+        );
+    }
+
+    public function test_suwayomi_jar_validation_refuses_a_corrupted_file(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'papyrus-jar-');
+        $this->assertIsString($path);
+        file_put_contents($path, 'not a Suwayomi jar');
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            RuntimePins::assertSuwayomiJar($path);
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function test_ca_bundle_validation_refuses_a_corrupted_file(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'papyrus-cacert-');
+        $this->assertIsString($path);
+        file_put_contents($path, 'not a CA bundle');
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            RuntimePins::assertCaBundle($path);
+        } finally {
+            @unlink($path);
+        }
     }
 
     public function test_every_distrusted_root_names_a_subject_and_fingerprint(): void

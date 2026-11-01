@@ -142,8 +142,20 @@ say('install', $stamped.' at '.$install);
 // --- the compiler -------------------------------------------------------------------------
 
 $iscc = findCompiler();
+$compilerVersion = compilerVersion($iscc);
 
-say('compiler', $iscc);
+if ($compilerVersion === null) {
+    fail(
+        'could not read the Inno Setup version from the registry. The manifest records the '
+        .'compiler so a build can be reproduced; install Inno Setup 6 and try again.'
+    );
+}
+
+if (version_compare($compilerVersion, '6.0', '<')) {
+    fail('Inno Setup 6 or newer is required, and '.$compilerVersion.' is installed');
+}
+
+say('compiler', 'Inno Setup '.$compilerVersion.' at '.$iscc);
 
 // --- compile ------------------------------------------------------------------------------
 
@@ -395,6 +407,17 @@ $manifest = [
      */
     'signed' => ! $skipSigning,
     'signature' => $skipSigning ? null : Signing::describe($expected),
+    /*
+     * The compiler that produced the payload, not its path.
+     *
+     * The path is per-machine and can carry a user folder, and this manifest is published. The
+     * version is the part that makes a build reproducible; `findCompiler()` accepts any ISCC.exe,
+     * so without this field two builds of one commit could come from different Inno Setup releases
+     * and nothing would say so.
+     */
+    'toolchain' => [
+        'inno_setup' => $compilerVersion,
+    ],
     'artifacts' => [[
         'file' => basename($expected),
         'sha256' => hash_file('sha256', $expected),
@@ -421,11 +444,13 @@ say('', 'requires suwayomi '.$manifest['requires']['suwayomi'].', jvm '.($jvm ??
 // --- and the one property that makes it an installer rather than an archive -----------------
 
 /*
- * The payload is checked against the install that was packaged, not against a number in the
- * script.
+ * This counts the install tree the compiler was given. It proves the source tree is whole; it
+ * does not prove the compiled payload contains every file. Nothing here reads the setup executable
+ * back.
  *
- * An installer that silently shipped half a directory is a reader with an app that cannot boot,
- * and the only cheap moment to notice is here, while the number of files still matches.
+ * The real payload check is the manual sandbox run, which installs through the setup executable
+ * and compares the installed tree with this one. The earlier version of this comment claimed that
+ * check existed here, and the count was the only thing behind the claim.
  */
 say('', '');
 say('checks');
@@ -505,6 +530,50 @@ function findCompiler(): string
         'Inno Setup was not found. Looked in: '.implode(', ', $candidates).'. '.
         'It is about 1MB of tool and installs from https://jrsoftware.org/isinfo.php'
     );
+}
+
+/**
+ * Read the Inno Setup version for the compiler this build will actually run.
+ *
+ * `ISCC.exe /?` names the major version only, and its file version resource is 0.0.0.0 on the
+ * installed build, so neither can distinguish 6.7.3 from 6.4. The uninstall entry carries the
+ * version the installer wrote, but it must be matched to the compiler path because `ISCC` can point
+ * at a different installation. The path is compared and never published; only the version is.
+ *
+ * Returns null rather than guessing, so the caller can refuse a build whose compiler it cannot
+ * name.
+ */
+function compilerVersion(string $compiler): ?string
+{
+    $directory = rtrim(str_replace('/', '\\', dirname($compiler)), '\\');
+
+    $keys = [
+        'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        'HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+    ];
+
+    foreach ($keys as $key) {
+        $location = @shell_exec('reg query '.escapeshellarg($key).' /v InstallLocation 2>&1');
+
+        if (! is_string($location) || preg_match('/InstallLocation\s+REG_SZ\s+(.+)/i', $location, $found) !== 1) {
+            continue;
+        }
+
+        $installed = rtrim(str_replace('/', '\\', trim($found[1])), '\\');
+
+        if (strcasecmp($installed, $directory) !== 0) {
+            continue;
+        }
+
+        $version = @shell_exec('reg query '.escapeshellarg($key).' /v DisplayVersion 2>&1');
+
+        if (is_string($version) && preg_match('/DisplayVersion\s+REG_SZ\s+([0-9]+(?:\.[0-9]+)+)/i', $version, $matches) === 1) {
+            return $matches[1];
+        }
+    }
+
+    return null;
 }
 
 /**

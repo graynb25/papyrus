@@ -294,6 +294,28 @@ foreach ([
     }
 }
 
+/*
+ * Refuse a substituted jar before the layout is cleared.
+ *
+ * The digest is the one GitHub publishes for the release asset, so a file renamed to the right
+ * version is still refused. This has to run before `removeTree($into)`: a build that clears the
+ * previous install and then discovers its input was wrong has destroyed the only local copy of a
+ * working tree for no result.
+ */
+$jarPath = $options['jar'];
+
+if ($jarPath === null) {
+    fail('no Suwayomi jar given, pass --jar=<path>');
+}
+
+try {
+    RuntimePins::assertSuwayomiJar($jarPath);
+} catch (RuntimeException $e) {
+    fail($e->getMessage());
+}
+
+say('jar', basename($jarPath).' matches the pinned digest');
+
 $jre = $options['jre'] ?? $repo.DIRECTORY_SEPARATOR.'suwayomi'.DIRECTORY_SEPARATOR.'runtime';
 
 if (! is_file($jre.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'java.exe')) {
@@ -400,13 +422,15 @@ say('version', $version.' ('.$commit.')');
  * repository. Regenerating them here would mean a second place to edit and a way for the artifact
  * and the source to disagree, which is the same class of bug as the one this fixes.
  *
- * ## Only the presence of the file is checked here
+ * ## What is checked here
  *
- * Whether the two numbers inside it are usable is asked further down, after the launcher has been
- * loaded from the built tree, using that class rather than a second copy of its rule. This block
- * cannot ask, because `require_once` deduplicates by resolved path: loading the class from the
- * repository here and from `build/install` further down declares it twice and the build dies with
- * "Cannot redeclare class", which is exactly what the first version of this did.
+ * The file must be readable JSON and its `tested` version must match the jar pin, because the
+ * artifact must not claim one Suwayomi release while carrying another. Whether the two numbers are
+ * usable is asked further down, after the launcher has been loaded from the built tree, using that
+ * class rather than a second copy of its rule. This block cannot ask, because `require_once`
+ * deduplicates by resolved path: loading the class from the repository here and from
+ * `build/install` further down declares it twice and the build dies with "Cannot redeclare class",
+ * which is exactly what the first version of this did.
  */
 $compatibilityFile = $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'suwayomi.json';
 
@@ -414,8 +438,18 @@ if (! is_file($compatibilityFile)) {
     fail('no packaging/suwayomi.json, so the build cannot say which Suwayomi this install expects');
 }
 
-if (! is_array(json_decode((string) file_get_contents($compatibilityFile), true))) {
+$declaredCompatibility = json_decode((string) file_get_contents($compatibilityFile), true);
+
+if (! is_array($declaredCompatibility)) {
     fail('packaging/suwayomi.json is not readable JSON');
+}
+
+if (($declaredCompatibility['tested'] ?? null) !== RuntimePins::SUWAYOMI_VERSION) {
+    fail(
+        'packaging/suwayomi.json says the tested server is '
+        .var_export($declaredCompatibility['tested'] ?? null, true)
+        .', but the jar pin is '.RuntimePins::SUWAYOMI_VERSION
+    );
 }
 
 if (copy($compatibilityFile, $into.DIRECTORY_SEPARATOR.'suwayomi.json') === false) {
@@ -554,9 +588,22 @@ if (! is_file($bundled)) {
     );
 }
 
-copy($bundled, $runtime.DIRECTORY_SEPARATOR.'cacert.pem');
+/*
+ * Verify whatever this build was handed, including `--cacert`.
+ *
+ * The staging script checks its own download, but the override exists and a path passed here is
+ * otherwise copied on trust. A stale or substituted bundle produces an install whose HTTPS
+ * failures look like network problems, so the build refuses it while the reason is still visible.
+ */
+try {
+    RuntimePins::assertCaBundle($bundled);
+} catch (RuntimeException $e) {
+    fail($e->getMessage());
+}
 
-say('cacert', basename($bundled));
+say('cacert', basename($bundled).' matches the pinned digest');
+
+copy($bundled, $runtime.DIRECTORY_SEPARATOR.'cacert.pem');
 
 // --- Suwayomi and its JRE -----------------------------------------------------------
 
@@ -566,11 +613,11 @@ if (! mkdir($suwayomi, 0o777, true) && ! is_dir($suwayomi)) {
     fail("could not create {$suwayomi}");
 }
 
-copy($options['jar'], $suwayomi.DIRECTORY_SEPARATOR.basename($options['jar']));
+copy($jarPath, $suwayomi.DIRECTORY_SEPARATOR.basename($jarPath));
 
-$jarSize = filesize($options['jar']);
+$jarSize = filesize($jarPath);
 
-say('jar', basename($options['jar']).' at '.formatBytes($jarSize === false ? 0 : $jarSize));
+say('jar', basename($jarPath).' at '.formatBytes($jarSize === false ? 0 : $jarSize));
 
 copyTree($jre, $suwayomi.DIRECTORY_SEPARATOR.'runtime');
 

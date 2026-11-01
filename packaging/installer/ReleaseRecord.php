@@ -74,6 +74,7 @@ final class ReleaseRecord
                     'requires' => is_array($manifest['requires'] ?? null) ? $manifest['requires'] : [],
                     'signed' => (bool) ($manifest['signed'] ?? false),
                     'signature' => is_string($manifest['signature'] ?? null) ? $manifest['signature'] : null,
+                    'toolchain' => is_array($manifest['toolchain'] ?? null) ? $manifest['toolchain'] : [],
                     'artifacts' => [],
                 ];
             }

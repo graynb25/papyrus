@@ -40,6 +40,25 @@ final class ReleaseRecordTest extends TestCase
         $this->assertSame('a1', $record['artifacts'][1]['commit']);
     }
 
+    public function test_it_keeps_the_installer_toolchain_when_the_portable_merges(): void
+    {
+        $installer = $this->manifest('Papyrus-1.5.2-setup.exe', str_repeat('a', 64), 10, 'a1');
+        $installer['toolchain'] = ['inno_setup' => '6.7.3'];
+
+        $portable = $this->manifest('Papyrus-1.5.2-portable.zip', str_repeat('b', 64), 20, 'b2');
+
+        $path = \ReleaseRecord::merge($this->dir, $installer);
+        \ReleaseRecord::merge($this->dir, $portable);
+
+        $record = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(
+            ['inno_setup' => '6.7.3'],
+            $record['toolchain'] ?? null,
+            'the compiler that built the installer must survive the portable merge',
+        );
+    }
+
     public function test_the_same_artifact_merge_is_idempotent(): void
     {
         $installer = $this->manifest('Papyrus-1.5.2-setup.exe', str_repeat('a', 64), 10, 'a1');

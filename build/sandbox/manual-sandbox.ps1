@@ -212,7 +212,15 @@ THE RUN
      open, and when a page is visible. Name each one. The ten second loop is the record; the named
      shots are the index.
 
-  7. When you are done, double-click Stop screenshots and wait ten seconds for the loop to write
+  7. After the install, count the installed payload and record it for the host:
+
+         (Get-ChildItem "$env:LOCALAPPDATA\Programs\Papyrus" -Recurse -File).Count |
+             Set-Content C:\results\payload-count.txt
+
+     The host compares that number with the build's install tree. A different count means the
+     compiled payload dropped or added files, which the source-tree count cannot see.
+
+  8. When you are done, double-click Stop screenshots and wait ten seconds for the loop to write
      its last frame, then close the sandbox window.
 
 WHAT IS BEING TESTED
