@@ -19,5 +19,9 @@ Updated 2026-11-01.
   13m19s. The 46m28s to 1h20m24s runs on 2026-10-14 and 2026-10-15 were a
   full-database mistake, not the baseline. The suite uses `DB_DATABASE=:memory:` and
   a test enforces it.
-- **Still open.** D4 signing, D5 Flux licence, the 1.5.2 release build and tag, and
-  D6 to D10.
+- **D4 signing, 2026-11-01.** Build 1.5.2 unsigned. The only signing material is a
+  self-signed development certificate, which does not remove the Windows warning. The
+  release record will say `signed: false`.
+- **D5 Flux licence, 2026-11-01.** Keep `livewire/flux`. No redistributable licence text
+  is staged; the in-app licences page names it proprietary.
+- **Still open.** The 1.5.2 release build and tag, and D6 to D10.

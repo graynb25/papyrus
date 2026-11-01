@@ -76,6 +76,8 @@ class PortableBuildTest extends TestCase
             $arguments[] = '--out='.escapeshellarg($out);
         }
 
+        $arguments[] = '--no-record';
+
         $output = [];
         $status = 1;
 

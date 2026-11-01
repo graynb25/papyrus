@@ -39,6 +39,11 @@ The 1.5.1 build will not be published. 1.5.2 is in preparation from the rewritte
 it is not published until the release build and tag are verified. See
 [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
+The 1.5.2 installer will be unsigned. The only signing material is a self-signed
+development certificate, which does not remove the Windows warning. The release record
+will say `signed: false`. Flux remains proprietary; no licence text is staged, and the
+in-app licences page names it proprietary.
+
 ### History rewrite, 2026-10-30
 
 The repository history was rewritten on 2026-10-30 to remove machine detail. The

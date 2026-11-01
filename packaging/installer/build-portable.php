@@ -32,7 +32,10 @@
  *
  * ## Usage
  *
- *     php packaging/installer/build-portable.php [--install=<dir>] [--out=<dir>]
+ *     php packaging/installer/build-portable.php [--install=<dir>] [--out=<dir>] [--no-record]
+ *
+ * `--no-record` is test-only: the portable build tests use a fake install and must not write the
+ * repository's release record. Release builds never pass it.
  */
 
 declare(strict_types=1);
@@ -42,11 +45,20 @@ $repo = dirname(__DIR__, 2);
 require_once __DIR__.'/ReleaseRecord.php';
 
 $options = [];
+$record = true;
+
 foreach (array_slice($argv, 1) as $argument) {
     if (str_starts_with($argument, '--install=')) {
         $options['install'] = substr($argument, strlen('--install='));
     } elseif (str_starts_with($argument, '--out=')) {
         $options['out'] = substr($argument, strlen('--out='));
+    } elseif ($argument === '--no-record') {
+        /*
+         * Test-only. The portable tests stage a tiny fake install with no commit and must not
+         * write the repository's release record. Release builds never pass this; the record is
+         * covered by ReleaseRecordTest and the real build.
+         */
+        $record = false;
     } else {
         fail('unexpected argument: '.$argument);
     }
@@ -418,15 +430,19 @@ if (file_put_contents($sidecar, $digest.'  '.$name.PHP_EOL) === false) {
 say('sha256', $digest);
 say('sidecar', basename($sidecar));
 
-$manifest = ReleaseRecord::manifest($install, [
-    'file' => $name,
-    'sha256' => $digest,
-    'size' => $bytes,
-]);
+if ($record) {
+    $manifest = ReleaseRecord::manifest($install, [
+        'file' => $name,
+        'sha256' => $digest,
+        'size' => $bytes,
+    ]);
 
-$committed = ReleaseRecord::merge($repo, $manifest);
+    $committed = ReleaseRecord::merge($repo, $manifest);
 
-say('record', $committed);
+    say('record', $committed);
+} else {
+    say('record', 'skipped for this test build');
+}
 
 say('', 'a zip cannot carry an Authenticode signature, so this hash is how it is verified');
 

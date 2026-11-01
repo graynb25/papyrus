@@ -41,6 +41,13 @@ replaced with the login, dashboard or AniList destination they meant, except the
 documented CBZ download exception. A reader who followed a refusal no longer lands on
 an unrelated page.
 
+### Release notes
+
+The 1.5.2 installer is unsigned. Windows may show a SmartScreen warning; compare the
+published SHA-256 before running it. The installer includes `livewire/flux` under its
+proprietary terms. No licence text is redistributed; the in-app licences page names it
+proprietary.
+
 ---
 
 ## 1.5.1 - 2026-10-28 (not published)
