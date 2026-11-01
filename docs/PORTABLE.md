@@ -4,7 +4,7 @@ The portable shape: a folder you copy anywhere and run. No installer, no registr
 rights.
 
 > **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
-> published. The next release is 1.5.2, pending. See
+> published. 1.5.2 is in preparation. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ---

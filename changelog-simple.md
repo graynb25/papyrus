@@ -4,8 +4,18 @@ The same release notes as [CHANGELOG.md](CHANGELOG.md), written for a reader rat
 No commit hashes, no file names, no jargon.
 
 > **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
-> published. The next release is 1.5.2, pending. See
+> published. 1.5.2 is in preparation from the rewritten tree. See
 > [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+
+---
+
+## Version 1.5.2, 1 November 2026
+
+This is the first published release after 1.5.0. It includes the 1.5.1 hardening
+described below, which was built and tested but never published. It also removes the
+design-review screenshots and the machine detail from the public repository history;
+the old history is kept in an offline archive. Redirects after a refusal now take you
+to the page they meant.
 
 ---
 

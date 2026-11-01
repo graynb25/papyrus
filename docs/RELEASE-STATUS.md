@@ -2,13 +2,12 @@
 
 Updated 2026-11-01.
 
+- **1.5.2 is in preparation from the rewritten tree.** `VERSION` is 1.5.2. It is not
+  published until the release build, signing and tag decisions are complete.
 - **1.5.1 was built and proven locally, but it was not published.** Do not publish it.
   The installer and portable runs passed manual sandbox acceptance on 2026-10-29. The
   record at [`releases/1.5.1.json`](../releases/1.5.1.json) is a local artifact record,
   not a published release.
-- **The next release is 1.5.2 from the rewritten tree.** This is the recommended
-  decision; the version decision is still open, so [`VERSION`](../VERSION) remains
-  1.5.1 until the owner records it.
 - **The public history was rewritten on 2026-11-01.** The rewrite removed the
   `storage/design-review` screenshots and the measured machine-identity classes. The
   pre-rewrite history is in an owner-held offline archive for 90 days. GitHub still
@@ -20,5 +19,5 @@ Updated 2026-11-01.
   13m19s. The 46m28s to 1h20m24s runs on 2026-10-14 and 2026-10-15 were a
   full-database mistake, not the baseline. The suite uses `DB_DATABASE=:memory:` and
   a test enforces it.
-- **Still open.** The 1.5.2 version decision, the release notes and tag, and the
-  remaining remediation phases.
+- **Still open.** D4 signing, D5 Flux licence, the 1.5.2 release build and tag, and
+  D6 to D10.

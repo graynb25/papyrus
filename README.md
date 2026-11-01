@@ -51,8 +51,9 @@ The 1.5.0 installer's manual sandbox run passed on 2026-10-27, and the 1.5.1 set
 is still blocked by the Windows Sandbox VM issue. Search, source management, health, downloads,
 migration between sources, the series page, the reader and settings are implemented.
 
-**Release status.** 1.5.1 was built and proven locally but was not published. The next
-release is 1.5.2 from the rewritten tree, pending the owner's version decision. See
+**Release status.** 1.5.2 is in preparation from the rewritten tree; `VERSION` is
+1.5.2. It is not published until the release build and tag are verified. 1.5.1 was
+built and proven locally but was not published. See
 [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the

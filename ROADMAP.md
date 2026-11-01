@@ -25,8 +25,8 @@ Severity is the project's existing scale:
 Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what exists: a Windows
 installer, a portable archive builder, daily backups, a diagnostics bundle, a health check that asks
 real questions, and a Suwayomi version check. A portable package is not published; the 1.5.1 archive
-passed clean-machine C: and D: runs, but 1.5.1 was not published. The next release is 1.5.2,
-pending. See [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+passed clean-machine C: and D: runs, but 1.5.1 was not published. 1.5.2 is in preparation. See
+[docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 ---
 

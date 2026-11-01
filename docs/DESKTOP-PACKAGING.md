@@ -1,7 +1,7 @@
 # Packaging Papyrus for Windows
 
 > **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
-> published. The next release is 1.5.2, pending. See
+> published. 1.5.2 is in preparation. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox

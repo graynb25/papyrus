@@ -21,15 +21,25 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.5.2 - 2026-11-01
 
-**Release status.** 1.5.1 was built and proven locally but was not published. The
-next release is 1.5.2 from the rewritten tree, pending the owner's version decision.
-See [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+The first published release after 1.5.0. It includes the 1.5.1 hardening that was
+built and proven locally but never published, the repository history rewrite, and the
+redirect fixes found during the remediation review.
 
-**Repository history.** The rewrite removed `storage/design-review` from every
-commit and replaced the measured machine-identity classes. No personal values are
-reproduced here.
+### Security
+
+**The public repository history no longer carries the design-review screenshots or
+the machine-identity values.** The rewrite removed `storage/design-review` from every
+commit and replaced the measured machine-identity classes. The pre-rewrite history is
+preserved in the owner-held offline archive; no personal values are reproduced here.
+
+### Fixed
+
+**A refusal or export redirect now names its destination.** The bare redirects were
+replaced with the login, dashboard or AniList destination they meant, except the
+documented CBZ download exception. A reader who followed a refusal no longer lands on
+an unrelated page.
 
 ---
 

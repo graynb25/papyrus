@@ -35,8 +35,9 @@ fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,4
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
 
-The 1.5.1 build will not be published. The next release is 1.5.2 from the rewritten tree,
-pending the owner's version decision. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+The 1.5.1 build will not be published. 1.5.2 is in preparation from the rewritten tree;
+it is not published until the release build and tag are verified. See
+[RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ### History rewrite, 2026-10-30
 
