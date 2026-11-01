@@ -750,7 +750,7 @@ class LibraryTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/library')->assertRedirect();
+        $this->get('/library')->assertRedirect(route('login'));
     }
 
     public function test_an_empty_library_says_so(): void

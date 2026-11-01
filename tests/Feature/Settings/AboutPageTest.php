@@ -219,7 +219,7 @@ class AboutPageTest extends TestCase
 
         auth()->logout();
 
-        $this->get(route('about.edit'))->assertRedirect();
+        $this->get(route('about.edit'))->assertRedirect(route('login'));
     }
 
     /**

@@ -227,7 +227,7 @@ class RegistrationGateTest extends TestCase
         $this->post(route('login.store'), [
             'email' => $user->email,
             'password' => 'password',
-        ])->assertRedirect();
+        ])->assertRedirect(route('dashboard'));
 
         $this->assertAuthenticatedAs($user);
     }

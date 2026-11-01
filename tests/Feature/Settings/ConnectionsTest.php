@@ -65,7 +65,7 @@ class ConnectionsTest extends TestCase
 
         Livewire::test('pages::settings.connections')
             ->call('connect')
-            ->assertRedirect();
+            ->assertRedirectContains('anilist.co');
 
         $this->assertNotEmpty(session('anilist_oauth_state'));
 

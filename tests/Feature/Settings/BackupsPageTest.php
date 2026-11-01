@@ -95,7 +95,7 @@ class BackupsPageTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/settings/backups')->assertRedirect();
+        $this->get('/settings/backups')->assertRedirect(route('login'));
     }
 
     public function test_a_signed_in_reader_is_forbidden_from_the_page(): void

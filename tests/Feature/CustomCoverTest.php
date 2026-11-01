@@ -535,7 +535,7 @@ class CustomCoverTest extends TestCase
 
         auth()->logout();
 
-        $this->get('/covers/76')->assertRedirect();
+        $this->get('/covers/76')->assertRedirect(route('login'));
     }
 
     public function test_a_row_whose_file_is_gone_serves_a_404_rather_than_erroring(): void

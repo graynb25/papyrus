@@ -548,7 +548,7 @@ class SourcesPageTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/sources')->assertRedirect();
+        $this->get('/sources')->assertRedirect(route('login'));
     }
 
     public function test_the_page_explains_the_store_and_trust_path_in_reader_words(): void

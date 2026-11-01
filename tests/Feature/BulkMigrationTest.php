@@ -118,7 +118,7 @@ class BulkMigrationTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/migrate/sources')->assertRedirect();
+        $this->get('/migrate/sources')->assertRedirect(route('login'));
     }
 
     public function test_it_renders(): void

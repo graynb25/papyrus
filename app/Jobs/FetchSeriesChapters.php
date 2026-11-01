@@ -160,11 +160,11 @@ class FetchSeriesChapters implements ShouldQueue
              *
              * `CheckLedger::check()` already records a Suwayomi failure as an ERROR row, which
              * is where the diagnosis belongs. What must not happen is the exception leaving
-             * `handle()`: the test suite runs the sync queue driver, where a dispatch is a
-             * direct call, so a rethrow 500s the series page the reader is looking at, turning
-             * a missing chapter list into a broken app. Under the real queue the same throw
-             * would mark the job failed, which is equally useless because there is nobody
-             * watching a queue log for a page they are already staring at.
+             * `handle()`: under a sync queue driver a dispatch is a direct call, so a rethrow
+             * 500s the series page the reader is looking at, turning a missing chapter list
+             * into a broken app. Under any other queue the same throw would mark the job
+             * failed, which is equally useless because there is nobody watching a queue log
+             * for a page they are already staring at.
              *
              * The page renders its loading state, this clears the claim, and the reader finds
              * the retry button. That is the outcome worth having.

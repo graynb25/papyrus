@@ -96,7 +96,7 @@ class SuwayomiProxyTest extends TestCase
 
     public function test_it_requires_authentication(): void
     {
-        $this->get('/suwayomi/api/v1/manga/12/chapter/0/page/0')->assertRedirect();
+        $this->get('/suwayomi/api/v1/manga/12/chapter/0/page/0')->assertRedirect(route('login'));
     }
 
     /**
@@ -131,7 +131,7 @@ class SuwayomiProxyTest extends TestCase
     public function test_an_extension_icon_still_needs_a_signed_in_reader(): void
     {
         $this->get('/suwayomi/api/v1/extension/icon/eu.kanade.tachiyomi.extension.en.mangadex')
-            ->assertRedirect();
+            ->assertRedirect(route('login'));
     }
 
     /**

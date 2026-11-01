@@ -66,9 +66,24 @@ class CbzExportTest extends TestCase
         '/api/v1/manga/76/chapter/1/page/2',
     ];
 
+    /**
+     * The directory this test's exporter builds in.
+     *
+     * Its own scratch directory, not the shared system temp directory. A test that lists the
+     * shared directory sees every other process on the machine: a concurrent run, a crashed
+     * earlier run, or a foreign file with a matching name changes the answer.
+     */
+    private string $exportScratch;
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->exportScratch = $this->scratchPath('papyrus-cbz');
+
+        $this->app->when(CbzExporter::class)
+            ->needs('$scratchDirectory')
+            ->give($this->exportScratch);
 
         $this->actingAs(User::factory()->create());
 
@@ -220,7 +235,9 @@ class CbzExportTest extends TestCase
     {
         Config::set('papyrus.downloads.cbz_export_max_bytes', 64);
 
-        // A redirect back to where the control was, not a truncated file.
+        // A redirect back to where the control was, not a truncated file. The destination is
+        // the referring page, which a direct request does not carry, so only the redirect
+        // itself is meaningful here.
         $this->get('/downloads/chapter/'.self::CHAPTER.'/cbz')
             ->assertRedirect();
 
@@ -268,6 +285,15 @@ class CbzExportTest extends TestCase
 
         $response = $this->get('/downloads/chapter/'.self::CHAPTER.'/cbz')->assertOk();
 
+        // The archive is built before it is sent, so it is still here now. This proves the
+        // export used this test's directory; a leak test that only compared before and after
+        // would pass against an exporter that wrote somewhere else entirely.
+        $this->assertCount(
+            1,
+            $this->scratchFiles(),
+            'The archive is built inside this test scratch directory.'
+        );
+
         // The body has to actually be read before this means anything. The archive is built and
         // then sent, so asserting immediately after the request would look at a directory in
         // which the file legitimately still exists and call it a leak.
@@ -313,7 +339,7 @@ class CbzExportTest extends TestCase
      */
     private function scratchFiles(): array
     {
-        $files = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-cbz-*.cbz') ?: [];
+        $files = glob($this->exportScratch.DIRECTORY_SEPARATOR.'*.cbz') ?: [];
 
         sort($files);
 

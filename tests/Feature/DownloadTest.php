@@ -909,9 +909,9 @@ class DownloadTest extends TestCase
     /**
      * The sync queue driver must not turn the chain into a loop.
      *
-     * This test runs with no `Queue::fake()` on purpose, so the test suite's
-     * `QUEUE_CONNECTION=sync` applies and a dispatch runs inline. Before the depth
-     * guard this exhausted 128MB in about a second: a download the server never
+     * This test runs with no `Queue::fake()` on purpose, and sets the sync driver
+     * itself rather than inheriting one. A dispatch then runs inline. Before the
+     * depth guard this exhausted 128MB in about a second: a download the server never
      * finishes stays pending, the pass re-books itself, the re-book runs inline,
      * and the next pass sees the same pending row and does it again.
      *
@@ -920,6 +920,8 @@ class DownloadTest extends TestCase
      */
     public function test_an_unreachable_queue_does_not_loop_under_the_sync_driver(): void
     {
+        config(['queue.default' => 'sync']);
+
         $this->pendingRow(13);
         $this->serverStatus = 503;
 
@@ -945,7 +947,7 @@ class DownloadTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/downloads')->assertRedirect();
+        $this->get('/downloads')->assertRedirect(route('login'));
     }
 
     public function test_an_empty_downloads_page_explains_itself(): void

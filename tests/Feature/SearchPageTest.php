@@ -193,7 +193,7 @@ class SearchPageTest extends TestCase
 
     public function test_the_page_requires_authentication(): void
     {
-        $this->get('/search')->assertRedirect();
+        $this->get('/search')->assertRedirect(route('login'));
     }
 
     public function test_the_page_renders_for_an_authenticated_user(): void

@@ -187,7 +187,7 @@ class ImportPageTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/settings/import')->assertRedirect();
+        $this->get('/settings/import')->assertRedirect(route('login'));
     }
 
     public function test_it_renders_for_a_signed_in_reader(): void
@@ -648,6 +648,8 @@ class ImportPageTest extends TestCase
 
     public function test_nothing_is_reported_when_the_queue_is_not_the_database_one(): void
     {
+        config(['queue.default' => 'sync']);
+
         $component = $this->page()->set('path', (string) $this->file)->call('start');
 
         $this->queueAJobWaitingFor(now()->subMinutes(2));
@@ -675,6 +677,8 @@ class ImportPageTest extends TestCase
          * anything. Saying so up front is the only version of this that is a warning rather
          * than an outage.
          */
+        config(['queue.default' => 'sync']);
+
         $this->assertTrue($this->page()->instance()->queueIsInline());
 
         $this->page()
@@ -1412,10 +1416,9 @@ class ImportPageTest extends TestCase
     /**
      * Put the page on the queue a deployed server actually uses.
      *
-     * `phpunit.xml` forces `QUEUE_CONNECTION=sync` so the suite does not need a worker, which
-     * is right for every other test here and wrong for these. These assert on the `jobs`
-     * table, so they have to say so rather than quietly pass against a queue that cannot hold
-     * a job.
+     * The suite runs on the database queue now, so this names the dependency at the point
+     * that reads the `jobs` table instead of leaving it implicit in `phpunit.xml`. A test
+     * that asserts on queued rows has to say which queue it means.
      */
     private function useDatabaseQueue(): void
     {

@@ -221,7 +221,7 @@ class HealthDashboardTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/health')->assertRedirect();
+        $this->get('/health')->assertRedirect(route('login'));
     }
 
     public function test_the_page_explains_that_health_is_based_on_searches_not_a_live_source_status(): void

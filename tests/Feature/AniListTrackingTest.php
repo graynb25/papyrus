@@ -199,7 +199,7 @@ class AniListTrackingTest extends TestCase
 
         auth()->logout();
 
-        $this->get('/anilist/callback?code=the-code&state=x')->assertRedirect();
+        $this->get('/anilist/callback?code=the-code&state=x')->assertRedirect(route('login'));
     }
 
     public function test_the_token_is_never_rendered(): void

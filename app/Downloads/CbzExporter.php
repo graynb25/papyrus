@@ -100,9 +100,13 @@ class CbzExporter
         'image/gif' => 'gif',
     ];
 
+    /**
+     * @param  string|null  $scratchDirectory  where the archive is built; null is the system temp directory
+     */
     public function __construct(
         private readonly SeriesGateway $series,
         private readonly AuthManager $auth,
+        private readonly ?string $scratchDirectory = null,
     ) {}
 
     /**
@@ -346,10 +350,14 @@ class CbzExporter
      * Under the temp directory rather than beside the covers and uploads, because this is a
      * scratch file that is not meant to survive. In `storage/app` it would sit among files
      * that something else owns, and nothing would ever clean it up.
+     *
+     * The directory is injectable so a test can point it at its own scratch directory and
+     * prove cleanup without listing the shared one. Production passes nothing and keeps the
+     * system temp directory.
      */
     private function scratchPath(int $chapterId): string
     {
-        return rtrim(sys_get_temp_dir(), '/\\')
+        return rtrim($this->scratchDirectory ?? sys_get_temp_dir(), '/\\')
             .DIRECTORY_SEPARATOR
             .'papyrus-cbz-'.$chapterId.'-'.bin2hex(random_bytes(6)).'.cbz';
     }

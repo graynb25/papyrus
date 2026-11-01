@@ -1435,7 +1435,7 @@ class MigrationTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/migrate/76')->assertRedirect();
+        $this->get('/migrate/76')->assertRedirect(route('login'));
     }
 
     public function test_the_page_offers_to_search(): void

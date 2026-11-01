@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\FetchSeriesChapters;
 use App\Models\ChapterState;
 use App\Models\SeriesState;
 use App\Models\User;
@@ -184,7 +185,7 @@ class ReadPathTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/series/76')->assertRedirect();
+        $this->get('/series/76')->assertRedirect(route('login'));
     }
 
     public function test_it_renders_the_series_metadata(): void
@@ -282,7 +283,17 @@ class ReadPathTest extends TestCase
             'chapters' => ['totalCount' => 0, 'nodes' => []],
         ]]];
 
-        $this->series()
+        $component = $this->series();
+
+        /*
+         * The automatic fetch releases this claim in its `finally` when it finishes. The
+         * queue is database backed now, so nothing runs the job inline and the page would
+         * otherwise stay on its in-flight panel. Releasing it here models the finished
+         * fetch, which is the state this test is about.
+         */
+        FetchSeriesChapters::release((int) $this->user->id);
+
+        $component->call('$refresh')
             ->assertSee('No chapters yet')
             ->assertSee('Refresh chapters');
     }
@@ -488,7 +499,7 @@ class ReadPathTest extends TestCase
     {
         auth()->logout();
 
-        $this->get('/read/76/1')->assertRedirect();
+        $this->get('/read/76/1')->assertRedirect(route('login'));
     }
 
     public function test_it_renders_one_image_per_page(): void
@@ -741,7 +752,7 @@ class ReadPathTest extends TestCase
         auth()->logout();
 
         $this->put('/read/76/settings', ['settings' => ['zoom' => 2.0]])
-            ->assertRedirect();
+            ->assertRedirect(route('login'));
     }
 
     public function test_settings_reject_an_unknown_mode(): void
@@ -936,6 +947,6 @@ class ReadPathTest extends TestCase
         auth()->logout();
 
         $this->post('/read/76/1/progress', ['page' => 2, 'total' => 3])
-            ->assertRedirect();
+            ->assertRedirect(route('login'));
     }
 }

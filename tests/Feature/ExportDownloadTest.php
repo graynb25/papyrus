@@ -254,6 +254,6 @@ class ExportDownloadTest extends TestCase
     {
         auth()->logout();
 
-        $this->get(route('backups.export', ['run' => 99]))->assertRedirect();
+        $this->get(route('backups.export', ['run' => 99]))->assertRedirect(route('login'));
     }
 }
