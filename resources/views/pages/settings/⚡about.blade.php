@@ -118,5 +118,21 @@ new #[Title('About this install')] class extends Component {
         <p class="mt-6 text-sm text-zinc-500 dark:text-zinc-400">
             {{ __('If you report a problem, include the Papyrus and Suwayomi versions shown above.') }}
         </p>
+
+        {{--
+            D6 chose this sentence over a network check. A reader who wants to know whether a
+            newer Papyrus exists should not have to guess, and this install should not make an
+            outbound request to tell them. The link is the only place the release list lives.
+        --}}
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+            {{ __('Updates are manual. This install never checks for new versions. Watch the') }}
+            <a
+                href="https://github.com/graynb25/papyrus/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="underline underline-offset-2 hover:text-vermilion-600 dark:hover:text-vermilion-400"
+            >{{ __('releases page') }}</a>
+            {{ __('for new ones.') }}
+        </p>
     </x-pages::settings.layout>
 </section>

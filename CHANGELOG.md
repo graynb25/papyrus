@@ -21,6 +21,16 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## Unreleased
+
+### Changed
+
+**The About page says updates are manual.** It now states that the install never checks
+for new versions and links the releases page. No outbound request is added. This ships
+after 1.5.2; that release's notes stay as published.
+
+---
+
 ## 1.5.2 - 2026-11-01
 
 The first published release after 1.5.0. It includes the 1.5.1 hardening that was

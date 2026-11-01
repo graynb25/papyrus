@@ -99,6 +99,23 @@ class AboutPageTest extends TestCase
     }
 
     /**
+     * D6 chose a manual statement over a network check.
+     *
+     * A reader who wants to know whether a newer Papyrus exists should not have to guess, and
+     * the install should not make an outbound request to tell them. The sentence says both.
+     */
+    public function test_it_says_updates_are_manual_and_never_checked(): void
+    {
+        $this->suwayomiIs('v2.4.2366');
+
+        $this->get(route('about.edit'))
+            ->assertOk()
+            ->assertSee('Updates are manual')
+            ->assertSee('never checks for new versions')
+            ->assertSee('https://github.com/graynb25/papyrus/releases', false);
+    }
+
+    /**
      * The Papyrus version comes from whichever file this install actually has.
      *
      * A checkout has `VERSION` and no `version.txt`; a packaged install is the reverse. Reading only

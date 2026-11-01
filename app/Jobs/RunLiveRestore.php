@@ -177,6 +177,13 @@ class RunLiveRestore implements ShouldQueue
                  * exactly what it was, and the queue's own retry finishes the pair. The
                  * note has to say both halves' truth or a reader staring at a failed row
                  * could conclude their library is unrestored when half of it already is.
+                 *
+                 * The retry is deliberately a full restore: the manga half is fetched and
+                 * sent again, then the reader half is swapped. Skipping the half from the
+                 * receipt would save that work, but the receipt is written after refusals
+                 * and is not yet trustworthy enough to decide a half is complete. The
+                 * duplicate work is bounded by the job timeout, and a wrong skip is worse
+                 * than a slow retry. Accepted for this release; COR-09.
                  */
                 $this->receipt(static function () use ($run, $e): void {
                     $run->update([

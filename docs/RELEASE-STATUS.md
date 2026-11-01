@@ -2,9 +2,13 @@
 
 Updated 2026-11-01.
 
-- **1.5.2 is published.** `VERSION` is 1.5.2. The tag and commits are on origin, CI
-  run `41351284012` passed, and the release is at
+- **1.5.2 is published on a private repository.** `VERSION` is 1.5.2. The tag and
+  commits are on origin, CI run `41351284012` passed, and the release is at
   <https://github.com/graynb25/papyrus/releases/tag/v1.5.2>.
+- **The repository is private.** The release page and repository return 404 without
+  repository access. Public reach needs the owner to make the repository public, which is
+  a separate decision. GitHub private vulnerability reporting is unavailable while the
+  repository is private.
 - **1.5.1 was built and proven locally, but it was not published.** Do not publish it.
   The installer and portable runs passed manual sandbox acceptance on 2026-10-29. The
   record at [`releases/1.5.1.json`](../releases/1.5.1.json) is a local artifact record,

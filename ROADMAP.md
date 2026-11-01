@@ -173,8 +173,10 @@ should not be.
 
 ### 10. An update check that reports rather than installs
 
-**Medium. Phase 2.** Tell a reader a newer Papyrus exists. Do not download and install it without
-asking. A click that appears to do nothing is worse than a sentence saying what will happen.
+**Decided 2026-11-01: manual statement for now.** The About page says updates are manual,
+never checks for new versions, and links the releases page. A network check is still not
+implemented. If it returns, it must be reporting-only, named on the privacy page, and
+switchable off. It must never download or install anything.
 
 ---
 
