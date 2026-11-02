@@ -370,173 +370,28 @@ class LauncherPhpConfigTest extends TestCase
     }
 
     /**
-     * `open_basedir` names every root the application legitimately uses, and nothing wider.
+     * `open_basedir` is deliberately absent on the shipped ini for now.
      *
-     * The four are the app root, the runtime, the data directory and the temp directory the rest
-     * of the file already points at. Windows separates them with `;`. A path outside these roots is
-     * a widened blast radius, and a missing root is an install that boots and then fails on its
-     * first write, so both directions are asserted.
-     *
-     * This setting was absent after 1.5.3: Laravel's translator asked the filesystem for
-     * `lang/en/Forgot your password?.php`, `file_exists` warned on the `?` inside an allowed root,
-     * and the promoted warning answered the login page with 500. `GuardedTranslationLoader` now
-     * refuses that group before the filesystem is touched, which is what lets the setting return.
+     * The desirable setting, four roots covering the app, runtime, data and temp directories, was
+     * measured broken in 1.5.3 and reverted: `file_exists` on a path inside an allowed root still
+     * warns when the filename carries a character PHP treats as a path metacharacter, Laravel's
+     * translator builds such a path from a translation key carrying `?`, the warning is promoted
+     * to a `ViewException`, and every page using that key 500s. The url-fopen stays off above; it
+     * is the half of this hardening that does not collide with the interpreter's own lookup.
      */
-    public function test_the_shipped_ini_allows_the_app_runtime_data_and_temp_roots(): void
+    public function test_open_basedir_is_absent_until_the_translator_lookup_fix(): void
     {
         $this->installShippedIni();
 
-        $settings = $this->settingsFrom($this->resolveIni($this->supervisor()));
+        $resolved = $this->resolveIni($this->supervisor());
+        $settings = $this->settingsFrom($resolved);
 
-        $value = $settings['open_basedir'] ?? '';
-
-        $this->assertNotSame(
-            '',
-            $value,
-            'without open_basedir a future file read or include reaches the reader profile',
+        $this->assertArrayNotHasKey(
+            'open_basedir',
+            $settings,
+            'open_basedir was confirmed broken for interpreter-lookup paths carrying a ? and '
+                .'must not come back until the translator lookup no longer pictures those',
         );
-
-        $this->assertStringNotContainsString(
-            '{{',
-            $value,
-            'an unresolved token in open_basedir is a directory name PHP will never find anything in',
-        );
-
-        $roots = explode(';', $value);
-
-        foreach ([
-            'the install root' => $this->slashed($this->install),
-            'the runtime' => $this->slashed($this->installIn('runtime')),
-            'the data directory' => $this->slashed($this->data),
-            'the temp directory' => $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
-        ] as $what => $expected) {
-            $this->assertContains(
-                $expected,
-                $roots,
-                $what.' must be an allowed root, or the process that needs it fails on its first read '
-                    .'or write',
-            );
-        }
-
-        $this->assertNotContains(
-            '',
-            $roots,
-            'an empty entry is not a root, and on Windows it is what a trailing separator leaves',
-        );
-
-        $this->assertNotContains(
-            $this->slashed($this->install.DIRECTORY_SEPARATOR.'..'),
-            $roots,
-            'the parent of the install is not an allowed root',
-        );
-    }
-
-    /**
-     * A 1.5.3 reader's local source folder may sit anywhere on disk.
-     *
-     * The quoted path carries a space and a `#`, which is enough to prove the parser does not stop
-     * at the comment marker and the resolved ini still uses forward slashes.
-     */
-    public function test_a_local_source_folder_outside_the_data_directory_is_allowed(): void
-    {
-        $library = $this->scratch.DIRECTORY_SEPARATOR.'manga # library';
-
-        $this->writeEnvironment("PAPYRUS_LOCAL_SOURCE_PATH='{$library}'");
-        $this->installShippedIni();
-
-        $settings = $this->settingsFrom($this->resolveIni($this->supervisor()));
-        $roots = explode(';', $settings['open_basedir'] ?? '');
-
-        $this->assertSame(
-            [
-                $this->slashed($this->install),
-                $this->slashed($this->installIn('runtime')),
-                $this->slashed($this->data),
-                $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
-                $this->slashed($library),
-            ],
-            $roots,
-            'the configured local source folder must be appended, with its # kept as data',
-        );
-    }
-
-    /**
-     * An existing install may keep its database outside the data directory.
-     *
-     * SQLite creates `-wal` and `-shm` beside the database, so allowing the file's parent is what
-     * keeps an upgraded install able to write, not merely read, its library.
-     */
-    public function test_a_database_outside_the_data_directory_allows_its_parent(): void
-    {
-        $directory = $this->scratch.DIRECTORY_SEPARATOR.'elsewhere';
-        $database = $directory.DIRECTORY_SEPARATOR.'reader.sqlite';
-
-        $this->writeEnvironment("DB_DATABASE='{$database}'");
-        $this->installShippedIni();
-
-        $settings = $this->settingsFrom($this->resolveIni($this->supervisor()));
-        $roots = explode(';', $settings['open_basedir'] ?? '');
-
-        $this->assertSame(
-            [
-                $this->slashed($this->install),
-                $this->slashed($this->installIn('runtime')),
-                $this->slashed($this->data),
-                $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
-                $this->slashed($directory),
-            ],
-            $roots,
-            'the database file cannot be named directly, and its -wal and -shm siblings need the '
-                .'same directory',
-        );
-    }
-
-    /**
-     * A fresh install has no `.env` when the ini is resolved, and an empty one is the same case.
-     *
-     * Neither may add an empty root or a trailing separator: PHP reads both as a directory that
-     * cannot be opened, and the install then fails on whatever it tried to read first.
-     */
-    public function test_a_missing_or_empty_environment_file_leaves_only_the_four_roots(): void
-    {
-        $this->installShippedIni();
-
-        $expected = [
-            $this->slashed($this->install),
-            $this->slashed($this->installIn('runtime')),
-            $this->slashed($this->data),
-            $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
-        ];
-
-        $this->assertFileDoesNotExist($this->data.DIRECTORY_SEPARATOR.'.env');
-
-        $missing = $this->settingsFrom($this->resolveIni($this->supervisor()));
-
-        $this->assertSame($expected, explode(';', $missing['open_basedir'] ?? ''));
-        $this->assertStringEndsNotWith(';', $missing['open_basedir'] ?? '');
-
-        $this->writeEnvironment('');
-
-        $empty = $this->settingsFrom($this->resolveIni($this->supervisor()));
-
-        $this->assertSame($expected, explode(';', $empty['open_basedir'] ?? ''));
-        $this->assertStringEndsNotWith(';', $empty['open_basedir'] ?? '');
-    }
-
-    /**
-     * A `.env` with these lines, where the launcher would have written one.
-     */
-    private function writeEnvironment(string $contents): void
-    {
-        if (! is_dir($this->data)) {
-            @mkdir($this->data, 0o777, true);
-        }
-
-        $path = $this->data.DIRECTORY_SEPARATOR.'.env';
-
-        if (file_put_contents($path, $contents.PHP_EOL) === false) {
-            $this->fail('could not write the environment file at '.$path);
-        }
     }
 
     /**

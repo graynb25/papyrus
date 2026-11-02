@@ -69,7 +69,6 @@ require __DIR__.'/src/InstallLayout.php';
 
 require __DIR__.'/src/SummaryLog.php';
 require __DIR__.'/src/Health.php';
-require __DIR__.'/src/OpenBasedirPaths.php';
 require __DIR__.'/src/Supervisor.php';
 
 /*
