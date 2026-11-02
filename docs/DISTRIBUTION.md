@@ -381,6 +381,11 @@ upgrade to the new one, force a migration failure, run `papyrus rollback`, then 
 previous setup. That drill exercises the installer's stop and downgrade guards and the recorded
 pre-migration snapshot, none of which a checkout test can prove.
 
+Every release also needs a fresh-install manual sandbox run: run the real setup on a clean guest,
+create the first account, add a source, and read a page. The 1.5.2 failure was in the launcher's
+first start, and only this run would have caught it. A manual run on an earlier version is not
+evidence for a later build, even when the reader flow looks the same.
+
 ### Naming, so an old download is recognisable
 
 ```

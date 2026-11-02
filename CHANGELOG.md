@@ -21,21 +21,57 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.5.3 - 2026-11-01
+
+A hotfix for a fresh-install failure in 1.5.2, plus the security and update work finished
+since that release.
+
+### Fixed
+
+**A fresh install starts again.** 1.5.2 took a pre-migration snapshot even when there was no
+database yet. `VACUUM INTO` refused the missing source, so the launcher stopped before the first
+migration and the browser showed `ERR_CONNECTION_REFUSED`. The launcher now skips the snapshot
+only when the database file is missing or empty, and still takes and records one for an existing
+library. `8c6b572`
+
+**An upgrade can be rolled back.** The launcher records the pre-migration snapshot path, digest,
+version and commit, and `papyrus rollback` restores it after saving the current database. The
+installer refuses a downgrade unless it is run with `/FORCEDOWNGRADE`, and it aborts if Papyrus is
+still running after `stop`. `e0c1426` `2a2454b`
+
+**The installer can wait for an older Papyrus to close.** It reads the stop output as well as the
+exit code, so a 1.5.2 launcher that prints "did not stop" but exits zero is caught. An interactive
+run offers Retry/Cancel after the reader closes Papyrus; a silent run fails with a clear message.
+`2a2454b`
+
+### Security
+
+**Auth POSTs are throttled and reset requests do not enumerate accounts.** Login keeps its five a
+minute limit; registration, forgot-password, reset and password confirmation share a twenty a
+minute per-address ceiling. A failed reset request answers the same as a successful one. `19b1b04`
+
+**Password reset links use the configured host, and only trusted hosts are accepted.** A forged
+Host header can no longer point a reset token at another origin. `a0b2a20`
+
+**Shared extension management is owner-only.** Install and uninstall check `manage-install`, the
+pending arrays are locked, and every install path re-checks the gate and the package names. `008ff7b`
+
+**The CBZ export is throttled and showcase covers only show ids on the wall.** The export allows
+six a minute per reader; a cover id outside the cached wall gets the same 404 as an unknown id. `a0b2a20`
+
+**The first-account claim is held until the account is written, and the last account cannot be
+deleted.** A second sign-up cannot claim an install between the count and the insert, and deleting
+the only account no longer reopens first-run registration. `008ff7b`
 
 ### Changed
 
-**The About page says updates are manual and links the release feed.** It now states
-that the install never checks for new versions, and links the releases page and its Atom
-feed. No outbound request is added. This ships after 1.5.2; that release's notes stay as
-published.
+**The About page says updates are manual and links the release feed.** It states that the install
+never checks for new versions, and links the releases page and its Atom feed. No outbound request
+is added.
 
-### Added
-
-**An upgrade can be rolled back.** The launcher records the pre-migration snapshot path,
-digest, version and commit before it migrates, and `papyrus rollback` restores it after
-saving the current database. The installer refuses a downgrade unless it is run with
-`/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`.
+**The build pins the Suwayomi jar, the CA bundle and the Inno Setup version.** The jar digest is
+the one GitHub publishes for 2.4.2366; the CA bundle is the dated `cacert-2026-10-20.pem`; the
+installer manifest and record name the compiler version. `178365b`
 
 ---
 

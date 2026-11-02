@@ -51,8 +51,9 @@ The 1.5.0 installer's manual sandbox run passed on 2026-10-27, and the 1.5.1 set
 is still blocked by the Windows Sandbox VM issue. Search, source management, health, downloads,
 migration between sources, the series page, the reader and settings are implemented.
 
-**Release status.** 1.5.2 is published. The installer and portable are on the releases
-page. 1.5.1 was built and proven locally but was not published. See
+**Release status.** 1.5.3 is the current release. It fixes a fresh-install failure in 1.5.2,
+carries the security work finished since that release, and adds the update contract. 1.5.1 was
+built and proven locally but was not published. See
 [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the
@@ -253,12 +254,13 @@ published on GitHub, and the release notes lead with what changed.
 
 To upgrade an installed copy, download the new `Papyrus-<version>-setup.exe`, compare its
 SHA-256 with `releases/<version>.json`, stop Papyrus, and run the installer. The installer
-replaces the program files and leaves `%LOCALAPPDATA%\Papyrus` alone. The launcher
-snapshots the database before it migrates.
+replaces the program files and leaves `%LOCALAPPDATA%\Papyrus` alone. The launcher snapshots
+an existing database before it migrates; on a fresh install it starts the first migration
+instead of trying to snapshot a database that does not exist yet.
 
-The next build adds a recorded pre-migration snapshot and a `papyrus rollback` command.
-Until that build is installed, keep the previous installer and a copy of your data before
-upgrading, so a failed migration has a way back.
+1.5.3 records the pre-migration snapshot and adds `papyrus rollback`. If a migration fails,
+run it, then reinstall the previous version. The installer also reads the old launcher's stop
+output and offers Retry if Papyrus is still running.
 
 The portable copy is replaced by unpacking the new zip over the old program folder. Keep
 the `papyrus-data` folder beside it.

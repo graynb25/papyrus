@@ -2,9 +2,13 @@
 
 Updated 2026-11-01.
 
-- **1.5.2 is published.** `VERSION` is 1.5.2. The tag and commits are on origin, CI
-  run `41357299009` passed in 13m16s, and the release is at
-  <https://github.com/graynb25/papyrus/releases/tag/v1.5.2>.
+- **1.5.3 is the current release.** It fixes the fresh-install failure in 1.5.2, carries the
+  security work finished since that release, and adds the update contract. The artifacts are
+  built from the release commit and published at
+  <https://github.com/graynb25/papyrus/releases/tag/v1.5.3>.
+- **1.5.2 has a fresh-install regression.** A new install of 1.5.2 stops before the first
+  migration because it tries to snapshot a database that does not exist yet. Existing 1.5.2
+  installs can upgrade to 1.5.3. The 1.5.2 release page carries a warning.
 - **The repository is public.** The old private repository is
   `graynb25/papyrus-private`; its pull-request ref stays private and is not part of the
   public repository. Private vulnerability reporting is enabled on the public one.
