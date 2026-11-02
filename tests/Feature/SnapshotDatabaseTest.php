@@ -242,9 +242,9 @@ class SnapshotDatabaseTest extends TestCase
      * `VACUUM INTO` fail with "attempt to write a readonly database", while the live database
      * stays readable. It is reset in `finally` so no later test inherits it.
      *
-     * The frozen time is what makes the first snapshot's name equal to the target the failing
-     * run computes. That only works because the command now names files with `now('UTC')`;
-     * `gmdate()` cannot be frozen and was one of the two reasons this defect was invisible.
+     * The frozen time keeps the name assertion stable. The failure itself no longer depends on
+     * a name collision: the run names its own temporary file and must remove only that, whether
+     * or not a snapshot from the same second already exists.
      */
     public function test_a_failed_snapshot_reports_failure_without_deleting_a_valid_snapshot(): void
     {
@@ -259,11 +259,10 @@ class SnapshotDatabaseTest extends TestCase
 
             $this->assertCount(1, $first, 'the first snapshot must exist before the failure');
 
-            $this->assertSame(
-                'reader-half-20261102-031701.sqlite',
+            $this->assertStringStartsWith(
+                'reader-half-20261102-031701-',
                 basename($first[0]),
-                'the name must come from the frozen UTC clock, which is what makes the collision '
-                    .'with the failing run deterministic',
+                'the name must come from the frozen UTC clock, followed by its random suffix',
             );
 
             DB::statement('PRAGMA query_only = ON');
@@ -298,11 +297,12 @@ class SnapshotDatabaseTest extends TestCase
     }
 
     /**
-     * Two snapshots in one second are two snapshots, not one and a failure.
+     * Two snapshots in one second both survive, under distinct random suffixes.
      *
-     * The timestamp has second resolution and the capture refuses an existing target, so a
-     * scheduled run racing a manual one used to fail and delete the other run's file. The
-     * second run now keeps the timestamp and takes a distinct suffix.
+     * Both runs share the frozen timestamp prefix, and neither can compute a name the other
+     * owns, so the second cannot fail on the first and neither replaces the other. This proves
+     * the same-second collision directly: two runs under one timestamp both survive, with no
+     * `-2` suffix and no reliance on lexicographic ordering.
      */
     public function test_two_snapshots_in_the_same_second_do_not_collide(): void
     {
@@ -327,20 +327,20 @@ class SnapshotDatabaseTest extends TestCase
 
         $this->assertCount(2, $files, 'both runs must leave a snapshot');
 
-        $this->assertEqualsCanonicalizing(
-            [
-                'reader-half-20261102-031701.sqlite',
-                'reader-half-20261102-031701-2.sqlite',
-            ],
-            array_map('basename', $files),
-            'both names must carry the frozen UTC timestamp, and the second run must take a '
-                .'distinct suffix rather than replace the first',
-        );
+        $names = array_map('basename', $files);
+
+        foreach ($names as $name) {
+            $this->assertStringStartsWith(
+                'reader-half-20261102-031701-',
+                $name,
+                'both names must carry the frozen UTC timestamp prefix and a suffix',
+            );
+        }
 
         $this->assertNotSame(
-            basename($files[0]),
-            basename($files[1]),
-            'the second run must choose a distinct name rather than fail on the first one',
+            $names[0],
+            $names[1],
+            'the two runs must choose distinct random suffixes rather than replace each other',
         );
 
         foreach ($files as $file) {
@@ -353,6 +353,11 @@ class SnapshotDatabaseTest extends TestCase
             );
         }
 
+        $this->assertFileExists(
+            $first[0],
+            'the first run\'s snapshot must not be replaced by the second run',
+        );
+
         $original = new \PDO('sqlite:'.$first[0]);
 
         $this->assertSame(
@@ -360,6 +365,75 @@ class SnapshotDatabaseTest extends TestCase
             (int) $original->query('select count(*) from chapter_states')->fetchColumn(),
             'the first run\'s snapshot must still hold the row it captured',
         );
+    }
+
+    /**
+     * A plain timestamped snapshot is not a target and is not replaced.
+     *
+     * The naming before the random suffix used `reader-half-<stamp>.sqlite`. Whether such a
+     * file came from an earlier build or was placed there by hand, a run in the same second
+     * must succeed without treating the plain name as its own target. The older file keeps its
+     * bytes, and the new snapshot sits beside it under the same timestamp with a random suffix.
+     */
+    public function test_a_run_succeeds_when_the_plain_timestamped_name_is_already_taken(): void
+    {
+        $directory = $this->scratch.'/upgrade';
+        $plain = $directory.'/reader-half-20261102-031701.sqlite';
+
+        Carbon::setTestNow(Carbon::create(2026, 11, 2, 3, 17, 1, 'UTC'));
+
+        try {
+            $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+
+            $written = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+            $this->assertCount(1, $written, 'the setup snapshot must exist');
+
+            $this->assertTrue(
+                rename($written[0], $plain),
+                'could not put the setup snapshot under the old plain timestamped name',
+            );
+
+            $before = (string) hash_file('sha256', $plain);
+
+            $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertFileExists($plain, 'the older version\'s snapshot must still be there');
+        $this->assertSame(
+            $before,
+            (string) hash_file('sha256', $plain),
+            'the new run must not replace the older version\'s snapshot',
+        );
+
+        $files = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+        $this->assertCount(2, $files, 'the older snapshot and the new one must both exist');
+
+        $new = array_values(array_filter(
+            $files,
+            static fn (string $file): bool => $file !== $plain,
+        ));
+
+        $this->assertCount(1, $new, 'the run must write one new snapshot beside the older one');
+
+        $this->assertStringStartsWith(
+            'reader-half-20261102-031701-',
+            basename($new[0]),
+            'the new name must carry the same frozen timestamp with a random suffix',
+        );
+
+        foreach ([$plain, $new[0]] as $file) {
+            $copy = new \PDO('sqlite:'.$file);
+
+            $this->assertSame(
+                1,
+                (int) $copy->query("select count(*) from sqlite_master where type='table' and name='chapter_states'")->fetchColumn(),
+                basename($file).' must open as a database with the schema',
+            );
+        }
     }
 
     /**

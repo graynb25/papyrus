@@ -118,7 +118,15 @@ class SnapshotDatabase extends Command
             return self::FAILURE;
         }
 
-        $target = $this->finalTarget($directory, $stamp);
+        /*
+         * The suffix is chosen once and the rename goes straight to it. An existence check
+         * followed by `rename()` is two decisions, and `rename()` overwrites on this platform,
+         * so two runs that both saw a free name could still lose one snapshot. A name another
+         * run cannot have chosen removes the window. The timestamp stays readable, and the
+         * shape is the same for every snapshot, so `prune()` never mistakes a plain name from
+         * an older version for a newer same-second file.
+         */
+        $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.$stamp.'-'.bin2hex(random_bytes(4)).'.sqlite';
 
         if (! @rename($temporary, $target)) {
             $this->discard($temporary);
@@ -156,26 +164,6 @@ class SnapshotDatabase extends Command
         } while (file_exists($path));
 
         return $path;
-    }
-
-    /**
-     * The timestamped name, with a suffix when another run already owns it.
-     *
-     * The timestamp keeps second resolution because a reader reads it, and a same-second
-     * collision is real: a scheduled run can overlap a manual one. The first writer keeps the
-     * plain name; later writers take `-2`, `-3` and so on rather than replacing it.
-     */
-    private function finalTarget(string $directory, string $stamp): string
-    {
-        $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.$stamp.'.sqlite';
-        $suffix = 1;
-
-        while (file_exists($target)) {
-            $suffix++;
-            $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.$stamp.'-'.$suffix.'.sqlite';
-        }
-
-        return $target;
     }
 
     /**
