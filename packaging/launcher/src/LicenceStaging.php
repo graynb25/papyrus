@@ -67,9 +67,10 @@ final class LicenceStaging
      * tracked absence markers for declarations no publisher ever published text for, and the
      * project's own texts, the root LICENSE and the packaged ones, which travel with everything
      * else. The npm side walks the installed node_modules and writes `licences/node/manifest.json`;
-     * the composer side reads the lock the vendor tree was installed from and writes
-     * `licences/composer/manifest.json` for the rows that need a record of their own. Both manifests
-     * are written last, so a manifest on disk is the signature of a pass that completed.
+     * the composer side reads the production set in the lock the vendor tree was installed from and
+     * writes `licences/composer/manifest.json` for the rows that need a record of their own, because
+     * an install is built with `composer install --no-dev` and describes no other tree. Both
+     * manifests are written last, so a manifest on disk is the signature of a pass that completed.
      *
      * Validation completes before the first byte moves. A pass that wrote as it walked would stop
      * halfway to its own refusal and leave an install that is neither the old build nor the new,
@@ -200,6 +201,10 @@ final class LicenceStaging
      * whose licence file already ships beside it is not copied: a second copy would be a second
      * answer to one question.
      *
+     * Only `packages` is read. The install is built with `composer install --no-dev`, so a
+     * `packages-dev` row would name a package the reader was never given and a staged text would
+     * travel for code that is not there. The dev section is therefore not part of the plan.
+     *
      * A proprietary package with neither is the one state this side refuses, because it is the
      * state the product cannot honestly redistribute: the terms are unknown, and nothing in the
      * tree says that was measured rather than missed.
@@ -224,54 +229,52 @@ final class LicenceStaging
 
         $plan = ['rows' => [], 'copies' => []];
 
-        foreach (['packages', 'packages-dev'] as $section) {
-            foreach (($decoded[$section] ?? []) as $package) {
-                if (! is_array($package) || ! is_string($package['name'] ?? null) || $package['name'] === '') {
-                    continue;
-                }
-
-                $name = $package['name'];
-                $licence = self::licenceDeclared($package['license'] ?? ($package['licence'] ?? null));
-
-                if (self::licenceFileIn($repo.'/vendor/'.$name) !== null) {
-                    continue;
-                }
-
-                $staged = $repo.'/packaging/staged-licences/'.$name;
-                $override = $staged.'/LICENSE';
-                $marker = $staged.'/'.self::ABSENCE_MARKER;
-
-                if (is_file($override)) {
-                    $file = 'composer/'.$name.'/'.basename($override);
-                    $plan['rows'][] = self::composerRow($package, $licence, $file, null);
-                    $plan['copies'][] = ['file' => $file, 'source' => $override];
-
-                    continue;
-                }
-
-                if (is_file($marker)) {
-                    $file = 'composer/'.$name.'/'.self::ABSENCE_MARKER;
-                    $plan['rows'][] = self::composerRow($package, $licence, null, $file);
-                    $plan['copies'][] = ['file' => $file, 'source' => $marker];
-
-                    continue;
-                }
-
-                if (! str_contains(strtolower($licence), 'proprietary')) {
-                    continue;
-                }
-
-                throw new RuntimeException(sprintf(
-                    'no licence text for %s: it declares %s but ships no file the pass reads, and nothing is'
-                    .' staged at packaging/staged-licences/%s/LICENSE. Stage the text there, or, if the'
-                    .' publisher ships no licence text anywhere, record the measured absence with %s beside'
-                    .' it, and rebuild.',
-                    $name,
-                    $licence,
-                    $name,
-                    self::ABSENCE_MARKER,
-                ));
+        foreach (($decoded['packages'] ?? []) as $package) {
+            if (! is_array($package) || ! is_string($package['name'] ?? null) || $package['name'] === '') {
+                continue;
             }
+
+            $name = $package['name'];
+            $licence = self::licenceDeclared($package['license'] ?? ($package['licence'] ?? null));
+
+            if (self::licenceFileIn($repo.'/vendor/'.$name) !== null) {
+                continue;
+            }
+
+            $staged = $repo.'/packaging/staged-licences/'.$name;
+            $override = $staged.'/LICENSE';
+            $marker = $staged.'/'.self::ABSENCE_MARKER;
+
+            if (is_file($override)) {
+                $file = 'composer/'.$name.'/'.basename($override);
+                $plan['rows'][] = self::composerRow($package, $licence, $file, null);
+                $plan['copies'][] = ['file' => $file, 'source' => $override];
+
+                continue;
+            }
+
+            if (is_file($marker)) {
+                $file = 'composer/'.$name.'/'.self::ABSENCE_MARKER;
+                $plan['rows'][] = self::composerRow($package, $licence, null, $file);
+                $plan['copies'][] = ['file' => $file, 'source' => $marker];
+
+                continue;
+            }
+
+            if (! str_contains(strtolower($licence), 'proprietary')) {
+                continue;
+            }
+
+            throw new RuntimeException(sprintf(
+                'no licence text for %s: it declares %s but ships no file the pass reads, and nothing is'
+                .' staged at packaging/staged-licences/%s/LICENSE. Stage the text there, or, if the'
+                .' publisher ships no licence text anywhere, record the measured absence with %s beside'
+                .' it, and rebuild.',
+                $name,
+                $licence,
+                $name,
+                self::ABSENCE_MARKER,
+            ));
         }
 
         usort($plan['rows'], static fn (array $a, array $b): int => strcmp((string) $a['name'], (string) $b['name']));

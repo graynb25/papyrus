@@ -27,6 +27,7 @@
  *     <into>/runtime/{bin,ext,php,frankenphp,cacert.pem}   the PHP and web server
  *     <into>/suwayomi/{*.jar,runtime/}                      the server and its JRE
  *     <into>/{artisan,app,bootstrap,config,...}             the application
+ *     <into>/vendor/                                        the production packages only
  *     <into>/packaging/launcher/                            the launcher itself
  *
  * The application files sit at the root rather than under an `app` subdirectory because the
@@ -67,6 +68,12 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'TarArchive.php';
  * An allowlist because the risk runs one way. A missed exclude ships the developer's `.env` and
  * their APP_KEY to a stranger. A missed include produces a layout that fails the completeness
  * check below, which names the file that is absent. One is a bad artifact, the other is loud.
+ *
+ * `vendor` is deliberately absent. It used to be an entry here, which copied the checkout's whole
+ * vendor tree: 38 dev packages and 68.2 MB of test runner, static analyser and faker that no runtime
+ * path executes. The production tree is resolved separately, below, because the only thing that
+ * can make it production only is `composer install --no-dev` against the lock, run somewhere that
+ * is not the checkout.
  */
 const APP_ENTRIES = [
     'app',
@@ -81,7 +88,37 @@ const APP_ENTRIES = [
     'resources',
     'routes',
     'storage',
-    'vendor',
+];
+
+/**
+ * What the production vendor stage is given, rather than what the install ships.
+ *
+ * `composer install` reads `composer.json` and `composer.lock`; the autoload roots are there so the
+ * authoritative classmap it writes names the same classes the install carries. Omitting `app/`
+ * would produce a vendor tree whose classmap cannot load a single application class.
+ *
+ * `database/` is staged as its three code directories, never as the whole tree: the checkout's
+ * `database/database.sqlite` is a reader's library, and copying it into a scratch directory to
+ * resolve packages would put reader data somewhere the build then has to remember to delete.
+ *
+ * `packaging/launcher/src` is staged because `composer.json` maps `Papyrus\Launcher\` there, and the
+ * install carries that directory. `packaging/signing` is not staged because no install carries it.
+ */
+const VENDOR_STAGE_ENTRIES = [
+    'app',
+    'artisan',
+    'bootstrap',
+    'composer.json',
+    'composer.lock',
+    'config',
+    'database/factories',
+    'database/migrations',
+    'database/seeders',
+    'packaging/launcher/src',
+    'public',
+    'resources',
+    'routes',
+    'storage',
 ];
 
 /**
@@ -125,6 +162,15 @@ const NEVER_SHIPPED = [
     'database/backups' => 'copies of the developer library made during development',
     'database/reader-snapshots' => 'snapshots of the developer reader half taken from its database',
     'storage/design-review' => 'screenshots taken during development',
+
+    /*
+     * Generated package and service manifests, written into `bootstrap/cache` the first time the
+     * checkout boots. They list the service providers composer discovered in the checkout's full
+     * vendor tree, so a build that prunes the dev packages would otherwise carry a manifest naming
+     * `laravel/pail` and fail to boot on a provider the vendor no longer holds. The install gets an
+     * empty cache directory and builds its own manifest from the production tree at first boot.
+     */
+    'bootstrap/cache' => 'generated package and service manifests from the developer checkout',
 ];
 
 /**
@@ -132,9 +178,12 @@ const NEVER_SHIPPED = [
  *
  * Denylisting `storage/logs` removes the directory as well as its contents, and Laravel writes to
  * those paths without creating them. An install that is missing them fails on its first log line
- * rather than at build time, so they are put back empty.
+ * rather than at build time, so they are put back empty. `bootstrap/cache` is here for the same
+ * reason: its generated manifests are removed before the boot check, which then rebuilds them from
+ * the production vendor tree.
  */
 const EMPTY_PLACEHOLDERS = [
+    'bootstrap/cache',
     'storage/app/private',
     'storage/app/public',
     'storage/framework/cache',
@@ -649,6 +698,56 @@ foreach (APP_ENTRIES as $entry) {
 }
 
 say('app', $copied.' files');
+
+// --- the production vendor tree ------------------------------------------------------
+
+/*
+ * The vendor tree the artifact gets, resolved from the lock in a scratch directory.
+ *
+ * The old build copied the checkout's `vendor` as one more application entry. That tree is the
+ * developer's: it carries phpunit, phpstan, pint and faker because the gates run there, and none
+ * of them can execute in an install. Measured on the tree this was written against, the 38 dev
+ * packages named by `vendor/composer/installed.json` were 68.2 MB of a 111.6 MB vendor tree.
+ *
+ * Three shapes were possible. Running `composer install --no-dev` in the checkout would mutate the
+ * tree the gates run against, which is forbidden. Pointing `COMPOSER_VENDOR_DIR` at the install
+ * would make composer rewrite the install's autoload paths while the launcher may be reading it,
+ * and the plan notes the process helper has no child environment seam. Staging a copy costs disk
+ * and a few minutes and leaves the checkout untouched, so that is the shape this build uses.
+ *
+ * The stage is a sibling of the install, not inside it: the leak scan classifies every top level
+ * entry of the install, and a second vendor tree inside it would be an entry nothing describes.
+ */
+$stage = rtrim($into, '/\\').'.vendor-stage';
+
+/*
+ * A stage left by an interrupted build is cleared first, for the same reason the install root is
+ * cleared: a stale tree is indistinguishable from a fresh one and could be copied by a later step.
+ */
+if (! removeTree($stage)) {
+    fail("could not clear the stale vendor stage at {$stage}, so the production vendor tree cannot be trusted");
+}
+
+/*
+ * Registered before the stage exists, and not only after the copy. `fail()` exits, and a shutdown
+ * function is the one hook that still runs on that path. The explicit removal inside the stage
+ * helper covers the successful path, so the unpruned tree is gone before the licence pass reads
+ * anything and the shutdown call is a no-op by then.
+ */
+register_shutdown_function(static function () use ($stage): void {
+    removeTree($stage);
+});
+
+$vendorFiles = stageProductionVendor($repo, $stage, $into);
+$vendorPackages = assertProductionVendor($into.DIRECTORY_SEPARATOR.'vendor');
+
+say(
+    'vendor',
+    $vendorFiles.' files, '.$vendorPackages.' production packages, '
+    .formatBytes(directorySize($into.DIRECTORY_SEPARATOR.'vendor')).', no dev tree',
+);
+
+say('verified', 'installed.json names no dev package and phpunit, phpstan/phpstan, fakerphp and pint are absent');
 
 // The launcher, at the path the application root implies, because `dirname(__DIR__, 2)` from
 // `packaging/launcher/papyrus.php` has to land on the install root.
@@ -1534,7 +1633,7 @@ function assertVersionStamp(string $path, string $version): void
 
 function assertPhpVersion(string $php): void
 {
-    [$status, $text] = runVersionCommand(escapeshellarg($php).' -v');
+    [$status, $text] = runCommand(escapeshellarg($php).' -v');
 
     if ($status !== 0) {
         fail(
@@ -1564,7 +1663,7 @@ function assertPhpVersion(string $php): void
 
 function assertFrankenphpVersion(string $frankenphp): void
 {
-    [$status, $text] = runVersionCommand(escapeshellarg($frankenphp).' --version');
+    [$status, $text] = runCommand(escapeshellarg($frankenphp).' --version');
 
     if ($status !== 0) {
         fail(
@@ -1606,7 +1705,7 @@ function assertJavaRuntime(string $into): void
         );
     }
 
-    [$status, $text] = runVersionCommand(
+    [$status, $text] = runCommand(
         escapeshellarg($jre.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'java.exe').' -version'
     );
 
@@ -1668,7 +1767,7 @@ function assertDistrustedRootsAbsent(string $into): void
 /**
  * @return array{0: int, 1: string}
  */
-function runVersionCommand(string $command): array
+function runCommand(string $command): array
 {
     $output = [];
     $status = 1;
@@ -1790,6 +1889,178 @@ function copyTree(string $source, string $target, bool $structureOnly = false): 
     }
 
     return $count;
+}
+
+/**
+ * Resolve a production-only vendor tree in a scratch directory and copy it into the install.
+ *
+ * The checkout's own vendor tree is never written: composer is pointed at a copy of the files it
+ * needs, and only the `vendor` directory it resolves there travels. That is the only shape that
+ * leaves the tree the gates run against intact while the artifact gets a different dependency set.
+ *
+ * `--no-scripts` is deliberate. The stage is not a running application, and composer's
+ * post-autoload script runs `artisan package:discover`, which needs an `.env` and a writable
+ * bootstrap cache the stage does not have. Package discovery happens at first start in an install,
+ * as it already did, so skipping it here changes nothing a reader receives.
+ *
+ * The stage is removed on the successful path below and by the caller's shutdown function on every
+ * exiting path. It is never the checkout, so a failure cannot damage it.
+ *
+ * @return int the number of files copied into the install's vendor directory
+ */
+function stageProductionVendor(string $repo, string $stage, string $into): int
+{
+    if (! is_dir($stage) && ! mkdir($stage, 0o777, true) && ! is_dir($stage)) {
+        fail("could not create the vendor stage at {$stage}");
+    }
+
+    foreach (VENDOR_STAGE_ENTRIES as $entry) {
+        $source = $repo.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $entry);
+
+        if (! file_exists($source)) {
+            fail("{$entry} is missing from the repository, so the production vendor stage cannot be resolved");
+        }
+
+        copyTree(
+            $source,
+            $stage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $entry),
+            $entry === 'storage',
+        );
+    }
+
+    [$status, $version] = runCommand('composer --version');
+
+    if ($status !== 0) {
+        fail(
+            "composer is not on PATH, and this build resolves the production vendor tree through it.\n\n"
+            .'  '.str_replace("\n", "\n  ", trim($version))."\n\n"
+            ."  Put composer on PATH and rebuild. The checkout's own vendor tree is not a substitute:\n"
+            .'  it carries the dev packages this build exists to keep out of the artifact.'
+        );
+    }
+
+    say('composer', strtok($version, "\n") ?: $version);
+
+    [$status, $output] = runCommand(sprintf(
+        'composer install --no-dev --classmap-authoritative --no-interaction --no-scripts --working-dir=%s',
+        escapeshellarg($stage),
+    ));
+
+    if ($status !== 0) {
+        fail(
+            "composer install --no-dev failed, so there is no production vendor tree to ship.\n\n"
+            .'  '.str_replace("\n", "\n  ", trim($output))."\n"
+        );
+    }
+
+    $stagedVendor = $stage.DIRECTORY_SEPARATOR.'vendor';
+
+    if (! is_dir($stagedVendor)) {
+        fail("composer install reported success but wrote no vendor directory at {$stagedVendor}");
+    }
+
+    $files = copyTree($stagedVendor, $into.DIRECTORY_SEPARATOR.'vendor');
+
+    if (! removeTree($stage)) {
+        fail(
+            "could not remove the vendor stage at {$stage} after copying it into the install.\n\n"
+            .'  Refusing to report success with a second vendor tree left in the build directory.'
+        );
+    }
+
+    return $files;
+}
+
+/**
+ * Prove the vendor tree that reached the install is the production set.
+ *
+ * The defect this guards is silent: an install built without `--no-dev` looks exactly like one
+ * built with it until somebody counts the packages. The manifest composer writes beside its own
+ * vendor tree names the dev packages explicitly, and the four measured dev trees are checked by
+ * path as well, so a missing or unreadable list cannot read as a pass on a tree that still carries
+ * phpunit.
+ *
+ * `phpstan` is checked as `phpstan/phpstan`, not as the `phpstan/` namespace. The namespace also
+ * holds `phpstan/phpdoc-parser`, which is a production dependency through
+ * `phpdocumentor/reflection-docblock` and Laravel Passkeys; a namespace wide check would refuse a
+ * correct tree and demand the removal of a package the production set requires.
+ *
+ * @return int the number of production packages the install carries
+ */
+function assertProductionVendor(string $vendor): int
+{
+    $manifest = $vendor.DIRECTORY_SEPARATOR.'composer'.DIRECTORY_SEPARATOR.'installed.json';
+
+    if (! is_file($manifest)) {
+        fail(
+            "the install has no vendor/composer/installed.json, so the build cannot prove its vendor\n"
+            .'  tree is the production set. That file is also what the licences page reads.'
+        );
+    }
+
+    $read = file_get_contents($manifest);
+
+    if ($read === false) {
+        fail("could not read {$manifest}");
+    }
+
+    $decoded = json_decode($read, true);
+
+    if (! is_array($decoded)) {
+        fail('vendor/composer/installed.json is not readable JSON, so the production vendor guard cannot run');
+    }
+
+    $packages = $decoded['packages'] ?? [];
+
+    if (! is_array($packages)) {
+        fail('vendor/composer/installed.json has no readable package list, so the production vendor guard cannot run');
+    }
+
+    if ($packages === []) {
+        fail(
+            'vendor/composer/installed.json lists no packages, so the install has no production vendor tree.'
+            ."\n  A manifest in the older composer format is not something this guard can read as a pass."
+        );
+    }
+
+    $dev = $decoded['dev-package-names'] ?? [];
+
+    if (! is_array($dev)) {
+        fail('vendor/composer/installed.json has a dev-package-names entry that is not a list');
+    }
+
+    if ($dev !== []) {
+        $names = [];
+
+        foreach ($dev as $name) {
+            $names[] = is_string($name) ? $name : '(unreadable entry)';
+        }
+
+        fail(
+            "the install's vendor tree lists dev packages, so it was not built with --no-dev:\n  - "
+            .implode("\n  - ", $names)
+            ."\n\n  These packages cannot execute in an install and are the reason this build stage exists."
+            ."\n  Refusing to report success over an artifact that is silently unpruned."
+        );
+    }
+
+    $present = [];
+
+    foreach (['phpunit', 'phpstan/phpstan', 'fakerphp', 'laravel/pint'] as $directory) {
+        if (is_dir($vendor.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $directory))) {
+            $present[] = $directory;
+        }
+    }
+
+    if ($present !== []) {
+        fail(
+            "the install's vendor tree carries dev package directories:\n  - ".implode("\n  - ", $present)
+            ."\n\n  An absent or empty dev-package-names list is not enough on its own: the tree can"
+            ."\n  still be the checkout's copy. Refusing to report success."
+        );
+    }
+
+    return count($packages);
 }
 
 /**

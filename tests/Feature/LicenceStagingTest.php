@@ -311,12 +311,32 @@ class LicenceStagingTest extends TestCase
             'license' => 'proprietary',
         ]));
 
+        /*
+         * A dev package the lock names and the checkout's full vendor tree carries. It has a
+         * staged override, which is the state that would put it in the manifest if the pass read
+         * the dev section: an install built with --no-dev does not carry the package at all, so a
+         * row for it would describe something the reader was never given.
+         */
+        $dev = $repo.'/vendor/stub/dev-only';
+        mkdir($dev, 0777, true);
+        file_put_contents($dev.'/composer.json', (string) json_encode([
+            'name' => 'stub/dev-only',
+            'version' => '2.0.0',
+            'license' => 'MIT',
+        ]));
+
+        $devStaged = $repo.'/packaging/staged-licences/stub/dev-only';
+        mkdir($devStaged, 0777, true);
+        file_put_contents($devStaged.'/LICENSE', "DEV ONLY TEXT\n");
+
         file_put_contents($repo.'/composer.lock', (string) json_encode([
             'packages' => [
                 ['name' => 'livewire/flux', 'version' => 'v2.20.1', 'license' => 'proprietary'],
                 ['name' => 'stub/mit', 'version' => '1.0.0', 'license' => 'MIT'],
             ],
-            'packages-dev' => [],
+            'packages-dev' => [
+                ['name' => 'stub/dev-only', 'version' => '2.0.0', 'license' => 'MIT'],
+            ],
         ]));
 
         if ($withOverride) {
@@ -380,6 +400,37 @@ class LicenceStagingTest extends TestCase
             ['composer/livewire/flux/NO-LICENCE-FILE-UPSTREAM.txt'],
             LicenceStaging::missingStaged($into),
             'a marker the manifest promises and the install lost is a build fault, like any staged text',
+        );
+    }
+
+    /**
+     * The manifest describes the tree an install was built from, and that tree is production only.
+     *
+     * The fixture's dev package carries a staged override, which is exactly the shape that used to
+     * pull it in: the pass read `packages-dev` and copied the override. An install made with
+     * --no-dev has neither the package nor any reason to name it, so both the row and its text
+     * must be absent.
+     */
+    public function test_a_dev_package_does_not_reach_the_staged_composer_manifest(): void
+    {
+        $repo = $this->composerRepo();
+        $into = $this->scratchPath('composer-install');
+
+        LicenceStaging::stage($repo, $into);
+
+        $manifest = json_decode((string) file_get_contents($into.'/licences/composer/manifest.json'), true);
+        $this->assertIsArray($manifest);
+
+        $byName = array_column($manifest['packages'] ?? [], null, 'name');
+
+        $this->assertArrayNotHasKey(
+            'stub/dev-only',
+            $byName,
+            'a package the install does not carry must not be a row on the licences page',
+        );
+        $this->assertFileDoesNotExist(
+            $into.'/licences/composer/stub/dev-only/LICENSE',
+            'a dev package text must not be staged either',
         );
     }
 
