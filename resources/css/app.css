@@ -611,12 +611,6 @@
         backdrop-filter: blur(6px);
     }
 
-    .on-art-quiet {
-        background: color-mix(in oklab, var(--color-zinc-950) 68%, transparent);
-        color: color-mix(in oklab, var(--color-zinc-50) 88%, transparent);
-        backdrop-filter: blur(6px);
-    }
-
     /* Rail scroller: horizontal shelves without visible scrollbars, with the
          leaving edge masked so cards fade out as they exit. Only the far edge
          fades: masking the start edge would dim the first card at rest. */
