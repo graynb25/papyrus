@@ -152,11 +152,6 @@ class SourcesPageTest extends TestCase
     }
 
     /**
-     * Choose what the catalogue endpoint returns for the rest of the test.
-     *
-     * @param  array<int, array<string, mixed>>  $nodes
-     */
-    /**
      * The nodes the fake will serve, honouring the `isInstalled`, `lang` and
      * `contentWarning` filters.
      *
@@ -2212,11 +2207,6 @@ class SourcesPageTest extends TestCase
         $this->assertSame(SourceNotices::SCRAMBLE, SourceNotices::kind('Comix (all)'));
     }
 
-    /**
-     * The card is where the count of variants is already on screen, which is why
-     * the pin control can live there: a button that affects 61 sources is being
-     * shown a reader who can read "61 sources" on the face they pressed.
-     */
     /**
      * The card is where the count of variants is already on screen, which is why
      * the pin control can live there: a button that affects 61 sources is being

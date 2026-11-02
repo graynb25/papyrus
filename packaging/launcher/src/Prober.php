@@ -3,23 +3,6 @@
 namespace Papyrus\Launcher;
 
 /**
- * Waits for something to become true, and says what it was waiting for when it does not.
- *
- * ## Why the failure message matters more than the polling
- *
- * Because the alternative is the reader staring at a launcher that never opens a browser and
- * never says why. Every one of these waits has a specific answer when it times out, and the
- * answer is different every time: Suwayomi not answering is a different problem from the
- * database being locked, and both look identical from outside if you only print "timed out".
- *
- * ## Why the interval backs off
- *
- * Suwayomi takes tens of seconds to come up and is doing genuine work while it does. Polling
- * it every 50ms for that long is thousands of HTTP requests against a server that is trying to
- * start, on a machine that is busy starting it. The first attempt is quick because most
- * failures are immediate, and it slows to a floor because most successes are slow.
- */
-/**
  * Asks questions about the machine, over the network and the filesystem.
  *
  * ## Why this is not final
@@ -40,13 +23,6 @@ class Prober
 
     private const SLOWEST_MS = 1_000;
 
-    /**
-     * Poll until the probe passes or the deadline passes.
-     *
-     * @param  callable(): bool  $probe
-     * @param  callable(string): void|null  $onAttempt  Told each attempt, for progress output.
-     * @return bool Whether it passed.
-     */
     /**
      * Whether Suwayomi's GraphQL endpoint answers, without waiting.
      *
@@ -153,6 +129,27 @@ class Prober
         ];
     }
 
+    /**
+     * Waits for something to become true, and says what it was waiting for when it does not.
+     *
+     * ## Why the failure message matters more than the polling
+     *
+     * Because the alternative is the reader staring at a launcher that never opens a browser and
+     * never says why. Every one of these waits has a specific answer when it times out, and the
+     * answer is different every time: Suwayomi not answering is a different problem from the
+     * database being locked, and both look identical from outside if you only print "timed out".
+     *
+     * ## Why the interval backs off
+     *
+     * Suwayomi takes tens of seconds to come up and is doing genuine work while it does. Polling
+     * it every 50ms for that long is thousands of HTTP requests against a server that is trying to
+     * start, on a machine that is busy starting it. The first attempt is quick because most
+     * failures are immediate, and it slows to a floor because most successes are slow.
+     *
+     * @param  callable(): bool  $probe
+     * @param  callable(string): void|null  $onAttempt  Told each attempt, for progress output.
+     * @return bool Whether it passed.
+     */
     public function waitFor(
         callable $probe,
         int $timeoutSeconds,

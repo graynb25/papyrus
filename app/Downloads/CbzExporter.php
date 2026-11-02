@@ -365,12 +365,6 @@ class CbzExporter
     /**
      * A filename the browser will accept and the header parser will not be harmed by.
      *
-     * Quotes and newlines are removed rather than escaped: this goes into a header, and a
-     * filename carrying a quote is header injection rather than a download.
-     */
-    /**
-     * A filename the browser will accept and the header parser will not be harmed by.
-     *
      * Two characters are allowed that a plain `[^\w\-. ]` would strip, and both are worth it.
      * The apostrophe, because it is not the delimiter: the value is wrapped in double quotes,
      * so a single quote inside it is harmless, and stripping it turns

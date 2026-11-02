@@ -29,12 +29,12 @@ class SearchSourceJob implements ShouldQueue
 {
     use Batchable, Queueable;
 
-    public int $tries = 1;
-
     /**
      * A single search is a single attempt. Retrying a source that already
      * timed out just spends the run's budget twice.
      */
+    public int $tries = 1;
+
     /**
      * @param  array<string, mixed>  $filterValues  named filter values, resolved
      *                                              to positions at send time

@@ -1205,8 +1205,7 @@ final class Supervisor
      * root and PHP looks for an ini beside the executable, not beside the script. A packaged
      * runtime that keeps its ini in `runtime/php/` therefore gets none of its extensions
      * unless it is told, and a Laravel without pdo_sqlite cannot boot.
-     */
-    /**
+     *
      * @param  list<string>  $arguments
      * @param  list<string>  $extra
      */
@@ -1292,28 +1291,6 @@ final class Supervisor
         return $jars[0] ?? null;
     }
 
-    /**
-     * Make sure the data directory exists, is outside the install, and is writable.
-     *
-     * Before anything starts, and before the lock is taken, because every one of these is a
-     * problem the reader can fix and none of them should be discovered halfway through bringing
-     * four processes up.
-     *
-     * @param  callable(string): void  $say
-     */
-    /**
-     * Run the layout step alone, for the build to verify an install with.
-     *
-     * Exists because the build needs to know that a finished install can be laid out and
-     * configured, and the only trustworthy way to ask that is to run the same code the launcher
-     * runs. Reimplementing the token substitution inside the build instead, which is what a build
-     * script naturally reaches for, proves the build's own copy of the behaviour rather than the
-     * product's, and the two drift apart the first time either is edited.
-     *
-     * Needs no JVM, no port and no Suwayomi, which is what makes it safe to call from a build.
-     * The data directory passed in should be a throwaway: this writes a resolved ini, a Caddyfile
-     * and a real `.env` with a generated APP_KEY into it.
-     */
     /**
      * The ports this install uses, for the health command.
      *
@@ -1599,6 +1576,19 @@ final class Supervisor
         return $this->summary ??= new SummaryLog($this->logDirectory);
     }
 
+    /**
+     * Run the layout step alone, for the build to verify an install with.
+     *
+     * Exists because the build needs to know that a finished install can be laid out and
+     * configured, and the only trustworthy way to ask that is to run the same code the launcher
+     * runs. Reimplementing the token substitution inside the build instead, which is what a build
+     * script naturally reaches for, proves the build's own copy of the behaviour rather than the
+     * product's, and the two drift apart the first time either is edited.
+     *
+     * Needs no JVM, no port and no Suwayomi, which is what makes it safe to call from a build.
+     * The data directory passed in should be a throwaway: this writes a resolved ini, a Caddyfile
+     * and a real `.env` with a generated APP_KEY into it.
+     */
     public function prepareLayoutForBuild(): void
     {
         $this->prepareLayout(static function (string $line): void {
@@ -1606,6 +1596,15 @@ final class Supervisor
         });
     }
 
+    /**
+     * Make sure the data directory exists, is outside the install, and is writable.
+     *
+     * Before anything starts, and before the lock is taken, because every one of these is a
+     * problem the reader can fix and none of them should be discovered halfway through bringing
+     * four processes up.
+     *
+     * @param  callable(string): void  $say
+     */
     private function prepareLayout(callable $say): void
     {
         $layout = new InstallLayout($this->root, $this->dataDirectory);
@@ -1728,19 +1727,6 @@ final class Supervisor
     }
 
     /**
-     * Refuse to start on an ini that still contains a template token.
-     *
-     * This exists because the failure it prevents is silent. PHP does not reject
-     * `extension_dir = "{{RUNTIME}}/ext"`. It treats it as a literal directory, fails to load
-     * every extension in it, prints a warning to stderr that the launcher is not reading, and
-     * serves an app that cannot reach its database. Every clue points at the database, which is
-     * why this check exists rather than a comment warning it off.
-     *
-     * Comment lines are skipped, because the shipped ini explains the templating in a comment
-     * that mentions the token syntax by name. Checking the whole file would refuse to start on
-     * a perfectly correct configuration.
-     */
-    /**
      * The one timezone all four processes use, which is the launcher's own.
      *
      * ## Why the JVM follows the launcher rather than the other way round
@@ -1771,6 +1757,19 @@ final class Supervisor
         return date_default_timezone_get() ?: 'UTC';
     }
 
+    /**
+     * Refuse to start on an ini that still contains a template token.
+     *
+     * This exists because the failure it prevents is silent. PHP does not reject
+     * `extension_dir = "{{RUNTIME}}/ext"`. It treats it as a literal directory, fails to load
+     * every extension in it, prints a warning to stderr that the launcher is not reading, and
+     * serves an app that cannot reach its database. Every clue points at the database, which is
+     * why this check exists rather than a comment warning it off.
+     *
+     * Comment lines are skipped, because the shipped ini explains the templating in a comment
+     * that mentions the token syntax by name. Checking the whole file would refuse to start on
+     * a perfectly correct configuration.
+     */
     private function refuseUnresolvedTokens(string $resolved, string $target): void
     {
         foreach (preg_split('#\R#', $resolved) ?: [] as $line) {

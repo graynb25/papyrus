@@ -156,8 +156,6 @@ final class TachimangaSchema
 
     public const CHAPTER_DOWNLOADED_COLUMN = 'is_downloaded';
 
-    public const HISTORY_TABLE = 'History';
-
     /**
      * One resume point per manga.
      *
@@ -166,6 +164,8 @@ final class TachimangaSchema
      * would point a reader at whatever chapter happens to hold that number in this
      * server, and every reader would silently resume at chapter one.
      */
+    public const HISTORY_TABLE = 'History';
+
     /**
      * Which manga a resume point belongs to.
      *

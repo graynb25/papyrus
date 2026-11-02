@@ -118,13 +118,6 @@ final class DevWorkersTest extends TestCase
     }
 
     /**
-     * The two shapes that are ours.
-     *
-     * Started with a bare relative `artisan` and a working directory, so the command line contains
-     * no path at all. That absence is the only reliable thing about them, and it is what the rule
-     * keys on.
-     */
-    /**
      * The interpreter must be a real `php.exe`, never a batch wrapper.
      *
      * This is the third defect in this one file, and the quietest. Started through Herd's `php.bat`,
@@ -173,7 +166,11 @@ final class DevWorkersTest extends TestCase
     }
 
     /**
-     * A worker started with a bare `artisan` is this checkout's, and anything path-qualified is not.
+     * The two shapes that are ours.
+     *
+     * Started with a bare relative `artisan` and a working directory, so the command line contains
+     * no path at all. That absence is the only reliable thing about them, and it is what the rule
+     * keys on. Anything path-qualified is not ours.
      */
     public function test_a_worker_started_with_a_bare_artisan_is_this_checkout(): void
     {

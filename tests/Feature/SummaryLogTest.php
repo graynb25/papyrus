@@ -159,23 +159,6 @@ class SummaryLogTest extends TestCase
     }
 
     /**
-     * The rotation boundary, tested by writing a real file rather than by lowering the threshold,
-     * because a threshold constant made configurable for its own test is a threshold nobody can
-     * find in production.
-     */
-    /**
-     * The rotation boundary, and the number of generations kept.
-     *
-     * The `.1` file is seeded before the rotation rather than after, which is the part that
-     * matters. Asserting only that `.2` does not exist passes whether one generation is kept or
-     * two, because with nothing in `.1` there is nothing to shift forward and no `.2` is ever
-     * created. A mutation raising `KEEP_GENERATIONS` to two survived until this was seeded.
-     *
-     * The threshold is exercised by writing a real oversized file rather than by making the
-     * constant configurable for its own test, which would be a constant nobody can find in
-     * production.
-     */
-    /**
      * The rotation boundary, and the number of generations kept.
      *
      * Two things here were wrong at first and both are worth recording.
@@ -291,22 +274,6 @@ class SummaryLogTest extends TestCase
         (new SummaryLog($this->scratch.DIRECTORY_SEPARATOR.'nowhere'))->assertUsable();
     }
 
-    /**
-     * A log that cannot be written must not stop an install from starting.
-     *
-     * A launcher that dies because a log directory is locked is a far worse outcome than a
-     * missing line, so the write fails silently by design and the absence is reported by health
-     * instead.
-     */
-    /**
-     * A log that cannot be written must not stop an install from starting.
-     *
-     * A launcher that dies because a log directory is locked is a far worse outcome than a missing
-     * line, so the write fails silently by design and the absence is reported by health instead.
-     *
-     * The path here has a parent that does not exist either, which matters: an earlier version
-     * used `<scratch>/nowhere`, whose parent *did* exist, so `mkdir` succeeded, the unwritable
-     * branch was never reached, and the test passed for the wrong reason. A mutation that made
     /**
      * A log that cannot be written must not stop an install from starting.
      *

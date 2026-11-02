@@ -562,10 +562,6 @@ class DownloadTest extends TestCase
     }
 
     /**
-     * A sync that cannot reach the queue must do nothing. Failing the rows would
-     * mark healthy downloads as broken because one poll timed out.
-     */
-    /**
      * A queue that answers and a series endpoint that does not.
      *
      * This is the case the class got wrong. `downloadedChapters()` returned `[]` on a transport
@@ -613,6 +609,10 @@ class DownloadTest extends TestCase
         $this->assertSame(2, $result['still_pending'], 'both are resolvable by a later sync');
     }
 
+    /**
+     * A sync that cannot reach the queue must do nothing. Failing the rows would
+     * mark healthy downloads as broken because one poll timed out.
+     */
     public function test_a_sync_that_cannot_reach_the_queue_leaves_rows_pending(): void
     {
         $this->pendingRow(13);

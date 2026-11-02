@@ -131,9 +131,6 @@ class ReadingState
     }
 
     /**
-     * Add or remove a series from this user's library.
-     */
-    /**
      * Load or create, in one call.
      *
      * Every mutator needs this, and forgetting it means a second save() creating
@@ -149,6 +146,9 @@ class ReadingState
         return $this->findSeries($user, $mangaId) ?? $this->series($user, $mangaId);
     }
 
+    /**
+     * Add or remove a series from this user's library.
+     */
     public function setInLibrary(User|int $user, int $mangaId, bool $inLibrary): SeriesState
     {
         $state = $this->loadOrCreate($user, $mangaId);
