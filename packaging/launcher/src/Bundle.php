@@ -32,6 +32,14 @@ use Throwable;
  */
 final class Bundle
 {
+    /**
+     * The largest collected file this release loads into the zip writer.
+     *
+     * The writer still holds the whole archive in memory, so this is a release sized bound
+     * rather than a streaming rewrite.
+     */
+    private const MAX_COLLECTED_BYTES = 10 * 1024 * 1024;
+
     public function __construct(
         private readonly Supervisor $supervisor,
         private readonly Prober $prober,
@@ -88,7 +96,18 @@ final class Bundle
         $writer = new ZipWriter;
 
         foreach ($this->allFiles($directory) as $name => $path) {
-            $writer->add('papyrus-diagnostics/'.$name, (string) file_get_contents($path));
+            $size = @filesize($path);
+
+            if ($size !== false && $size > self::MAX_COLLECTED_BYTES) {
+                $writer->add(
+                    'papyrus-diagnostics/'.$name.'.truncated.txt',
+                    sprintf('This file was %d bytes, above the bundle limit, and was not included.', $size),
+                );
+
+                continue;
+            }
+
+            $writer->addFile('papyrus-diagnostics/'.$name, $path);
         }
 
         file_put_contents($destination, $writer->finish());

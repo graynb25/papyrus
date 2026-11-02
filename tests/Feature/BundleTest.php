@@ -603,6 +603,51 @@ class BundleTest extends TestCase
     }
 
     /**
+     * An oversized collected file becomes a note naming its size, never a silent omission.
+     *
+     * The writer still holds the archive in memory, so this cap is the release sized bound
+     * rather than a streaming rewrite.
+     */
+    public function test_an_oversized_collected_file_is_replaced_by_a_truncation_note(): void
+    {
+        if (! class_exists(ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive is needed to verify the archive this project wrote');
+        }
+
+        $directory = $this->scratch.DIRECTORY_SEPARATOR.'capped-bundle';
+
+        mkdir($directory, 0o777, true);
+
+        $size = 10 * 1024 * 1024 + 1;
+
+        file_put_contents($directory.DIRECTORY_SEPARATOR.'oversized.log', str_repeat('x', $size));
+        file_put_contents($directory.DIRECTORY_SEPARATOR.'small.txt', 'keep me');
+
+        $archivePath = $this->bundle()->zip($directory);
+
+        $zip = new ZipArchive;
+
+        $this->assertTrue($zip->open($archivePath) === true, 'the cap must not produce an invalid archive');
+
+        $names = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+
+        $this->assertContains('papyrus-diagnostics/small.txt', $names);
+        $this->assertNotContains('papyrus-diagnostics/oversized.log', $names);
+        $this->assertContains('papyrus-diagnostics/oversized.log.truncated.txt', $names);
+
+        $note = (string) $zip->getFromName('papyrus-diagnostics/oversized.log.truncated.txt');
+
+        $this->assertStringContainsString((string) $size, $note, 'the note names the excluded size');
+        $this->assertStringContainsString('not included', $note);
+
+        $zip->close();
+    }
+
+    /**
      * An archive with no files in it is still a valid archive.
      *
      * The empty case is where the end-of-central-directory record is most easily wrong, and it is

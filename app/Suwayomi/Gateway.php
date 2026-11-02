@@ -4,6 +4,7 @@ namespace App\Suwayomi;
 
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * The single door to Suwayomi.
@@ -76,7 +77,7 @@ class Gateway
         $elapsedMs = (microtime(true) - $started) * 1000;
         $this->lastLatencyMs = $elapsedMs;
 
-        return $this->unwrap($response, $elapsedMs);
+        return $this->unwrap($response, $elapsedMs, $document);
     }
 
     /**
@@ -173,7 +174,7 @@ class Gateway
      *
      * @throws SuwayomiException
      */
-    private function unwrap(Response $response, float $elapsedMs): array
+    private function unwrap(Response $response, float $elapsedMs, string $document): array
     {
         if ($this->rejectedAuth($response)) {
             // Still rejected after one fresh login, so this is not an expiry.
@@ -203,7 +204,19 @@ class Gateway
         if (! empty($body['errors'])) {
             $errors = $body['errors'];
 
-            Log::debug('Suwayomi GraphQL error', ['errors' => $errors, 'elapsed_ms' => $elapsedMs]);
+            /*
+             * The raw upstream array is not logged. It carries whatever text the server chose,
+             * travels in every diagnostics bundle, and the operation plus a bounded first message
+             * is enough to tell an operator which call failed.
+             */
+            $first = is_array($errors) ? ($errors[0] ?? null) : null;
+            $message = is_array($first) ? (string) ($first['message'] ?? 'unknown') : 'unknown';
+
+            Log::debug('Suwayomi GraphQL error', [
+                'operation' => $this->operation($document),
+                'message' => Str::limit(Str::squish($message), 200),
+                'elapsed_ms' => $elapsedMs,
+            ]);
 
             throw SuwayomiException::query($errors, $elapsedMs);
         }
@@ -219,5 +232,21 @@ class Gateway
         }
 
         return $data;
+    }
+
+    /**
+     * The operation name, or the first selected field for an anonymous document.
+     */
+    private function operation(string $document): string
+    {
+        if (preg_match('/\b(?:query|mutation|subscription)\s+([A-Za-z_][A-Za-z0-9_]*)/', $document, $match) === 1) {
+            return $match[1];
+        }
+
+        if (preg_match('/\{\s*([A-Za-z_][A-Za-z0-9_]*)/', $document, $match) === 1) {
+            return $match[1];
+        }
+
+        return 'unknown';
     }
 }

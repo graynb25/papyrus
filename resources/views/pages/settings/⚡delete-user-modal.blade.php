@@ -1,6 +1,7 @@
 <?php
 
 use App\Concerns\PasswordValidationRules;
+use App\Covers\CoverStore;
 use App\Livewire\Actions\Logout;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
@@ -36,7 +37,15 @@ new class extends Component {
             return;
         }
 
-        tap(Auth::user(), $logout(...))->delete();
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        app(CoverStore::class)->forgetUser((int) $user->getKey());
+
+        tap($user, $logout(...))->delete();
 
         $this->redirect('/', navigate: true);
     }
@@ -48,7 +57,7 @@ new class extends Component {
             <flux:heading size="lg">{{ __('Are you sure you want to delete your account?') }}</flux:heading>
 
             <flux:subheading>
-                {{ __('This permanently removes this account and its saved settings and reading activity. It does not remove manga files stored by Papyrus. Enter your password to continue.') }}
+                {{ __('This permanently removes this account and its saved settings and reading activity, and any cover you uploaded. It does not remove manga files stored by Papyrus. Enter your password to continue.') }}
             </flux:subheading>
         </div>
 

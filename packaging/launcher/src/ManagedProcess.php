@@ -33,6 +33,17 @@ use RuntimeException;
  */
 final class ManagedProcess
 {
+    /**
+     * A process log above this size is rotated before the child opens it.
+     *
+     * Five megabytes is several runs of ordinary output and small enough that a debug loop
+     * cannot fill a reader's disk between starts.
+     */
+    private const MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+    /** How many rotated process logs are kept. */
+    private const KEPT_ROTATIONS = 3;
+
     /** @var resource|null */
     private $handle = null;
 
@@ -97,6 +108,13 @@ final class ManagedProcess
         // assign to the promoted readonly property, which PHP refuses at runtime. The callers
         // already name each file, so the line bought nothing.
         @mkdir(dirname($this->logFile), 0o777, true);
+
+        /*
+         * Rotation runs before `proc_open`, so the child opens the new file rather than a
+         * handle to the oversized one. A rename cannot replace an existing name on Windows,
+         * so a timestamp is the base and a counter resolves a collision in the same second.
+         */
+        $this->rotateLog();
 
         $command = array_merge([$this->executable], $this->arguments);
 
@@ -226,6 +244,43 @@ final class ManagedProcess
     public function __destruct()
     {
         $this->close();
+    }
+
+    /**
+     * Rotate an oversized process log and keep only the newest three rotations.
+     */
+    private function rotateLog(): void
+    {
+        clearstatcache(true, $this->logFile);
+
+        $size = @filesize($this->logFile);
+
+        if ($size === false || $size <= self::MAX_LOG_BYTES) {
+            return;
+        }
+
+        $stamp = gmdate('Ymd-His');
+        $rotated = $this->logFile.'.'.$stamp;
+        $suffix = 0;
+
+        while (file_exists($rotated)) {
+            $suffix++;
+            $rotated = $this->logFile.'.'.$stamp.'-'.$suffix;
+        }
+
+        if (! @rename($this->logFile, $rotated)) {
+            return;
+        }
+
+        $rotations = glob($this->logFile.'.????????-??????*') ?: [];
+
+        sort($rotations, SORT_STRING);
+
+        $excess = count($rotations) - self::KEPT_ROTATIONS;
+
+        foreach ($excess > 0 ? array_slice($rotations, 0, $excess) : [] as $old) {
+            @unlink($old);
+        }
     }
 
     private function waitFor(int $seconds): bool

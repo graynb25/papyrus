@@ -7,6 +7,7 @@ use App\Suwayomi\Gateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
@@ -68,6 +69,47 @@ class GatewayTest extends TestCase
             $this->assertStringNotContainsString("\n", $e->getMessage());
             $this->assertNotNull($e->errors);
         }
+    }
+
+    /**
+     * The log record names the operation and a bounded message, not the upstream payload.
+     */
+    public function test_a_graphql_error_is_logged_as_a_curated_record(): void
+    {
+        $this->fakeLogin();
+
+        $tail = 'tail-marker-that-must-not-be-logged';
+        $message = str_repeat('upstream detail ', 40).$tail;
+
+        Http::fake([
+            '*/api/graphql' => Http::response([
+                'errors' => [
+                    ['message' => $message, 'path' => ['manga']],
+                ],
+            ]),
+        ]);
+
+        Log::spy();
+
+        try {
+            app(Gateway::class)->execute('query Series($id: Int!) { manga(id: $id) { id } }');
+            $this->fail('Expected a SuwayomiException.');
+        } catch (SuwayomiException $e) {
+            $this->assertSame(FailureKind::Query, $e->kind);
+        }
+
+        Log::shouldHaveReceived('debug')
+            ->withArgs(function (string $record, array $context) use ($tail): bool {
+                $this->assertSame('Suwayomi GraphQL error', $record);
+                $this->assertSame('Series', $context['operation'] ?? null);
+                $this->assertArrayHasKey('elapsed_ms', $context);
+                $this->assertArrayNotHasKey('errors', $context, 'the raw upstream array must not be logged');
+                $this->assertIsString($context['message'] ?? null);
+                $this->assertLessThanOrEqual(203, mb_strlen($context['message']));
+                $this->assertStringNotContainsString($tail, $context['message']);
+
+                return true;
+            });
     }
 
     public function test_it_reauthenticates_once_on_a_401_then_retries(): void

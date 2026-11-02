@@ -274,9 +274,23 @@ should not fill their disk, and a support request should not require a 400MB dow
 | File | Kept | Why |
 | --- | --- | --- |
 | `papyrus.log` | last 2 MB, rotated at 1 MB | A reader reads the last run, not the last year |
+| `laravel-YYYY-MM-DD.log` | 14 daily files | The packaged install writes the app log through the daily stack |
+| `web.log`, `queue.log`, `scheduler.log`, `suwayomi.log` | rotated above 5 MB, last 3 rotations | A process log is opened for append and would otherwise grow for the life of the install |
 | `collected/*.txt` | last run only, replaced each start | A failed start is the interesting one; the run before it is not |
 | `health.txt` | last run only | It is a snapshot, not a history |
 | `diagnostics.zip` | built on demand, never automatic | It should cost nothing unless asked for |
+
+The packaged install sets `LOG_STACK=daily`, `LOG_LEVEL=info` and `LOG_DAILY_DAYS=14` in
+`papyrus:configure`, so a fresh install and an existing 1.5.3 `.env` both end up with the same
+retention on their next launcher start. When debug logging is enabled, a Suwayomi GraphQL failure
+is one curated record naming the operation, a whitespace-collapsed first message bounded to about
+200 characters, and `elapsed_ms`. The raw upstream `errors` array is not written.
+
+The launcher rotates a process log above 5 MB before it opens the file, so the child writes to the
+new file, and it keeps the newest three rotations. A collected file above 10 MB is not loaded into
+the diagnostics zip; the archive carries `<name>.truncated.txt` naming the excluded size so the
+bundle never silently drops evidence. The zip writer still assembles the archive in memory, so the
+cap bounds each member and a streaming rewrite remains a follow-up.
 
 **Rotation is on size, not on date.** A reader who opens Papyrus once a month should not
 accumulate a year of logs they will never read, and a reader in a debug loop should not be able to

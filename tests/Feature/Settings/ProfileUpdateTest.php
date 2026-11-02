@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Settings;
 
+use App\Models\SeriesCover;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -139,13 +141,61 @@ class ProfileUpdateTest extends TestCase
         $this->assertNotNull($user->fresh());
     }
 
+    public function test_account_deletion_removes_the_users_uploaded_covers_and_leaves_another_readers(): void
+    {
+        Storage::fake('local');
+        config(['papyrus.covers.disk' => 'local']);
+
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+
+        $mine = 'covers/'.$user->id.'/76.jpg';
+        $theirs = 'covers/'.$other->id.'/76.jpg';
+
+        Storage::disk('local')->put($mine, 'mine');
+        Storage::disk('local')->put($theirs, 'theirs');
+
+        SeriesCover::createFor($user, [
+            'suwayomi_manga_id' => 76,
+            'disk' => 'local',
+            'path' => $mine,
+            'origin' => 'upload',
+        ]);
+
+        SeriesCover::createFor($other, [
+            'suwayomi_manga_id' => 76,
+            'disk' => 'local',
+            'path' => $theirs,
+            'origin' => 'upload',
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test('pages::settings.delete-user-modal')
+            ->set('password', 'password')
+            ->call('deleteUser')
+            ->assertHasNoErrors();
+
+        $this->assertNull($user->fresh());
+        $this->assertDirectoryDoesNotExist(
+            Storage::disk('local')->path('covers/'.$user->id),
+            'the deleted account has no uploaded cover directory left',
+        );
+
+        Storage::disk('local')->assertExists($theirs);
+        $this->assertNotNull(
+            SeriesCover::forUser($other)->where('suwayomi_manga_id', 76)->first(),
+            'another account keeps its cover and row',
+        );
+    }
+
     public function test_account_deletion_names_what_it_removes_and_keeps(): void
     {
         $user = User::factory()->create();
 
         Livewire::actingAs($user)
             ->test('pages::settings.delete-user-modal')
-            ->assertSee('This permanently removes this account and its saved settings and reading activity.')
+            ->assertSee('This permanently removes this account and its saved settings and reading activity, and any cover you uploaded.')
             ->assertSee('It does not remove manga files stored by Papyrus.');
     }
 }

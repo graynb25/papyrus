@@ -137,6 +137,46 @@ class ConfigureInstallTest extends TestCase
     }
 
     /**
+     * The shipped log setup is daily at info, with bounded retention.
+     *
+     * A packaged install inherits `.env.example`, which ships debug on a single file with no
+     * retention. That is the verbose combination the diagnostics bundle was collecting.
+     */
+    public function test_a_packaged_install_writes_daily_logging_at_info_level(): void
+    {
+        $this->configure()->assertSuccessful();
+
+        $values = $this->envValues();
+
+        $this->assertSame('stack', $values['LOG_CHANNEL']);
+        $this->assertSame('daily', $values['LOG_STACK']);
+        $this->assertSame('info', $values['LOG_LEVEL']);
+        $this->assertSame('14', $values['LOG_DAILY_DAYS']);
+    }
+
+    /**
+     * An existing 1.5.3 `.env` keeps debug logging until the next launcher start repairs it.
+     */
+    public function test_an_existing_env_file_with_debug_logging_is_repaired(): void
+    {
+        $key = 'base64:'.base64_encode(str_repeat('k', 32));
+
+        File::put(
+            $this->envFile,
+            "APP_KEY={$key}\nLOG_CHANNEL=stack\nLOG_STACK=single\nLOG_LEVEL=debug\nLOG_DAILY_DAYS=90\n",
+        );
+
+        $this->configure()->assertSuccessful();
+
+        $values = $this->envValues();
+
+        $this->assertSame($key, $values['APP_KEY'], 'the key must survive the repair');
+        $this->assertSame('daily', $values['LOG_STACK']);
+        $this->assertSame('info', $values['LOG_LEVEL']);
+        $this->assertSame('14', $values['LOG_DAILY_DAYS']);
+    }
+
+    /**
      * The one that must not break.
      */
     public function test_an_existing_app_key_is_never_replaced(): void
@@ -390,7 +430,7 @@ class ConfigureInstallTest extends TestCase
     {
         File::put(
             $this->envFile,
-            "# a comment that explains things\nAPP_KEY=\nLOG_LEVEL=debug # very noisy\n# another comment\n",
+            "# a comment that explains things\nAPP_KEY=\nCUSTOM_LEVEL=debug # very noisy\n# another comment\n",
         );
 
         $this->configure()->assertSuccessful();
@@ -403,7 +443,7 @@ class ConfigureInstallTest extends TestCase
 
         $this->assertSame(
             'debug',
-            $parsed['LOG_LEVEL'] ?? null,
+            $parsed['CUSTOM_LEVEL'] ?? null,
             'the comment must stay outside the quotes, or the setting becomes the comment',
         );
     }

@@ -65,6 +65,9 @@ class ConfigureInstall extends Command
         'QUEUE_CONNECTION' => 'database',
         'CACHE_STORE' => 'database',
         'LOG_CHANNEL' => 'stack',
+        'LOG_STACK' => 'daily',
+        'LOG_LEVEL' => 'info',
+        'LOG_DAILY_DAYS' => '14',
     ];
 
     public function handle(): int

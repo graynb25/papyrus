@@ -411,7 +411,7 @@ class BackupsPageTest extends TestCase
         $this->writePair();
 
         $this->get('/settings/backups')
-            ->assertSee('A backup pair contains your library')
+            ->assertSee('A backup pair contains your library, your account email and display name')
             ->assertSee('an encrypted AniList token and password hashes')
             ->assertSee("Live session rows and the manga server's cached tokens are left out.")
             ->assertSee('Treat this folder as a secret.');

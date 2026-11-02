@@ -227,6 +227,21 @@ class CoverStore
     }
 
     /**
+     * Remove every uploaded cover this reader owns from every disk its rows name.
+     *
+     * Called before the user row is deleted, because the cascade takes the series_covers rows
+     * with it and the disk names are no longer discoverable afterwards. Each row may name a
+     * different configured disk, so the per-user directory is cleared through that disk rather
+     * than by walking a local path.
+     */
+    public function forgetUser(int $userId): void
+    {
+        foreach ($this->query($userId)->pluck('disk')->unique() as $disk) {
+            Storage::disk((string) $disk)->deleteDirectory('covers/'.$userId);
+        }
+    }
+
+    /**
      * The bytes of a stored cover, or null when the row exists and the file does not.
      *
      * Null in that case rather than an exception, because the row outliving its file is a
