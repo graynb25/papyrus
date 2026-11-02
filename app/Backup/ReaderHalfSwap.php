@@ -146,6 +146,28 @@ final class ReaderHalfSwap
                 ));
             }
 
+            /*
+             * The refill is `SELECT *`, which is positional. A candidate that carries the
+             * same columns in another order would copy every row one column off while every
+             * name the table check compares still matched, so the orders are held against
+             * each other before anything is deleted.
+             */
+            foreach ($tables as $table) {
+                $liveColumns = $this->columnNames($live, 'main', $table);
+                $candidateColumns = $this->columnNames($live, 'candidate', $table);
+
+                if ($liveColumns !== $candidateColumns) {
+                    throw new ReaderHalfRefused(sprintf(
+                        'The pair\'s reader half carries a different column layout for %s: '
+                        .'the live database holds (%s) and the pair holds (%s), so `SELECT *` '
+                        .'would put each row one column off. The live database was not touched.',
+                        $table,
+                        implode(', ', $liveColumns),
+                        implode(', ', $candidateColumns),
+                    ));
+                }
+            }
+
             $preservedTables = array_values(array_intersect($tables, self::PRESERVED));
             $swapTables = array_values(array_diff($tables, self::PRESERVED));
 
@@ -636,6 +658,25 @@ final class ReaderHalfSwap
             "select name from {$schema}.sqlite_master where type = 'table' and name not like 'sqlite_%' order by name",
             "the tables of {$schema}",
         )->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * The columns one table carries, in the order its schema declares them.
+     *
+     * `PRAGMA table_info` lists them in declaration order, which is the order `SELECT *`
+     * copies them in. Names rather than a count, because the same count in a different
+     * order is exactly the candidate that copies sideways.
+     *
+     * @return list<string>
+     */
+    private function columnNames(PDO $live, string $schema, string $table): array
+    {
+        /** @var list<string> */
+        return $this->query(
+            $live,
+            "PRAGMA {$schema}.table_info(\"{$table}\")",
+            "the columns of {$table} in {$schema}",
+        )->fetchAll(PDO::FETCH_COLUMN, 1);
     }
 
     /** @throws ReaderHalfRefused */

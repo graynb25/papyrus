@@ -8,6 +8,8 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
+use Throwable;
 
 /**
  * A reader's own cover art for a series.
@@ -144,26 +146,52 @@ class CoverStore
         $path = $this->pathFor($userId, $mangaId, $extension);
 
         $disk = $this->disk();
-        $disk->put($path, $this->encode($image, $source['mime']));
+        $encoded = $this->encode($image, $source['mime']);
 
         imagedestroy($image);
 
         /*
-         * The old file goes before the row is rewritten, and only if it is a different
-         * path. Replacing a jpg cover with a jpg cover writes the same path, so deleting
-         * first would destroy the file just written.
+         * Written beside the destination rather than into it. When the extension does not
+         * change, the destination is the file the reader's current row already names, so a
+         * write that stops halfway would truncate that cover in place. A rename inside one
+         * directory is a single driver operation, so the destination holds either the old
+         * bytes or the whole new file and never a short one.
          */
-        $existing = $this->find($user, $mangaId);
+        $temporary = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
 
-        if ($existing !== null && $existing->path !== $path) {
-            $disk->delete($existing->path);
+        try {
+            $written = $disk->put($temporary, $encoded);
+            $moved = $written !== false && $disk->move($temporary, $path);
+        } catch (Throwable $e) {
+            $disk->delete($temporary);
+
+            throw $e;
         }
 
+        if (! $moved) {
+            $disk->delete($temporary);
+
+            throw new RuntimeException('The cover could not be written to disk, so the previous one was kept.');
+        }
+
+        $existing = $this->find($user, $mangaId);
+
+        /*
+         * The row is written before the old file is removed. A failed save then leaves the
+         * old cover and the row that names it together, rather than a row pointing at a
+         * file this method already deleted.
+         */
         if ($existing !== null) {
+            $oldPath = $existing->path;
+
             $existing->disk = $this->diskName();
             $existing->path = $path;
             $existing->origin = 'upload';
             $existing->save();
+
+            if ($oldPath !== $path) {
+                $disk->delete($oldPath);
+            }
 
             return $existing;
         }

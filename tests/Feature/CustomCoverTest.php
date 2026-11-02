@@ -8,12 +8,14 @@ use App\Models\SeriesCover;
 use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\Support\MintsTokens;
 use Tests\TestCase;
 
@@ -283,6 +285,134 @@ class CustomCoverTest extends TestCase
         );
 
         Storage::disk('local')->assertExists($second->path);
+    }
+
+    /**
+     * A failed replacement must not truncate the cover the reader already has.
+     *
+     * The old code wrote the resized bytes straight into the final path, which is the same
+     * path when the extension does not change, so a disk that failed midway shortened the
+     * current cover in place. This disk truncates and throws on any direct put at the
+     * destination and refuses every move, so only the old bytes can answer for the cover
+     * and only the row can answer for the path.
+     */
+    public function test_a_failed_replacement_leaves_the_previous_cover_and_row_untouched(): void
+    {
+        $this->store()->store($this->user, 76, $this->jpeg(400, 600));
+        $first = $this->store()->find($this->user, 76);
+
+        $this->assertNotNull($first);
+
+        $before = Storage::disk('local')->get($first->path);
+
+        $real = Storage::disk('local');
+
+        $failing = new class($real->getDriver(), $real->getAdapter(), $real->getConfig()) extends FilesystemAdapter
+        {
+            public int $destinationPuts = 0;
+
+            public int $moves = 0;
+
+            public function put($path, $contents, $options = [])
+            {
+                if (! str_ends_with((string) $path, '.tmp')) {
+                    $this->destinationPuts++;
+
+                    // The destination is truncated before the write fails, which is the
+                    // shape a stream that dies midway leaves behind.
+                    parent::put($path, '');
+
+                    throw new RuntimeException('the disk stopped halfway through the write');
+                }
+
+                return parent::put($path, $contents, $options);
+            }
+
+            public function move($from, $to)
+            {
+                $this->moves++;
+
+                return false;
+            }
+        };
+
+        Storage::set('local', $failing);
+
+        $failure = null;
+
+        try {
+            $this->store()->store($this->user, 76, $this->jpeg(500, 700));
+        } catch (RuntimeException $e) {
+            $failure = $e;
+        }
+
+        $this->assertNotNull($failure, 'The store reported success for a cover the disk refused to write.');
+
+        $after = $this->store()->find($this->user, 76);
+
+        $this->assertNotNull($after);
+        $this->assertSame($first->id, $after->id);
+        $this->assertSame($first->path, $after->path);
+        $this->assertSame(1, SeriesCover::query()->forUser($this->user->id)->count());
+        $this->assertSame(
+            $before,
+            Storage::disk('local')->get($first->path),
+            'The cover the row points at is byte for byte what it was before the failed upload.',
+        );
+        $this->assertSame(
+            [$first->path],
+            Storage::disk('local')->allFiles('covers'),
+            'Only the temporary file was removed, and no part of the failed write was left behind.',
+        );
+        $this->assertSame(0, $failing->destinationPuts, 'The destination is only reached by the rename.');
+        $this->assertSame(1, $failing->moves);
+        $this->assertStringContainsString('cover could not be written', $failure->getMessage());
+    }
+
+    /**
+     * A row that fails to save must not take the old file with it.
+     *
+     * A format change writes a different path, so the old file is the only copy of the
+     * cover the unchanged row still names. The old code deleted it before the save, which
+     * left a row pointing at nothing.
+     */
+    public function test_a_failed_row_write_keeps_the_old_cover_the_row_still_names(): void
+    {
+        $this->store()->store($this->user, 76, $this->jpeg(400, 600));
+        $first = $this->store()->find($this->user, 76);
+
+        $this->assertNotNull($first);
+
+        $before = Storage::disk('local')->get($first->path);
+
+        /*
+         * Throwing from the model's own saving event is the failed write a database
+         * constraint or a lock produces at this seam, without needing either.
+         */
+        SeriesCover::saving(static function (): void {
+            throw new RuntimeException('the row could not be saved');
+        });
+
+        $failure = null;
+
+        try {
+            $this->store()->store($this->user, 76, $this->png(500, 700));
+        } catch (RuntimeException $e) {
+            $failure = $e;
+        }
+
+        $this->assertNotNull($failure, 'The store reported success for a row the database refused to save.');
+
+        $after = $this->store()->find($this->user, 76);
+
+        $this->assertNotNull($after);
+        $this->assertSame($first->id, $after->id);
+        $this->assertSame($first->path, $after->path);
+        $this->assertSame(
+            $before,
+            Storage::disk('local')->get($first->path),
+            'The old cover is still there for the row that still names it.',
+        );
     }
 
     // Removing -----------------------------------------------------------

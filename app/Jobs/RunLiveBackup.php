@@ -62,6 +62,14 @@ class RunLiveBackup implements ShouldQueue
      * writes its own row, so a retry leaves the first one answering for itself instead of
      * rewriting history.
      *
+     * Declared here rather than left to the launcher's `--tries=3`, which would otherwise
+     * supply a third attempt the docblock above never promised.
+     */
+    public int $tries = 2;
+
+    /**
+     * The wait between those two attempts.
+     *
      * @var list<int>
      */
     public array $backoff = [30];

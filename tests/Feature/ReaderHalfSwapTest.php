@@ -237,6 +237,45 @@ class ReaderHalfSwapTest extends TestCase
         $this->assertSame([['title' => 'b1']], $live->query('select title from books')->fetchAll(PDO::FETCH_ASSOC), 'the refusal leaves the live rows exactly as they were');
     }
 
+    /**
+     * A candidate whose tables and columns carry the same names in a different order is
+     * refused before anything is deleted. `SELECT *` is positional, so the same values
+     * would land one column off while the table list still matches.
+     */
+    public function test_a_candidate_whose_columns_are_in_a_different_order_is_refused(): void
+    {
+        $this->fill($this->live, [['b1', 'Ada']], 2, 2);
+        $this->fill($this->candidate, [['b1', 'Ada']], 2, 2);
+
+        $candidate = $this->open($this->candidate);
+
+        $candidate->exec('alter table books rename to books_before_reorder');
+        $candidate->exec(
+            'create table books (id integer primary key autoincrement, '
+            .'title text not null, author_id integer not null references authors(id))'
+        );
+        $candidate->exec('insert into books (id, title, author_id) select id, title, author_id from books_before_reorder');
+        $candidate->exec('drop table books_before_reorder');
+        $candidate = null;
+
+        try {
+            (new ReaderHalfSwap)->swap($this->candidate);
+            $this->fail('The swap copied a candidate whose columns were in a different order.');
+        } catch (ReaderHalfRefused $e) {
+            $this->assertStringContainsString('books', $e->getMessage());
+            $this->assertStringContainsString('id, author_id, title', $e->getMessage(), 'The live order is named.');
+            $this->assertStringContainsString('id, title, author_id', $e->getMessage(), 'The candidate order is named.');
+        }
+
+        $live = $this->open($this->live);
+
+        $this->assertSame(
+            [['title' => 'b1']],
+            $live->query('select title from books')->fetchAll(PDO::FETCH_ASSOC),
+            'the refusal leaves the live rows exactly as they were',
+        );
+    }
+
     // -------------------------------------------------------------------------------------------
 
     /**
