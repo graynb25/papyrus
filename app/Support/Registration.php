@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Support\Facades\DB;
 
@@ -39,7 +40,10 @@ use Illuminate\Support\Facades\DB;
  * and showcase behaviour that mode exists to switch off.
  *
  * So the POST path takes a lock, re-reads the count while holding it, and only the holder proceeds.
- * `isOpen()` is for asking the question. `claim()` is for answering it once.
+ * `isOpen()` is for asking the question. `claim()` is for answering it once, and the answer is only
+ * true while the lock is still held. The middleware that takes the claim releases it after the
+ * request that creates the account has finished, which is what puts the count and the insert inside
+ * one critical section rather than leaving a gap between them.
  *
  * ## Why `LockProvider` and not `Cache`
  *
@@ -74,6 +78,17 @@ final class Registration
     private $userCount;
 
     /**
+     * The claim lock this request is holding, if it won one.
+     *
+     * A claim is not a boolean answer the moment it returns: it is a critical
+     * section that has to stay open until the account is written. Keeping the
+     * lock object here is what lets the middleware release it after the request
+     * that creates the account has finished, rather than releasing it as soon as
+     * `claim()` found zero users.
+     */
+    private ?Lock $heldClaim = null;
+
+    /**
      * @param  (callable(): int)|null  $userCount  Counts accounts. Injected so a test can put the
      *                                             install in "nobody has registered yet" or its opposite
      *                                             without creating rows to do it.
@@ -104,6 +119,12 @@ final class Registration
      * exists to not have: that is a check and a use with a gap between them, and the gap is where the
      * second reader arrives.
      *
+     * The lock is deliberately not released on a successful claim. Releasing it here was the other
+     * half of the same bug: two requests could both win the claim, because the first had not written
+     * its account yet, and both would then read a count of zero. The caller holds the claim until the
+     * account exists and calls `releaseClaim()` afterwards, so the second request waits at the lock
+     * and finds one user when it finally reads.
+     *
      * In a mode that allows registration this is unconditionally true and takes no lock, because the
      * invariant it protects does not exist there and serialising every sign-up would be a cost with
      * no benefit.
@@ -114,9 +135,43 @@ final class Registration
             return true;
         }
 
-        return (bool) $this->cache
-            ->lock(self::LOCK, self::LOCK_SECONDS)
-            ->get(fn (): bool => $this->count() === 0);
+        if ($this->heldClaim !== null) {
+            return true;
+        }
+
+        $lock = $this->cache->lock(self::LOCK, self::LOCK_SECONDS);
+
+        if (! $lock->get()) {
+            return false;
+        }
+
+        if ($this->count() > 0) {
+            $lock->release();
+
+            return false;
+        }
+
+        $this->heldClaim = $lock;
+
+        return true;
+    }
+
+    /**
+     * Give the claim back once the request that took it has finished.
+     *
+     * Called from a `finally` around the sign-up request, so a validation failure, a refusal or an
+     * unexpected error cannot leave the install unable to register until the lock expires. Releasing
+     * a lock this instance does not hold is a no-op, which is what the other registration routes and
+     * the modes that allow registration need.
+     */
+    public function releaseClaim(): void
+    {
+        if ($this->heldClaim === null) {
+            return;
+        }
+
+        $this->heldClaim->release();
+        $this->heldClaim = null;
     }
 
     /**
@@ -124,11 +179,12 @@ final class Registration
      *
      * ## Why the lock is taken around the write rather than at a call site
      *
-     * `claim()` above is the single-reader guard: in `single` it refuses the second sign-up,
-     * and in `shared` or `public` it deliberately serializes nothing. The owner question still
-     * has to be answered once in every mode. Two first sign-ups that both read "no owner" and
-     * both promote themselves would leave the install with two owners, and one that read "no
-     * owner" and then lost the write would leave it with none.
+     * `claim()` above is the single-reader guard: in `single` it refuses the second sign-up and
+     * holds its claim until the request finishes, so the count it read and the row this method
+     * writes are in one critical section. The owner question still has to be answered once in
+     * every mode. Two first sign-ups that both read "no owner" and both promote themselves would
+     * leave the install with two owners, and one that read "no owner" and then lost the write
+     * would leave it with none.
      *
      * ## Why the lock is held across the commit
      *

@@ -16,6 +16,7 @@ use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 
@@ -114,8 +115,15 @@ new #[Title('Sources')] class extends AdultContentPage
      * Armed by an install press and emptied by both answers to the dialog, so it
      * never sits armed while the dialog is closed.
      *
+     * Locked because it is the answer the confirm button acts on. A public
+     * Livewire property is client supplied unless it is locked, and the one
+     * thing this array has to be is the list this page armed, not a list a
+     * request wrote. A forged value here would skip the row and trust checks
+     * the press made, which is the whole gate this page exists to hold.
+     *
      * @var array<int, string>
      */
+    #[Locked]
     public array $pendingInstall = [];
 
     /**
@@ -123,8 +131,12 @@ new #[Title('Sources')] class extends AdultContentPage
      * them together with the flagged ones, because that is the request the press
      * stood for; closing the dialog installs nothing.
      *
+     * Locked for the same reason as `pendingInstall`: it carries the rest of
+     * the answered selection into the confirm press.
+     *
      * @var array<int, string>
      */
+    #[Locked]
     public array $pendingClean = [];
 
     public function mount(): void
@@ -525,6 +537,14 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function install(string $pkgName): void
     {
+        /*
+         * The control is hidden from readers below, but a Livewire method is callable
+         * from the browser console. Installing runs a signed artefact in the shared
+         * Suwayomi process, so it belongs to the install owner whichever way the press
+         * reaches the method.
+         */
+        Gate::authorize('manage-install');
+
         if (! $this->canInstallName($pkgName)) {
             return;
         }
@@ -543,6 +563,15 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public function uninstall(string $pkgName): void
     {
+        /*
+         * An extension is shared by every reader of this install. In `shared` or
+         * `public` mode a second account removing one costs another reader their
+         * sources, so removal belongs to the install owner. The trust check cannot
+         * cover this: it is a decision about installing, not about taking something
+         * away from everybody.
+         */
+        Gate::authorize('manage-install');
+
         try {
             app(ExtensionManager::class)->setInstalled($pkgName, false);
         } catch (SuwayomiException $e) {
@@ -669,6 +698,8 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function installSelected(): void
     {
+        Gate::authorize('manage-install');
+
         $allowed = $this->installableFromSelection();
 
         $this->reset(['selected', 'failures']);
@@ -692,13 +723,22 @@ new #[Title('Sources')] class extends AdultContentPage
     }
 
     /**
-     * The press after the warning. The pending names install straight through with
-     * no second guard: the ask already checked each row before arming, and asking
-     * the same question twice on one press is how a warning becomes furniture.
+     * The press after the warning. The ask already checked each row before arming,
+     * so the dialog is not asked a second time; asking the same question twice on
+     * one press is how a warning becomes furniture.
+     *
+     * The gate and the per-name checks are still re-run here and in `installNames()`,
+     * because the pending arrays travel through the browser and the ask happened in
+     * an earlier request. That second pass is the rule; the ask is the courtesy.
      */
     public function installConfirmed(): void
     {
-        $names = array_values(array_merge($this->pendingInstall, $this->pendingClean));
+        Gate::authorize('manage-install');
+
+        $names = array_values(array_filter(
+            array_merge($this->pendingInstall, $this->pendingClean),
+            fn (string $pkgName): bool => $this->canInstallName($pkgName),
+        ));
 
         $this->reset(['pendingInstall', 'pendingClean']);
 
@@ -725,10 +765,27 @@ new #[Title('Sources')] class extends AdultContentPage
      * single press's copy; more than one keeps the bulk count, because a toast
      * that says one extension for two names would read as a lie.
      *
+     * The gate and the per-name checks are repeated here rather than trusted from
+     * the caller, because every install path ends at this method and a future
+     * caller must not be able to skip them. `canInstallName()` reads the row and
+     * the reader's current trust, so a name whose store was distrusted between
+     * the press and this call installs nothing.
+     *
      * @param array<int, string> $names
      */
     private function installNames(array $names): void
     {
+        Gate::authorize('manage-install');
+
+        $names = array_values(array_filter(
+            $names,
+            fn (string $pkgName): bool => $this->canInstallName($pkgName),
+        ));
+
+        if ($names === []) {
+            return;
+        }
+
         if (count($names) === 1) {
             try {
                 app(ExtensionManager::class)->setInstalled($names[0], true);
@@ -2494,23 +2551,25 @@ new #[Title('Sources')] class extends AdultContentPage
             </flux:callout>
         @endif
 
-        @if ($this->selected !== [])
-            <flux:callout variant="primary" icon="check">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <span class="text-sm">
-                        {{ trans_choice('{1} :count selected|[2,*] :count selected', count($this->selected), ['count' => count($this->selected)]) }}
-                    </span>
+        @can('manage-install')
+            @if ($this->selected !== [])
+                <flux:callout variant="primary" icon="check">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <span class="text-sm">
+                            {{ trans_choice('{1} :count selected|[2,*] :count selected', count($this->selected), ['count' => count($this->selected)]) }}
+                        </span>
 
-                    <div class="flex items-center gap-2">
-                        <flux:button size="sm" wire:click="$set('selected', [])">{{ __('Clear') }}</flux:button>
+                        <div class="flex items-center gap-2">
+                            <flux:button size="sm" wire:click="$set('selected', [])">{{ __('Clear') }}</flux:button>
 
-                        <flux:button size="sm" variant="primary" wire:click="installSelected" icon="arrow-down-tray">
-                            {{ __('Install selected') }}
-                        </flux:button>
+                            <flux:button size="sm" variant="primary" wire:click="installSelected" icon="arrow-down-tray">
+                                {{ __('Install selected') }}
+                            </flux:button>
+                        </div>
                     </div>
-                </div>
-            </flux:callout>
-        @endif
+                </flux:callout>
+            @endif
+        @endcan
 
         {{--
             Install failures are listed rather than toasted. The user is about to
@@ -2712,20 +2771,22 @@ new #[Title('Sources')] class extends AdultContentPage
                             </div>
 
                             @unless ($installed)
-                                {{--
-                                    The tick that selects an extension for a bulk
-                                    install, named so a screen reader says what
-                                    it is for. The house's shape for a selection
-                                    is "Select <thing>" (the library's own bulk
-                                    checkbox says "Select <title>"), and here the
-                                    selection is for an install, so it says that.
-                                --}}
-                                <flux:checkbox
-                                    wire:model="selected"
-                                    :value="$extension['pkgName']"
-                                    class="shrink-0"
-                                    aria-label="{{ __('Select :name to install', ['name' => $extension['name']]) }}"
-                                />
+                                @can('manage-install')
+                                    {{--
+                                        The tick that selects an extension for a bulk
+                                        install, named so a screen reader says what
+                                        it is for. The house's shape for a selection
+                                        is "Select <thing>" (the library's own bulk
+                                        checkbox says "Select <title>"), and here the
+                                        selection is for an install, so it says that.
+                                    --}}
+                                    <flux:checkbox
+                                        wire:model="selected"
+                                        :value="$extension['pkgName']"
+                                        class="shrink-0"
+                                        aria-label="{{ __('Select :name to install', ['name' => $extension['name']]) }}"
+                                    />
+                                @endcan
                             @endunless
                         </div>
 
@@ -2754,33 +2815,39 @@ new #[Title('Sources')] class extends AdultContentPage
                                     </flux:tooltip>
                                 @endif
 
-                                @php($uninstallAction = 'uninstall('.Illuminate\Support\Js::from($extension['pkgName'])->toHtml().')')
+                                @can('manage-install')
+                                    @php($uninstallAction = 'uninstall('.Illuminate\Support\Js::from($extension['pkgName'])->toHtml().')')
 
-                                <x-confirm
-                                    :action="$uninstallAction"
-                                    :title="__('Uninstall this extension?')"
-                                    :body="__('Its source stops being searchable.')"
-                                    :confirm="__('Uninstall')"
-                                >
-                                    <flux:button size="sm">
-                                        {{ __('Uninstall') }}
-                                    </flux:button>
-                                </x-confirm>
-                            @elseif ($this->isTrusted($extension))
-                                <flux:button
-                                    size="sm"
-                                    variant="primary"
-                                    wire:click="install({{ Illuminate\Support\Js::from($extension['pkgName']) }})"
-                                    wire:loading.attr="disabled"
-                                    icon="arrow-down-tray"
-                                >
-                                    {{ __('Install') }}
-                                </flux:button>
+                                    <x-confirm
+                                        :action="$uninstallAction"
+                                        :title="__('Uninstall this extension?')"
+                                        :body="__('Its source stops being searchable.')"
+                                        :confirm="__('Uninstall')"
+                                    >
+                                        <flux:button size="sm">
+                                            {{ __('Uninstall') }}
+                                        </flux:button>
+                                    </x-confirm>
+                                @endcan
                             @else
-                                {{-- Say why rather than showing a control that cannot work. --}}
-                                <flux:tooltip :content="__('Trust this extension’s store before installing it.')">
-                                    <flux:icon name="lock-closed" class="text-zinc-400" />
-                                </flux:tooltip>
+                                @can('manage-install')
+                                    @if ($this->isTrusted($extension))
+                                        <flux:button
+                                            size="sm"
+                                            variant="primary"
+                                            wire:click="install({{ Illuminate\Support\Js::from($extension['pkgName']) }})"
+                                            wire:loading.attr="disabled"
+                                            icon="arrow-down-tray"
+                                        >
+                                            {{ __('Install') }}
+                                        </flux:button>
+                                    @else
+                                        {{-- Say why rather than showing a control that cannot work. --}}
+                                        <flux:tooltip :content="__('Trust this extension’s store before installing it.')">
+                                            <flux:icon name="lock-closed" class="text-zinc-400" />
+                                        </flux:tooltip>
+                                    @endif
+                                @endcan
                             @endif
                         </div>
                     </li>

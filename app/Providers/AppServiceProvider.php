@@ -12,6 +12,7 @@ use App\Search\TitleNormalizer;
 use App\Support\Deployment;
 use App\Support\Library;
 use App\Support\LocalReaderAccount;
+use App\Support\Registration;
 use App\Support\Suwayomi\Timestamps;
 use App\Support\UploadLimit;
 use App\Suwayomi\AuthManager;
@@ -68,6 +69,18 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(StoreHostResolver::class, SystemStoreHostResolver::class);
         $this->app->singleton(Deployment::class);
         $this->app->singleton(TitleNormalizer::class);
+
+        /*
+         * The first-account claim, shared within one request.
+         *
+         * `Registration` now carries request state: the claim lock taken by the registration
+         * middleware and released after the account is written. The middleware and Fortify's
+         * sign-up action reach it through two different `app()` calls in the same request, so a
+         * fresh instance per call would release nothing and hold the claim nowhere. Scoped is the
+         * same shape `Library` uses above for the same reason, and it is fresh for the next
+         * request rather than leaked across them.
+         */
+        $this->app->scoped(Registration::class);
 
         /*
          * The cache lock provider, bound to the resolved store.

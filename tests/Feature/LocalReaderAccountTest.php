@@ -7,6 +7,7 @@ use App\Support\Deployment;
 use App\Support\EnvironmentFile;
 use App\Support\LocalReaderAccount;
 use App\Support\Registration;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -349,6 +350,61 @@ class LocalReaderAccountTest extends TestCase
 
         $this->assertTrue($held, 'the test did not get the lock, so it would prove nothing');
         $this->assertFalse(app(Registration::class)->claim());
+    }
+
+    public function test_a_second_claim_cannot_win_while_the_first_request_holds_it(): void
+    {
+        /*
+         * The other half of the race above. `claim()` used to release the lock as soon as it saw zero
+         * users, so a second request could take the same claim before the first had written its
+         * account, and both would create one. The claim now stays held until the request that took it
+         * releases it after the account exists.
+         *
+         * A second request is modelled with a second instance, because `Registration` is scoped and
+         * `app()` hands the same instance back inside one request.
+         */
+        $first = app(Registration::class);
+
+        $this->assertTrue($first->claim(), 'the first request wins the claim');
+
+        $second = new Registration(app(Deployment::class), app(LockProvider::class));
+
+        $this->assertFalse(
+            $second->claim(),
+            'a second request must not win a claim the first is still holding',
+        );
+
+        $first->releaseClaim();
+
+        $this->assertTrue(
+            $second->claim(),
+            'a claim released without an account leaves the install claimable',
+        );
+
+        $second->releaseClaim();
+    }
+
+    public function test_the_claim_is_released_when_the_registration_request_finishes_without_an_account(): void
+    {
+        /*
+         * The lock is held across the whole POST, so a refused sign-up has to give it back. Without
+         * the release, one mistyped password would leave the install unable to register until the
+         * fifteen second lock expired, and a crash would look like an install nobody can claim.
+         */
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'not-an-email',
+            'password' => 'short',
+            'password_confirmation' => 'short',
+        ])->assertSessionHasErrors();
+
+        $this->assertSame(0, User::query()->count());
+
+        $claim = new Registration(app(Deployment::class), app(LockProvider::class));
+
+        $this->assertTrue($claim->claim(), 'a refused sign-up must not leave the install unclaimable');
+
+        $claim->releaseClaim();
     }
 
     public function test_the_claim_always_succeeds_in_a_mode_that_allows_registration(): void

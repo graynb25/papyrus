@@ -2,6 +2,7 @@
 
 use App\Concerns\PasswordValidationRules;
 use App\Livewire\Actions\Logout;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
@@ -12,12 +13,28 @@ new class extends Component {
 
     /**
      * Delete the currently authenticated user.
+     *
+     * The last account is kept rather than deleted. Deleting it leaves zero users, and
+     * `Registration::isOpen()` treats zero users on a single-reader install as an unclaimed
+     * install, so the sign-up form would silently reopen. On every install it would also
+     * leave nobody holding the owner role. Refusing here is the rule that needs no second
+     * warning screen and no way to close registration again afterwards.
      */
     public function deleteUser(Logout $logout): void
     {
         $this->validate([
             'password' => $this->currentPasswordRules(),
         ]);
+
+        if (User::query()->count() === 1) {
+            $this->addError('password', __(
+                'This is the only account. Deleting it would leave this install with no owner '
+                .'and let the sign-up form claim it again. Create another account first if you '
+                .'really want to remove this one.'
+            ));
+
+            return;
+        }
 
         tap(Auth::user(), $logout(...))->delete();
 

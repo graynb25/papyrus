@@ -43,7 +43,9 @@ use Symfony\Component\HttpFoundation\Response;
  * single-reader install ends up with two readers, which breaks the invariant the mode is named for.
  *
  * So the form checks whether registration is open, and the submission tries to claim the install. A
- * check followed by a use is not atomic, and the claim is what closes that gap.
+ * check followed by a use is not atomic, and the claim is what closes that gap. The claim is held
+ * until this middleware returns, which is after Fortify has written the account, so the critical
+ * section covers the count and the insert rather than ending at the check.
  *
  * ## Why it consults `Registration` and not `Deployment` again
  *
@@ -70,12 +72,25 @@ class RegistrationMustBeAllowed
 
         $registration = app(Registration::class);
 
-        // The submission has to win the install, not merely observe that it is unclaimed.
-        $allowed = $request->routeIs('register.store')
-            ? $registration->claim()
-            : $registration->isOpen();
+        /*
+         * The submission has to win the install, not merely observe that it is unclaimed,
+         * and it has to keep winning until the account is written. The claim is held across
+         * the rest of this request and released in `finally`, so a second POST cannot read
+         * the same zero users while this one is still between its check and its insert.
+         */
+        if ($request->routeIs('register.store')) {
+            if (! $registration->claim()) {
+                abort(404);
+            }
 
-        if ($allowed) {
+            try {
+                return $next($request);
+            } finally {
+                $registration->releaseClaim();
+            }
+        }
+
+        if ($registration->isOpen()) {
             return $next($request);
         }
 

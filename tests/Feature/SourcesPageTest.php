@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Http;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\FakeStoreHostResolver;
@@ -1006,6 +1007,163 @@ class SourcesPageTest extends TestCase
             ->assertForbidden();
 
         $this->assertDatabaseHas('extension_stores', ['id' => $store->id]);
+    }
+
+    /*
+     * Installing and uninstalling change the shared Suwayomi process, so both belong to the
+     * install owner whichever way the press reaches the page. A second account that trusts
+     * a store still must not add to or remove from what every reader shares.
+     */
+
+    public function test_a_reader_cannot_uninstall_an_extension_even_if_they_call_the_action(): void
+    {
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.leaving';
+
+        Source::query()->create([
+            'suwayomi_source_id' => 2,
+            'name' => 'Leaving',
+            'display_name' => 'Leaving (EN)',
+            'extension_pkg_name' => $pkg,
+            'lang' => 'en',
+            'is_installed' => true,
+        ]);
+
+        $this->serveExtensions([$this->extension($pkg, 'Leaving', true, true)]);
+
+        $reader = User::factory()->create();
+
+        $this->actingAs($reader);
+
+        // The reader trusts the store too. Trust is per reader and is not the rule this
+        // action is about, so the refusal below cannot be explained by an untrusted store.
+        $this->page()->call('trust', $store->id);
+
+        $this->page()
+            ->call('uninstall', $pkg)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('sources', [
+            'extension_pkg_name' => $pkg,
+            'is_installed' => true,
+        ]);
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+    }
+
+    public function test_a_forged_pending_install_cannot_install_anything(): void
+    {
+        $store = $this->store();
+        $pkg = 'eu.kanade.tachiyomi.extension.en.fresh';
+
+        $this->serveExtensions([$this->extension($pkg, 'Fresh Scan', false, true)]);
+
+        $this->page()->call('trust', $store->id);
+
+        $component = $this->page()->set('view', 'available');
+
+        $refused = false;
+
+        try {
+            $component->set('pendingInstall', [$pkg]);
+        } catch (CannotUpdateLockedPropertyException) {
+            $refused = true;
+        }
+
+        $this->assertTrue($refused, 'Livewire refuses a pending install the page did not arm.');
+
+        $component->call('installConfirmed');
+
+        Http::assertNotSent(
+            fn (Request $request): bool => str_contains($request->data()['query'] ?? '', 'updateExtension'),
+        );
+
+        $this->assertDatabaseCount('sources', 0);
+    }
+
+    public function test_the_owner_can_still_install_and_uninstall(): void
+    {
+        $store = $this->store();
+
+        $installed = 'eu.kanade.tachiyomi.extension.en.fresh';
+        $staying = 'eu.kanade.tachiyomi.extension.en.staying';
+
+        $this->serveExtensions([$this->extension($installed, 'Fresh Scan', false, true)]);
+        $this->serveSources([$this->source(4242, $installed, 'Fresh Scan (EN)')]);
+
+        $this->page()->call('trust', $store->id);
+
+        $this->page()
+            ->set('view', 'available')
+            ->call('install', $installed)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4242,
+            'extension_pkg_name' => $installed,
+            'is_installed' => true,
+        ]);
+
+        /*
+         * The server now reports the extension as installed and lists one other source,
+         * so the mirror read after the uninstall is complete. An empty catalogue would
+         * take the incomplete branch and leave the leaving source marked installed.
+         */
+        $this->serveExtensions([$this->extension($installed, 'Fresh Scan', true, true)]);
+        $this->serveSources([$this->source(4243, $staying, 'Staying (EN)')]);
+
+        $this->page()
+            ->call('uninstall', $installed)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('sources', [
+            'suwayomi_source_id' => 4242,
+            'is_installed' => false,
+        ]);
+    }
+
+    public function test_a_reader_is_not_offered_the_install_or_uninstall_controls(): void
+    {
+        $store = $this->store();
+
+        $installed = 'eu.kanade.tachiyomi.extension.en.installed';
+        $available = 'eu.kanade.tachiyomi.extension.en.available';
+
+        $this->serveExtensions([
+            $this->extension($installed, 'Installed', true, true),
+            $this->extension($available, 'Available', false, true),
+        ]);
+
+        $reader = User::factory()->create();
+
+        $this->actingAs($reader);
+
+        $this->page()->call('trust', $store->id);
+
+        $availableHtml = $this->page()->set('view', 'available')->html();
+
+        $this->assertStringNotContainsString('wire:click="install(', $availableHtml);
+        $this->assertStringNotContainsString('wire:model="selected"', $availableHtml);
+
+        $installedHtml = $this->page()->set('view', 'installed')->html();
+
+        $this->assertStringNotContainsString('uninstall(', $installedHtml);
+
+        // The owner still gets both, so the controls were hidden rather than broken.
+        $this->actingAs($this->user);
+
+        $this->page()->call('trust', $store->id);
+
+        $this->assertStringContainsString(
+            'wire:click="install(',
+            $this->page()->set('view', 'available')->html(),
+        );
+        $this->assertStringContainsString(
+            'uninstall(',
+            $this->page()->set('view', 'installed')->html(),
+        );
     }
 
     /**

@@ -4,7 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Support\Deployment;
+use App\Support\Registration;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
 
@@ -132,6 +136,46 @@ class RegistrationGateTest extends TestCase
         ])->assertNotFound();
 
         $this->assertDatabaseMissing('users', ['email' => 'second@example.test']);
+    }
+
+    public function test_the_claim_is_still_held_when_the_first_account_is_written(): void
+    {
+        /*
+         * This is the gap SEC-06 named. `claim()` used to release the lock as soon as it read
+         * a count of zero, and the account was written afterwards. Reading a count and
+         * inserting a row have to be one critical section, so the lock has to still be held
+         * when the row lands.
+         *
+         * Fortify dispatches `Registered` after `CreateNewUser::create()` returns, which is
+         * after the insert has committed and while the middleware still holds the claim. A
+         * competing request asking for the same lock at that moment must be refused.
+         */
+        $this->inMode(Deployment::SINGLE);
+
+        $heldDuringRegistration = null;
+
+        Event::listen(Registered::class, function () use (&$heldDuringRegistration): void {
+            $lock = Cache::lock(Registration::LOCK, 1);
+            $heldDuringRegistration = ! $lock->get();
+
+            if (! $heldDuringRegistration) {
+                $lock->release();
+            }
+        });
+
+        $this->post(route('register.store'), [
+            'name' => 'First Reader',
+            'email' => 'first@example.test',
+            'password' => 'Correct-Horse-Battery-42',
+            'password_confirmation' => 'Correct-Horse-Battery-42',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertTrue(
+            $heldDuringRegistration,
+            'the claim must cover the count and the insert, not end at the check',
+        );
+
+        $this->assertSame(1, User::query()->count());
     }
 
     public function test_shared_and_public_modes_leave_registration_open(): void
