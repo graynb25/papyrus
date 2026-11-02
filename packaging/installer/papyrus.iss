@@ -65,6 +65,11 @@
 #define MyAppPublisher "Papyrus"
 #define MyAppExeName "Papyrus"
 
+; The first release whose launcher exits non-zero when a process survives. An older install's
+; stop returns zero even after it prints "did not stop", so the installer checks the output as
+; well as the exit code for those versions.
+#define StopFixVersion "1.5.3"
+
 [Setup]
 AppId={{4F2A9C31-6B8E-4D57-9A1E-3C7B0D5E8F42}
 AppName={#MyAppName}
@@ -235,10 +240,33 @@ begin
   Result := Pos('/FORCEDOWNGRADE', Uppercase(GetCmdTail)) > 0;
 end;
 
+// Whether the stop output says a process survived. The launcher before {#StopFixVersion} printed
+// this line but still exited zero, so the exit code alone cannot answer the question there.
+function StopLogSaysRunning(const Path: String): Boolean;
+var
+  Lines: TArrayOfString;
+  I: Integer;
+begin
+  Result := False;
+
+  if not LoadStringsFromFile(Path, Lines) then
+    Exit;
+
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos('did not stop', Lines[I]) > 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
   Installed: String;
+  StopLog: String;
+  StopCommand: String;
+  Older: String;
 begin
   Result := '';
 
@@ -282,30 +310,74 @@ begin
     Exit;
   end;
 
-  // The launcher's stop exits non-zero when any process survives. A zero here used to mean only
-  // that the launcher ran, which is not the fact this installer needs before it replaces binaries.
-  if not Exec(
-    ExpandConstant('{app}\runtime\bin\php.exe'),
-    '"' + ExpandConstant('{app}\packaging\launcher\papyrus.php') + '" stop',
-    ExpandConstant('{app}'),
-    SW_HIDE,
-    ewWaitUntilTerminated,
-    ResultCode
-  ) then
-  begin
-    Result := 'Papyrus could not be stopped because its launcher did not run.' + #13#10 +
-              'Nothing was changed. Close Papyrus and try again.';
+  // Stop, read what the launcher printed, and let the reader retry after closing Papyrus.
+  //
+  // The launcher before {#StopFixVersion} printed "did not stop" for a surviving process but
+  // exited zero, so the exit code is not enough for a reader upgrading from 1.5.2. Redirecting
+  // the output catches that line on both the old and new launchers. A retry is the useful
+  // action: the reader closes the window and the next stop succeeds.
+  StopLog := ExpandConstant('{tmp}\papyrus-stop.txt');
+  Older := '';
 
-    Exit;
+  if (Installed <> '') and (CompareVersions(Installed, '{#StopFixVersion}') < 0) then
+    Older := 'This older Papyrus cannot confirm that every process closed.' + #13#10 + #13#10;
+
+  while True do
+  begin
+    if FileExists(StopLog) then
+      DeleteFile(StopLog);
+
+    StopCommand := '/C ""' + ExpandConstant('{app}\runtime\bin\php.exe') + '" "' +
+      ExpandConstant('{app}\packaging\launcher\papyrus.php') + '" stop > "' + StopLog + '" 2>&1"';
+
+    if not Exec(
+      ExpandConstant('{cmd}'),
+      StopCommand,
+      ExpandConstant('{app}'),
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    ) then
+    begin
+      Result := 'Papyrus could not be stopped because its launcher did not run.' + #13#10 +
+                'Nothing was changed. Close Papyrus and try again.';
+
+      Exit;
+    end;
+
+    if (ResultCode = 0) and (not StopLogSaysRunning(StopLog)) then
+      Break;
+
+    if not StopLogSaysRunning(StopLog) then
+    begin
+      Result := 'Papyrus could not be stopped because its launcher failed.' + #13#10 +
+                'Nothing was changed. Close Papyrus and try again.';
+
+      Exit;
+    end;
+
+    if WizardSilent then
+    begin
+      Result := 'Papyrus is still running, so the installer stopped before changing anything.' + #13#10 +
+                'Close Papyrus and run setup again.';
+
+      Exit;
+    end;
+
+    if MsgBox(
+      Older + 'Papyrus is still running. Close it from its window, then click Retry.',
+      mbConfirmation, MB_RETRYCANCEL
+    ) = IDCANCEL then
+    begin
+      Result := 'Papyrus is still running.' + #13#10 +
+                'Nothing was changed.';
+
+      Exit;
+    end;
   end;
 
-  if ResultCode <> 0 then
-  begin
-    Result := 'Papyrus is still running, so the installer stopped before changing anything.' + #13#10 +
-              'Close Papyrus and try again.';
-
-    Exit;
-  end;
+  if FileExists(StopLog) then
+    DeleteFile(StopLog);
 end;
 
 //
