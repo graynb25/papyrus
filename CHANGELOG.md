@@ -63,6 +63,37 @@ six a minute per reader; a cover id outside the cached wall gets the same 404 as
 deleted.** A second sign-up cannot claim an install between the count and the insert, and deleting
 the only account no longer reopens first-run registration. `008ff7b`
 
+### Hardened
+
+**The launcher refuses to adopt a listener it cannot name.** Anything already on the Suwayomi
+port is checked for this install's Java runtime, jar and data directory. An unexpected listener
+is refused rather than handed the credentials to answer library, search and cover requests with.
+`f00d20a`
+
+**Process matching by substring is gone.** Every stop lookup anchors on the image name and exact
+executable path, with command line tokens for the install. A text editor that happens to name the
+Caddyfile is no longer a stop target. `f00d20a`
+
+**The instance lock is exclusive creation.** Two launchers can no longer both win the check-then-
+rename race into the same install, and a stale lock is reclaimed safely. `f00d20a`
+
+**The certificate password is off the command line.** `--password=` is refused and
+`PAPYRUS_CERT_PASSWORD` flows to openssl through a private file that is deleted afterwards, so it
+no longer shows in the process list or shell history. `f00d20a`
+
+**The launcher calls absolute tool paths.** `powershell`, `taskkill`, `tasklist` and `tar` are
+resolved from System32 rather than from `PATH`, so a renamed binary on the search path cannot
+become the tool Papyrus runs. `f00d20a`
+
+**A tar fallback checks for traversal.** Tar entries carrying `..`, an absolute path or a
+drive-qualified name are refused before extraction. `f00d20a`
+
+**The shipped ini turns off `allow_url_fopen` and `allow_url_include`.** PHP's defaults allow a
+file read or include defect to fire at a remote address. `open_basedir` was tried and reverted:
+`file_exists` on a path inside an allowed root still warns when the filename carries a `?`, the
+translator builds exactly such a lookup, and the warning becomes a `ViewException` that 500s the
+page. The lookup fix is a 1.5.4 item; the settings that do survive are Off. `0cb8d75`
+
 ### Changed
 
 **The About page says updates are manual and links the release feed.** It states that the install
