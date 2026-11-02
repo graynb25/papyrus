@@ -14,6 +14,7 @@ use App\Support\Library;
 use App\Support\LocalReaderAccount;
 use App\Support\Registration;
 use App\Support\Suwayomi\Timestamps;
+use App\Support\Translation\GuardedTranslationLoader;
 use App\Support\UploadLimit;
 use App\Suwayomi\AuthManager;
 use App\Suwayomi\Gateway;
@@ -23,6 +24,7 @@ use App\Suwayomi\Transport;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Contracts\Cache\LockProvider;
+use Illuminate\Contracts\Translation\Loader;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -39,6 +41,25 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        /*
+         * Translation keys are copy, not file paths.
+         *
+         * The framework reads a key that is not in a JSON file as a group name, so an English
+         * sentence became `lang/en/Forgot your password?.php`. The packaged ini's open_basedir
+         * made that lookup warn, Laravel made the warning a ViewException, and the login page
+         * answered 500. The guard refuses a locale, group or namespace that is not a path-safe
+         * translation segment before the loader asks the filesystem.
+         *
+         * Extending rather than rebinding keeps the framework's FileLoader, its vendor language
+         * path and its namespace hints. The translator is resolved lazily, so this extender is in
+         * place before the first translation reaches the loader; a test asks the resolved
+         * translator for its loader so a provider ordering change cannot silently skip it.
+         */
+        $this->app->extend(
+            'translation.loader',
+            static fn (Loader $loader): GuardedTranslationLoader => new GuardedTranslationLoader($loader),
+        );
+
         /*
          * Scoped, not singleton, so it is shared within one request and fresh for the next,
          * which is what a class carrying request state wants.
