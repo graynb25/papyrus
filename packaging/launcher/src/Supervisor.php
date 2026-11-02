@@ -626,41 +626,54 @@ final class Supervisor
 
     private function migrate(callable $say): void
     {
-        $say('taking a snapshot before migrating');
-
-        $snapshot = $this->runArtisan(['papyrus:snapshot', '--keep=14'], [], 'snapshot.log');
-
-        if ($snapshot !== 0) {
-            throw new RuntimeException(sprintf(
-                'Papyrus could not snapshot the database before migrating, so it will not migrate. '
-                .'The output is in %s.',
-                $this->logDirectory.DIRECTORY_SEPARATOR.'snapshot.log',
-            ));
-        }
-
-        /*
-         * Name the snapshot before the migration can fail.
-         *
-         * The snapshot command writes a timestamped file, and the log that names it is not a place a
-         * reader can be asked to look. `MigrationRecord` writes the path, digest, version and commit
-         * where `papyrus rollback` reads it. If that record cannot be written, the migration does not
-         * run: a snapshot nobody can name is not a rollback path.
-         */
-        $snapshotPath = $this->newestSnapshot(dirname($this->databaseFile()).DIRECTORY_SEPARATOR.'reader-snapshots');
-
-        if ($snapshotPath === null) {
-            throw new RuntimeException(
-                'The snapshot command reported success but wrote no reader-half file, so Papyrus '
-                .'will not migrate without a snapshot it can name.'
-            );
-        }
-
         $record = new MigrationRecord($this->dataDirectory, $this->root);
         $previousRecord = is_file($record->path()) ? (string) @file_get_contents($record->path()) : null;
 
-        $record->write($snapshotPath);
+        /*
+         * A fresh install has no database file yet.
+         *
+         * The pre-migration snapshot was added to protect an existing library. On a fresh
+         * install there is nothing to copy, and `VACUUM INTO` fails with "Database file does
+         * not exist", which made the launcher refuse the first migration and never start.
+         * Skip the snapshot only when there is no database; an existing empty file is also
+         * skipped, because the first migration is about to create its tables.
+         */
+        if ($this->hasDatabase()) {
+            $say('taking a snapshot before migrating');
 
-        $say('recorded the pre-migration snapshot at '.$snapshotPath);
+            $snapshot = $this->runArtisan(['papyrus:snapshot', '--keep=14'], [], 'snapshot.log');
+
+            if ($snapshot !== 0) {
+                throw new RuntimeException(sprintf(
+                    'Papyrus could not snapshot the database before migrating, so it will not migrate. '
+                    .'The output is in %s.',
+                    $this->logDirectory.DIRECTORY_SEPARATOR.'snapshot.log',
+                ));
+            }
+
+            /*
+             * Name the snapshot before the migration can fail.
+             *
+             * The snapshot command writes a timestamped file, and the log that names it is not a place a
+             * reader can be asked to look. `MigrationRecord` writes the path, digest, version and commit
+             * where `papyrus rollback` reads it. If that record cannot be written, the migration does not
+             * run: a snapshot nobody can name is not a rollback path.
+             */
+            $snapshotPath = $this->newestSnapshot(dirname($this->databaseFile()).DIRECTORY_SEPARATOR.'reader-snapshots');
+
+            if ($snapshotPath === null) {
+                throw new RuntimeException(
+                    'The snapshot command reported success but wrote no reader-half file, so Papyrus '
+                    .'will not migrate without a snapshot it can name.'
+                );
+            }
+
+            $record->write($snapshotPath);
+
+            $say('recorded the pre-migration snapshot at '.$snapshotPath);
+        } else {
+            $say('no existing database, so the first migration has nothing to snapshot');
+        }
 
         $say('checking whether the database needs migrating');
 
@@ -1347,6 +1360,21 @@ final class Supervisor
         }
 
         return $this->dataDirectory.DIRECTORY_SEPARATOR.'database.sqlite';
+    }
+
+    /**
+     * Whether there is an existing database with bytes in it.
+     *
+     * A fresh install has no file, and the first migration creates it. The pre-migration
+     * snapshot must be skipped in that case: `VACUUM INTO` fails when the source file does not
+     * exist, and 1.5.2 refused the first migration for exactly that reason.
+     */
+    public function hasDatabase(): bool
+    {
+        $database = $this->databaseFile();
+        $size = @filesize($database);
+
+        return is_file($database) && is_int($size) && $size > 0;
     }
 
     /**
