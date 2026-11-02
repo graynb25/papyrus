@@ -152,8 +152,10 @@ Worth knowing before deciding what to add in front of it:
 - **Login is rate limited** to 5 attempts a minute per email and address, and every auth POST
   (login, registration, forgot-password, reset and password confirmation) shares a
   20-per-minute per-address ceiling. A reset request answers the same whether or not the
-  address exists, so the form cannot be used to enumerate accounts. There are separate
-  limiters for two-factor and passkey challenges.
+  address exists, so the form cannot be used to enumerate accounts. Password reset links are
+  built from `APP_URL`, not the request `Host` header, and a host that is neither the
+  configured host nor a loopback address is refused before the request is handled. There are
+  separate limiters for two-factor and passkey challenges.
 - **Two-factor authentication** is available per account, with password confirmation to
   enable or disable it.
 - **Passkeys** are available per account, and `.well-known/passkey-endpoints` is public by
@@ -189,8 +191,11 @@ written by nothing. Section 14 of the engineering notes has the detail.
 The public FAQ, privacy, terms and showcase JSON routes carry `throttle:120,1`, which is
 120 requests a minute for one client. The showcase cover route is deliberately not
 throttled: it serves public cache and its expensive step is a thumbnail on the
-loopback-bound server. The Fortify endpoints have their own login, two-factor and passkey
-limiters.
+loopback-bound server. It answers only the ids in the cached wall payload; any other id is
+the same 404 an unknown series receives, so the route cannot be walked to count the library.
+The CBZ export carries `throttle:6,1`, six exports a minute for one signed-in reader, because
+each export can pull up to 256 MB through Suwayomi before the response starts. The Fortify
+endpoints have their own login, two-factor and passkey limiters.
 
 ## The readiness endpoint and a same-host proxy
 

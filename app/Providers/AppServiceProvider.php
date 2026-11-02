@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use RuntimeException;
@@ -127,9 +128,44 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->forceConfiguredRootUrl();
         $this->allowTemporaryUploadsToTheServerCeiling();
         $this->rememberTheLocalReader();
         $this->defineInstallOwnerGate();
+    }
+
+    /**
+     * Build absolute URLs from the configured origin, never from the request.
+     *
+     * ## Why the request is the wrong source
+     *
+     * Laravel's URL generator takes its root from the incoming request, including the Host
+     * header. The password reset notification builds its link with `url(route(...))`, so a
+     * request carrying `Host: evil.example` produced a reset link pointing at that host. The
+     * token in the link is then handed to whoever controls it when the reader clicks.
+     *
+     * Forcing the root from `APP_URL` fixes every absolute URL at once, including the reset
+     * link and the cached showcase payload, rather than patching one notification. The scheme
+     * is forced only for an HTTPS origin, because forcing it unconditionally would send a
+     * plain development checkout to a scheme it does not serve.
+     *
+     * Guarded on a non-empty string rather than assumed: `APP_URL` is optional, and a caller
+     * who removed it should get the old request-derived root rather than a URL that starts
+     * with an empty string.
+     */
+    private function forceConfiguredRootUrl(): void
+    {
+        $url = config('app.url');
+
+        if (! is_string($url) || $url === '') {
+            return;
+        }
+
+        URL::forceRootUrl($url);
+
+        if (str_starts_with($url, 'https://')) {
+            URL::forceScheme('https');
+        }
     }
 
     /**

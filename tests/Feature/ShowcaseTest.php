@@ -259,6 +259,29 @@ class ShowcaseTest extends TestCase
         $this->get('/showcase/cover/99999')->assertNotFound();
     }
 
+    public function test_a_cover_outside_the_wall_is_refused_even_when_the_server_has_it(): void
+    {
+        /*
+         * The payload is the allow-list, so the cover route cannot be walked to
+         * count the library or fetch art for series the login screen never
+         * shows. Id 77 exists upstream and is deliberately not in the library;
+         * id 99999 exists nowhere. Both answers are the same 404, which is the
+         * point: the route reveals nothing about whether an id exists.
+         */
+        $this->fakeSuwayomi();
+        $this->addSeries(116);
+
+        SeriesState::factory()->for($this->user)->notInLibrary()->create(['suwayomi_manga_id' => 77]);
+        $this->serverRows[77] = 'Outside the wall';
+
+        $this->get('/showcase/cover/116')->assertOk();
+        $this->get('/showcase/cover/77')->assertNotFound();
+
+        Http::assertNotSent(function (Request $request): bool {
+            return str_contains($request->url(), '/manga/77/thumbnail');
+        });
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /**

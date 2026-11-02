@@ -74,6 +74,8 @@ class SecurityDocumentTest extends TestCase
         );
 
         $this->assertStringContainsString('showcase cover route is deliberately not throttled', $text);
+        $this->assertStringContainsString('answers only the ids in the cached wall payload', $text);
+        $this->assertStringContainsString('The CBZ export carries `throttle:6,1`', $text);
         $this->assertStringNotContainsString('No application route is rate limited', $text);
 
         foreach (['faq', 'privacy', 'terms', 'showcase.index'] as $name) {
@@ -96,6 +98,24 @@ class SecurityDocumentTest extends TestCase
             'Illuminate\Routing\Middleware\ThrottleRequests:120,1',
             $this->app->make('router')->gatherRouteMiddleware($cover),
             'the cover route is deliberately not throttled',
+        );
+
+        $export = Route::getRoutes()->getByName('downloads.cbz');
+
+        $this->assertNotNull($export, 'the CBZ export route exists');
+
+        $this->assertContains(
+            'Illuminate\Routing\Middleware\ThrottleRequests:6,1',
+            $this->app->make('router')->gatherRouteMiddleware($export),
+            'the CBZ export carries the documented six per minute limit',
+        );
+    }
+
+    public function test_the_reset_link_origin_is_stated(): void
+    {
+        $this->assertStringContainsString(
+            'Password reset links are built from `APP_URL`, not the request `Host` header',
+            $this->text(),
         );
     }
 

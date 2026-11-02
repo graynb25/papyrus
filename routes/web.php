@@ -144,8 +144,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
      * so the "guard" would have been a 403 on every export. The cap in
      * `papyrus.downloads.cbz_export_max_bytes` is the guard that exists and is enforced.
      * A deployment switch is a small addition whenever someone wants one.
+     *
+     * Throttled to six a minute per signed-in reader. Each export can pull up to 256 MB
+     * through Suwayomi and write it to the temp volume before the response starts, so a loop
+     * starves every other reader in `shared` mode. The key is the reader, not the address,
+     * because a household shares one address and six is already more than a bookmark bar
+     * needs. See `docs/SECURITY.md` for the stated limit.
      */
     Route::get('downloads/chapter/{chapter}/cbz', CbzExportController::class)
+        ->middleware('throttle:6,1')
         ->name('downloads.cbz');
 
     /*

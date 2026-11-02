@@ -65,13 +65,7 @@ class ShowcaseController extends Controller
     {
         $this->ensureVisible($deployment);
 
-        $payload = Cache::remember(
-            self::CACHE_KEY,
-            (int) config('papyrus.showcase.cache_seconds', 300),
-            fn (): array => $this->payload(),
-        );
-
-        return response()->json($payload);
+        return response()->json($this->wall());
     }
 
     /**
@@ -80,6 +74,12 @@ class ShowcaseController extends Controller
      * Streams rather than buffers, on the same grounds as the page proxy: this
      * is an image path and must never become a memory sink. An unresolvable
      * cover is a quiet 404, which the login wall answers by hiding the slot.
+     *
+     * An id outside the wall is refused before Suwayomi is asked anything, so
+     * the route cannot be walked to count the reader's library or fetch art for
+     * series the login screen never shows. The refusal is the same 404 an id the
+     * server does not know receives, which keeps the answer free of whether that
+     * id exists.
      */
     public function cover(Request $request, int $manga, Deployment $deployment, CoverStore $covers, AuthManager $auth): mixed
     {
@@ -88,6 +88,8 @@ class ShowcaseController extends Controller
         if ($manga <= 0) {
             abort(404);
         }
+
+        abort_unless(in_array($manga, $this->visibleIds(), true), 404);
 
         $userId = $this->primaryUserId();
 
@@ -106,6 +108,75 @@ class ShowcaseController extends Controller
         }
 
         return $this->streamThumbnail($manga, $auth);
+    }
+
+    /**
+     * The cached wall payload, the one source both endpoints read.
+     *
+     * The cover route reuses this rather than running its own query, so the ids
+     * it accepts cannot drift from the ids the payload advertises. A payload
+     * cached before a library change keeps both answers in step, which is the
+     * same ten-minute window the wall already had.
+     *
+     * @return array{covers: array<int, array{manga: int, url: string}>}
+     */
+    private function wall(): array
+    {
+        return $this->normaliseWall(Cache::remember(
+            self::CACHE_KEY,
+            (int) config('papyrus.showcase.cache_seconds', 300),
+            fn (): array => $this->payload(),
+        ));
+    }
+
+    /**
+     * The cached payload, with any older or malformed shape reduced to what the wall can show.
+     *
+     * The cache can hold an older payload shape after an upgrade. A cover without an integer
+     * manga id or a string URL is dropped, and a malformed payload becomes an empty wall instead
+     * of an error. The `mixed` parameter is deliberate: it keeps the checks meaningful instead of
+     * letting the callback's return type make them look redundant.
+     *
+     * @return array{covers: array<int, array{manga: int, url: string}>}
+     */
+    private function normaliseWall(mixed $cached): array
+    {
+        if (! is_array($cached) || ! is_array($cached['covers'] ?? null)) {
+            return ['covers' => []];
+        }
+
+        $covers = [];
+
+        foreach ($cached['covers'] as $cover) {
+            if (! is_array($cover)) {
+                continue;
+            }
+
+            $manga = $cover['manga'] ?? null;
+            $url = $cover['url'] ?? null;
+
+            if (is_int($manga) && is_string($url)) {
+                $covers[] = ['manga' => $manga, 'url' => $url];
+            }
+        }
+
+        return ['covers' => $covers];
+    }
+
+    /**
+     * The ids the wall advertises, and therefore the only ids a cover may name.
+     *
+     * An empty list is the fail-closed answer: no library means no cover, not a
+     * route that falls through and asks Suwayomi anyway.
+     *
+     * @return list<int>
+     */
+    private function visibleIds(): array
+    {
+        return array_values(array_map(
+            static fn (array $cover): int => (int) $cover['manga'],
+            $this->wall()['covers'],
+        ));
     }
 
     /**

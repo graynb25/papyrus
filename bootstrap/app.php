@@ -60,6 +60,39 @@ $app = Application::configure(basePath: dirname(__DIR__))
         ]);
 
         /*
+         * Only the configured host and loopback are trusted, and the list is a closure rather
+         * than an array because this file runs before the application exists: `config()` is
+         * not available yet, but a closure is only called from the middleware per request.
+         *
+         * Password reset links used to be built from whatever Host header arrived, so a forged
+         * one pointed the emailed token at an attacker. Absolute URLs are forced to `APP_URL`
+         * in AppServiceProvider, and this list stops an unlisted host from being accepted in
+         * the first place. The patterns are anchored because Symfony treats an unanchored
+         * entry as a regular expression, where `localhost` would also match
+         * `evil-localhost.example`.
+         *
+         * `subdomains: false` because the configured host is the install's own name, not a
+         * domain whose children all belong to it. The two loopback forms stay so a reader who
+         * opens the packaged install on `localhost` instead of `127.0.0.1` is not refused.
+         */
+        $middleware->trustHosts(
+            at: static function (): array {
+                $hosts = ['localhost', '127.0.0.1', '[::1]'];
+                $configured = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+                if (is_string($configured) && $configured !== '') {
+                    array_unshift($hosts, $configured);
+                }
+
+                return array_values(array_unique(array_map(
+                    static fn (string $host): string => '^'.preg_quote($host, '/').'$',
+                    $hosts,
+                )));
+            },
+            subdomains: false,
+        );
+
+        /*
          * Global rather than web-grouped, because the headers belong on the responses the web
          * group never sees: `/ready`, `/up`, downloads, covers and the Suwayomi proxy. The
          * middleware also has to run last, so a controller that sets one of the same headers

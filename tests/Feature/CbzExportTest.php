@@ -144,6 +144,23 @@ class CbzExportTest extends TestCase
         $response->assertHeader('Content-Type', 'application/vnd.comicbook+zip');
     }
 
+    public function test_the_seventh_export_in_a_minute_is_refused(): void
+    {
+        /*
+         * Six a minute is the documented ceiling. The limiter runs before the
+         * controller, so the seventh request is refused without building an
+         * archive or spending a Suwayomi page fetch.
+         */
+        for ($i = 1; $i <= 6; $i++) {
+            $this->get('/downloads/chapter/'.self::CHAPTER.'/cbz')->assertOk();
+        }
+
+        $limited = $this->get('/downloads/chapter/'.self::CHAPTER.'/cbz');
+
+        $limited->assertStatus(429);
+        $limited->assertHeader('Retry-After');
+    }
+
     public function test_the_archive_holds_one_entry_per_page(): void
     {
         /*
