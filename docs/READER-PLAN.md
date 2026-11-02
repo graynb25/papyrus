@@ -41,7 +41,7 @@ live in `docs/ENGINEERING-NOTES.md` section 3.
 
 | Component | State | Notes |
 |---|---|---|
-| PHP | 8.4.25 (Herd) | Meets `^8.3` |
+| PHP | 8.4.25 (Herd) | Meets `^8.4` |
 | Node / npm | 26.12.1 / 11.20.0 | |
 | JRE | **26.0.2** Oracle JDK | Exceeds Suwayomi's JRE 21+ requirement |
 | Virtualization | **On** (corrected 2026-10-26) | `HypervisorPresent: True`; WSL2 3.0.3.0 with kernel 6.18.54.1, Ubuntu 26.04.1 and Docker Desktop 4.96 are installed. The old `VirtualizationFirmwareEnabled: False` reading did not mean the hypervisor was off. **JAR remains the shipped deployment.** |

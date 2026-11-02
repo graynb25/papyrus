@@ -612,7 +612,7 @@ binary or three. It is resolved, in the app's favour, with evidence.
 | Check | Result |
 | --- | --- |
 | FrankenPHP Windows binary | 1.13.0, ships PHP **8.5.11** ZTS |
-| App requirement | `php ^8.3`, so 8.5.11 is in range |
+| App requirement | `php ^8.4`, so 8.5.11 is in range |
 | Full suite on 8.5.11 | **1,453 tests, 3,372 assertions, all passing** |
 | Extensions needed by the app | all 12 load, zero warnings |
 | App boots on the packaged ini | yes, `artisan about` reports PHP 8.5.11 |

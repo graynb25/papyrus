@@ -502,4 +502,130 @@ class LicencesTest extends TestCase
         $this->assertStringNotContainsString('Acknowledged', (string) $html, 'one reader mark is not readable by another');
         $this->assertStringNotContainsString('changed since', (string) $html, 'neither is a row that only reports its own staleness');
     }
+
+    // The composer side of the staged override and absence marker, mirroring the npm seam.
+
+    /**
+     * A composer package can carry a tracked text where the publisher shipped none, from the same
+     * `packaging/staged-licences/` tree the npm side already reads. Without this, the only place a
+     * composer text could come from was beside the vendor package, which is exactly the place the
+     * proprietary component does not have one.
+     */
+    public function test_a_composer_package_reads_a_staged_override_when_it_ships_no_text(): void
+    {
+        $root = $this->scratchPath('composer-override');
+        mkdir($root.'/vendor/composer', 0777, true);
+        mkdir($root.'/packaging/staged-licences/stub/closed', 0777, true);
+
+        file_put_contents($root.'/vendor/composer/installed.json', (string) json_encode([
+            'packages' => [
+                ['name' => 'stub/closed', 'version' => '1.0.0', 'license' => 'proprietary'],
+            ],
+        ]));
+
+        file_put_contents($root.'/packaging/staged-licences/stub/closed/LICENSE', "STAGED COMPOSER TEXT\n");
+
+        $licences = new Licences($root);
+        $row = $licences->composerPackages()[0];
+
+        $this->assertSame('composer:stub/closed', $row->textKey);
+        $this->assertSame("STAGED COMPOSER TEXT\n", $licences->textFor($row));
+        $this->assertTrue($licences->hasText($row));
+    }
+
+    /**
+     * And where no text exists anywhere, the row resolves the tracked marker, so the page can name
+     * the record rather than leaving a proprietary row silent about why nothing is behind it.
+     */
+    public function test_a_composer_package_names_the_absence_marker_it_carries(): void
+    {
+        $root = $this->scratchPath('composer-absence');
+        mkdir($root.'/vendor/composer', 0777, true);
+        mkdir($root.'/packaging/staged-licences/stub/closed', 0777, true);
+
+        file_put_contents($root.'/vendor/composer/installed.json', (string) json_encode([
+            'packages' => [
+                ['name' => 'stub/closed', 'version' => '1.0.0', 'license' => 'proprietary'],
+            ],
+        ]));
+
+        file_put_contents($root.'/packaging/staged-licences/stub/closed/NO-LICENCE-FILE-UPSTREAM.txt', "MEASURED ABSENCE\n");
+
+        $licences = new Licences($root);
+        $row = $licences->composerPackages()[0];
+
+        $this->assertNull($licences->textFor($row), 'a marker is not a licence text and is never read as one');
+        $this->assertSame(
+            $root.'/packaging/staged-licences/stub/closed/NO-LICENCE-FILE-UPSTREAM.txt',
+            $licences->absenceMarkerFor($row),
+        );
+    }
+
+    /**
+     * On an install `packaging/` does not travel, so the marker resolves from what the build staged
+     * into `licences/composer/`, and the manifest is the only record of it.
+     */
+    public function test_an_install_names_the_marker_the_build_staged(): void
+    {
+        $root = $this->scratchPath('composer-install-marker');
+        mkdir($root.'/vendor/composer', 0777, true);
+        mkdir($root.'/licences/composer/stub/closed', 0777, true);
+
+        file_put_contents($root.'/vendor/composer/installed.json', (string) json_encode([
+            'packages' => [
+                ['name' => 'stub/closed', 'version' => '1.0.0', 'license' => 'proprietary'],
+            ],
+        ]));
+
+        file_put_contents($root.'/licences/composer/manifest.json', (string) json_encode([
+            'packages' => [[
+                'name' => 'stub/closed',
+                'version' => '1.0.0',
+                'licence' => 'proprietary',
+                'file' => null,
+                'marker' => 'composer/stub/closed/NO-LICENCE-FILE-UPSTREAM.txt',
+            ]],
+        ]));
+
+        file_put_contents($root.'/licences/composer/stub/closed/NO-LICENCE-FILE-UPSTREAM.txt', "STAGED ABSENCE\n");
+
+        $licences = new Licences($root);
+        $row = $licences->composerPackages()[0];
+
+        $this->assertSame(
+            $root.'/licences/composer/stub/closed/NO-LICENCE-FILE-UPSTREAM.txt',
+            $licences->absenceMarkerFor($row),
+        );
+    }
+
+    /**
+     * The row this whole seam exists for. Flux is the one proprietary package and it ships no
+     * licence file, so before this the row said "not open source" and nothing else: a reader could
+     * not tell an unread declaration from an unmeasured gap.
+     */
+    public function test_the_flux_row_names_the_absence_marker_rather_than_staying_silent(): void
+    {
+        $row = array_values(array_filter(
+            $this->licences()->composerPackages(),
+            static fn (LicensedPackage $p): bool => $p->name === 'livewire/flux',
+        ))[0] ?? null;
+
+        $this->assertNotNull($row);
+        $this->assertSame(
+            'NO-LICENCE-FILE-UPSTREAM.txt',
+            basename((string) $this->licences()->absenceMarkerFor($row)),
+            'the tracked record of the measured absence is named for the one proprietary package',
+        );
+
+        $html = (string) $this->actingAs(User::factory()->create())
+            ->get(route('licences.edit'))
+            ->getContent();
+
+        $fluxAt = strpos($html, 'livewire/flux');
+        $rowEnd = $fluxAt === false ? false : strpos($html, '</li>', $fluxAt);
+        $fluxRow = $fluxAt !== false && $rowEnd !== false ? substr($html, $fluxAt, $rowEnd - $fluxAt) : '';
+
+        $this->assertNotSame('', $fluxRow, 'flux has a row on the page');
+        $this->assertStringContainsString('NO-LICENCE-FILE-UPSTREAM.txt', $fluxRow, 'the row names the marker instead of leaving the gap silent');
+    }
 }

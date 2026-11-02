@@ -203,13 +203,16 @@ const REQUIRED_AFTER_BUILD = [
     /*
      * What the licences page is fed, checked here where an omission is still a build fault.
      *
-     * The manifest carries the npm tree's own declarations, so npm rows exist in an install that
-     * no longer holds the lock files they were derived from. The packaged texts are this project's
+     * The manifests carry each tree's own declarations, so rows exist in an install that no longer
+     * holds the lock files they were derived from. The composer manifest is the record of the
+     * packages whose text or measured absence had to travel, which is how the one proprietary
+     * component's row can say where its missing text stands. The packaged texts are this project's
      * bundled licences at rest and LICENSE is the project's own text. Miss any of them and the page
      * ships a section that is simply absent, with nothing on the page saying why.
      */
     'LICENSE',
     'licences/node/manifest.json',
+    'licences/composer/manifest.json',
     'licences/suwayomi-server.txt',
     'licences/java-runtime.txt',
     'licences/heroicons.txt',
@@ -735,7 +738,7 @@ if ($absentOnceStaged !== []) {
     );
 }
 
-say('licences', $stagedLicenceTexts.' package texts staged, manifest at licences/node/manifest.json');
+say('licences', $stagedLicenceTexts.' package licence texts staged, manifests at licences/node and licences/composer');
 
 // --- strip what must not ship, and put the empty placeholders back --------------------
 

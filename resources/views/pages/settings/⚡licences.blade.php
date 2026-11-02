@@ -222,6 +222,23 @@ new #[Title('Licences')] class extends Component {
                                         {{ $package->source }}
                                     </p>
 
+                                    {{--
+                                        A proprietary package that publishes no licence text is a
+                                        statement the row has to make. Without this the only sign was
+                                        a missing reveal button, which is indistinguishable from a
+                                        text nobody staged, and the one non-open component in the
+                                        product was the one row that did not say why. The marker is
+                                        named rather than shown, because it is a record of an absence
+                                        and not a licence anyone could read.
+                                    --}}
+                                    @php($absentMarker = $this->licences()->absenceMarkerFor($package))
+
+                                    @if ($absentMarker !== null)
+                                        <p class="text-xs break-all text-zinc-500 dark:text-zinc-400">
+                                            {{ __('The publisher ships no licence text. That measured absence is recorded in :marker.', ['marker' => basename($absentMarker)]) }}
+                                        </p>
+                                    @endif
+
                                     <div class="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                                         @if ($this->licences()->hasText($package))
                                             <flux:button

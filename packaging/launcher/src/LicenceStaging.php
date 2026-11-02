@@ -62,18 +62,20 @@ final class LicenceStaging
     /**
      * Stage every licence text an install must carry to serve its licences page.
      *
-     * Three sources, one pass: the texts publishers ship beside their packages, the tracked
-     * overrides for declarations the ecosystem shipped without a file and the tracked absence
-     * markers for declarations no publisher ever published text for, and the project's own
-     * texts, the root LICENSE and the packaged ones, which travel with everything else. The
-     * manifest at `licences/node/manifest.json` is written last, so a manifest on disk is the
-     * signature of a pass that completed.
+     * Three sources, one pass, for two package managers: the texts publishers ship beside their
+     * packages, the tracked overrides for declarations the ecosystem shipped without a file and the
+     * tracked absence markers for declarations no publisher ever published text for, and the
+     * project's own texts, the root LICENSE and the packaged ones, which travel with everything
+     * else. The npm side walks the installed node_modules and writes `licences/node/manifest.json`;
+     * the composer side reads the lock the vendor tree was installed from and writes
+     * `licences/composer/manifest.json` for the rows that need a record of their own. Both manifests
+     * are written last, so a manifest on disk is the signature of a pass that completed.
      *
      * Validation completes before the first byte moves. A pass that wrote as it walked would stop
      * halfway to its own refusal and leave an install that is neither the old build nor the new,
      * which is worse than refusing.
      *
-     * @return int the number of package texts staged under licences/node
+     * @return int the number of package texts staged under licences/node and licences/composer
      */
     public static function stage(string $repo, string $into): int
     {
@@ -133,6 +135,13 @@ final class LicenceStaging
         usort($rows, static fn (array $a, array $b): int => strcmp((string) $a['path'], (string) $b['path']));
 
         /*
+         * The composer plan is validated here, before the first byte below moves, for the same
+         * reason the loop above refuses before writing: a build that stops halfway to its own
+         * refusal leaves an install that is neither the old build nor the new.
+         */
+        $composer = self::composerPlan($repo);
+
+        /*
          * Fresh rather than merged. A package that left the tree between builds would otherwise
          * leave its staged text behind with nothing in the manifest pointing at it, and dead text
          * in an artifact is the same lie as a licence the tree no longer carries.
@@ -169,6 +178,167 @@ final class LicenceStaging
             copy($text, $into.'/licences/'.basename($text));
         }
 
+        if ($composer === null) {
+            // No lock means no composer tree this pass can describe. The build's required files
+            // catch that loudly; leaving a stale manifest here would describe a tree that no
+            // longer exists.
+            self::removeDirectory($into.'/licences/composer');
+
+            return $count;
+        }
+
+        return $count + self::composerWrite($into, $composer);
+    }
+
+    /**
+     * What the composer side must stage, validated before anything is written.
+     *
+     * The npm pass walks the tree it installs; this one reads the lock the vendor tree was
+     * installed from, because a composer package's own directory travels with the install and only
+     * the two cases the ecosystem cannot serve need a record: a text staged by hand because the
+     * publisher shipped none, and a marker because no text exists anywhere to stage. A package
+     * whose licence file already ships beside it is not copied: a second copy would be a second
+     * answer to one question.
+     *
+     * A proprietary package with neither is the one state this side refuses, because it is the
+     * state the product cannot honestly redistribute: the terms are unknown, and nothing in the
+     * tree says that was measured rather than missed.
+     *
+     * A null plan is a repository with no composer.lock, so no composer tree this pass can describe.
+     *
+     * @return array{rows: list<array<string, mixed>>, copies: list<array{file: string, source: string}>}|null
+     */
+    private static function composerPlan(string $repo): ?array
+    {
+        $lockPath = $repo.'/composer.lock';
+
+        if (! is_file($lockPath)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($lockPath), true);
+
+        if (! is_array($decoded)) {
+            throw new RuntimeException('unreadable composer.lock at '.$lockPath.': the pass refuses to guess what the packages declare');
+        }
+
+        $plan = ['rows' => [], 'copies' => []];
+
+        foreach (['packages', 'packages-dev'] as $section) {
+            foreach (($decoded[$section] ?? []) as $package) {
+                if (! is_array($package) || ! is_string($package['name'] ?? null) || $package['name'] === '') {
+                    continue;
+                }
+
+                $name = $package['name'];
+                $licence = self::licenceDeclared($package['license'] ?? ($package['licence'] ?? null));
+
+                if (self::licenceFileIn($repo.'/vendor/'.$name) !== null) {
+                    continue;
+                }
+
+                $staged = $repo.'/packaging/staged-licences/'.$name;
+                $override = $staged.'/LICENSE';
+                $marker = $staged.'/'.self::ABSENCE_MARKER;
+
+                if (is_file($override)) {
+                    $file = 'composer/'.$name.'/'.basename($override);
+                    $plan['rows'][] = self::composerRow($package, $licence, $file, null);
+                    $plan['copies'][] = ['file' => $file, 'source' => $override];
+
+                    continue;
+                }
+
+                if (is_file($marker)) {
+                    $file = 'composer/'.$name.'/'.self::ABSENCE_MARKER;
+                    $plan['rows'][] = self::composerRow($package, $licence, null, $file);
+                    $plan['copies'][] = ['file' => $file, 'source' => $marker];
+
+                    continue;
+                }
+
+                if (! str_contains(strtolower($licence), 'proprietary')) {
+                    continue;
+                }
+
+                throw new RuntimeException(sprintf(
+                    'no licence text for %s: it declares %s but ships no file the pass reads, and nothing is'
+                    .' staged at packaging/staged-licences/%s/LICENSE. Stage the text there, or, if the'
+                    .' publisher ships no licence text anywhere, record the measured absence with %s beside'
+                    .' it, and rebuild.',
+                    $name,
+                    $licence,
+                    $name,
+                    self::ABSENCE_MARKER,
+                ));
+            }
+        }
+
+        usort($plan['rows'], static fn (array $a, array $b): int => strcmp((string) $a['name'], (string) $b['name']));
+
+        return $plan;
+    }
+
+    /**
+     * @param  array<string, mixed>  $package
+     * @return array<string, mixed>
+     */
+    private static function composerRow(array $package, string $licence, ?string $file, ?string $marker): array
+    {
+        $row = [
+            'name' => (string) $package['name'],
+            'version' => is_string($package['version'] ?? null) && trim($package['version']) !== ''
+                ? trim($package['version'])
+                : 'unknown',
+            'licence' => $licence,
+            'file' => $file,
+        ];
+
+        if ($marker !== null) {
+            $row['marker'] = $marker;
+        }
+
+        return $row;
+    }
+
+    /**
+     * Write the validated composer plan, starting fresh like the npm tree.
+     *
+     * @param  array{rows: list<array<string, mixed>>, copies: list<array{file: string, source: string}>}  $plan
+     * @return int the number of licence texts staged under licences/composer, which excludes the
+     *             absence markers: a marker records that no text exists and is never counted as one
+     */
+    private static function composerWrite(string $into, array $plan): int
+    {
+        $composerLicences = $into.'/licences/composer';
+        self::removeDirectory($composerLicences);
+
+        if (! mkdir($composerLicences, 0777, true) && ! is_dir($composerLicences)) {
+            throw new RuntimeException('could not create '.$composerLicences);
+        }
+
+        $count = 0;
+
+        foreach ($plan['copies'] as $copy) {
+            $target = $into.'/licences/'.$copy['file'];
+            $directory = dirname($target);
+
+            if (! is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+
+            copy($copy['source'], $target);
+
+            if (basename($copy['file']) !== self::ABSENCE_MARKER) {
+                $count++;
+            }
+        }
+
+        file_put_contents($into.'/licences/composer/manifest.json', (string) json_encode(
+            ['packages' => $plan['rows']],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+        ));
+
         return $count;
     }
 
@@ -203,6 +373,36 @@ final class LicenceStaging
 
             if (is_string($file) && $file !== '' && ! is_file($into.'/licences/'.$file)) {
                 $missing[] = $file;
+            }
+        }
+
+        /*
+         * The composer manifest is optional here rather than required, because a repository whose
+         * composer side staged nothing still writes one, while a tree that predates the composer
+         * pass does not. A manifest that is present is checked the same way as the npm one: its
+         * files and its absence markers are both promises the install must keep.
+         */
+        $composerManifest = $into.'/licences/composer/manifest.json';
+
+        if (is_file($composerManifest)) {
+            $composer = json_decode((string) file_get_contents($composerManifest), true);
+
+            if (! is_array($composer)) {
+                throw new RuntimeException('unreadable composer licence manifest at '.$composerManifest.': the guard refuses to guess what staging promised');
+            }
+
+            foreach (($composer['packages'] ?? []) as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+
+                foreach (['file', 'marker'] as $field) {
+                    $file = $row[$field] ?? null;
+
+                    if (is_string($file) && $file !== '' && ! is_file($into.'/licences/'.$file)) {
+                        $missing[] = $file;
+                    }
+                }
             }
         }
 

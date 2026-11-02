@@ -1,0 +1,18 @@
+livewire/flux v2.20.1 declares "proprietary" and ships no licence text anywhere this build could measure.
+
+What was measured, in the sitting of 2026-11-02:
+
+- the package at v2.20.1, commit ee9ad7f91087ea117a2c80993a14cb25bb902f70, carries composer.json,
+  README.md, src/, dist/ and stubs/ at its root and no licence file in any shape the staging pass
+  reads
+- its composer.json records "license": "proprietary" and nothing else about terms
+- the only licence files in the package are dist/flags/LICENSE, which is MIT and covers the
+  bundled flag artwork, and dist/flags/LICENSE-NOTO, which covers that artwork's font
+- the README names how to activate a Flux Pro licence key and does not restate the terms that
+  apply to redistributing the component library in a bundled application
+
+This file is the tracked record of that measured absence. The pass stages the package's
+declaration with no text behind it, which is the row the page already renders honestly. Nothing
+here invented a text. The component library is used on every page, so replacing it is a product
+change rather than a licence fix. If the publisher ever ships a text, put it at LICENSE beside this
+marker and delete the marker, and the next build carries the text.

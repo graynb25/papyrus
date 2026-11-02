@@ -60,6 +60,16 @@ final class Licences
         private readonly ?string $root = null,
     ) {}
 
+    /**
+     * The composer staging manifest, read once per instance, keyed by package name.
+     *
+     * Null means "not read yet" and an empty array means "read, and this tree carries none", which
+     * is the distinction a second read would otherwise have to make again.
+     *
+     * @var array<string, array<string, mixed>>|null
+     */
+    private ?array $composerStaged = null;
+
     private function root(): string
     {
         return $this->root ?? base_path();
@@ -568,6 +578,47 @@ final class Licences
     }
 
     /**
+     * The tracked record of a measured absence, for a row whose publisher ships no licence text.
+     *
+     * The npm side has carried this state since the staging pass was written: a package that names
+     * a licence and publishes no file for it gets a `NO-LICENCE-FILE-UPSTREAM.txt` beside the place
+     * its text would have been staged, and the row says there is no text rather than leaving a
+     * blank. The composer side had no equivalent, so the one proprietary package in the product was
+     * the one row where a reader could not tell an unread declaration from an unmeasured gap.
+     *
+     * The build stages the marker into `licences/composer/` for an install, because `packaging/`
+     * does not travel; on a checkout the tracked original is read where it sits. This returns the
+     * file so the page can name it, and is deliberately separate from {@see textFor()} because a
+     * marker is not a licence text and must never be revealed as one.
+     */
+    public function absenceMarkerFor(LicensedPackage $package): ?string
+    {
+        if ($package->kind !== 'composer') {
+            return null;
+        }
+
+        $name = (string) substr($package->textKey, strlen('composer:'));
+
+        if ($name === '' || str_contains($name, '..')) {
+            return null;
+        }
+
+        $marker = $this->composerStaged()[$name]['marker'] ?? null;
+
+        if (is_string($marker) && $marker !== '') {
+            $staged = $this->root().'/licences/'.$marker;
+
+            if (File::exists($staged)) {
+                return $staged;
+            }
+        }
+
+        $tracked = $this->root().'/packaging/staged-licences/'.$name.'/'.self::ABSENCE_MARKER;
+
+        return File::exists($tracked) ? $tracked : null;
+    }
+
+    /**
      * The file a row's text would be read from, indexed once so the button and the read agree.
      *
      * The button must not offer a text that would fail to open, and the open must not read a file
@@ -595,7 +646,77 @@ final class Licences
             return null;
         }
 
-        return $this->licenceFileIn($this->root().'/vendor/'.$name);
+        $beside = $this->licenceFileIn($this->root().'/vendor/'.$name);
+
+        if ($beside !== null) {
+            return $beside;
+        }
+
+        /*
+         * Then what the build staged, on the same preference order as npm: the package's own
+         * directory first, because a publisher's file is the text that ships with the code, and the
+         * staged override second. A row whose staged file is null is one the build recorded as an
+         * absence; it must answer null here rather than fall through to a text that is not there.
+         */
+        $row = $this->composerStaged()[$name] ?? null;
+
+        if ($row !== null) {
+            $file = is_string($row['file'] ?? null) && $row['file'] !== '' ? $row['file'] : null;
+
+            if ($file === null) {
+                return null;
+            }
+
+            $candidate = $this->root().'/licences/'.$file;
+
+            return File::exists($candidate) ? $candidate : null;
+        }
+
+        // A checkout has no staged manifest, so the tracked override is read where it sits.
+        $override = $this->root().'/packaging/staged-licences/'.$name.'/LICENSE';
+
+        return File::exists($override) ? $override : null;
+    }
+
+    /**
+     * The composer rows the build staged, keyed by package name.
+     *
+     * Only packages whose text or absence had to travel a different way appear here: a licence file
+     * beside the vendor package already ships with it and needs no record. An install carries no
+     * `packaging/`, so this manifest is how an override or an absence marker reaches it.
+     *
+     * Read once per instance, because every composer row asks during a render and decoding the same
+     * file several hundred times is work the page does not need. An empty array is a checked tree
+     * without a manifest, which is every checkout.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function composerStaged(): array
+    {
+        if ($this->composerStaged !== null) {
+            return $this->composerStaged;
+        }
+
+        $this->composerStaged = [];
+        $manifest = $this->root().'/licences/composer/manifest.json';
+
+        if (! File::exists($manifest)) {
+            return $this->composerStaged;
+        }
+
+        $decoded = json_decode((string) File::get($manifest), true);
+
+        if (! is_array($decoded)) {
+            return $this->composerStaged;
+        }
+
+        foreach (($decoded['packages'] ?? []) as $row) {
+            if (is_array($row) && is_string($row['name'] ?? null) && $row['name'] !== '') {
+                $this->composerStaged[$row['name']] = $row;
+            }
+        }
+
+        return $this->composerStaged;
     }
 
     /**
@@ -696,6 +817,15 @@ final class Licences
 
         return null;
     }
+
+    /**
+     * The tracked file that records a licence text no publisher ever published.
+     *
+     * The same name the packaging pass enforces, because the two ends describe one convention: the
+     * pass stages this file beside where a text would go, and this class reads it to say so on the
+     * row. Two spellings of one file name would be a page that names a record nobody wrote.
+     */
+    private const ABSENCE_MARKER = 'NO-LICENCE-FILE-UPSTREAM.txt';
 
     /**
      * The licence file names this tree was measured to actually carry, in resolver preference order.

@@ -284,4 +284,153 @@ class LicenceStagingTest extends TestCase
         $this->assertCount(1, $missing);
         $this->assertSame('node/node_modules/renamed-text/LICENSE', $missing[0], 'the path refused is the one the manifest records');
     }
+
+    /**
+     * The composer tree the staging reads: one package whose text ships beside it, and one
+     * proprietary package that ships no text, with either a tracked override text or the tracked
+     * absence marker beside where that text would go.
+     */
+    private function composerRepo(bool $withMarker = true, bool $withOverride = false): string
+    {
+        $repo = $this->scratchPath('composer-repo');
+
+        mkdir($repo.'/packaging/licences', 0777, true);
+        mkdir($repo.'/node_modules', 0777, true);
+        file_put_contents($repo.'/LICENSE', "MIT License\n");
+        file_put_contents($repo.'/packaging/licences/suwayomi-server.txt', "MPL 2.0 TEXT\n");
+
+        $mit = $repo.'/vendor/stub/mit';
+        mkdir($mit, 0777, true);
+        file_put_contents($mit.'/LICENSE', "VENDOR MIT TEXT\n");
+
+        $flux = $repo.'/vendor/livewire/flux';
+        mkdir($flux, 0777, true);
+        file_put_contents($flux.'/composer.json', (string) json_encode([
+            'name' => 'livewire/flux',
+            'version' => 'v2.20.1',
+            'license' => 'proprietary',
+        ]));
+
+        file_put_contents($repo.'/composer.lock', (string) json_encode([
+            'packages' => [
+                ['name' => 'livewire/flux', 'version' => 'v2.20.1', 'license' => 'proprietary'],
+                ['name' => 'stub/mit', 'version' => '1.0.0', 'license' => 'MIT'],
+            ],
+            'packages-dev' => [],
+        ]));
+
+        if ($withOverride) {
+            $staged = $repo.'/packaging/staged-licences/livewire/flux';
+            mkdir($staged, 0777, true);
+            file_put_contents($staged.'/LICENSE', "STAGED COMPOSER OVERRIDE\n");
+        }
+
+        if ($withMarker) {
+            $staged = $repo.'/packaging/staged-licences/livewire/flux';
+            mkdir($staged, 0777, true);
+            file_put_contents($staged.'/NO-LICENCE-FILE-UPSTREAM.txt', "MEASURED COMPOSER ABSENCE\n");
+        }
+
+        return $repo;
+    }
+
+    /**
+     * The composer side of the same rule the npm side already carries: a proprietary package with
+     * no text anywhere is recorded by a marker, and the manifest names the marker rather than
+     * leaving the row's gap unexplained.
+     */
+    public function test_a_composer_absence_marker_is_staged_and_named_in_the_composer_manifest(): void
+    {
+        $repo = $this->composerRepo();
+        $into = $this->scratchPath('composer-install');
+
+        $this->assertSame(0, LicenceStaging::stage($repo, $into), 'a marker stages no licence text');
+
+        $manifest = json_decode((string) file_get_contents($into.'/licences/composer/manifest.json'), true);
+        $this->assertIsArray($manifest);
+
+        $byName = array_column($manifest['packages'] ?? [], null, 'name');
+
+        $flux = $byName['livewire/flux'] ?? null;
+        $this->assertNotNull($flux, 'the proprietary package is a row like any other');
+        $this->assertSame('v2.20.1', $flux['version']);
+        $this->assertSame('proprietary', $flux['licence']);
+        $this->assertNull($flux['file'], 'no licence text was invented for it');
+        $this->assertSame(
+            'composer/livewire/flux/NO-LICENCE-FILE-UPSTREAM.txt',
+            $flux['marker'],
+            'the manifest names the tracked record of the measured absence',
+        );
+
+        $this->assertSame(
+            "MEASURED COMPOSER ABSENCE\n",
+            (string) file_get_contents($into.'/licences/'.$flux['marker']),
+            'the marker travels into the install, because packaging/ does not',
+        );
+
+        $this->assertArrayNotHasKey(
+            'stub/mit',
+            $byName,
+            'a text beside the vendor package already ships, so staging a copy would be a second answer',
+        );
+
+        unlink($into.'/licences/'.$flux['marker']);
+
+        $this->assertSame(
+            ['composer/livewire/flux/NO-LICENCE-FILE-UPSTREAM.txt'],
+            LicenceStaging::missingStaged($into),
+            'a marker the manifest promises and the install lost is a build fault, like any staged text',
+        );
+    }
+
+    /**
+     * The override is the other half of the same seam: a proprietary package whose publisher
+     * declares a licence and ships no file, where a text does exist and is tracked by hand.
+     */
+    public function test_a_composer_staged_override_carries_the_text(): void
+    {
+        $repo = $this->composerRepo(withMarker: false, withOverride: true);
+        $into = $this->scratchPath('composer-install');
+
+        $this->assertSame(1, LicenceStaging::stage($repo, $into), 'one composer text travels');
+
+        $manifest = json_decode((string) file_get_contents($into.'/licences/composer/manifest.json'), true);
+        $this->assertIsArray($manifest);
+
+        $flux = array_column($manifest['packages'] ?? [], null, 'name')['livewire/flux'] ?? null;
+
+        $this->assertNotNull($flux);
+        $this->assertSame('composer/livewire/flux/LICENSE', $flux['file']);
+        $this->assertArrayNotHasKey('marker', $flux, 'a staged text makes the absence marker moot');
+        $this->assertSame(
+            "STAGED COMPOSER OVERRIDE\n",
+            (string) file_get_contents($into.'/licences/'.$flux['file']),
+        );
+    }
+
+    /**
+     * And the narrow refusal: a proprietary composer package with neither a text nor a marker
+     * stops the build, naming the package and both remedies.
+     */
+    public function test_a_proprietary_composer_package_with_neither_text_nor_marker_refuses(): void
+    {
+        $repo = $this->composerRepo(withMarker: false);
+        $into = $this->scratchPath('composer-install');
+
+        $fired = false;
+
+        try {
+            LicenceStaging::stage($repo, $into);
+        } catch (RuntimeException $e) {
+            $fired = true;
+
+            $this->assertStringContainsString('livewire/flux', $e->getMessage(), 'the refused package is named');
+            $this->assertStringContainsString('proprietary', $e->getMessage(), 'the declaration that made it a refusal is named');
+            $this->assertStringContainsString('packaging/staged-licences', $e->getMessage(), 'the remedy an operator can perform is named');
+            $this->assertStringContainsString('NO-LICENCE-FILE-UPSTREAM.txt', $e->getMessage(), 'the absence record is named beside it');
+        }
+
+        $this->assertTrue($fired, 'a proprietary package with no text and no record of the absence stops the build');
+        $this->assertFileDoesNotExist($into.'/licences/composer/manifest.json', 'nothing was written before the pass that refused');
+    }
 }
