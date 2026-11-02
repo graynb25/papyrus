@@ -370,46 +370,27 @@ class LauncherPhpConfigTest extends TestCase
     }
 
     /**
-     * `open_basedir` names every root the application legitimately uses, and nothing wider.
+     * `open_basedir` is deliberately absent on the shipped ini for now.
      *
-     * The four are the app root, the runtime, the data directory and the temp directory the rest
-     * of the file already points at. Windows separates them with `;`. A path outside these roots is
-     * a widened blast radius, and a missing root is an install that boots and then fails on its
-     * first write, so both directions are asserted.
+     * The desirable setting, four roots covering the app, runtime, data and temp directories, was
+     * measured broken in 1.5.3 and reverted: `file_exists` on a path inside an allowed root still
+     * warns when the filename carries a character PHP treats as a path metacharacter, Laravel's
+     * translator builds such a path from a translation key carrying `?`, the warning is promoted
+     * to a `ViewException`, and every page using that key 500s. The url-fopen stays off above; it
+     * is the half of this hardening that does not collide with the interpreter's own lookup.
      */
-    public function test_open_basedir_lists_the_app_runtime_data_and_temp_roots(): void
+    public function test_open_basedir_is_absent_until_the_translator_lookup_fix(): void
     {
         $this->installShippedIni();
 
         $resolved = $this->resolveIni($this->supervisor());
         $settings = $this->settingsFrom($resolved);
 
-        $roots = explode(';', $settings['open_basedir'] ?? '');
-
-        $this->assertStringNotContainsString(
-            '{{',
-            $settings['open_basedir'] ?? '',
-            'an unresolved token in open_basedir is a directory name PHP will never find anything in',
-        );
-
-        foreach ([
-            'the install root' => $this->slashed($this->install),
-            'the runtime' => $this->slashed($this->installIn('runtime')),
-            'the data directory' => $this->slashed($this->data),
-            'the temp directory' => $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
-        ] as $what => $expected) {
-            $this->assertContains(
-                $expected,
-                $roots,
-                $what.' must be an allowed root, or the process that needs it fails on its first read '
-                    .'or write',
-            );
-        }
-
-        $this->assertNotContains(
-            $this->slashed($this->install.DIRECTORY_SEPARATOR.'..'),
-            $roots,
-            'the parent of the install is not an allowed root',
+        $this->assertArrayNotHasKey(
+            'open_basedir',
+            $settings,
+            'open_basedir was confirmed broken for interpreter-lookup paths carrying a ? and '
+                .'must not come back until the translator lookup no longer pictures those',
         );
     }
 
