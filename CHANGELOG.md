@@ -25,9 +25,17 @@ checkable: each carries the commit that made the change.
 
 ### Changed
 
-**The About page says updates are manual.** It now states that the install never checks
-for new versions and links the releases page. No outbound request is added. This ships
-after 1.5.2; that release's notes stay as published.
+**The About page says updates are manual and links the release feed.** It now states
+that the install never checks for new versions, and links the releases page and its Atom
+feed. No outbound request is added. This ships after 1.5.2; that release's notes stay as
+published.
+
+### Added
+
+**An upgrade can be rolled back.** The launcher records the pre-migration snapshot path,
+digest, version and commit before it migrates, and `papyrus rollback` restores it after
+saving the current database. The installer refuses a downgrade unless it is run with
+`/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`.
 
 ---
 

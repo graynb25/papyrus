@@ -112,7 +112,9 @@ class AboutPageTest extends TestCase
             ->assertOk()
             ->assertSee('Updates are manual')
             ->assertSee('never checks for new versions')
-            ->assertSee('https://github.com/graynb25/papyrus/releases', false);
+            ->assertSee('https://github.com/graynb25/papyrus/releases', false)
+            ->assertSee('https://github.com/graynb25/papyrus/releases.atom', false)
+            ->assertSee('RSS feed');
     }
 
     /**

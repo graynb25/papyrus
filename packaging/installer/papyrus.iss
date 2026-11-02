@@ -159,9 +159,86 @@ Filename: "{app}\Papyrus.cmd"; Description: "{cm:LaunchProgram,{#MyAppName}}"; F
  // The question is skipped in silent mode rather than asked and auto-answered. A suppressed
  // message box in a deploy script is a hang or a silent yes depending on the host, and neither is
  // worth a sentence a scripted upgrade cannot read.
+function InstalledVersion(): String;
+var
+  Lines: TArrayOfString;
+  I: Integer;
+begin
+  Result := '';
+
+  if not FileExists(ExpandConstant('{app}\version.txt')) then
+    Exit;
+
+  if not LoadStringsFromFile(ExpandConstant('{app}\version.txt'), Lines) then
+    Exit;
+
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos('version ', Lines[I]) = 1 then
+    begin
+      Result := Trim(Copy(Lines[I], 9, Length(Lines[I])));
+      Exit;
+    end;
+end;
+
+function VersionPart(const Value: String; Index: Integer): Integer;
+var
+  I, Part, Start: Integer;
+begin
+  Part := 0;
+  Start := 1;
+
+  for I := 1 to Length(Value) + 1 do
+    if (I > Length(Value)) or (Value[I] = '.') then
+    begin
+      if Part = Index then
+      begin
+        Result := StrToIntDef(Copy(Value, Start, I - Start), 0);
+        Exit;
+      end;
+
+      Inc(Part);
+      Start := I + 1;
+    end;
+
+  Result := 0;
+end;
+
+function CompareVersions(const Left, Right: String): Integer;
+var
+  I, A, B: Integer;
+begin
+  for I := 0 to 2 do
+  begin
+    A := VersionPart(Left, I);
+    B := VersionPart(Right, I);
+
+    if A < B then
+    begin
+      Result := -1;
+      Exit;
+    end;
+
+    if A > B then
+    begin
+      Result := 1;
+      Exit;
+    end;
+  end;
+
+  Result := 0;
+end;
+
+// The escape hatch for a deliberate rollback. `papyrus rollback` prints the command with this
+// flag, and the downgrade guard below refuses without it.
+function ForcedDowngrade(): Boolean;
+begin
+  Result := Pos('/FORCEDOWNGRADE', Uppercase(GetCmdTail)) > 0;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  Installed: String;
 begin
   Result := '';
 
@@ -172,6 +249,23 @@ begin
 
   if not FileExists(ExpandConstant('{app}\packaging\launcher\papyrus.php')) then
   begin
+    Exit;
+  end;
+
+  // An older installer over a newer install is a downgrade, and it is refused unless the reader
+  // asked for one on purpose. `papyrus rollback` prints the /FORCEDOWNGRADE command after it has
+  // restored the reader database, so a real rollback has an explicit path and an accidental one
+  // does not.
+  Installed := InstalledVersion();
+
+  if (Installed <> '') and
+     (CompareVersions(Installed, '{#MyAppVersion}') > 0) and
+     (not ForcedDowngrade()) then
+  begin
+    Result := 'This installer is older than the version already installed (' + Installed + ').' + #13#10 +
+              'Nothing was changed. To roll back on purpose, run the previous installer with ' +
+              '/FORCEDOWNGRADE after papyrus rollback.';
+
     Exit;
   end;
 
@@ -188,14 +282,30 @@ begin
     Exit;
   end;
 
-  Exec(
+  // The launcher's stop exits non-zero when any process survives. A zero here used to mean only
+  // that the launcher ran, which is not the fact this installer needs before it replaces binaries.
+  if not Exec(
     ExpandConstant('{app}\runtime\bin\php.exe'),
     '"' + ExpandConstant('{app}\packaging\launcher\papyrus.php') + '" stop',
     ExpandConstant('{app}'),
     SW_HIDE,
     ewWaitUntilTerminated,
     ResultCode
-  );
+  ) then
+  begin
+    Result := 'Papyrus could not be stopped because its launcher did not run.' + #13#10 +
+              'Nothing was changed. Close Papyrus and try again.';
+
+    Exit;
+  end;
+
+  if ResultCode <> 0 then
+  begin
+    Result := 'Papyrus is still running, so the installer stopped before changing anything.' + #13#10 +
+              'Close Papyrus and try again.';
+
+    Exit;
+  end;
 end;
 
 //

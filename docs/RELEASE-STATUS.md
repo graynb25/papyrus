@@ -45,6 +45,10 @@ Updated 2026-11-01.
   `090c096`, and [`releases/1.5.2.json`](../releases/1.5.2.json) carries both. The
   release page carries the installer, the portable and its sidecar; GitHub reports the
   same SHA-256 digests.
+- **Update contract, 2026-11-01.** The launcher records the pre-migration snapshot and adds
+  `papyrus rollback`; the installer refuses a downgrade unless it is run with
+  `/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`. This is on
+  main after 1.5.2; the next release carries it. The About page links the release Atom feed.
 - **Still open.** D10 and the WP2-S4 runtime drills. DEP-02, DEP-03 and DEP-08 are
   closed on main by `178365b`, after the 1.5.2 artifacts were built; the next release
   carries them. The WP2-S7 sandbox install was not run.

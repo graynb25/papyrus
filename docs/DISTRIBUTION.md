@@ -370,11 +370,16 @@ some point in every project that has ever shipped one.
 7. `cosign attest` the artifacts, keyless.
 8. Write release notes that lead with what breaks, not what was added. The first line should be
    readable by someone deciding whether to update without reading the rest.
-9. Attach artifacts, publish.
+9. Attach artifacts, publish. Keep the previous setup attached for rollback.
 10. Verify the Atom feed updated, and that the per-release URL an in-app check would read
     actually resolves. This is the step that catches "released to the wrong tag".
 
 Steps 5 and 10 are the two that catch real problems and the two that get skipped.
+
+An upgrade release also needs the manual sandbox upgrade drill: install the previous release,
+upgrade to the new one, force a migration failure, run `papyrus rollback`, then reinstall the
+previous setup. That drill exercises the installer's stop and downgrade guards and the recorded
+pre-migration snapshot, none of which a checkout test can prove.
 
 ### Naming, so an old download is recognisable
 

@@ -507,8 +507,14 @@ final class Supervisor
          * different conversation from one that reports it had to kill something.
          */
         if ($outcomes !== []) {
+            $incomplete = array_filter(
+                $outcomes,
+                static fn (string $outcome): bool => $outcome === 'still running' || $outcome === 'could not be stopped',
+            );
+
             $this->summary()->record('papyrus', sprintf(
-                'stopped cleanly, %d process%s: %s',
+                '%s, %d process%s: %s',
+                $incomplete === [] ? 'stopped cleanly' : 'stop incomplete',
                 count($outcomes),
                 count($outcomes) === 1 ? '' : 'es',
                 implode(', ', array_keys($outcomes)),
@@ -632,7 +638,38 @@ final class Supervisor
             ));
         }
 
+        /*
+         * Name the snapshot before the migration can fail.
+         *
+         * The snapshot command writes a timestamped file, and the log that names it is not a place a
+         * reader can be asked to look. `MigrationRecord` writes the path, digest, version and commit
+         * where `papyrus rollback` reads it. If that record cannot be written, the migration does not
+         * run: a snapshot nobody can name is not a rollback path.
+         */
+        $snapshotPath = $this->newestSnapshot(dirname($this->databaseFile()).DIRECTORY_SEPARATOR.'reader-snapshots');
+
+        if ($snapshotPath === null) {
+            throw new RuntimeException(
+                'The snapshot command reported success but wrote no reader-half file, so Papyrus '
+                .'will not migrate without a snapshot it can name.'
+            );
+        }
+
+        $record = new MigrationRecord($this->dataDirectory, $this->root);
+        $previousRecord = is_file($record->path()) ? (string) @file_get_contents($record->path()) : null;
+
+        $record->write($snapshotPath);
+
+        $say('recorded the pre-migration snapshot at '.$snapshotPath);
+
         $say('checking whether the database needs migrating');
+
+        /*
+         * Truncated before the run, because `runArtisan` appends to its log. A previous
+         * "Nothing to migrate" left in the file would make this run look like a no-op even when it
+         * applied migrations, and the previous rollback record would be kept for the wrong reason.
+         */
+        @file_put_contents($this->logDirectory.DIRECTORY_SEPARATOR.'migrate.log', '');
 
         $result = $this->runArtisan(['migrate', '--force']);
 
@@ -645,7 +682,59 @@ final class Supervisor
             ));
         }
 
+        /*
+         * A start with nothing to migrate must not replace the last real rollback point.
+         *
+         * The snapshot is taken on every start, so the newest file is usually a post-migration
+         * copy. The record should keep naming the snapshot taken before the last migration that
+         * actually ran, or a reader who upgrades, restarts once, and then wants the previous
+         * version has lost the record they need.
+         */
+        if ($previousRecord !== null && $this->migrateWasNoop()) {
+            if (file_put_contents($record->path(), $previousRecord) === false) {
+                throw new RuntimeException('Could not keep the previous migration record at '.$record->path());
+            }
+
+            $say('no migrations were pending, so the previous rollback record was kept');
+        }
+
         $say('database is current');
+    }
+
+    /**
+     * Whether the last migrate run said there was nothing to do.
+     *
+     * Laravel writes "Nothing to migrate" for a no-op. The log is the supervisor's own record of
+     * the command, so this reads the same output a reader would see in a bug report.
+     */
+    private function migrateWasNoop(): bool
+    {
+        $log = $this->logDirectory.DIRECTORY_SEPARATOR.'migrate.log';
+        $contents = @file_get_contents($log);
+
+        return is_string($contents) && str_contains($contents, 'Nothing to migrate');
+    }
+
+    /**
+     * The newest reader-half snapshot in a directory, or null when there is none.
+     *
+     * Newest by modification time, not by name, because two snapshots in one second would sort
+     * unpredictably by filename and the migration needs the one just written.
+     */
+    private function newestSnapshot(string $directory): ?string
+    {
+        $files = glob($directory.DIRECTORY_SEPARATOR.'reader-half-*.sqlite') ?: [];
+
+        if ($files === []) {
+            return null;
+        }
+
+        usort(
+            $files,
+            static fn (string $a, string $b): int => (@filemtime($b) ?: 0) <=> (@filemtime($a) ?: 0),
+        );
+
+        return $files[0];
     }
 
     private function startWebServer(callable $say): void

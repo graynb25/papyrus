@@ -132,6 +132,13 @@ new #[Title('About this install')] class extends Component {
                 rel="noopener noreferrer"
                 class="underline underline-offset-2 hover:text-vermilion-600 dark:hover:text-vermilion-400"
             >{{ __('releases page') }}</a>
+            {{ __('or follow its') }}
+            <a
+                href="https://github.com/graynb25/papyrus/releases.atom"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="underline underline-offset-2 hover:text-vermilion-600 dark:hover:text-vermilion-400"
+            >{{ __('RSS feed') }}</a>
             {{ __('for new ones.') }}
         </p>
     </x-pages::settings.layout>

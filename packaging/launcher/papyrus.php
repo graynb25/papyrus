@@ -3,7 +3,7 @@
 /**
  * The packaged Papyrus launcher.
  *
- * Seven commands, because that is what a phase 0 install needs:
+ * Eight commands, because that is what a phase 0 install needs:
  *
  *   start        bring everything up, wait until it is genuinely usable, then hold
  *   stop         bring it all down, leaving nothing behind
@@ -12,6 +12,7 @@
  *   diagnostics  gather everything into one bundle to attach to a bug report
  *   snapshot     take both databases as one pair, which only this can do
  *   restore      put a pair back, or leave both as they were
+ *   rollback     put the reader database back to the pre-migration snapshot
  *
  * ## Why this is plain PHP and not a compiled launcher
  *
@@ -107,6 +108,8 @@ require __DIR__.'/src/RunRecord.php';
 require __DIR__.'/src/ReaderSnapshotResult.php';
 require __DIR__.'/src/ReaderSnapshot.php';
 require __DIR__.'/src/SnapshotCommand.php';
+require __DIR__.'/src/MigrationRecord.php';
+require __DIR__.'/src/RollbackCommand.php';
 
 /*
  * The licence staging pass, which no launcher command calls and every build script does.
@@ -251,6 +254,8 @@ try {
                 exit(0);
             }
 
+            $failed = false;
+
             foreach ($outcomes as $name => $outcome) {
                 if ($outcome === 'killed') {
                     /*
@@ -270,10 +275,17 @@ try {
 
                 if ($outcome === 'still running' || $outcome === 'could not be stopped') {
                     $say(sprintf('%s did not stop. Something outside Papyrus may be holding it.', $name));
+
+                    $failed = true;
                 }
             }
 
-            exit(0);
+            /*
+             * A stop that leaves a process alive is not a stop. The installer reads this exit code
+             * before it writes anything, and a zero here used to mean "the launcher ran", not "the
+             * install is down", which is the one thing the installer needs to know.
+             */
+            exit($failed ? 1 : 0);
 
         case 'status':
             $status = $supervisor->status();
@@ -318,6 +330,18 @@ try {
              * from a broken application.
              */
             exit(SnapshotCommand::forSupervisor($supervisor)->run(array_slice($argv, 2), $say));
+
+        case 'rollback':
+            /*
+             * The migration rollback, not a pair restore.
+             *
+             * A migration changes the reader schema and leaves Suwayomi alone, so the pre-migration
+             * reader-half snapshot is the whole rollback. The command stops, saves the current
+             * database, puts the snapshot back, and deliberately does not start this version: its
+             * next start would migrate the restored database forward again. The reader reinstalls
+             * the previous version and starts that.
+             */
+            exit(RollbackCommand::forSupervisor($supervisor)->run(array_slice($argv, 2), $say));
 
         case 'health':
             /*
@@ -398,7 +422,7 @@ try {
             exit(0);
 
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics|snapshot|restore] [--zip] [--open] [--yes] [--into=DIR]\n");
+            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics|snapshot|restore|rollback] [--zip] [--open] [--yes] [--into=DIR]\n");
 
             exit(2);
     }

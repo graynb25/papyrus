@@ -51,9 +51,8 @@ The 1.5.0 installer's manual sandbox run passed on 2026-10-27, and the 1.5.1 set
 is still blocked by the Windows Sandbox VM issue. Search, source management, health, downloads,
 migration between sources, the series page, the reader and settings are implemented.
 
-**Release status.** 1.5.2 is in preparation from the rewritten tree; `VERSION` is
-1.5.2. It is not published until the release build and tag are verified. 1.5.1 was
-built and proven locally but was not published. See
+**Release status.** 1.5.2 is published. The installer and portable are on the releases
+page. 1.5.1 was built and proven locally but was not published. See
 [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the
@@ -242,6 +241,27 @@ so the portable builder writes a `.sha256` sidecar beside the archive for the sa
 
 If the hash matches what the release record says, the file is the one that was built. Whether to run
 an unsigned program is still your decision, and Windows will ask you to confirm it.
+
+## Updates
+
+Papyrus does not update itself and makes no automatic network request. Releases are
+published on GitHub, and the release notes lead with what changed.
+
+- Watch the repository and choose **Releases only** for GitHub notifications.
+- Subscribe to the Atom feed: <https://github.com/graynb25/papyrus/releases.atom>.
+- Or check the [releases page](https://github.com/graynb25/papyrus/releases).
+
+To upgrade an installed copy, download the new `Papyrus-<version>-setup.exe`, compare its
+SHA-256 with `releases/<version>.json`, stop Papyrus, and run the installer. The installer
+replaces the program files and leaves `%LOCALAPPDATA%\Papyrus` alone. The launcher
+snapshots the database before it migrates.
+
+The next build adds a recorded pre-migration snapshot and a `papyrus rollback` command.
+Until that build is installed, keep the previous installer and a copy of your data before
+upgrading, so a failed migration has a way back.
+
+The portable copy is replaced by unpacking the new zip over the old program folder. Keep
+the `papyrus-data` folder beside it.
 
 ## Running it
 

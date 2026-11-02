@@ -1300,6 +1300,29 @@ Step 4 is the one that gets skipped and it is the one that matters. **Back up `d
 every migration**, and keep the previous version directory until the new one has been healthy
 long enough to trust.
 
+### 4a. What ships now: manual upgrade
+
+The versioned-directory updater above is not built. The supported path today is the full
+installer over the existing install, with the reader confirming every step:
+
+1. Download the new `Papyrus-<version>-setup.exe` from Releases and compare its SHA-256 with
+   `releases/<version>.json`.
+2. Stop Papyrus, or let the installer stop it. The installer aborts if the launcher cannot
+   stop every process.
+3. Run the installer. It refuses to replace a newer install unless it is run with
+   `/FORCEDOWNGRADE`, which is the deliberate rollback path.
+4. The installer replaces program files only. It never writes, moves or deletes anything under
+   `%LOCALAPPDATA%\Papyrus`.
+5. The first start records the pre-migration snapshot path, digest, version and commit, then
+   migrates. If the snapshot cannot be recorded, it does not migrate.
+6. If the migration fails, `papyrus rollback` restores the recorded snapshot after saving the
+   current database. Reinstall the previous version afterwards; the current version must not
+   start against the restored database.
+
+Papyrus never checks, downloads or runs an update silently, and it never suppresses SmartScreen.
+The installer is unsigned, so Windows will warn about it; the hash and the committed release
+record are the checks that mean something.
+
 ### 5. jlink and the Java runtime
 
 **M**. Not urgent, but it is 100MB and it is the kind of saving that justifies doing it early.
