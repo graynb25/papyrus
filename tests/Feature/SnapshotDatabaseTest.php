@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -230,23 +231,135 @@ class SnapshotDatabaseTest extends TestCase
     }
 
     /**
-     * A snapshot that could not be taken must say so, and must not leave something behind that
-     * looks like a backup.
+     * A failed snapshot must not delete a valid snapshot that shares its timestamp.
      *
-     * A half written file carrying a snapshot's name is indistinguishable from a good one by
-     * name, and is discovered at restore time, which is the worst moment to find it.
+     * Two runs in the same second used to build the same target name, and the cleanup for a
+     * failed capture unlinked whatever that name pointed at. `VACUUM INTO` refuses an existing
+     * target, so the run that lost the race deleted the winner's good snapshot and reported
+     * only a failure.
+     *
+     * `PRAGMA query_only = ON` is the deterministic failure: measured on this machine it makes
+     * `VACUUM INTO` fail with "attempt to write a readonly database", while the live database
+     * stays readable. It is reset in `finally` so no later test inherits it.
+     *
+     * The frozen time is what makes the first snapshot's name equal to the target the failing
+     * run computes. That only works because the command now names files with `now('UTC')`;
+     * `gmdate()` cannot be frozen and was one of the two reasons this defect was invisible.
      */
-    public function test_a_failed_snapshot_reports_failure(): void
+    public function test_a_failed_snapshot_reports_failure_without_deleting_a_valid_snapshot(): void
     {
         $directory = $this->scratch.'/failing';
-        File::ensureDirectoryExists($directory);
 
-        // A directory exactly where the snapshot file belongs, so the write cannot succeed.
-        File::ensureDirectoryExists($directory.'/reader-half-'.gmdate('Ymd-His').'.sqlite');
+        Carbon::setTestNow(Carbon::create(2026, 11, 2, 3, 17, 1, 'UTC'));
 
-        $exit = $this->artisan('papyrus:snapshot', ['--into' => $directory])->run();
+        try {
+            $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+
+            $first = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+            $this->assertCount(1, $first, 'the first snapshot must exist before the failure');
+
+            $this->assertSame(
+                'reader-half-20261102-031701.sqlite',
+                basename($first[0]),
+                'the name must come from the frozen UTC clock, which is what makes the collision '
+                    .'with the failing run deterministic',
+            );
+
+            DB::statement('PRAGMA query_only = ON');
+
+            try {
+                $exit = $this->artisan('papyrus:snapshot', ['--into' => $directory])->run();
+            } finally {
+                DB::statement('PRAGMA query_only = OFF');
+            }
+        } finally {
+            Carbon::setTestNow();
+            DB::statement('PRAGMA query_only = OFF');
+        }
 
         $this->assertSame(1, $exit, 'a failed snapshot must report failure, not success');
+
+        $this->assertFileExists($first[0], 'the valid snapshot must survive the failed run');
+
+        $copy = new \PDO('sqlite:'.$first[0]);
+
+        $this->assertSame(
+            1,
+            (int) $copy->query("select count(*) from sqlite_master where type='table' and name='chapter_states'")->fetchColumn(),
+            'the surviving snapshot must still open as the database it was',
+        );
+
+        $this->assertSame(
+            [],
+            glob($directory.'/.reader-half-*') ?: [],
+            'the failed run must remove its own temporary file and leave nothing else behind',
+        );
+    }
+
+    /**
+     * Two snapshots in one second are two snapshots, not one and a failure.
+     *
+     * The timestamp has second resolution and the capture refuses an existing target, so a
+     * scheduled run racing a manual one used to fail and delete the other run's file. The
+     * second run now keeps the timestamp and takes a distinct suffix.
+     */
+    public function test_two_snapshots_in_the_same_second_do_not_collide(): void
+    {
+        $directory = $this->scratch.'/same-second';
+
+        Carbon::setTestNow(Carbon::create(2026, 11, 2, 3, 17, 1, 'UTC'));
+
+        try {
+            $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+
+            $first = glob($directory.'/reader-half-*.sqlite') ?: [];
+
+            $this->assertCount(1, $first, 'the first run must write one snapshot');
+
+            $this->artisan('papyrus:snapshot', ['--into' => $directory])->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $files = glob($directory.'/reader-half-*.sqlite') ?: [];
+        sort($files);
+
+        $this->assertCount(2, $files, 'both runs must leave a snapshot');
+
+        $this->assertEqualsCanonicalizing(
+            [
+                'reader-half-20261102-031701.sqlite',
+                'reader-half-20261102-031701-2.sqlite',
+            ],
+            array_map('basename', $files),
+            'both names must carry the frozen UTC timestamp, and the second run must take a '
+                .'distinct suffix rather than replace the first',
+        );
+
+        $this->assertNotSame(
+            basename($files[0]),
+            basename($files[1]),
+            'the second run must choose a distinct name rather than fail on the first one',
+        );
+
+        foreach ($files as $file) {
+            $copy = new \PDO('sqlite:'.$file);
+
+            $this->assertSame(
+                1,
+                (int) $copy->query("select count(*) from sqlite_master where type='table' and name='chapter_states'")->fetchColumn(),
+                basename($file).' must open as a database with the schema',
+            );
+        }
+
+        $original = new \PDO('sqlite:'.$first[0]);
+
+        $this->assertSame(
+            1,
+            (int) $original->query('select count(*) from chapter_states')->fetchColumn(),
+            'the first run\'s snapshot must still hold the row it captured',
+        );
     }
 
     /**

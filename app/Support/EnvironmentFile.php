@@ -145,15 +145,17 @@ final class EnvironmentFile
             return [];
         }
 
-        $this->write($settings, $path);
+        $this->write($settings, $path, $changed);
 
         return $changed;
     }
 
     /**
      * @param  array<string, string>  $settings
+     * @param  list<string>  $changed  Names this run chose a new value for. Those values are
+     *                                 data; every other setting is a line being carried.
      */
-    private function write(array $settings, string $path): void
+    private function write(array $settings, string $path, array $changed): void
     {
         $remaining = $settings;
         $written = [];
@@ -170,7 +172,7 @@ final class EnvironmentFile
             $name = trim(explode('=', $trimmed, 2)[0]);
 
             if (array_key_exists($name, $remaining)) {
-                $written[] = $this->renderSetting($name, $remaining[$name]);
+                $written[] = $this->renderSetting($name, $remaining[$name], in_array($name, $changed, true));
                 unset($remaining[$name]);
 
                 continue;
@@ -181,9 +183,10 @@ final class EnvironmentFile
              *
              * It looks like the branch a foreign setting should be quoted in, and it is not.
              * `read()` parses every line into a set, so a setting this caller does not own still
-             * arrives as a key and takes the branch above. Anything reaching this one is a name that
-             * is not being changed, and writing it back exactly as it was found is the only safe
-             * thing to do with a line whose value nobody here has interpreted.
+             * arrives as a key and takes the branch above. The ownership flag passed there is
+             * what keeps its `#` meaning a comment rather than data. Anything reaching this one
+             * is not a setting at all, and writing it back exactly as it was found is the only
+             * safe thing to do with a line whose value nobody here has interpreted.
              */
             $written[] = $line;
         }
@@ -199,17 +202,20 @@ final class EnvironmentFile
     }
 
     /**
-     * Render `name=value`, quoting only the value and only when it has to be quoted.
+     * Render `name=value` for one line this class is writing.
      *
-     * ## Why the comment is split off first
+     * ## Why an owned value is never split at `#`
      *
-     * Because quoting a value that has a comment on it turns that comment into part of the setting,
-     * and the application then reads `debug` where the author wrote `debug # very noisy`.
+     * Because the value was chosen by the caller, not written by a person as an environment
+     * line. `DB_DATABASE` for a data directory containing `#` is the measured case: splitting
+     * it writes a shorter path, and the application then opens a different sqlite file with no
+     * error naming the line. The whole value goes to `quoteIfNeeded()`, which already quotes a
+     * `#`, so dotenv reads it back unchanged.
      *
-     * ## Where a `#` opens a comment, measured rather than remembered
+     * ## Why a carried value still splits
      *
-     * Anywhere in the value, with no requirement of whitespace before it, measured against the dotenv
-     * this ships with:
+     * Because dotenv does, and this class is not the author of that line. When a `#` opens a
+     * comment, measured against the dotenv this ships with:
      *
      *     VALUE=a#b                  parses to  a
      *     VALUE=a #b                 parses to  a
@@ -217,11 +223,15 @@ final class EnvironmentFile
      *     VALUE=path\to\file # tail  parses to  path\to\file
      *     VALUE=two words            refuses to parse
      *
-     * An earlier version of this required whitespace before the `#`, which is wrong by that table: it
-     * would have kept `#b` inside the quotes and changed `a#b` into a two character value.
+     * `SITE_TAG=reader#beta` is a setting this command does not own, and it must keep parsing
+     * as `reader`; quoting it whole would turn the author's comment into data.
      */
-    private function renderSetting(string $name, string $value): string
+    private function renderSetting(string $name, string $value, bool $owned): string
     {
+        if ($owned) {
+            return $name.'='.$this->quoteIfNeeded($value);
+        }
+
         $comment = '';
 
         if (preg_match('~^(.*?)#(.*)$~', trim($value), $matches) === 1) {

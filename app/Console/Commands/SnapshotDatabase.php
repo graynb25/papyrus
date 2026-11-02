@@ -94,24 +94,35 @@ class SnapshotDatabase extends Command
             return self::SUCCESS;
         }
 
-        $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.gmdate('Ymd-His').'.sqlite';
+        $stamp = now('UTC')->format('Ymd-His');
+        $temporary = $this->temporaryTarget($directory);
 
         try {
-            $capture->capture($target);
+            $capture->capture($temporary);
         } catch (Throwable $e) {
             // Refuse rather than leave a partial file that looks like a backup. An incomplete
             // snapshot discovered during a restore is worse than no snapshot, because it is
-            // found at the moment it is needed.
-            @unlink($target);
+            // found at the moment it is needed. Only this run's temporary file is removed: a
+            // snapshot that already owns a timestamped name is never this run's to delete.
+            $this->discard($temporary);
 
             $this->components->error('The snapshot failed and nothing was written: '.$e->getMessage());
 
             return self::FAILURE;
         }
 
-        if (! is_file($target) || filesize($target) === 0) {
-            @unlink($target);
+        if (! is_file($temporary) || filesize($temporary) === 0) {
+            $this->discard($temporary);
             $this->components->error('The snapshot produced no file.');
+
+            return self::FAILURE;
+        }
+
+        $target = $this->finalTarget($directory, $stamp);
+
+        if (! @rename($temporary, $target)) {
+            $this->discard($temporary);
+            $this->components->error("The snapshot could not be moved into place: {$target}");
 
             return self::FAILURE;
         }
@@ -127,6 +138,57 @@ class SnapshotDatabase extends Command
         $this->prune($directory);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A name no other run is writing to, for the capture to fill before verification.
+     *
+     * The leading dot and the `.tmp` ending keep this out of `prune()`'s
+     * `reader-half-*.sqlite` glob, so a temporary is never counted as a snapshot and never
+     * deleted by retention. The random part is what makes two runs in the same second safe:
+     * `VACUUM INTO` refuses an existing target, and this loop only hands back a path that does
+     * not exist, so anything later found there was made by this invocation and nothing else.
+     */
+    private function temporaryTarget(string $directory): string
+    {
+        do {
+            $path = $directory.DIRECTORY_SEPARATOR.'.reader-half-'.bin2hex(random_bytes(8)).'.sqlite.tmp';
+        } while (file_exists($path));
+
+        return $path;
+    }
+
+    /**
+     * The timestamped name, with a suffix when another run already owns it.
+     *
+     * The timestamp keeps second resolution because a reader reads it, and a same-second
+     * collision is real: a scheduled run can overlap a manual one. The first writer keeps the
+     * plain name; later writers take `-2`, `-3` and so on rather than replacing it.
+     */
+    private function finalTarget(string $directory, string $stamp): string
+    {
+        $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.$stamp.'.sqlite';
+        $suffix = 1;
+
+        while (file_exists($target)) {
+            $suffix++;
+            $target = $directory.DIRECTORY_SEPARATOR.self::PREFIX.$stamp.'-'.$suffix.'.sqlite';
+        }
+
+        return $target;
+    }
+
+    /**
+     * Remove only the temporary file this invocation made.
+     *
+     * Never the timestamped name. That name may belong to a snapshot another run finished,
+     * and deleting it on this run's failure was the data loss this method exists to stop.
+     */
+    private function discard(string $temporary): void
+    {
+        if (is_file($temporary)) {
+            @unlink($temporary);
+        }
     }
 
     /**

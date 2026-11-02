@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Dotenv\Parser\Parser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Testing\PendingCommand;
 use Tests\TestCase;
@@ -93,6 +94,26 @@ class ConfigureInstallTest extends TestCase
         }
 
         return $values;
+    }
+
+    /**
+     * The file as dotenv itself reads it.
+     *
+     * `envValues()` above trims the raw line, which is enough for an unquoted value and wrong
+     * for a quoted one. This is the parser the application boots with, so a value that comes
+     * back here is the one the install will use.
+     *
+     * @return array<string, string>
+     */
+    private function parsedEnvFile(): array
+    {
+        $parsed = [];
+
+        foreach ((new Parser)->parse(File::get($this->envFile)) as $entry) {
+            $parsed[$entry->getName()] = $entry->getValue()->get()->getChars();
+        }
+
+        return $parsed;
     }
 
     /**
@@ -255,6 +276,52 @@ class ConfigureInstallTest extends TestCase
             $parsed['DB_DATABASE'],
             'and the value dotenv reads back must be the path itself, with the quotes removed by the '
                 .'parser rather than left inside the value',
+        );
+    }
+
+    /**
+     * A data directory containing `#` is a path, not a comment.
+     *
+     * The renderer used to split every value at the first `#`, because dotenv opens a comment
+     * there in an unquoted value. For a setting this command owns, that split is a guess: the
+     * value is the path the caller gave, and the only way to read it back unchanged is to quote
+     * the whole thing. Measured before this test: the written `DB_DATABASE` stopped at the
+     * `#`, so a data directory named `papyrus # data` produced a different sqlite file, with no
+     * error naming the line.
+     *
+     * A space is in the name too, because the quoting rule that preserves `#` must also handle
+     * the ordinary Windows install path.
+     */
+    public function test_a_data_directory_containing_a_hash_keeps_the_whole_path(): void
+    {
+        $data = $this->scratch.DIRECTORY_SEPARATOR.'papyrus # data';
+
+        $this->artisan('papyrus:configure', [
+            '--env-file' => $this->envFile,
+            '--data' => $data,
+        ])->assertSuccessful();
+
+        $expected = $data.DIRECTORY_SEPARATOR.'database.sqlite';
+
+        $this->assertSame(
+            $expected,
+            $this->parsedEnvFile()['DB_DATABASE'] ?? null,
+            'dotenv must read back the whole data directory, including everything after the #',
+        );
+
+        /*
+         * The launcher runs this on every start. The second run reads the line back, so it must
+         * not shorten a path the first run wrote, and it must not need a third run to repair it.
+         */
+        $this->artisan('papyrus:configure', [
+            '--env-file' => $this->envFile,
+            '--data' => $data,
+        ])->assertSuccessful();
+
+        $this->assertSame(
+            $expected,
+            $this->parsedEnvFile()['DB_DATABASE'] ?? null,
+            'a second configure run must leave the whole path in place',
         );
     }
 
@@ -445,6 +512,51 @@ class ConfigureInstallTest extends TestCase
         // test_a_foreign_setting_with_a_space_in_its_value_survives_readable, which is the same
         // line for the same reason. Asserting it twice here would only make one failure to fix.
         $this->assertStringContainsString('CUSTOM_SETTING=', $text);
+    }
+
+    /**
+     * A missing `.env.example` is a clear failure, not a stack trace.
+     *
+     * The command already knew how to say the install is incomplete, then carried on into
+     * `EnvironmentFile::write()`, which read a `.env` that had never been copied. A reader sees
+     * a parser crash at the moment the command intended a clean diagnostic, and a support
+     * bundle then reads as a report about the wrong thing.
+     *
+     * The base path is pointed at a scratch directory with no example in it and restored in
+     * `finally`, so this never depends on, or changes, the real `.env.example`.
+     */
+    public function test_a_missing_env_example_fails_cleanly_without_writing_an_env(): void
+    {
+        $base = $this->app->basePath();
+        $incomplete = $this->scratch.DIRECTORY_SEPARATOR.'incomplete';
+
+        File::ensureDirectoryExists($incomplete);
+
+        try {
+            $this->app->setBasePath($incomplete);
+
+            $exit = Artisan::call('papyrus:configure', [
+                '--env-file' => $this->envFile,
+                '--data' => $this->scratch.DIRECTORY_SEPARATOR.'data',
+            ]);
+
+            $output = Artisan::output();
+        } finally {
+            $this->app->setBasePath($base);
+        }
+
+        $this->assertSame(1, $exit, 'an incomplete install must report failure');
+        $this->assertStringContainsString(
+            'No .env.example to copy from',
+            $output,
+            'the clear sentence the command already had must be the thing the reader sees',
+        );
+        $this->assertStringNotContainsString(
+            'Stack trace',
+            $output,
+            'and the command must stop before the write that used to crash on the missing file',
+        );
+        $this->assertFileDoesNotExist($this->envFile, 'nothing may be half configured');
     }
 
     /**

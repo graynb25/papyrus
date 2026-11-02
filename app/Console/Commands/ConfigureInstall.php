@@ -71,8 +71,13 @@ class ConfigureInstall extends Command
     {
         $path = $this->envPath();
 
-        if (! is_file($path)) {
-            $this->copyExample($path);
+        /*
+         * Nothing below may run when the example could not be copied. The first version printed
+         * the clear sentence and carried on, so `EnvironmentFile::write()` read a `.env` that
+         * had never been created and the install died with a parser stack trace instead.
+         */
+        if (! is_file($path) && ! $this->copyExample($path)) {
+            return self::FAILURE;
         }
 
         /*
@@ -137,19 +142,30 @@ class ConfigureInstall extends Command
      * `.env.example` is committed and is the only description of what this app needs. A file
      * written from scratch here would be a second list to keep in step with it, and the two
      * would diverge the first time a dependency was added.
+     *
+     * Returns whether the file is now in place. A caller that ignores this is the crash this
+     * method exists to prevent, so the answer is part of the signature rather than a printed
+     * message the caller has to remember to act on.
      */
-    private function copyExample(string $path): void
+    private function copyExample(string $path): bool
     {
         $example = base_path('.env.example');
 
         if (! is_file($example)) {
             $this->components->error("No .env.example to copy from at {$example}. The install is incomplete.");
 
-            return;
+            return false;
         }
 
-        File::copy($example, $path);
+        if (! File::copy($example, $path)) {
+            $this->components->error("Could not copy {$example} to {$path}. The install is incomplete.");
+
+            return false;
+        }
+
         $this->components->info('Created .env from .env.example');
+
+        return true;
     }
 
     /**
