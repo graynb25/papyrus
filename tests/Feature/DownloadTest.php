@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\ReadingState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -422,6 +423,48 @@ class DownloadTest extends TestCase
 
         $this->assertSame(0, $result['queued']);
         $this->assertDatabaseCount('downloads', 1);
+    }
+
+    public function test_a_double_click_that_loses_the_insert_race_is_not_an_error(): void
+    {
+        $competingInsertDone = false;
+
+        /*
+         * Both requests read no row before either writes. The other request's insert lands
+         * between this ledger's read and its create, which is the exact shape of two tabs
+         * pressing Download at once. A model listener writes that row through the query
+         * builder so it cannot fire this listener again.
+         */
+        Download::creating(function (Download $row) use (&$competingInsertDone): void {
+            if ($competingInsertDone) {
+                return;
+            }
+
+            $competingInsertDone = true;
+
+            DB::table('downloads')->insert([
+                'user_id' => $row->user_id,
+                'suwayomi_chapter_id' => $row->suwayomi_chapter_id,
+                'suwayomi_manga_id' => $row->suwayomi_manga_id,
+                'state' => Download::QUEUED,
+                'progress' => 0,
+                'enqueued_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $result = $this->ledger()->enqueue($this->user, [13], 76);
+
+        $this->assertTrue($competingInsertDone, 'the competing insert happened after the read missed it');
+        $this->assertSame(0, $result['queued'], 'the other request already queued it, so this is its existing-row branch');
+        $this->assertDatabaseCount('downloads', 1);
+        $this->assertDatabaseHas('downloads', [
+            'user_id' => $this->user->id,
+            'suwayomi_chapter_id' => 13,
+            'state' => Download::QUEUED,
+        ]);
+        $this->assertSame([[13]], $this->enqueueCalls, 'the server is still asked for the batch');
     }
 
     /**

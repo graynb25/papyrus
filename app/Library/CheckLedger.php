@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\Library;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Throwable;
@@ -423,7 +424,30 @@ class CheckLedger
             return $existing;
         }
 
-        return LibraryCheck::createFor($userId, $values);
+        try {
+            return LibraryCheck::createFor($userId, $values);
+        } catch (UniqueConstraintViolationException $e) {
+            /*
+             * Two requests read no row before either wrote. Laravel maps the driver's unique
+             * failure to this subclass on this tree, so the losing request re-reads the
+             * winner's row and updates it, which is the same "one row per series" answer the
+             * unique index enforces. Sharing the seam with `DownloadLedger::enqueue()` means
+             * neither class parses SQLSTATE or driver text.
+             */
+            $existing = LibraryCheck::query()
+                ->forUser($userId)
+                ->where('suwayomi_manga_id', $mangaId)
+                ->first();
+
+            if ($existing === null) {
+                throw $e;
+            }
+
+            $existing->fill($values);
+            $existing->save();
+
+            return $existing;
+        }
     }
 
     /**

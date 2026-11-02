@@ -245,7 +245,14 @@ class CheckLibrary implements ShouldQueue
      */
     private function anythingStillDue(CheckSchedule $schedule): bool
     {
-        return $schedule->due($this->userId, 1)->isNotEmpty();
+        /*
+         * No limit. `due()` filters the interval in PHP after the query, so asking for one
+         * row answered "is the single oldest check due" rather than "is any check due".
+         * Measured: a row checked 300 days ago under a 365 day interval sorts first and is
+         * not due, so a capped pass ended COMPLETE with 6 due rows unvisited behind it.
+         * The unlimited read is what `dueIds()` already uses.
+         */
+        return $schedule->due($this->userId)->isNotEmpty();
     }
 
     /**

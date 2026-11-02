@@ -9,6 +9,7 @@ use App\Support\ReadingState;
 use App\Suwayomi\DownloadGateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -83,14 +84,43 @@ class DownloadLedger
                 ->where('suwayomi_chapter_id', $chapterId)
                 ->first();
 
-            // Re-enqueueing something already finished or queued is a no-op rather
-            // than an error, because "download this again" is a thing a reader
-            // clicks twice.
-            if ($existing !== null && ! $existing->isSettled()) {
-                continue;
+            if ($existing === null) {
+                try {
+                    Download::createFor($userId, [
+                        'suwayomi_chapter_id' => $chapterId,
+                        'suwayomi_manga_id' => $mangaId ?? 0,
+                        'state' => Download::QUEUED,
+                        'progress' => 0,
+                        'enqueued_at' => now(),
+                    ]);
+                } catch (UniqueConstraintViolationException $e) {
+                    /*
+                     * Two requests read no row before either wrote. Laravel maps the driver's
+                     * unique failure to this subclass on this tree, so the losing request
+                     * re-reads the winner's row and takes the existing-row branch below rather
+                     * than returning a raw 500 on a double click.
+                     *
+                     * Re-read rather than trust the exception: no row means this was not that
+                     * race, and the original failure is the truth.
+                     */
+                    $existing = Download::forUser($userId)
+                        ->where('suwayomi_chapter_id', $chapterId)
+                        ->first();
+
+                    if ($existing === null) {
+                        throw $e;
+                    }
+                }
             }
 
             if ($existing !== null) {
+                // Re-enqueueing something already finished or queued is a no-op rather
+                // than an error, because "download this again" is a thing a reader
+                // clicks twice.
+                if (! $existing->isSettled()) {
+                    continue;
+                }
+
                 $existing->state = Download::QUEUED;
                 $existing->progress = 0;
                 $existing->error = null;
@@ -98,14 +128,6 @@ class DownloadLedger
                 $existing->started_at = null;
                 $existing->finished_at = null;
                 $existing->save();
-            } else {
-                Download::createFor($userId, [
-                    'suwayomi_chapter_id' => $chapterId,
-                    'suwayomi_manga_id' => $mangaId ?? 0,
-                    'state' => Download::QUEUED,
-                    'progress' => 0,
-                    'enqueued_at' => now(),
-                ]);
             }
 
             $queued++;

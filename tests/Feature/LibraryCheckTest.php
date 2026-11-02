@@ -614,6 +614,50 @@ class LibraryCheckTest extends TestCase
         );
     }
 
+    public function test_two_rapid_card_checks_do_not_race_the_unique_index(): void
+    {
+        $this->addToLibrary(76);
+        $this->refreshShapes[76] = ['chapters' => 5];
+
+        $competingInsertDone = false;
+
+        /*
+         * Both presses read no row before either writes. This listener inserts the other
+         * press's row between the ledger's read and its create, which is the shape of two
+         * requests on the same card. The query builder bypasses model events, so it cannot
+         * fire itself.
+         */
+        LibraryCheck::creating(function (LibraryCheck $row) use (&$competingInsertDone): void {
+            if ($competingInsertDone) {
+                return;
+            }
+
+            $competingInsertDone = true;
+
+            DB::table('library_checks')->insert([
+                'user_id' => $row->user_id,
+                'suwayomi_manga_id' => $row->suwayomi_manga_id,
+                'state' => LibraryCheck::CHECKED,
+                'chapter_count' => 1,
+                'checked_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $row = $this->ledger()->check($this->user, 76, force: true);
+
+        $this->assertTrue($competingInsertDone, 'the competing insert happened after the read missed it');
+        $this->assertSame(LibraryCheck::CHECKED, $row->state);
+        $this->assertSame(5, (int) $row->chapter_count, 'the losing press writes its own result over the row it lost to');
+        $this->assertSame(1, LibraryCheck::query()->forUser($this->user->id)->count(), 'one row per series, as the index requires');
+        $this->assertSame(
+            5,
+            (int) LibraryCheck::query()->forUser($this->user->id)->value('chapter_count'),
+            'and the stored row is the one the second press saved',
+        );
+    }
+
     public function test_the_floor_holds_a_recently_checked_series(): void
     {
         $this->addToLibrary(76);
@@ -697,6 +741,52 @@ class LibraryCheckTest extends TestCase
         }
 
         $this->app->call([new CheckLibrary($this->user->id), 'handle']);
+
+        Queue::assertPushed(CheckLibrary::class);
+    }
+
+    public function test_a_capped_pass_stays_running_when_the_oldest_row_is_not_due(): void
+    {
+        Queue::fake();
+
+        /*
+         * The row `due()` returns first and rejects. It is checked 300 days ago under a 365
+         * day interval, so it sorts ahead of every due row and is not itself due. Asking for
+         * one row used to answer "this one is not due" and stop the chain with 6 due series
+         * still unvisited.
+         */
+        $notDue = $this->addToLibrary(1);
+        $notDue->chapter_list_checked_at = now()->subDays(300);
+        $notDue->fetch_interval_days = 365;
+        $notDue->save();
+
+        // More due series than one pass may visit, all behind the row above in `due()`.
+        // Forty days is past their thirty day interval, so they are due; twenty days
+        // would not be, because `isDue()` asks for a check older than the interval.
+        foreach (range(2, 66) as $id) {
+            $due = $this->addToLibrary($id);
+            $due->chapter_list_checked_at = now()->subDays(40);
+            $due->fetch_interval_days = 30;
+            $due->save();
+
+            $this->refreshShapes[$id] = ['chapters' => 1];
+        }
+
+        $this->assertCount(65, app(CheckSchedule::class)->due($this->user), 'the fixture holds 65 due series');
+
+        $this->app->call([new CheckLibrary($this->user->id), 'handle']);
+
+        $run = CheckRun::query()->forUser($this->user->id)->latest('id')->firstOrFail();
+
+        /*
+         * The oldest not-due row takes one of the sixty places before the interval filter
+         * runs, so the cap offers 59 due rows. That is `due()`'s measured answer for the
+         * cap, not a second query's.
+         */
+        $this->assertSame(59, (int) $run->checked, 'the pass visited what the capped query offered');
+        $this->assertSame(CheckRun::RUNNING, $run->state, 'the due series behind the not-due row keep the run open');
+        $this->assertNull($run->finished_at);
+        $this->assertCount(6, app(CheckSchedule::class)->due($this->user), 'the remaining due series are still owed a check');
 
         Queue::assertPushed(CheckLibrary::class);
     }
