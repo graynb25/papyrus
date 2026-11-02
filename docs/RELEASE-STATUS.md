@@ -1,15 +1,15 @@
-# Release status
+﻿# Release status
 
 Updated 2026-11-01.
 
 - **1.5.3 is built and tagged locally.** It fixes the fresh-install failure in 1.5.2, carries
   the security work finished since that release, and adds the update contract. It is built from
-  `ff5d607` and tagged `v1.5.3`. Publication waits for the fresh-install manual sandbox.
+  `5ae2794` and tagged `v1.5.3`. Publication waits for the fresh-install manual sandbox.
 - **1.5.3 artifacts.** The installer is 245.6 MB, SHA-256
-  `3cd8f348bfa0852364fa70faae623141e9a5f9f47f78a2b798077ad3f34fb93a`; the portable is
+  `f813140709d64a892ce5652754bd2824d7cfdf021ab9ef6bb3118cf426eb9501`; the portable is
   285.6 MB, SHA-256
-  `5b1875999ac01153ad570630c90d5c361437ca14d8f063ef90e83cd2d30d63bd`. Both name
-  `ff5d607`, and [`releases/1.5.3.json`](../releases/1.5.3.json) carries both.
+  `7afa7b574640eff061d6c2877b79070c65f42398e3dbc9ce4196f2308bdb1d44`. Both name
+  `5ae2794`, and [`releases/1.5.3.json`](../releases/1.5.3.json) carries both.
 - **1.5.2 has a fresh-install regression.** A new install of 1.5.2 stops before the first
   migration because it tries to snapshot a database that does not exist yet. Existing 1.5.2
   installs can upgrade to 1.5.3. The 1.5.2 release page carries a warning.
@@ -60,3 +60,4 @@ Updated 2026-11-01.
 - **Still open.** The fresh-install manual sandbox for 1.5.3. D10 and the WP2-S4 runtime
   drills. DEP-01, DEP-04, DEP-05, DEP-06, DEP-09, the COR batch and the CQ batch remain for
   1.5.4. The WP2-S7 sandbox install is the manual run in progress.
+
