@@ -578,7 +578,7 @@ on. Use `{{ Js::from($x) }}`.
 
 **A plain document is not a Livewire page, so nothing is automatic.** Alpine happens to load
 here because `partials.head` pulls in Flux and Livewire, but the reader does not use it, and
-`resources/js/app.js` is empty. Anything the reader needs it wires up itself, and the one
+the app ships no own script entry point. Anything the reader needs it wires up itself, and the one
 call it must not make is waiting on `window.load`: a source that stalls on a single page
 stalls the reader, and the reader starts measuring immediately instead.
 

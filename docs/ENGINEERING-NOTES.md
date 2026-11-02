@@ -302,8 +302,9 @@ Each of these cost real time. Do not repeat them.
     the auth middleware redirects and the harness reports a broken proxy. Suwayomi was serving
     198KB of webp the whole time. Exercise the proxy through the kernel with a real login, or
     assert against the direct upstream call.
-44. **`resources/js/app.js` is empty, so nothing from the app's own entry point reaches a page
-    that does not use Livewire.** Alpine does still load, because `partials.head` pulls in Flux
+44. **The app's own entry point reached no page that does not use Livewire, and is now gone.**
+    `partials.head` used to load an empty `resources/js/app.js`; it was removed so the build no
+    longer emits an empty chunk. Alpine does still load, because `partials.head` pulls in Flux
     and Flux pulls in Livewire, so this is not an Alpine trap. But the reader was written in
     Alpine directives that never took effect, and nothing about the rendered HTML looks wrong.
     A directive that quietly does nothing is the failure mode; assert the absence of `x-data`
