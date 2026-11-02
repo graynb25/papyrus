@@ -8,6 +8,7 @@ use App\Models\ImportRun;
 use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
+use App\Support\UserKey;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SourceCatalog;
 use App\Suwayomi\SuwayomiException;
@@ -549,7 +550,7 @@ final class BackupImporter
         }
 
         $library = app(Library::class);
-        $userId = $user instanceof User ? $user->id : $user;
+        $userId = UserKey::of($user);
         $seasons = $backup->series->keyBy(fn (ImportedSeries $s): int => $s->backupId);
 
         $placed = 0;

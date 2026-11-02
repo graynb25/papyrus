@@ -5,6 +5,7 @@ namespace App\Models\Concerns;
 use App\Exceptions\MissingOwnerException;
 use App\Models\Scopes\OwnedByUser;
 use App\Models\User;
+use App\Support\UserKey;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -75,7 +76,7 @@ abstract class OwnedModel extends Model
 
         $model->setAttribute(
             $model->getUserIdColumn(),
-            $user instanceof User ? $user->getKey() : $user,
+            UserKey::of($user),
         );
 
         $model->fill($attributes);
@@ -96,7 +97,7 @@ abstract class OwnedModel extends Model
             ->withoutGlobalScope(OwnedByUser::class)
             ->where(
                 $this->qualifyColumn($this->getUserIdColumn()),
-                $user instanceof User ? $user->getKey() : $user,
+                UserKey::of($user),
             );
     }
 

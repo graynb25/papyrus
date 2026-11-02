@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\OwnedModel;
 use App\Models\Scopes\OwnedByUser;
+use App\Support\UserKey;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Support\Carbon;
 
@@ -62,7 +63,7 @@ class UserSource extends OwnedModel
             return 0;
         }
 
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
         $now = now();
 
         $rows = array_map(static fn (int $sourceId): array => [
@@ -102,7 +103,7 @@ class UserSource extends OwnedModel
             return 0;
         }
 
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
         $sourceIds = array_values(array_unique(array_map('intval', $sourceIds)));
 
         if ($pinned) {
@@ -151,7 +152,7 @@ class UserSource extends OwnedModel
      */
     public static function pinnedSourceIdsFor(User|int $user): array
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return static::forUser($userId)->whereNotNull('pinned_at')->pluck('source_id')->all();
     }

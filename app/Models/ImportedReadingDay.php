@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Import\ReadingDay;
 use App\Models\Concerns\OwnedModel;
 use App\Support\ReadingInsights;
+use App\Support\UserKey;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -67,7 +68,7 @@ class ImportedReadingDay extends OwnedModel
      */
     public static function replaceFor(User|int $user, string $backupKey, int $mangaId, Collection $days): void
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         DB::transaction(function () use ($userId, $backupKey, $mangaId, $days): void {
             static::query()

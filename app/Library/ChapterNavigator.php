@@ -4,6 +4,7 @@ namespace App\Library;
 
 use App\Models\ChapterState;
 use App\Models\User;
+use App\Support\UserKey;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Collection;
@@ -68,7 +69,7 @@ class ChapterNavigator
      */
     public function forSeries(User|int $user, int $mangaId, int $currentChapterId): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $rows = $this->rows([$mangaId]);
 

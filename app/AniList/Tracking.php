@@ -7,6 +7,7 @@ use App\Models\AniListAccount;
 use App\Models\AniListMedia;
 use App\Models\ChapterState;
 use App\Models\User;
+use App\Support\UserKey;
 use App\Suwayomi\SeriesGateway;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
@@ -61,7 +62,7 @@ class Tracking
      */
     public function accountFor(User|int $user): ?AniListAccount
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return AniListAccount::forUser($userId)->first();
     }
@@ -88,7 +89,7 @@ class Tracking
      */
     public function disconnect(User|int $user): void
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         AniListAccount::forUser($userId)->delete();
     }
@@ -108,7 +109,7 @@ class Tracking
      */
     public function scheduleSync(User|int $user, int $mangaId): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         if (AniListAccount::forUser($userId)->exists() === false) {
             return false;
@@ -141,7 +142,7 @@ class Tracking
      */
     public function sync(User|int $user, int $mangaId): string
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $account = $this->accountFor($userId);
 

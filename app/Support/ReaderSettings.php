@@ -164,7 +164,7 @@ class ReaderSettings
      */
     public function resolve(User|int $user, int $mangaId, array $session = []): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $settings = $this->defaults();
 
@@ -230,7 +230,7 @@ class ReaderSettings
      */
     public function setCategorySettings(User|int $user, int $categoryId, array $settings): Category
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $category = Category::forUser($userId)->whereKey($categoryId)->first();
 
@@ -253,7 +253,7 @@ class ReaderSettings
      */
     public function clearCategorySettings(User|int $user, int $categoryId): void
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         Category::forUser($userId)
             ->whereKey($categoryId)
@@ -313,7 +313,7 @@ class ReaderSettings
      */
     public function setSeriesOverride(User|int $user, int $mangaId, array $settings): SeriesState
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $state = SeriesState::forUser($userId)->where('suwayomi_manga_id', $mangaId)->first();
 
@@ -344,7 +344,7 @@ class ReaderSettings
      */
     public function clearSeriesOverride(User|int $user, int $mangaId): void
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         SeriesState::forUser($userId)
             ->where('suwayomi_manga_id', $mangaId)

@@ -4,6 +4,7 @@ namespace App\Covers;
 
 use App\Models\SeriesCover;
 use App\Models\User;
+use App\Support\UserKey;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
@@ -87,7 +88,7 @@ class CoverStore
      */
     public function store(User|int $user, int $mangaId, UploadedFile $file): SeriesCover
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $contents = (string) file_get_contents($file->getRealPath());
         $source = $this->inspect($contents);
@@ -482,7 +483,7 @@ class CoverStore
     private function query(User|int $user): Builder
     {
         return SeriesCover::query()->forUser(
-            $user instanceof User ? (int) $user->getKey() : $user,
+            UserKey::of($user),
         );
     }
 

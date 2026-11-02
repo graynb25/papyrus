@@ -4,6 +4,7 @@ namespace App\Library;
 
 use App\Models\SeriesState;
 use App\Models\User;
+use App\Support\UserKey;
 use Illuminate\Support\Collection;
 
 /**
@@ -106,7 +107,7 @@ class CheckSchedule
      */
     public function due(User|int $user, ?int $limit = null): Collection
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         /*
          * Read every library row rather than filtering in SQL, because the interval
@@ -171,7 +172,7 @@ class CheckSchedule
      */
     public function summary(User|int $user): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $states = SeriesState::forUser($userId)
             ->where('in_library', true)

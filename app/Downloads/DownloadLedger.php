@@ -6,6 +6,7 @@ use App\Jobs\SyncDownloads;
 use App\Models\Download;
 use App\Models\User;
 use App\Support\ReadingState;
+use App\Support\UserKey;
 use App\Suwayomi\DownloadGateway;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
@@ -66,7 +67,7 @@ class DownloadLedger
      */
     public function enqueue(User|int $user, array $chapterIds, ?int $mangaId = null): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $ids = array_values(array_unique(array_filter(
             array_map('intval', $chapterIds),
@@ -174,7 +175,7 @@ class DownloadLedger
      */
     public function sync(User|int $user): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $pending = Download::forUser($userId)->pending()->get();
 
@@ -430,7 +431,7 @@ class DownloadLedger
      */
     public function cancel(User|int $user, int $chapterId): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $row = Download::forUser($userId)->where('suwayomi_chapter_id', $chapterId)->first();
 
@@ -458,7 +459,7 @@ class DownloadLedger
      */
     public function forget(User|int $user, int $chapterId): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $row = Download::forUser($userId)->where('suwayomi_chapter_id', $chapterId)->first();
 
@@ -501,7 +502,7 @@ class DownloadLedger
      */
     public function forgetSeries(User|int $user, int $mangaId): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $removed = 0;
         $cancelled = 0;
@@ -535,7 +536,7 @@ class DownloadLedger
      */
     public function sharedQueue(User|int $user): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $mine = Download::forUser($userId)->pending()->pluck('suwayomi_chapter_id')->all();
 
@@ -563,7 +564,7 @@ class DownloadLedger
      */
     public function forUser(User|int $user, int $limit = 200): Collection
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return Download::forUser($userId)
             ->orderByRaw("case when state in ('queued', 'downloading') then 0 else 1 end")
@@ -579,7 +580,7 @@ class DownloadLedger
      */
     public function counts(User|int $user): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $byState = DB::connection()->table('downloads')
             ->select('state')

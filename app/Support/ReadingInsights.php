@@ -52,7 +52,7 @@ class ReadingInsights
      */
     public function bySeries(User|int $user, ?CarbonImmutable $since): Collection
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         /** @var Collection<int, array{manga_id: int, seconds: int, native_seconds: int, imported_seconds: int, pages: int, sessions: int, last_active_at: CarbonImmutable}> $merged */
         $merged = ReadingSession::forUser($userId)

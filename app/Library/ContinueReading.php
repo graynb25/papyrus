@@ -5,6 +5,7 @@ namespace App\Library;
 use App\Models\ChapterState;
 use App\Models\SeriesState;
 use App\Models\User;
+use App\Support\UserKey;
 use Illuminate\Support\Collection;
 
 /**
@@ -62,7 +63,7 @@ class ContinueReading
      */
     public function forLibrary(User|int $user, array $sourceRows): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $states = SeriesState::forUser($userId)
             ->where('in_library', true)

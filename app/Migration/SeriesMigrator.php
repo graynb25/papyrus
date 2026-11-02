@@ -9,6 +9,7 @@ use App\Models\SeriesMigration;
 use App\Models\Source;
 use App\Models\User;
 use App\Support\ReadingState;
+use App\Support\UserKey;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +76,7 @@ class SeriesMigrator
     public function migrate(User|int $user, int $fromMangaId, int $toMangaId, ?MigrationSettings $settings = null): array
     {
         $settings ??= MigrationSettings::defaults();
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         if ($fromMangaId === $toMangaId) {
             return $this->refuse(__('That is the series it is already on.'));
@@ -279,7 +280,7 @@ class SeriesMigrator
      */
     public function lastMigrationFor(User|int $user, int $toMangaId): ?SeriesMigration
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return SeriesMigration::forUser($userId)
             ->where('to_manga_id', $toMangaId)

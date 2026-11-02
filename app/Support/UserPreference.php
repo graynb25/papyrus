@@ -40,7 +40,7 @@ final class UserPreference
      */
     public function read(User|int $user, string $key): ?bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $row = DB::connection()->table('user_settings')
             ->where('user_id', $userId)
@@ -72,7 +72,7 @@ final class UserPreference
      */
     public function write(User|int $user, string $key, bool $value): void
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $attributes = [
             'value' => json_encode($value),

@@ -158,7 +158,7 @@ class ChapterNotes
      */
     private function states(User|int $user, array $chapterIds): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $rows = ChapterState::query()
             ->forUser($userId)
@@ -196,7 +196,7 @@ class ChapterNotes
      */
     private function query(User|int $user): Builder
     {
-        return Note::query()->forUser($user instanceof User ? $user->getKey() : $user);
+        return Note::query()->forUser(UserKey::of($user));
     }
 
     /**

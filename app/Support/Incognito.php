@@ -107,7 +107,7 @@ class Incognito
      */
     public function suppresses(User|int $user, int $mangaId): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $incognito = $this->incognitoIds($userId);
 
@@ -133,7 +133,7 @@ class Incognito
      */
     public function sourceIsIncognito(User|int $user, string $sourceId): bool
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return in_array(
             $sourceId,
@@ -202,7 +202,7 @@ class Incognito
             return 0;
         }
 
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
         $now = now();
 
         $rows = array_map(static fn (int|string $sourceId): array => [

@@ -80,7 +80,7 @@ class ReadingState
     public function series(User|int $user, int $mangaId): SeriesState
     {
         $state = new SeriesState;
-        $state->setAttribute('user_id', $user instanceof User ? $user->getKey() : $user);
+        $state->setAttribute('user_id', UserKey::of($user));
         $state->suwayomi_manga_id = $mangaId;
 
         return $state;
@@ -91,7 +91,7 @@ class ReadingState
      */
     public function findSeries(User|int $user, int $mangaId): ?SeriesState
     {
-        return SeriesState::forUser($user instanceof User ? $user->getKey() : $user)
+        return SeriesState::forUser(UserKey::of($user))
             ->where('suwayomi_manga_id', $mangaId)
             ->first();
     }
@@ -105,7 +105,7 @@ class ReadingState
      */
     public function chapter(User|int $user, int $mangaId, int $chapterId): ChapterState
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $existing = ChapterState::forUser($userId)
             ->where('suwayomi_chapter_id', $chapterId)
@@ -125,7 +125,7 @@ class ReadingState
 
     public function findChapter(User|int $user, int $chapterId): ?ChapterState
     {
-        return ChapterState::forUser($user instanceof User ? $user->getKey() : $user)
+        return ChapterState::forUser(UserKey::of($user))
             ->where('suwayomi_chapter_id', $chapterId)
             ->first();
     }
@@ -283,7 +283,7 @@ class ReadingState
      */
     public function addTag(User|int $user, int $mangaId, string $tag): SeriesState
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return SeriesState::query()->getConnection()->transaction(function () use ($userId, $mangaId, $tag): SeriesState {
             $state = SeriesState::query()
@@ -438,7 +438,7 @@ class ReadingState
      */
     public function openChapter(User|int $user, int $mangaId, int $chapterId): ChapterState
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         /*
          * Incognito, and this is the write that would leave the most behind: it stamps
@@ -596,7 +596,7 @@ class ReadingState
             return;
         }
 
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
         $now = now();
 
         /*
@@ -644,7 +644,7 @@ class ReadingState
         }
 
         $rows = DB::connection()->table('chapter_states')
-            ->where('user_id', $user instanceof User ? (int) $user->getKey() : $user)
+            ->where('user_id', UserKey::of($user))
             ->where('is_read', true)
             ->whereIn('suwayomi_manga_id', $ids)
             ->get(['suwayomi_manga_id', 'suwayomi_chapter_id']);
@@ -673,7 +673,7 @@ class ReadingState
             return [];
         }
 
-        return ChapterState::forUser($user instanceof User ? $user->getKey() : $user)
+        return ChapterState::forUser(UserKey::of($user))
             ->whereIn('suwayomi_chapter_id', $chapterIds)
             ->get()
             ->keyBy('suwayomi_chapter_id')
@@ -757,7 +757,7 @@ class ReadingState
         bool $carryChapters = true,
         bool $carryShelves = true,
     ): array {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         return DB::transaction(function () use ($userId, $fromMangaId, $toMangaId, $chapterMap, $carryChapters, $carryShelves): array {
             $moved = 0;

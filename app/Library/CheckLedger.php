@@ -7,6 +7,7 @@ use App\Models\LibraryCheck;
 use App\Models\SeriesState;
 use App\Models\User;
 use App\Support\Library;
+use App\Support\UserKey;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -96,7 +97,7 @@ class CheckLedger
      */
     public function check(User|int $user, int $mangaId, bool $force = false, ?int $timeout = null): LibraryCheck
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $state = SeriesState::forUser($userId)
             ->where('suwayomi_manga_id', $mangaId)
@@ -344,7 +345,7 @@ class CheckLedger
     private function candidates(User|int $user, int $maxSeries, bool $force): Collection
     {
         $schedule = app(CheckSchedule::class);
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         if ($force) {
             return SeriesState::forUser($userId)
@@ -517,7 +518,7 @@ class CheckLedger
      */
     public function counts(User|int $user): array
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         $rows = LibraryCheck::query()->forUser($userId)->get(['state', 'new_chapters', 'checked_at']);
 

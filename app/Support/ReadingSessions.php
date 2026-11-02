@@ -67,7 +67,7 @@ class ReadingSessions
      */
     public function openFor(User|int $user, int $mangaId, int $chapterId): void
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         if ($this->reading->suppresses($user, $mangaId)) {
             return;
@@ -103,7 +103,7 @@ class ReadingSessions
      */
     public function pingFor(User|int $user, int $mangaId, int $chapterId, int $page): void
     {
-        $userId = $user instanceof User ? $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         if ($this->reading->suppresses($user, $mangaId)) {
             return;

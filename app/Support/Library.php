@@ -937,6 +937,6 @@ class Library
 
     private function userId(User|int $user): int
     {
-        return $user instanceof User ? (int) $user->getKey() : $user;
+        return UserKey::of($user);
     }
 }

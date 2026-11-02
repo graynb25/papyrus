@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\OwnedModel;
+use App\Support\UserKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -109,7 +110,7 @@ class CheckRun extends OwnedModel
      */
     public static function begin(User|int $user, int $total): self
     {
-        $userId = $user instanceof User ? (int) $user->getKey() : $user;
+        $userId = UserKey::of($user);
 
         self::query()
             ->forUser($userId)
