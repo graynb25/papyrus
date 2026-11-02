@@ -142,16 +142,17 @@ class ProcessIdentityTest extends TestCase
     }
 
     /**
-     * A lock written with microseconds matches a start time read in whole seconds.
+     * Start times are compared with a one-second tolerance, not exactly.
      *
      * The two sources disagree below a second. PHP's `REQUEST_TIME_FLOAT` carries microseconds and is
-     * what a lock records; Windows CIM reports `CreationDate` at whole seconds and is what a reader
+     * what a lock records; Windows CIM reports `CreationDate` at a whole second and is what a reader
      * gets back. Measured, with a live holder holding a lock:
      *
      *     lock startedAt   : 1792009321.885108
      *     actual startTime : 1792009321.000000
      *
-     * An exact comparison rejects a process that is the process, and the rejection is silent: the lock
+     * A winner that starts at a second boundary can be a whole second apart from the loser's reading,
+     * so an exact comparison rejects a process that is the process. The rejection is silent: the lock
      * reports itself stale and a launcher starts a second install over the first.
      *
      * This runs the real `isSameProcess()` against the real pair of strings rather than a copy of the
@@ -212,9 +213,14 @@ class ProcessIdentityTest extends TestCase
             .' (start '.$started.', fraction '.$fraction.', offset '.$withinSecond.')',
         );
 
-        $this->assertFalse(
+        $this->assertTrue(
             ProcessIdentity::isSameProcess($pid, number_format($asFloat + 1.0, 6, '.', '')),
-            'a full second later is a different run of the process, not a reading of this one',
+            'a reading one full second later is still this process, which is the tolerance the two clocks need',
+        );
+
+        $this->assertFalse(
+            ProcessIdentity::isSameProcess($pid, number_format($asFloat + 2.0, 6, '.', '')),
+            'but two seconds later is a different run of the process',
         );
 
         /*
@@ -224,7 +230,8 @@ class ProcessIdentityTest extends TestCase
          * start time, because truncating a value like 1792011484.101414 gives 1792011484 while
          * truncating 1792011485.101414 gives 1792011485 and lands on the far side. That is correct
          * for CIM, which reports a whole second, and it means the case has to be constructed rather
-         * than read off whatever this process happened to be.
+         * than read off whatever this process happened to be. One whole second away is inside the
+         * tolerance; two is not.
          */
         $whole = (int) $started;
 
@@ -233,22 +240,95 @@ class ProcessIdentityTest extends TestCase
             'a whole second reading of the same second is this process, which is what CIM gives',
         );
 
-        $this->assertFalse(
+        $this->assertTrue(
             ProcessIdentity::isSameProcess($pid, ($whole + 1).'.000000'),
-            'and a whole second reading of the next one is not',
+            'and one whole second away is inside the tolerance',
+        );
+
+        $this->assertFalse(
+            ProcessIdentity::isSameProcess($pid, ($whole + 2).'.000000'),
+            'but two whole seconds away is a different run of the process',
         );
     }
 
     /**
-     * One second apart is a different process, which is the whole reason the start time is stored.
+     * One second away is still this process; two seconds away is a different one.
+     *
+     * The one-second case is the measured concurrency flake: a winner at a second boundary can be one
+     * second from the loser's CIM reading. The two-second case is what still distinguishes a recycled
+     * pid, which starts much later than the start time the old lock recorded.
+     *
+     * The value is built from the real `ProcessIdentity::startTime()` and formatted to the same six
+     * decimals a lock stores, so this exercises the real strings rather than an invented pair.
      */
-    public function test_a_start_time_a_second_away_is_a_different_process(): void
+    public function test_start_times_one_second_apart_are_tolerated_and_two_are_not(): void
     {
-        $oneSecondOn = number_format((float) ProcessIdentity::startTime((int) getmypid()) + 1, 6, '.', '');
+        $pid = (int) getmypid();
+        $started = ProcessIdentity::startTime($pid);
+
+        $this->assertNotNull($started, 'this process must have a readable start time for this test to mean anything');
+
+        $at = (float) $started;
+
+        $this->assertTrue(
+            ProcessIdentity::isSameProcess($pid, number_format($at + 1.0, 6, '.', '')),
+            'a start time one second after the real one is the same process at this tolerance (real '.$started.')',
+        );
 
         $this->assertFalse(
-            ProcessIdentity::isSameProcess((int) getmypid(), $oneSecondOn),
-            'a pid that is alive with a start time one second out is not the process that lock describes',
+            ProcessIdentity::isSameProcess($pid, number_format($at + 2.0, 6, '.', '')),
+            'a start time two seconds after the real one is a different process (real '.$started.')',
+        );
+    }
+
+    /**
+     * A live process whose start time cannot be read is held, not declared stale.
+     *
+     * A failed identity read used to answer "not the same process", which is the dangerous direction:
+     * a loser in the concurrency test unlinked the live winner's lock and took the install. A live pid
+     * with no readable start time is evidence of a process that exists, not evidence that the lock is
+     * stale.
+     *
+     * The only start time this process cannot read is its own, and the deterministic way to make that
+     * read fail is to hide `REQUEST_TIME_FLOAT` before the class reads it. That is done in a child
+     * process rather than here, because the framework uses the same value and removing it in this
+     * process would change state this test does not own.
+     */
+    public function test_a_live_process_with_an_unreadable_start_time_is_still_held(): void
+    {
+        $workspace = $this->workspace();
+        $script = $workspace.DIRECTORY_SEPARATOR.'unreadable-start.php';
+        $stderr = $workspace.DIRECTORY_SEPARATOR.'unreadable-start.err';
+        $launcher = dirname(__DIR__, 2).'/packaging/launcher/src';
+
+        file_put_contents($script, <<<'PHP'
+<?php
+unset($_SERVER['REQUEST_TIME_FLOAT']);
+
+require $argv[1];
+require $argv[2];
+
+$pid = getmypid();
+
+exit(\Papyrus\Launcher\ProcessIdentity::isSameProcess($pid, '1.000000') ? 0 : 1);
+PHP);
+
+        $process = proc_open(
+            [PHP_BINARY, $script, $launcher.'/SystemTools.php', $launcher.'/ProcessIdentity.php'],
+            [1 => ['file', $workspace.DIRECTORY_SEPARATOR.'unreadable-start.out', 'w'], 2 => ['file', $stderr, 'w']],
+            $pipes,
+        );
+
+        $this->assertIsResource($process, 'the child process could not be started');
+
+        $exit = proc_close($process);
+        $error = (string) @file_get_contents($stderr);
+
+        $this->assertSame(
+            0,
+            $exit,
+            'a live pid with no readable start time must be treated as held, not as a stale lock'
+            .($error === '' ? '' : ': '.$error),
         );
     }
 

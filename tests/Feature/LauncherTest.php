@@ -146,6 +146,63 @@ class LauncherTest extends TestCase
     }
 
     /**
+     * A start time one second off is still this live launcher; two seconds off is a recycled pid.
+     *
+     * This is the measured concurrency flake. A winner records `REQUEST_TIME_FLOAT` with microseconds
+     * while a loser reads the winner's CIM `CreationDate` truncated to a whole second. At a second
+     * boundary the two readings are a full second apart, and an exact comparison let the loser unlink
+     * the live winner's lock and take the install. The tolerance must accept that reading while still
+     * rejecting a pid that was recycled much later.
+     *
+     * `acquire()` is asserted as well as `isHeld()`, because refusing to start is the behaviour the
+     * lock exists for. The two-second lock is a separate file so the stale path is exercised from a
+     * clean lock rather than from the tolerated one.
+     */
+    public function test_a_lock_one_second_off_the_real_start_time_is_held_and_two_seconds_off_is_stale(): void
+    {
+        $pid = (int) getmypid();
+        $started = ProcessIdentity::startTime($pid);
+
+        $this->assertNotNull($started, 'this process must have a readable start time for this test to mean anything');
+
+        $at = (float) $started;
+
+        $tolerated = $this->lockPath('one-second.lock');
+
+        file_put_contents($tolerated, json_encode([
+            'format' => 'json',
+            'pid' => $pid,
+            'startedAt' => number_format($at + 1.0, 6, '.', ''),
+            'acquiredAt' => gmdate('c'),
+        ]));
+
+        $held = new InstanceLock($tolerated);
+
+        $this->assertTrue(
+            $held->isHeld(),
+            'a start time one second after the real one is the same live launcher at this tolerance',
+        );
+
+        $this->assertFalse($held->acquire(), 'so a second launcher must be refused');
+        $this->assertSame($pid, $held->holderPid(), 'and the live holder is still named');
+
+        $stale = $this->lockPath('two-seconds.lock');
+
+        file_put_contents($stale, json_encode([
+            'format' => 'json',
+            'pid' => $pid,
+            'startedAt' => number_format($at + 2.0, 6, '.', ''),
+            'acquiredAt' => gmdate('c'),
+        ]));
+
+        $reclaimed = new InstanceLock($stale);
+
+        $this->assertFalse($reclaimed->isHeld(), 'a start time two seconds after the real one is a recycled pid');
+        $this->assertTrue($reclaimed->acquire(), 'so the stale lock is reclaimable');
+        $this->assertSame($pid, $reclaimed->holderPid());
+    }
+
+    /**
      * A pid that exists but with no recorded start time degrades to liveness alone.
      *
      * Better than refusing to start. The lock format can evolve, and an unreadable lock from

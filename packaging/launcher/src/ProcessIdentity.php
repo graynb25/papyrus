@@ -61,28 +61,48 @@ final class ProcessIdentity
 
         $actual = self::startTime($pid);
 
+        /*
+         * A live pid whose start time cannot be read is held, not stolen.
+         *
+         * This is the conservative answer, and it is deliberate. Reading another process's start time
+         * can fail for reasons that say nothing about the process: PowerShell unavailable, a policy
+         * blocking CIM, or the read racing the winner's own start. Answering "not the same process"
+         * from a failed read unlinks a live launcher's lock, which is the dangerous direction: two
+         * launchers then supervise one install and the loser's cleanup stops the winner's children.
+         *
+         * A dead pid never reaches this point, because liveness is checked first. A recycled pid is
+         * still caught below whenever its start time is readable and more than the tolerance away.
+         */
         if ($actual === null) {
-            return false;
+            return true;
         }
 
         /*
-         * Compared to the second, not to the microsecond.
+         * One whole second of tolerance, because both sources report whole seconds and a process
+         * starting at a boundary can land on either side of it.
          *
-         * The two sources do not agree below a second. `REQUEST_TIME_FLOAT` is PHP's own float and
-         * carries microseconds; Windows CIM reports `CreationDate` at a whole second. Measured, with a
-         * live launcher holding the lock:
+         * `REQUEST_TIME_FLOAT` carries microseconds and is what a lock records; Windows CIM
+         * `CreationDate` is reduced to a whole second when it is parsed, and `ps -o lstart=` on Unix
+         * is whole seconds to begin with. The process is created before PHP's request starts, so a
+         * child created at `...408.98` can record `...409.00` in its lock while a reader sees
+         * `...408.00`. Measured in the concurrency test, with two winners:
          *
-         *     lock startedAt   : 1792009321.885108
-         *     actual startTime : 1792009321.000000
+         *     lock startedAt   : 1793658409.000777
+         *     actual startTime : 1793658408.000000
+         *     difference       : 1.000777 seconds
          *
-         * So an exact comparison rejects a process that is the process. A second is also finer than the
-         * answer needs: what distinguishes one run of a process from another is which second it began
-         * in, and two processes cannot share a pid and a start second by accident.
+         * Both readings name the same process, and the second winner took the lock because the first
+         * winner's lock looked stale. The comparison therefore works in the units both sources
+         * actually report: whole seconds, with a tolerance of one. The earlier exact comparison of
+         * those whole seconds rejected the boundary case above.
          *
-         * Both sides are truncated rather than rounded, so a start time one second before a boundary
-         * does not round up into it.
+         * One second is safe because a recycled pid starts much later than the start time the old lock
+         * recorded; it does not appear in the same or the next whole second as the process that wrote
+         * the lock. The `startedAt` is truncated rather than rounded, because both real sources
+         * truncate: CIM's `strtotime` drops the fraction and `ps` reports a whole second. Rounding a
+         * `...59.9` reading up into the next second would widen the window for no gain.
          */
-        return (int) $actual === (int) (float) $startedAt;
+        return abs((int) $actual - (int) (float) $startedAt) <= 1;
     }
 
     /**
