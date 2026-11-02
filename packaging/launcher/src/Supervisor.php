@@ -1677,6 +1677,11 @@ final class Supervisor
      * an inconsistency and is not: the extensions are only ever read, so a read only install
      * directory is exactly right for them, and copying 130MB of DLLs into the data directory on
      * every start to satisfy a path that is only read would be the worse trade.
+     *
+     * `{{OPEN_BASEDIR_EXTRA}}` is not one of the fixed roots. A 1.5.3 reader's `.env` can name a
+     * local source folder or a database outside the data directory, and `open_basedir` would turn
+     * a working upgrade into an install that cannot read its own library. It resolves to nothing
+     * when there is no `.env` or no such path, so a missing file leaves the four roots untouched.
      */
     private function resolvePhpConfig(): void
     {
@@ -1686,8 +1691,10 @@ final class Supervisor
 
         @mkdir(dirname($target), 0o777, true);
 
+        $extra = (new OpenBasedirPaths($this->environmentFile()))->paths();
+
         $resolved = str_replace(
-            ['{{APP_ROOT}}', '{{RUNTIME}}', '{{DATA}}', '{{LOGS}}', '{{TEMP}}', '{{TIMEZONE}}'],
+            ['{{APP_ROOT}}', '{{RUNTIME}}', '{{DATA}}', '{{LOGS}}', '{{TEMP}}', '{{TIMEZONE}}', '{{OPEN_BASEDIR_EXTRA}}'],
             [
                 // Forward slashes, matching the Caddyfile. An ini path is read by the C runtime
                 // rather than by PHP's own path handling, so a mixed path is at best a warning.
@@ -1697,6 +1704,13 @@ final class Supervisor
                 str_replace('\\', '/', $this->logDirectory),
                 str_replace('\\', '/', $this->dataDirectory.DIRECTORY_SEPARATOR.'tmp'),
                 $this->machineTimezone(),
+                /*
+                 * The token sits directly after `{{TEMP}}`, so the separator belongs to this value
+                 * rather than to the template. An empty result must leave no trailing `;`, which
+                 * PHP reads as an entry for the current directory rather than a root this install
+                 * chose.
+                 */
+                $extra === [] ? '' : ';'.implode(';', $extra),
             ],
             (string) file_get_contents($template),
         );
