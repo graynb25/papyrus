@@ -423,7 +423,20 @@ final class Supervisor
             // A half started install is worse than a stopped one, so unwind whatever came up
             // before rethrowing. Leaving Suwayomi running with no web server is the state a
             // reader cannot diagnose and we can.
-            $this->stopAll($say);
+            try {
+                $this->stopAll($say);
+            } catch (ProcessProbeFailed $probeFailure) {
+                /*
+                 * The reason the start failed is what the reader has to act on. A probe that
+                 * cannot read the process list during cleanup is part of that failure, not a
+                 * replacement for it, so both messages travel and the original stays the cause.
+                 */
+                $e = new RuntimeException(
+                    $e->getMessage().' '.$probeFailure->getMessage(),
+                    (int) $e->getCode(),
+                    $e,
+                );
+            }
 
             // Recorded before rethrowing, because a thrown exception in a terminal window is the
             // one message that never reaches a log file, and this is the reader's only record
@@ -461,6 +474,8 @@ final class Supervisor
      *
      * @param  (callable(string): void)|null  $say
      * @return array<string, string> Process name to how it ended.
+     *
+     * @throws ProcessProbeFailed When the operating system process list could not be read.
      */
     public function stopAll(?callable $say = null): array
     {
@@ -1447,6 +1462,8 @@ final class Supervisor
      * install is that worker. That is true across sessions, which is the case that matters, since
      * a reader running `health` is by definition in a different session from the one that started
      * Papyrus.
+     *
+     * @throws ProcessProbeFailed When the operating system process list could not be read.
      */
     public function isRunning(string $name): bool
     {
@@ -1512,6 +1529,8 @@ final class Supervisor
      *
      * @return list<int> Empty when the process is not running, or when its tokens cannot be built.
      *                   Both are the same answer for this caller and neither is guessed at.
+     *
+     * @throws ProcessProbeFailed When the operating system process list could not be read.
      */
     public function pidsFor(string $name): array
     {

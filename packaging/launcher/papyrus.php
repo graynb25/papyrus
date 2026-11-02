@@ -44,6 +44,7 @@ require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/BrowserLauncher.php';
 require __DIR__.'/src/Prober.php';
+require __DIR__.'/src/ProcessProbeFailed.php';
 require __DIR__.'/src/ProcessFinder.php';
 require __DIR__.'/src/ManagedProcess.php';
 require __DIR__.'/src/DataLocation.php';

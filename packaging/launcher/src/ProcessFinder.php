@@ -104,6 +104,8 @@ final class ProcessFinder
      *
      * @param  array<string, mixed>|list<string>  $query
      * @return list<int>
+     *
+     * @throws ProcessProbeFailed When the operating system process list could not be read.
      */
     public function find(array $query): array
     {
@@ -223,7 +225,9 @@ final class ProcessFinder
         $script = tempnam(sys_get_temp_dir(), 'papyrus-find-');
 
         if ($script === false) {
-            return [];
+            throw new ProcessProbeFailed(
+                'The process list could not be read: a temporary PowerShell script could not be created.'
+            );
         }
 
         /*
@@ -242,7 +246,14 @@ final class ProcessFinder
          */
         $script .= '.ps1';
 
-        file_put_contents($script, self::probeScript());
+        if (file_put_contents($script, self::probeScript()) === false) {
+            @unlink($script);
+
+            throw new ProcessProbeFailed(sprintf(
+                'The process list could not be read: the PowerShell probe script could not be written to %s.',
+                $script,
+            ));
+        }
 
         /*
          * The child's output goes to a file, and is read after it exits. Not read through a pipe.
@@ -267,7 +278,9 @@ final class ProcessFinder
         if ($out === false) {
             @unlink($script);
 
-            return [];
+            throw new ProcessProbeFailed(
+                'The process list could not be read: a temporary PowerShell output file could not be created.'
+            );
         }
 
         $process = @proc_open(
@@ -296,28 +309,68 @@ final class ProcessFinder
             @unlink($script);
             @unlink($out);
 
-            return [];
+            throw new ProcessProbeFailed(
+                'The process list could not be read: the PowerShell probe could not be started.'
+            );
         }
 
         // The script reads nothing from stdin. Closing it lets the child exit promptly.
         fclose($pipes[0]);
 
-        proc_close($process);
-
-        $output = (string) file_get_contents($out);
+        $exit = proc_close($process);
+        $output = @file_get_contents($out);
 
         @unlink($script);
         @unlink($out);
 
+        if ($output === false) {
+            throw new ProcessProbeFailed(sprintf(
+                'The process list could not be read: the PowerShell output file could not be read after PowerShell exited with code %d.',
+                $exit,
+            ));
+        }
+
+        return self::parseProbeOutput($output, $exit);
+    }
+
+    /**
+     * Turn raw PowerShell output into process rows, or refuse it.
+     *
+     * Public so the failure cases can be exercised without PowerShell, which is the only way to
+     * assert that empty output, a banner, malformed JSON and a non-zero exit are all named as
+     * failures rather than returned as a plausible empty process table.
+     *
+     * @return list<array{pid: int, name: string, executable: string, command: string}>
+     *
+     * @throws ProcessProbeFailed
+     */
+    public static function parseProbeOutput(string $output, int $exit): array
+    {
+        if ($exit !== 0) {
+            throw new ProcessProbeFailed(sprintf(
+                'The process list could not be read: PowerShell exited with code %d.%s',
+                $exit,
+                self::printed($output),
+            ));
+        }
+
+        if (trim($output) === '') {
+            throw new ProcessProbeFailed(
+                'The process list could not be read: PowerShell exited with code 0 but printed no output.'
+            );
+        }
+
         $decoded = json_decode($output, true);
 
         if (! is_array($decoded)) {
-            return [];
+            throw self::notAProcessTable($output, $exit);
         }
 
         // ConvertTo-Json gives a bare object for a one-row table. Accept both shapes.
         if (isset($decoded['pid'])) {
             $decoded = [$decoded];
+        } elseif (! array_is_list($decoded)) {
+            throw self::notAProcessTable($output, $exit);
         }
 
         $processes = [];
@@ -336,6 +389,36 @@ final class ProcessFinder
         }
 
         return $processes;
+    }
+
+    private static function notAProcessTable(string $output, int $exit): ProcessProbeFailed
+    {
+        return new ProcessProbeFailed(sprintf(
+            'The process list could not be read: PowerShell output was not a JSON process table (exit code %d).%s',
+            $exit,
+            self::printed($output),
+        ));
+    }
+
+    /**
+     * A short, single-line excerpt of what the probe printed, for a failure message.
+     *
+     * Bounded because a PowerShell banner or a stack trace can be long, and the point is to name
+     * the failure rather than to put the whole output into a terminal message.
+     */
+    private static function printed(string $output): string
+    {
+        $snippet = trim((string) preg_replace('/\s+/', ' ', $output));
+
+        if ($snippet === '') {
+            return '';
+        }
+
+        if (strlen($snippet) > 300) {
+            $snippet = substr($snippet, 0, 300).'...';
+        }
+
+        return ' It printed: '.$snippet;
     }
 
     /**
