@@ -2266,7 +2266,13 @@ that took as long as it did.
 
 ### 14.2 Config keys no code reads
 
-Four of the 41 leaf keys in `config/papyrus.php` are read by nothing. The count was 47 keys and 6 unread before this pass; `search.fanout_concurrency` stopped being dead then, and `downloads.cbz_export_max_bytes` stopped being dead with the CBZ export.
+Four of the 56 leaf keys in `config/papyrus.php` are read by nothing. Measured on 2026-11-02 at
+`1346199` by counting the scalar leaves in the loaded config and searching every full key in
+`app/`, `packaging/`, `routes/`, `database/` and `resources/`. The four `password_margins` keys
+are read as one array by the password margins component, so they are not in this list. The
+count was 47 keys and 6 unread when this list was first written; `search.fanout_concurrency`
+stopped being dead then, and `downloads.cbz_export_max_bytes` stopped being dead with the CBZ
+export.
 
 | Key | Why it is still there |
 |---|---|
@@ -2349,12 +2355,15 @@ thing to check before wiring it up.**
   job whose runtime is uncertain. Only `FindMigrationCandidates` does. The four
   self-re-booking jobs, including `CheckLibrary` whose docblock cites the trap, leave it
   default.
-- **Two orphaned docblocks**, each documenting nothing because another docblock follows it
-  immediately: `ReadingState.php:103` and `SearchSourceJob.php:34`.
+- **No orphaned docblocks remain.** A pass on 2026-11-02 moved or merged every block that was
+  immediately followed by another; `ReadingState.php` and `SearchSourceJob.php` were two of the
+  sites. The same pass covered `packaging/` and `tests/`.
 - **`ReaderSettings::gap` is documented and defaulted inconsistently.** The docblock
   explains why a webtoon needs a non-zero gap; the default is `0`.
-- **`.env.example` documents 12 of the 36 env-backed keys.** The rest are discoverable in
-  `config/papyrus.php`, which is where they are commented.
+- **`.env.example` documents 15 of the 45 env-backed names in `config/papyrus.php`.** Measured on
+  2026-11-02 by matching the unique `env('...')` names in that file against the uncommented
+  `NAME=` lines in `.env.example`. The rest are discoverable in `config/papyrus.php`, which is
+  where they are commented.
 - **`.well-known/passkey-endpoints` carries no middleware at all**, unlike every other route.
 - **The reader is described as carrying no framework**, and its script does not use one, but
   `wire:navigate` is on every chapter-navigator segment, so the rendered document does

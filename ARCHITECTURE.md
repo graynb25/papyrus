@@ -131,13 +131,17 @@ build/install/                  what the installer packages
   app/, config/, database/, public/, resources/, routes/, vendor/
 ```
 
-The build is four scripts, run in this order:
+The build is five scripts, run in this order:
 
 ```
+stage-frankenphp.php  fetch and verify the FrankenPHP archive
 stage-runtime.php     the pinned JRE and the CA bundle
-build-install.php     assemble build/install, and verify 20 required paths
+build-install.php     assemble build/install, and verify 28 required paths
 build-installer.php   compile papyrus.iss with ISCC into build/dist
+build-portable.php    package build/install as the portable zip
 ```
+
+`REQUIRED_AFTER_BUILD` in `build-install.php` is the list; it holds 28 entries on 2026-11-02.
 
 `build-install.php` **deletes and rebuilds `build/install` in place**, so nothing may be running out
 of it during a build. It ends by loading the launcher from the tree it just built and booting it,
@@ -147,7 +151,7 @@ which is how a build that would fatal on first run is caught before it ships.
 
 ## The launcher is not Laravel
 
-[`packaging/launcher/`](packaging/launcher) is 25 plain PHP classes with **no autoloader and no
+[`packaging/launcher/src/`](packaging/launcher/src) is 46 plain PHP classes with **no autoloader and no
 dependencies**. `papyrus.php` requires them in dependency order by hand.
 
 This is deliberate and it is the most important structural fact about the packaging layer. The
@@ -244,21 +248,29 @@ shape regardless of which process wrote the line.
 
 ## Testing
 
-1,725 tests, 4,303 assertions.
+The suite count moves with every commit, so measure the tree you are on with
+`php -d memory_limit=2048M artisan test`. Measured on 2026-11-02 at `1346199`: 2,795 tests,
+8,549 assertions, one skipped.
 
 ```
-php -d memory_limit=2048M artisan test --without-tty
+php -d memory_limit=2048M artisan test
 php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G
-php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/
+php -d memory_limit=2048M vendor/bin/pint --test
 python ..\.tools\suwayomi\check-dashes.py
+python tools\check-machine-detail.py
+python tools\test-check-machine-detail.py
 ```
 
-Four gates, all required. Notes that are not obvious:
+Six gates, all required. Notes that are not obvious:
 
 - **CI runs on `windows-latest`, one job, no matrix.** The product is a Windows executable. On Linux
   the process-matching tests find nothing and pass vacuously, so a green Linux job would report the
   packaging layer as covered while testing none of it.
-- **PHPStan analyses `packaging/` as well as `app/`.** Adding that found four defects in one commit.
+- **PHPStan level 7 analyses `packaging/` as well as `app/`.** Adding that found four defects in one commit.
+  It does not analyse `tests/`, so this is not test type checking.
+- **Pint covers the whole repository.** A narrower `app/ tests/ packaging/` scope missed
+  `database/` and `routes/` and let a red CI run through.
+- **The installed PHPUnit rejects `--without-tty`.** The command above is the one that runs.
 - **Zero em and en dashes** anywhere, in code, comments, docs and commit messages. The checker scans
   every tracked file.
 - **Mutation checks** live in `.tools/suwayomi/`. A run distinguishes `killed` (covered), `SURVIVED`
