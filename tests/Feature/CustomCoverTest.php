@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use RuntimeException;
 use Tests\Support\MintsTokens;
+use Tests\Support\UsesTranslations;
 use Tests\TestCase;
 
 /**
@@ -43,7 +44,7 @@ use Tests\TestCase;
  */
 class CustomCoverTest extends TestCase
 {
-    use MintsTokens, RefreshDatabase;
+    use MintsTokens, RefreshDatabase, UsesTranslations;
 
     private User $user;
 
@@ -838,6 +839,38 @@ class CustomCoverTest extends TestCase
             ->assertHasErrors(['coverUpload']);
 
         $this->assertNull($this->store()->find($this->user, 76));
+    }
+
+    public function test_the_cover_refusals_are_translated(): void
+    {
+        $this->useTranslations([
+            'A cover has to be a JPEG, PNG or WebP.' => 'That cover is not a JPEG, PNG or WebP.',
+            'A cover has to be under :max KB. Resize it and try again.' => 'That cover is over :max KB. Resize it and try again.',
+        ]);
+
+        $wrongType = Livewire::test('pages::series', ['manga' => 76])
+            ->set('coverUpload', UploadedFile::fake()->createWithContent('a.gif', 'GIF89a'));
+
+        $this->assertSame(
+            'That cover is not a JPEG, PNG or WebP.',
+            $wrongType->errors()->first('coverUpload'),
+            'the mimes refusal is a translation key, not a literal',
+        );
+
+        // This test PHP reports a 2MB upload ceiling, and Livewire copies it into its
+        // temporary upload rule, so the 4MB fixture would be refused before saveCover's
+        // own 2048 KB rule ran. Raise only that rule so the message under test is the
+        // page's, which is the one a packaged install with a larger PHP ceiling shows.
+        config(['livewire.temporary_file_upload.rules' => ['required', 'file', 'max:12288']]);
+
+        $tooBig = Livewire::test('pages::series', ['manga' => 76])
+            ->set('coverUpload', UploadedFile::fake()->create('huge.jpg', 4096));
+
+        $this->assertSame(
+            'That cover is over 2048 KB. Resize it and try again.',
+            $tooBig->errors()->first('coverUpload'),
+            'the max refusal keeps the :max replacement after translation',
+        );
     }
 
     public function test_removing_through_the_page_puts_the_source_cover_back(): void

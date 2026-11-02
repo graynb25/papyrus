@@ -990,8 +990,8 @@ new class extends Component
                 'max:'.(int) config('papyrus.covers.max_kilobytes'),
             ],
         ], [
-            'coverUpload.max' => 'A cover has to be under :max KB. Resize it and try again.',
-            'coverUpload.mimes' => 'A cover has to be a JPEG, PNG or WebP.',
+            'coverUpload.max' => __('A cover has to be under :max KB. Resize it and try again.'),
+            'coverUpload.mimes' => __('A cover has to be a JPEG, PNG or WebP.'),
         ]);
 
         try {

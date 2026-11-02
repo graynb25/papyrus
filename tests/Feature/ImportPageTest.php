@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\BuildsTachimangaBackups;
+use Tests\Support\UsesTranslations;
 use Tests\TestCase;
 
 /**
@@ -41,6 +42,7 @@ class ImportPageTest extends TestCase
 {
     use BuildsTachimangaBackups;
     use RefreshDatabase;
+    use UsesTranslations;
 
     private User $user;
 
@@ -1343,8 +1345,36 @@ class ImportPageTest extends TestCase
 
         $this->assertSame(ImportRun::DECLINED, $run->fresh()->state);
         $this->assertNull($run->fresh()->file_path);
+        $this->assertNull(
+            $run->fresh()->progress_note,
+            'the sentence is rendered from the state, not frozen into the row',
+        );
         $this->assertFalse(is_file($path), 'the upload the review was holding is gone');
         Queue::assertNothingPushed();
+    }
+
+    public function test_a_discarded_review_is_translated_when_it_is_displayed(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $path = Storage::disk('local')->path('imports/review.tmb');
+        File::ensureDirectoryExists(dirname($path));
+        file_put_contents($path, 'backup bytes');
+
+        $run = $this->awaitingReviewRun([], path: $path);
+
+        $this->useTranslations([
+            'You discarded this review without importing the file.' => 'That review was discarded without importing the file.',
+        ]);
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->call('discardReview');
+
+        $this->page()
+            ->call('openRunModal', $run->id)
+            ->assertSee('That review was discarded without importing the file.');
     }
 
     public function test_an_unanswered_review_does_not_poll_but_a_confirm_is_followed(): void

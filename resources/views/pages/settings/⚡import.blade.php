@@ -518,6 +518,12 @@ new #[Title('Import a backup')] class extends Component
 
         $path = $run->file_path;
 
+        /*
+         * The note stays null so summary() renders the sentence from the DECLINED state
+         * at display time. The locale is configuration (APP_LOCALE), not a column on the
+         * row, so a sentence stored here would keep the language of the run that wrote
+         * it even after the install's locale changed.
+         */
         $claimed = ImportRun::query()
             ->forUser(auth()->id())
             ->whereKey($run->id)
@@ -526,7 +532,7 @@ new #[Title('Import a backup')] class extends Component
                 'state' => ImportRun::DECLINED,
                 'file_path' => null,
                 'finished_at' => now(),
-                'progress_note' => 'You discarded this review without importing the file.',
+                'progress_note' => null,
             ]);
 
         if ($claimed !== 1) {
