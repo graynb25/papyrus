@@ -178,6 +178,27 @@ Worth knowing before deciding what to add in front of it:
   packaged install does not send `X-Powered-By`; a development checkout may still show the
   PHP and web-server versions in `X-Powered-By` and `Server`.
 
+## Dependency advisories
+
+Two lock files describe what Papyrus runs and what builds it: `composer.lock` for the
+PHP dependencies and `package-lock.json` for the build toolchain. CI audits both before
+it runs the suite, so a lock with a known advisory fails the build instead of reaching a
+release.
+
+- **A production advisory fails the build.** `composer audit --locked --no-dev` is a
+  blocking step. `--locked` reads the lock Composer will install, not a fresh
+  resolution, so a stale lock cannot hide a finding.
+- **The npm lock is audited too.** `npm audit --package-lock-only` is blocking while
+  the lock is clean. It audits the lock, not `node_modules`.
+- **A development advisory is triaged.** A package under `require-dev` cannot execute
+  in a reader's install, so its advisory is reported and assessed rather than blocking.
+  The full `composer audit` is run as part of that assessment.
+- **Dependabot watches all three ecosystems.** Composer, npm and GitHub Actions are
+  checked weekly, with a five day cooldown and one grouped pull request per ecosystem.
+
+There is no ignore list. An advisory is closed by moving the package out of the
+affected range, not by silencing the check.
+
 ## Deployment modes
 
 `single` is the default and closes registration. `shared` and `public` open it, which means

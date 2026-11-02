@@ -84,6 +84,17 @@ jobs:
       - name: Setup Application
         run: composer setup
 
+      # The audits run before the suite so a vulnerable lock fails in seconds rather
+      # than after 8 to 13 minutes. `--locked` checks the lock Composer will install,
+      # not a fresh resolution, and there is no ignore list to silence a finding.
+      - name: Audit production dependencies
+        run: composer audit --locked --no-dev
+
+      # `composer setup` already ran `npm install`; `--package-lock-only` audits the
+      # lock rather than node_modules, so the result does not depend on the runner.
+      - name: Audit the JavaScript lock
+        run: npm audit --package-lock-only
+
       # The suite uses DB_DATABASE=:memory: from phpunit.xml. A test fails if
       # that is pointed at database/database.sqlite. The full library is not test
       # data; a run against it took 46 to 80 minutes instead of 8 to 13.
