@@ -296,7 +296,7 @@ class Prober
 
         $process = @proc_open(
             [
-                'powershell',
+                SystemTools::powershell(),
                 '-NoProfile',
                 '-NonInteractive',
                 '-ExecutionPolicy',

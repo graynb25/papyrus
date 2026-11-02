@@ -90,9 +90,9 @@ class SupervisorProcessIdentityTest extends TestCase
      * A supervisor whose finder records what it was asked for and finds nothing.
      *
      * Records rather than answers, because the question being tested is *what was asked*, and a
-     * finder that returned a fixed list would let a test pass while the tokens were wrong.
+     * finder that returned a fixed process would let a test pass while the query was wrong.
      *
-     * @param  list<list<string>>  $asked
+     * @param  list<array<string, mixed>>  $asked
      */
     private function supervisorRecording(array &$asked): Supervisor
     {
@@ -105,8 +105,8 @@ class SupervisorProcessIdentityTest extends TestCase
         );
 
         $supervisor->useProcessFinder(new ProcessFinder(
-            probe: function (array $tokens) use (&$asked): array {
-                $asked[] = $tokens;
+            probe: function (array $spec) use (&$asked): array {
+                $asked[] = $spec;
 
                 return [];
             },
@@ -133,12 +133,12 @@ class SupervisorProcessIdentityTest extends TestCase
 
         $this->assertCount(4, $asked, 'every process was looked up');
 
-        foreach ($asked as $tokens) {
+        foreach ($asked as $spec) {
             $this->assertContains(
                 $this->data,
-                $tokens,
+                $spec['tokens'],
                 'a lookup that does not name this install\'s data directory will match another install\'s '
-                    .'processes. Tokens asked: '.implode(' | ', $tokens),
+                    .'processes. Query asked: '.json_encode($spec),
             );
         }
     }
@@ -157,7 +157,7 @@ class SupervisorProcessIdentityTest extends TestCase
         $expected = [
             'queue' => 'queue:work',
             'scheduler' => 'schedule:work',
-            'web' => 'frankenphp',
+            'web' => $this->data.DIRECTORY_SEPARATOR.'frankenphp'.DIRECTORY_SEPARATOR.'Caddyfile',
         ];
 
         foreach ($expected as $name => $role) {
@@ -165,7 +165,11 @@ class SupervisorProcessIdentityTest extends TestCase
         }
 
         foreach ($expected as $name => $role) {
-            $this->assertContains($role, $asked[$name === 'queue' ? 0 : ($name === 'scheduler' ? 1 : 2)], $name.' must name its own role');
+            $this->assertContains(
+                $role,
+                $asked[$name === 'queue' ? 0 : ($name === 'scheduler' ? 1 : 2)]['tokens'],
+                $name.' must name its own role',
+            );
         }
     }
 
@@ -188,7 +192,8 @@ class SupervisorProcessIdentityTest extends TestCase
         $supervisor = $this->supervisorRecording($asked);
         $supervisor->isRunning('queue');
 
-        $tokens = $asked[0];
+        $spec = $asked[0];
+        $tokens = $spec['tokens'];
 
         $this->assertContains('queue:work', $tokens, 'the role must still be there');
         $this->assertNotContains($otherData, $tokens, 'sanity: this is a different install');
@@ -197,6 +202,12 @@ class SupervisorProcessIdentityTest extends TestCase
             $tokens,
             'with the data directory required, a process carrying another install\'s cannot match, '
                 .'because a command line holds one path and it would have to be both',
+        );
+
+        $this->assertSame(
+            'php.exe',
+            $spec['name'],
+            'and the image name is an exact anchor, so an editor is excluded even when it names the path',
         );
     }
 

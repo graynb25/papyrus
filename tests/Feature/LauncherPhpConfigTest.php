@@ -343,6 +343,106 @@ class LauncherPhpConfigTest extends TestCase
     }
 
     /**
+     * The shipped ini turns off the two settings that turn a file read into code execution.
+     *
+     * This is defence in depth rather than a live hole, and that is exactly why it has to be
+     * asserted: the next person who edits this file has no symptom to notice. PHP's default for
+     * `allow_url_fopen` is on, and a future include or template defect would then be able to fetch
+     * and run something remote.
+     */
+    public function test_the_shipped_ini_turns_off_url_fopen_and_url_include(): void
+    {
+        $this->installShippedIni();
+
+        $settings = $this->settingsFrom($this->resolveIni($this->supervisor()));
+
+        $this->assertSame(
+            'off',
+            strtolower($settings['allow_url_fopen'] ?? ''),
+            'allow_url_fopen must be Off, or a future file read can become a remote fetch',
+        );
+
+        $this->assertSame(
+            'off',
+            strtolower($settings['allow_url_include'] ?? ''),
+            'allow_url_include must be Off, or a future include can execute a remote stream',
+        );
+    }
+
+    /**
+     * `open_basedir` names every root the application legitimately uses, and nothing wider.
+     *
+     * The four are the app root, the runtime, the data directory and the temp directory the rest
+     * of the file already points at. Windows separates them with `;`. A path outside these roots is
+     * a widened blast radius, and a missing root is an install that boots and then fails on its
+     * first write, so both directions are asserted.
+     */
+    public function test_open_basedir_lists_the_app_runtime_data_and_temp_roots(): void
+    {
+        $this->installShippedIni();
+
+        $resolved = $this->resolveIni($this->supervisor());
+        $settings = $this->settingsFrom($resolved);
+
+        $roots = explode(';', $settings['open_basedir'] ?? '');
+
+        $this->assertStringNotContainsString(
+            '{{',
+            $settings['open_basedir'] ?? '',
+            'an unresolved token in open_basedir is a directory name PHP will never find anything in',
+        );
+
+        foreach ([
+            'the install root' => $this->slashed($this->install),
+            'the runtime' => $this->slashed($this->installIn('runtime')),
+            'the data directory' => $this->slashed($this->data),
+            'the temp directory' => $this->slashed($this->data.DIRECTORY_SEPARATOR.'tmp'),
+        ] as $what => $expected) {
+            $this->assertContains(
+                $expected,
+                $roots,
+                $what.' must be an allowed root, or the process that needs it fails on its first read '
+                    .'or write',
+            );
+        }
+
+        $this->assertNotContains(
+            $this->slashed($this->install.DIRECTORY_SEPARATOR.'..'),
+            $roots,
+            'the parent of the install is not an allowed root',
+        );
+    }
+
+    /**
+     * The active settings, keyed by name, with surrounding quotes removed.
+     *
+     * Read from the same active-line list the other assertions use, so a setting that is commented
+     * out cannot be mistaken for one PHP applies.
+     *
+     * @return array<string, string>
+     */
+    private function settingsFrom(string $ini): array
+    {
+        $settings = [];
+
+        foreach ($this->activeLines($ini) as $line) {
+            if (preg_match('/^\s*([A-Za-z0-9_.]+)\s*=\s*(.*?)\s*$/', $line, $match) !== 1) {
+                continue;
+            }
+
+            $value = trim($match[2]);
+
+            if (str_starts_with($value, '"') && str_ends_with($value, '"')) {
+                $value = substr($value, 1, -1);
+            }
+
+            $settings[strtolower($match[1])] = $value;
+        }
+
+        return $settings;
+    }
+
+    /**
      * A comment naming the token syntax is documentation, not a fault.
      *
      * The shipped ini explains its own templating in a comment that names `{{TOKEN}}` outright.

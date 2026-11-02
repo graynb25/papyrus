@@ -145,17 +145,25 @@ final class Supervisor
     }
 
     /**
-     * The tokens that identify one of the four processes as belonging to *this* install.
+     * What identifies one of the four processes as belonging to *this* install.
      *
-     * Two per process, and never one. The data directory is what stops a `stop` reaching into
-     * another install, and the role marker is what stops it reaching into this install's web
-     * server when it was asked for the queue worker.
+     * A query has three parts: the image name, the executable path, and the command line markers.
+     * The name and path are exact anchors, and the markers are what distinguish this install from
+     * another one running the same program.
+     *
+     * ## Why the anchors exist
+     *
+     * Because the old matcher was a list of substrings, and the web marker was the literal
+     * `frankenphp`. The data directory contains `...\Papyrus\frankenphp\Caddyfile`, so any process
+     * whose command line named that file matched, including a text editor, a diff tool or a backup
+     * tool. `stop` then ran `taskkill /T /F` against it. The image name and the executable path
+     * cannot be satisfied by an editor, because an editor is `notepad.exe` in `C:\Windows`.
      *
      * ## Why the data directory and not the install root
      *
      * Because two launchers can share one install root with different data directories: the
      * lock lives in the data directory, so they do not exclude each other, and both start. Their
-     * four processes then carry an identical install root, so a matcher keyed on it would have
+     * four processes then carry an identical install root, so a matcher keyed only on it would have
      * `stop` on one install terminate the workers of the other, which is the worst thing a stop
      * can do.
      *
@@ -167,59 +175,59 @@ final class Supervisor
      *     web       frankenphp run --config <DATA>\frankenphp\Caddyfile
      *     suwayomi  java -D...rootDir=<DATA>\suwayomi -jar <ROOT>\suwayomi\....jar
      *
-     * Returned as a list rather than joined into one string, because on Windows every argument is
-     * quoted and so a joined string containing a space can never match. Measured here rather than
-     * assumed; see {@see ProcessFinder}.
+     * The install root is still used for the executable path, which is an anchor rather than an
+     * identity: it says which program, and the data directory says which install.
      *
-     * @return list<string>
+     * @return array{}|array{name: string|null, executable: string|null, tokens: list<string>}
      */
-    private function tokensFor(string $name): array
+    private function specFor(string $name): array
     {
-        $role = match ($name) {
-            'queue' => 'queue:work',
-            'scheduler' => 'schedule:work',
-            // The resolved config rather than the executable name, because `--config` names this
-            // install's resolved Caddyfile, which lives in the data directory, and every other
-            // frankenphp on the machine is somebody else's business.
-            'web' => 'frankenphp',
-            // The jar's own name rather than the Suwayomi directory, because the directory is
-            // named `suwayomi` and a reader who keeps their library there would have any process
-            // with that word on its command line matched.
-            'suwayomi' => $this->locateJar() !== null ? basename((string) $this->locateJar()) : null,
-            /*
-             * Suwayomi's embedded browser, which is the only one of these that is not a child of a
-             * process this class started.
-             *
-             * It is extracted into the data directory on first run and launched by the JVM, so it is
-             * not in `$started` and survives a stop that reported all four other processes dead. The
-             * cost is not a stray process: it holds `jcef_helper.exe` open inside the reader's data
-             * directory, so the directory cannot be deleted afterwards. "Access is denied" on a
-             * folder the reader is trying to empty, for a file nothing is using any more.
-             *
-             * The name is safe to match on. It is Suwayomi's own binary, nothing else on a machine
-             * is called `jcef_helper`, and the data directory is the second token, so another
-             * install's helper is not matched either.
-             */
-            'kcef' => 'jcef_helper',
-            default => null,
+        $php = $this->phpExecutable ?? $this->path('runtime', 'bin', 'php.exe');
+        $frankenphp = $this->frankenphpExecutable ?? $this->path('runtime', 'bin', 'frankenphp.exe');
+        $java = $this->javaExecutable ?? $this->path(
+            'suwayomi',
+            'runtime',
+            'bin',
+            PHP_OS_FAMILY === 'Windows' ? 'java.exe' : 'java',
+        );
+
+        // The resolved ini and Caddyfile live in the data directory. A `stop` process has not run
+        // the layout step, so it cannot ask `$this->ini()` or `$this->caddyfile()` without either
+        // writing the file or throwing; the path is the same one both methods resolve to.
+        $ini = $this->dataDirectory.DIRECTORY_SEPARATOR.'php'.DIRECTORY_SEPARATOR.'php.ini';
+        $caddyfile = $this->dataDirectory.DIRECTORY_SEPARATOR.'frankenphp'.DIRECTORY_SEPARATOR.'Caddyfile';
+
+        $jar = $this->suwayomiJar ?? $this->locateJar();
+
+        return match ($name) {
+            'queue' => $this->spec($php, [$this->dataDirectory, $ini, 'queue:work']),
+            'scheduler' => $this->spec($php, [$this->dataDirectory, $ini, 'schedule:work']),
+            'web' => $this->spec($frankenphp, [$this->dataDirectory, $caddyfile]),
+            // No jar means nothing this launcher can call Suwayomi. An empty query matches
+            // nothing, which is the correct answer rather than a warning.
+            'suwayomi' => $jar === null ? [] : $this->spec($java, [$this->dataDirectory, $jar]),
+            'kcef' => $this->spec(
+                PHP_OS_FAMILY === 'Windows' ? 'jcef_helper.exe' : 'jcef_helper',
+                [$this->dataDirectory],
+                executable: false,
+            ),
+            default => [],
         };
+    }
 
-        if ($role === null) {
-            return [];
-        }
-
-        // The data directory exactly as this install knows it, with no normalisation at all.
-        //
-        // Normalising the separators to forward slashes looked tidy and was wrong, measured
-        // against a live worker. `proc_open` puts the path on the child's command line as it was
-        // given, so what CIM holds is the backslash form:
-        //
-        //     "...php.exe" "-c" "...\php.ini" "D:\Program Files\Papyrus\artisan" "queue:work"
-        //
-        // A forward slash token matches none of that and finds nothing, silently. A token that
-        // finds nothing is the same output as a token that found a machine with nothing running,
-        // which is why this could have shipped looking correct.
-        return [$this->dataDirectory, $role];
+    /**
+     * @param  list<string>  $tokens
+     * @param  bool  $executable  False for a process launched out of the data directory, whose own
+     *                            path is not a stable anchor because it is extracted on first run.
+     * @return array{name: string|null, executable: string|null, tokens: list<string>}
+     */
+    private function spec(string $program, array $tokens, bool $executable = true): array
+    {
+        return [
+            'name' => basename($program),
+            'executable' => $executable ? $program : null,
+            'tokens' => $tokens,
+        ];
     }
 
     /**
@@ -488,7 +496,7 @@ final class Supervisor
                 continue;
             }
 
-            foreach ($this->finder->find($this->tokensFor($name)) as $pid) {
+            foreach ($this->finder->find($this->specFor($name)) as $pid) {
                 $outcomes[$name] = $this->finder->terminate($pid);
                 $say(sprintf('%s: %s (pid %d, found rather than started here)', $name, $outcomes[$name], $pid));
             }
@@ -542,15 +550,26 @@ final class Supervisor
     {
         if ($this->prober->isPortTaken($this->suwayomiPort)) {
             /*
-             * Do not adopt it and do not start a second one. This machine has Suwayomi running
-             * from a shortcut, and a launcher that adopted it would have no handle to stop it
-             * with. Saying so plainly, and naming the port, is the most useful thing here.
+             * A listener on this port is not automatically this install's Suwayomi.
+             *
+             * It can be a second Windows account, or any process in another user's session, that
+             * bound 4567 first. The application then sends the login mutation with the configured
+             * username and password to that listener and accepts whatever it answers for library,
+             * search and cover requests. So the owner is checked before adoption, and a port whose
+             * owner cannot be identified is refused rather than assumed to be friendly.
              */
-            $say(sprintf(
-                'Something is already listening on port %d. Papyrus will use it rather than start a '
-                .'second Suwayomi, and cannot stop it for you.',
-                $this->suwayomiPort,
-            ));
+            $holder = $this->prober->portHolder($this->suwayomiPort);
+
+            if (! $this->isThisInstallsSuwayomi($holder)) {
+                throw new RuntimeException(sprintf(
+                    'Something is listening on port %d, but it is not the Suwayomi this install '
+                    .'started%s. Close it, or change the Suwayomi port, then start again.',
+                    $this->suwayomiPort,
+                    $holder === null ? '' : sprintf(' (%s, pid %d)', $holder['name'], $holder['pid']),
+                ));
+            }
+
+            $say('using the Suwayomi already running from this install');
 
             return;
         }
@@ -622,6 +641,42 @@ final class Supervisor
         }
 
         $say('Suwayomi is answering');
+    }
+
+    /**
+     * Whether the process holding the Suwayomi port is the one this install would have started.
+     *
+     * The owner is this install's Java runtime running this install's jar with this install's data
+     * directory on its command line. Anything else is refused, and so is an owner that could not be
+     * identified: `portHolder()` returns null when the machine will not answer, and a launcher that
+     * treated "could not find out" as "probably fine" would hand the reader's credentials to
+     * exactly the process it failed to identify.
+     *
+     * @param  array{pid: int, name: string, command: string, addresses: list<string>}|null  $holder
+     */
+    private function isThisInstallsSuwayomi(?array $holder): bool
+    {
+        if ($holder === null) {
+            return false;
+        }
+
+        $name = strtolower(basename($holder['name']));
+
+        if (! in_array($name, ['java.exe', 'java'], true)) {
+            return false;
+        }
+
+        $jar = $this->suwayomiJar ?? $this->locateJar();
+
+        if ($jar === null) {
+            return false;
+        }
+
+        $command = $holder['command'];
+
+        return $command !== ''
+            && str_contains($command, $this->dataDirectory)
+            && str_contains($command, basename($jar));
     }
 
     private function migrate(callable $say): void
@@ -1411,12 +1466,12 @@ final class Supervisor
             return ($this->livenessProbe)($name);
         }
 
-        if ($this->tokensFor($name) === []) {
+        if ($this->specFor($name) === []) {
             return false;
         }
 
         /*
-         * The same tokens `stop` uses, and the same finder.
+         * The same query `stop` uses, and the same finder.
          *
          * This used to build its own marker and its own PowerShell query. The marker was a bare
          * `queue:work`, `schedule:work`, `frankenphp` or a jar name, none of which say *which*
@@ -1426,7 +1481,7 @@ final class Supervisor
          * processes as its own, all green, while failing on its own database.
          *
          * It is lesson 223 one level up, and it survived a fix that was correct one screen away.
-         * `tokensFor()` had carried the data directory for some time and `stopAll` had been using
+         * `specFor()` had carried the data directory for some time and `stopAll` had been using
          * it, and nobody noticed the question had been answered twice.
          *
          * Which is the actual lesson, and it is 225 again: a fix applied to one occurrence of a
@@ -1460,13 +1515,13 @@ final class Supervisor
      */
     public function pidsFor(string $name): array
     {
-        $tokens = $this->tokensFor($name);
+        $spec = $this->specFor($name);
 
-        if ($tokens === []) {
+        if ($spec === []) {
             return [];
         }
 
-        return $this->finder->find($tokens);
+        return $this->finder->find($spec);
     }
 
     /**
@@ -1632,11 +1687,13 @@ final class Supervisor
         @mkdir(dirname($target), 0o777, true);
 
         $resolved = str_replace(
-            ['{{RUNTIME}}', '{{LOGS}}', '{{TEMP}}', '{{TIMEZONE}}'],
+            ['{{APP_ROOT}}', '{{RUNTIME}}', '{{DATA}}', '{{LOGS}}', '{{TEMP}}', '{{TIMEZONE}}'],
             [
                 // Forward slashes, matching the Caddyfile. An ini path is read by the C runtime
                 // rather than by PHP's own path handling, so a mixed path is at best a warning.
+                str_replace('\\', '/', $this->root),
                 str_replace('\\', '/', $this->path('runtime')),
+                str_replace('\\', '/', $this->dataDirectory),
                 str_replace('\\', '/', $this->logDirectory),
                 str_replace('\\', '/', $this->dataDirectory.DIRECTORY_SEPARATOR.'tmp'),
                 $this->machineTimezone(),

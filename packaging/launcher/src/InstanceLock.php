@@ -47,6 +47,17 @@ final class InstanceLock
      */
     private const FORMAT = 'json';
 
+    /**
+     * How long an unreadable lock must sit before it is treated as abandoned.
+     *
+     * A lock that cannot be parsed is either a crashed launcher or a launcher part way through
+     * writing its own lock. Removing the second is how two launchers both win, and the window is
+     * short enough that a few seconds of patience costs nothing a reader will notice. A lock
+     * naming a live process is never removed by age; this threshold is only for one that cannot
+     * be identified at all.
+     */
+    private const UNREADABLE_GRACE_SECONDS = 10;
+
     public function __construct(private readonly string $path) {}
 
     /**
@@ -86,17 +97,28 @@ final class InstanceLock
     /**
      * Take the lock for this process, or report that somebody else has it.
      *
-     * Written to a temporary file and moved into place rather than written directly. A
-     * half-written lock is a lock that parses as nothing and reads as stale, which would let a
-     * second launcher in while the first is mid-write. `rename` within one directory is atomic
-     * on both Windows and Linux.
+     * ## Why exclusive creation rather than check then rename
+     *
+     * `isHeld()` followed by a temporary file and `rename()` is two decisions where one is
+     * needed. On Windows PHP's `rename()` replaces an existing file, so two launchers can both
+     * pass the check and both rename their temporary file over the lock. Both then believe they
+     * own the install, the second fails on a port or on Suwayomi, and its catch block calls
+     * `stopAll()`, which stops the processes the first launcher just started.
+     *
+     * `fopen($path, 'x')` is one decision made by the operating system: it creates the file only
+     * if it does not exist, and only one caller wins. The payload is written into that file
+     * rather than into a temporary one, so there is no second rename to lose.
+     *
+     * ## Why stale reclamation holds a guard
+     *
+     * Two launchers can both decide that an old lock is stale. Without a guard they can both
+     * unlink it, one can create the new lock, and the other can then unlink that new lock because
+     * it decided before the new file existed. A separate `flock` on a guard file serialises only
+     * the reclamation, so whichever process loses sees the winner's lock and refuses. A launcher
+     * whose own lock is fine never touches the guard.
      */
     public function acquire(): bool
     {
-        if ($this->isHeld()) {
-            return false;
-        }
-
         // getmypid() answers false only when the process has no id, which PHP cannot give
         // it, but a false reaching startTime() is a TypeError rather than a lock file that
         // says nothing. Zero is the documented failure value, and a lock with pid 0 is
@@ -115,19 +137,100 @@ final class InstanceLock
             return false;
         }
 
-        $temporary = $this->path.'.'.getmypid().'.tmp';
+        if ($this->createExclusively($payload)) {
+            return true;
+        }
 
-        if (file_put_contents($temporary, $payload, LOCK_EX) === false) {
+        if ($this->isHeld()) {
             return false;
         }
 
-        if (! @rename($temporary, $this->path)) {
-            @unlink($temporary);
+        return $this->reclaim($payload);
+    }
+
+    /**
+     * Create the lock only if it does not exist, and write the whole payload into it.
+     */
+    private function createExclusively(string $payload): bool
+    {
+        $handle = @fopen($this->path, 'x');
+
+        if ($handle === false) {
+            return false;
+        }
+
+        $written = fwrite($handle, $payload);
+
+        fflush($handle);
+        fclose($handle);
+
+        if ($written === false || $written !== strlen($payload)) {
+            @unlink($this->path);
 
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * Replace a lock that is demonstrably not held, under a guard that only one process takes.
+     */
+    private function reclaim(string $payload): bool
+    {
+        $guard = @fopen($this->path.'.reclaim', 'c');
+
+        if ($guard === false) {
+            return false;
+        }
+
+        // Non-blocking: another launcher is already reclaiming, and waiting on it would delay the
+        // message this one is about to print. Losing the guard means losing the race.
+        if (! flock($guard, LOCK_EX | LOCK_NB)) {
+            fclose($guard);
+
+            return false;
+        }
+
+        try {
+            // Re-read under the guard. The lock may have been taken between the caller's check
+            // and this point, and a live lock must not be removed.
+            if ($this->isHeld()) {
+                return false;
+            }
+
+            if (! $this->isStale()) {
+                return false;
+            }
+
+            @unlink($this->path);
+
+            return $this->createExclusively($payload);
+        } finally {
+            flock($guard, LOCK_UN);
+            fclose($guard);
+            @unlink($this->path.'.reclaim');
+        }
+    }
+
+    /**
+     * Whether an existing lock has no live owner.
+     *
+     * A readable owner is compared with the process table, so a dead pid and a recycled pid are
+     * both stale. An unreadable file is only stale once it is older than the grace period, because
+     * a launcher that has just created the file may not have written it yet.
+     */
+    private function isStale(): bool
+    {
+        $owner = $this->readOwner();
+
+        if ($owner !== null) {
+            return ! ProcessIdentity::isSameProcess($owner['pid'], $owner['startedAt']);
+        }
+
+        $modified = @filemtime($this->path);
+
+        return $modified !== false && (time() - $modified) >= self::UNREADABLE_GRACE_SECONDS;
     }
 
     /**

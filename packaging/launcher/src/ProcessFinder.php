@@ -20,9 +20,9 @@ namespace Papyrus\Launcher;
  * The honest version of a fix is to ask the operating system which processes are this install's,
  * the same way {@see Supervisor::isRunning()} already does for liveness.
  *
- * ## Why matching takes several tokens rather than one
+ * ## Why matching takes a name, a path and several tokens
  *
- * Because one token is not enough to identify a process, and the evidence for that is measured
+ * Because one substring is not enough to identify a process, and the evidence for that is measured
  * rather than assumed. On Windows, `proc_open` quotes every argument, so a worker started from
  * an install root containing a space has this command line:
  *
@@ -31,33 +31,27 @@ namespace Papyrus\Launcher;
  * A single marker of `D:\Program Files\Papyrus\artisan queue:work` therefore never matches,
  * because a quote and a space sit between the two halves. Measured on this machine, not assumed.
  *
- * Worse, and this is the part that decides the design: `queue:work` on its own matches *any*
- * Laravel queue worker on the machine, including one belonging to a developer's own checkout.
- * Killing that would be the worst outcome this class could produce, so no single token is ever
- * sufficient. A process is this install's only when the install root **and** the role marker are
- * both present.
+ * Worse, `queue:work` on its own matches *any* Laravel queue worker on the machine, including one
+ * belonging to a developer's own checkout. And the web role marker was the literal `frankenphp`,
+ * which also appears in this install's data path, so an editor with the data directory's
+ * `Caddyfile` open matched the web server and was force killed with its children.
  *
- * ## Why the tokens travel as JSON on stdin
+ * So the query has exact anchors as well as tokens: the image name, the executable path, and the
+ * command line markers that identify this install. A text editor is named `notepad.exe` and lives
+ * in `C:\Windows`, so it cannot match either anchor even though its command line names the same
+ * Caddyfile.
  *
- * Because the three obvious channels were each measured and each is broken:
+ * ## Why the query is built in PHP rather than in the script
  *
- * - argv with `-Command`: needs double quotes wrapped around source that itself contains double
- *   quotes. Escaping that nest correctly was tried, and it silently returned nothing on a
- *   machine where the identical command worked pasted into a shell. That failure mode is the
- *   worst one available, because health reports every process broken while its own query tool is
- *   the problem.
- * - argv with `-File`: binds only the **first** positional argument into a `[string[]]`. Measured:
- *   three tokens in, `COUNT 1`. The rest are dropped without complaint.
- * - argv as a JSON string: arrives already split on spaces, because the shell parsed it before
- *   PowerShell did.
+ * The script used to receive the tokens on stdin and filter the process table itself. That made
+ * the matcher untestable without a real process, and the matcher is the part that was wrong. The
+ * script now lists name, executable path and command line for every process, and
+ * {@see ProcessFinder::matches()} decides. A test hands it a table that includes the editor and
+ * the real web server and asserts which pid survives.
  *
- * stdin has no shell and no argument parser anywhere in the path, so a path containing a space
- * is simply a path containing a space. JSON rather than a delimiter because a delimiter is one
- * more character that could appear inside a path, and the tokens are Windows paths.
- *
- * The payload must come from `json_encode`, never from a hand written string: `\D` and `\P` are
- * not valid JSON escapes, and a probe built with them fails in a way that looks exactly like the
- * approach being wrong.
+ * The script reads nothing from stdin at all, which also removes the quoting problems the old
+ * channel had: `-Command` needed a nest of quotes that silently returned nothing, `-File` bound
+ * only the first positional argument, and a JSON argv string arrived already split on spaces.
  *
  * ## Why the output is read from a file
  *
@@ -66,19 +60,22 @@ namespace Papyrus\Launcher;
  *
  * With the child's stdout attached to a PHP pipe, PowerShell writes its startup banner to that
  * pipe and the script's own output never arrives. `find()` therefore returned an empty list on a
- * machine where the identical script, flags and tokens found the process every time. Writing the
+ * machine where the identical script and flags found the process every time. Writing the
  * child's stdout to a file and reading it after the child exits works.
  *
  * The reason this survived several wrong diagnoses is that a matcher for one specific pid is
  * indistinguishable from a matcher that matched nothing when that pid is not running. An earlier
- * probe printed a diagnostic before reading its tokens, so every run produced some output, it was
- * just the banner. Output that proves the probe *ran* is not output that proves it *answered*, and
+ * probe printed a diagnostic before it answered, so every run produced some output, it was just
+ * the banner. Output that proves the probe *ran* is not output that proves it *answered*, and
  * only the second kind is worth asserting on.
  */
 final class ProcessFinder
 {
     /**
-     * @param  (callable(list<string>): list<int>)|null  $probe  Overrides the OS query, for tests.
+     * @param  (callable(array<string, mixed>): list<array{pid: int, name: string, executable: string, command: string}>)|null  $probe
+     *                                                                                                                                  Overrides the OS query, for tests. It is handed the query so a test can record what was
+     *                                                                                                                                  asked, and returns the process table rather than a filtered answer so the matching
+     *                                                                                                                                  itself is exercised.
      * @param  (callable(string): array{status: int})|null  $killer  Overrides running `taskkill`, for
      *                                                               tests. It exists because the defect this class was measured having is a defect in the
      *                                                               *command*, and a command nobody can assert on is a command nobody can catch being wrong.
@@ -87,21 +84,142 @@ final class ProcessFinder
     public function __construct(private $probe = null, private $killer = null) {}
 
     /**
-     * The pids of every running process whose command line contains all of these tokens.
+     * The pids of every running process that matches the query.
      *
-     * @param  list<string>  $tokens
+     * A query is a name, an executable path, and any number of command line tokens. Every part
+     * that is given must match, and a query with nothing in it matches nothing rather than
+     * everything.
+     *
+     * ## Why the name and the executable are separate from the tokens
+     *
+     * Because a substring alone cannot tell this install's web server from an editor that has the
+     * same file open. Measured: the web role token was the literal `frankenphp`, and the data
+     * directory contains `...\Papyrus\frankenphp\Caddyfile`, so a text editor, a diff tool or a
+     * backup tool whose command line named that file matched `stop` and was force killed with its
+     * children. The name and the executable path are exact anchors, and the tokens are what
+     * distinguish this install from another one running the same program.
+     *
+     * A list of bare strings is accepted as a token-only query, because that is the shape every
+     * existing caller used and removing it would be a second change hidden inside this one.
+     *
+     * @param  array<string, mixed>|list<string>  $query
      * @return list<int>
      */
-    public function find(array $tokens): array
+    public function find(array $query): array
     {
-        if ($tokens === []) {
+        $spec = $this->normalise($query);
+
+        if (! $this->hasAnchor($spec)) {
             return [];
         }
 
-        if ($this->probe !== null) {
-            return ($this->probe)($tokens);
+        $processes = $this->probe !== null ? ($this->probe)($spec) : $this->queryProcesses();
+
+        $pids = [];
+
+        foreach ($processes as $process) {
+            if (self::matches($process, $spec)) {
+                $pids[] = $process['pid'];
+            }
         }
 
+        // array_unique keeps the original keys, so it can leave gaps. This returns a list.
+        return array_values(array_unique($pids));
+    }
+
+    /**
+     * Whether one process row is the process a query names.
+     *
+     * Public because this is the decision that was wrong, and a decision that cannot be handed a
+     * process table in a test is a decision that has to be read rather than exercised.
+     *
+     * @param  array{pid?: int, name?: string, executable?: string, command?: string}  $process
+     * @param  array{name: string|null, executable: string|null, tokens: list<string>}  $spec
+     */
+    public static function matches(array $process, array $spec): bool
+    {
+        if ($spec['name'] !== null
+            && strcasecmp((string) ($process['name'] ?? ''), $spec['name']) !== 0) {
+            return false;
+        }
+
+        if ($spec['executable'] !== null
+            && ! self::samePath((string) ($process['executable'] ?? ''), $spec['executable'])) {
+            return false;
+        }
+
+        $command = (string) ($process['command'] ?? '');
+
+        foreach ($spec['tokens'] as $token) {
+            if ($token === '' || ! str_contains($command, $token)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Two paths naming the same file, on a platform whose paths are case insensitive.
+     *
+     * Separators are normalised because the same path reaches a process command line with
+     * backslashes on Windows and forward slashes when a build stage wrote it.
+     */
+    private static function samePath(string $left, string $right): bool
+    {
+        $normalise = static fn (string $path): string => strtolower(
+            rtrim(str_replace('/', '\\', $path), '\\'),
+        );
+
+        return $left !== '' && $right !== '' && $normalise($left) === $normalise($right);
+    }
+
+    /**
+     * @param  array<string, mixed>|list<string>  $query
+     * @return array{name: string|null, executable: string|null, tokens: list<string>}
+     */
+    private function normalise(array $query): array
+    {
+        if (array_is_list($query)) {
+            return [
+                'name' => null,
+                'executable' => null,
+                'tokens' => array_map('strval', $query),
+            ];
+        }
+
+        $tokens = $query['tokens'] ?? [];
+
+        return [
+            'name' => isset($query['name']) && is_string($query['name']) && $query['name'] !== ''
+                ? $query['name']
+                : null,
+            'executable' => isset($query['executable']) && is_string($query['executable']) && $query['executable'] !== ''
+                ? $query['executable']
+                : null,
+            'tokens' => is_array($tokens) ? array_values(array_map('strval', $tokens)) : [],
+        ];
+    }
+
+    /**
+     * @param  array{name: string|null, executable: string|null, tokens: list<string>}  $spec
+     */
+    private function hasAnchor(array $spec): bool
+    {
+        return $spec['name'] !== null || $spec['executable'] !== null || $spec['tokens'] !== [];
+    }
+
+    /**
+     * The whole process table, read through PowerShell.
+     *
+     * The filtering happens here rather than in the script, so the matcher is a PHP method a test
+     * can hand a process table to. A PowerShell `Where-Object` would be a second implementation
+     * of the rule, and the rule is the part that was wrong.
+     *
+     * @return list<array{pid: int, name: string, executable: string, command: string}>
+     */
+    private function queryProcesses(): array
+    {
         $script = tempnam(sys_get_temp_dir(), 'papyrus-find-');
 
         if ($script === false) {
@@ -154,7 +272,7 @@ final class ProcessFinder
 
         $process = @proc_open(
             [
-                'powershell',
+                SystemTools::powershell(),
                 '-NoProfile',
                 '-NonInteractive',
                 '-ExecutionPolicy',
@@ -181,8 +299,7 @@ final class ProcessFinder
             return [];
         }
 
-        // json_encode, for the reason in the class docblock.
-        fwrite($pipes[0], (string) json_encode($tokens));
+        // The script reads nothing from stdin. Closing it lets the child exit promptly.
         fclose($pipes[0]);
 
         proc_close($process);
@@ -192,18 +309,33 @@ final class ProcessFinder
         @unlink($script);
         @unlink($out);
 
-        $pids = [];
+        $decoded = json_decode($output, true);
 
-        foreach (preg_split('#\R#', $output) ?: [] as $line) {
-            $line = trim($line);
-
-            if ($line !== '' && ctype_digit($line)) {
-                $pids[] = (int) $line;
-            }
+        if (! is_array($decoded)) {
+            return [];
         }
 
-        // array_unique keeps the original keys, so it can leave gaps. This returns a list.
-        return array_values(array_unique($pids));
+        // ConvertTo-Json gives a bare object for a one-row table. Accept both shapes.
+        if (isset($decoded['pid'])) {
+            $decoded = [$decoded];
+        }
+
+        $processes = [];
+
+        foreach ($decoded as $row) {
+            if (! is_array($row) || ! isset($row['pid'])) {
+                continue;
+            }
+
+            $processes[] = [
+                'pid' => (int) $row['pid'],
+                'name' => (string) ($row['name'] ?? ''),
+                'executable' => (string) ($row['executable'] ?? ''),
+                'command' => (string) ($row['command'] ?? ''),
+            ];
+        }
+
+        return $processes;
     }
 
     /**
@@ -269,7 +401,7 @@ final class ProcessFinder
 
         if (PHP_OS_FAMILY === 'Windows') {
             $status = ($this->killer ?? [self::class, 'taskkill'])(
-                sprintf('taskkill /PID %d /T /F 2>NUL', $pid),
+                sprintf('%s /PID %d /T /F 2>NUL', escapeshellarg(SystemTools::taskkill()), $pid),
             )['status'];
 
             return $status === 0 && $this->waitForExit($pid, 10) ? 'killed' : 'could not be stopped';
@@ -322,44 +454,25 @@ final class ProcessFinder
      * `.ps1` shipped beside the code is one more file to lose in packaging, and this is the only
      * thing in the launcher that needs a shell.
      *
-     * The filter is written out longhand. A `Where-Object` with a nested `Where-Object` reads as
-     * though it filters on all tokens and is not the same thing at all, which is how a matcher
-     * quietly becomes a matcher for any one token.
+     * The script lists the process table and does no filtering. The matcher lives in PHP for the
+     * reason the class docblock gives: the rule is the part that was wrong, and a PowerShell
+     * `Where-Object` would be a second implementation no test could hand a process table to.
      */
     private static function probeScript(): string
     {
         return <<<'POWERSHELL'
 $ErrorActionPreference = 'SilentlyContinue'
 
-$raw = [Console]::In.ReadToEnd()
-
-try {
-    $tokens = ConvertFrom-Json -InputObject $raw
-}
-catch {
-    exit 1
-}
-
-if ($null -eq $tokens) {
-    exit 1
-}
-
-foreach ($proc in (Get-CimInstance Win32_Process)) {
-    if (-not $proc.CommandLine) { continue }
-
-    $matched = $true
-
-    foreach ($token in $tokens) {
-        if (-not $proc.CommandLine.Contains($token)) {
-            $matched = $false
-            break
-        }
+$rows = @(Get-CimInstance Win32_Process | ForEach-Object {
+    [pscustomobject]@{
+        pid = [int]$_.ProcessId
+        name = [string]$_.Name
+        executable = [string]$_.ExecutablePath
+        command = [string]$_.CommandLine
     }
+})
 
-    if ($matched) {
-        Write-Output $proc.ProcessId
-    }
-}
+[Console]::Out.Write((ConvertTo-Json -InputObject @($rows) -Compress))
 POWERSHELL;
     }
 }

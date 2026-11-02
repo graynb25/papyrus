@@ -178,10 +178,36 @@ class LauncherTest extends TestCase
         file_put_contents($path, "9999\nsome other format\n");
         file_put_contents($this->lockPath('garbage.lock'), 'not json at all');
 
+        // Old enough that it cannot be a launcher part way through writing its own lock. A fresh
+        // unreadable file is covered by its own test below.
+        touch($path, time() - 60);
+        touch($this->lockPath('garbage.lock'), time() - 60);
+
         $this->assertFalse((new InstanceLock($path))->isHeld());
         $this->assertFalse((new InstanceLock($this->lockPath('garbage.lock')))->isHeld());
 
         $this->assertTrue((new InstanceLock($path))->acquire(), 'and both are reclaimable');
+    }
+
+    /**
+     * A file that was created a moment ago may be a lock being written, not a stale one.
+     *
+     * `fopen($path, 'x')` creates the file before the payload is written. A second launcher that
+     * read that half-written file and treated it as stale would delete the winner's lock and take
+     * the install, which is the same double-launcher outcome the exclusive create exists to stop.
+     */
+    public function test_a_fresh_unreadable_lock_is_not_stolen_while_it_is_being_written(): void
+    {
+        $path = $this->lockPath();
+
+        file_put_contents($path, '');
+
+        $this->assertFalse(
+            (new InstanceLock($path))->acquire(),
+            'an empty lock written this second must be treated as a write in progress',
+        );
+
+        $this->assertFileExists($path);
     }
 
     /**

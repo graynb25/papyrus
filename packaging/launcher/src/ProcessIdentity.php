@@ -200,7 +200,8 @@ final class ProcessIdentity
 
         $output = PHP_OS_FAMILY === 'Windows'
             ? @shell_exec(sprintf(
-                'powershell -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter \'ProcessId=%d\').CreationDate.ToUniversalTime().ToString(\'o\')" 2>NUL',
+                '"%s" -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter \'ProcessId=%d\').CreationDate.ToUniversalTime().ToString(\'o\')" 2>NUL',
+                SystemTools::powershell(),
                 $pid,
             ))
             : @shell_exec(sprintf('ps -o lstart= -p %d 2>/dev/null', $pid));
@@ -258,7 +259,7 @@ final class ProcessIdentity
             return true;
         }
 
-        $output = @shell_exec(sprintf('tasklist /FI "PID eq %d" /NH 2>NUL', $pid));
+        $output = @shell_exec(sprintf('"%s" /FI "PID eq %d" /NH 2>NUL', SystemTools::tasklist(), $pid));
 
         if (! is_string($output)) {
             return true;

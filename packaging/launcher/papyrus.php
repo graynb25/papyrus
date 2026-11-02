@@ -39,6 +39,7 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
+require __DIR__.'/src/SystemTools.php';
 require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/BrowserLauncher.php';

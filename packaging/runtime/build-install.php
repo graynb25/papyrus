@@ -51,12 +51,15 @@ use Papyrus\Launcher\LicenceStaging;
 use Papyrus\Launcher\Supervisor;
 use Papyrus\Launcher\SuwayomiCompatibility;
 use Papyrus\Runtime\RuntimePins;
+use Papyrus\Runtime\TarArchive;
 use Papyrus\Runtime\TrustStore;
 use RuntimeException;
 use Throwable;
 
 require_once __DIR__.DIRECTORY_SEPARATOR.'RuntimePins.php';
 require_once __DIR__.DIRECTORY_SEPARATOR.'TrustStore.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'SystemTools.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'TarArchive.php';
 
 /**
  * The application's own files, copied by allowlist rather than denylist.
@@ -1721,14 +1724,10 @@ function extractArchive(string $archive, string $working): string
 
         $zip->close();
     } else {
-        exec(
-            sprintf('tar -xf %s -C %s 2>&1', escapeshellarg($archive), escapeshellarg($working)),
-            $output,
-            $status,
-        );
-
-        if ($status !== 0) {
-            fail('tar could not read the archive: '.implode("\n", $output));
+        try {
+            TarArchive::extract($archive, $working);
+        } catch (RuntimeException $e) {
+            fail($e->getMessage());
         }
     }
 

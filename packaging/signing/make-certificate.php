@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Papyrus\Runtime\SystemTools;
 
 /**
  * Make a self-signed code-signing certificate, and be honest about what it is.
@@ -65,10 +66,15 @@ declare(strict_types=1);
  *
  * ## Usage
  *
- *     php packaging/signing/make-certificate.php [--years=10] [--password=<value>]
+ *     php packaging/signing/make-certificate.php [--years=10]
  *     php packaging/signing/make-certificate.php --export-instructions
+ *
+ * The PFX password comes from `PAPYRUS_CERT_PASSWORD`, never from the command line. A literal on a
+ * command line is visible in the process list, and the PFX is the release signing identity.
  */
 $repo = dirname(__DIR__, 2);
+
+require_once __DIR__.'/../runtime/SystemTools.php';
 
 const CERTIFICATE_SUBJECT = 'CN=Papyrus, O=Papyrus, OU=self-signed';
 
@@ -101,7 +107,7 @@ CONF;
  * A test that ran against the default would either fail because a certificate already existed or, worse,
  * replace the identity every release is signed under.
  */
-$options = ['years' => '10', 'password' => '', 'out' => null];
+$options = ['years' => '10', 'out' => null];
 
 foreach (array_slice($argv, 1) as $argument) {
     if ($argument === '--export-instructions') {
@@ -113,7 +119,18 @@ foreach (array_slice($argv, 1) as $argument) {
     if (str_starts_with($argument, '--years=')) {
         $options['years'] = substr($argument, strlen('--years='));
     } elseif (str_starts_with($argument, '--password=')) {
-        $options['password'] = substr($argument, strlen('--password='));
+        /*
+         * Refused rather than accepted and ignored.
+         *
+         * The password is the release signing identity. A literal here is visible to any
+         * same-user process, process auditing or EDR for as long as the command runs, and the
+         * rest of this file already refuses to put one on a command line for a different tool.
+         * Accepting it silently would leave the caller believing the safe path was used.
+         */
+        say('failed', '--password is not accepted because a literal on a command line is visible '
+            .'in the process list. Set PAPYRUS_CERT_PASSWORD instead.');
+
+        exit(1);
     } elseif (str_starts_with($argument, '--out=')) {
         $options['out'] = substr($argument, strlen('--out='));
     } else {
@@ -252,16 +269,15 @@ if ($years < 1 || $years > 30) {
 /*
  * The password.
  *
- * Read from the environment by default, and never printed. A password typed on a command line ends up
- * in shell history, in a transcript, and in anything that records the command.
+ * Read from the environment, and never printed and never put on a command line. A password typed
+ * on a command line ends up in shell history, in a transcript, in the process list, and in
+ * anything that records the command. The export below passes a temporary file to openssl instead.
  *
  * A blank password is allowed and is the default, because the file is only as exposed as the folder
  * holding it and a blank password makes the release build a single command with nothing secret to
  * arrange. A real certificate from a CA will have a password and it should come from the environment.
  */
-$password = $options['password'] !== ''
-    ? $options['password']
-    : (string) (getenv('PAPYRUS_CERT_PASSWORD') ?: '');
+$password = (string) (getenv('PAPYRUS_CERT_PASSWORD') ?: '');
 
 // --- what already exists -----------------------------------------------------------------------
 
@@ -322,14 +338,50 @@ if ($status !== 0 || ! is_file($cert)) {
 $output = [];
 $status = 1;
 
-exec(sprintf(
-    '%s pkcs12 -export -out %s -inkey %s -in %s -passout pass:%s 2>&1',
-    escapeshellarg($openssl),
-    escapeshellarg($pfx),
-    escapeshellarg($key),
-    escapeshellarg($cert),
-    escapeshellarg($password),
-), $output, $status);
+/*
+ * The password goes into a file, not onto the command line.
+ *
+ * Openssl reads it with `-passout file:`, so the only thing the process list carries is the path
+ * to a short-lived file holding the secret. The file is restricted to the current user where the
+ * platform honours that, and removed in `finally` so a failed export does not leave the password
+ * behind for the next command to read.
+ *
+ * A blank password is the documented default and is passed as an empty `pass:` argument. It is not
+ * a secret, and an empty file is not a password openssl can read: measured, it fails with "Error
+ * reading password from BIO", which is why the two cases are kept apart.
+ */
+$passwordFile = null;
+
+if ($password !== '') {
+    $passwordFile = tempnam(sys_get_temp_dir(), 'papyrus-pfx-');
+
+    if ($passwordFile === false || file_put_contents($passwordFile, $password) === false) {
+        if (is_string($passwordFile)) {
+            @unlink($passwordFile);
+        }
+
+        say('failed', 'could not write the password file openssl needs');
+
+        exit(1);
+    }
+
+    @chmod($passwordFile, 0o600);
+}
+
+try {
+    exec(sprintf(
+        '%s pkcs12 -export -out %s -inkey %s -in %s -passout %s 2>&1',
+        escapeshellarg($openssl),
+        escapeshellarg($pfx),
+        escapeshellarg($key),
+        escapeshellarg($cert),
+        escapeshellarg($passwordFile === null ? 'pass:' : 'file:'.$passwordFile),
+    ), $output, $status);
+} finally {
+    if ($passwordFile !== null) {
+        @unlink($passwordFile);
+    }
+}
 
 if ($status !== 0 || ! is_file($pfx)) {
     say('failed', 'could not export the pfx: '.implode(' ', $output));
@@ -515,7 +567,11 @@ function installIntoStore(string $pfx, string $password): bool
     $output = [];
     $status = 1;
 
-    exec('powershell -NoProfile -Command "'.$command.'" 2>&1', $output, $status);
+    exec(sprintf(
+        '"%s" -NoProfile -Command "%s" 2>&1',
+        SystemTools::powershell(),
+        $command,
+    ), $output, $status);
 
     return $status === 0;
 }

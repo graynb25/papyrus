@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Papyrus\Launcher\ProcessFinder;
 use Papyrus\Launcher\ProcessIdentity;
+use Papyrus\Launcher\SystemTools;
 use Tests\TestCase;
 
 /**
@@ -28,77 +29,127 @@ use Tests\TestCase;
 class CrossProcessStopTest extends TestCase
 {
     /**
-     * A finder whose OS query is a fixed table, so a test states what is on the machine instead
-     * of inheriting whatever happens to be running on the developer's.
+     * A finder whose OS query is a fixed process table, so a test states what is on the machine
+     * instead of inheriting whatever happens to be running on the developer's.
      *
-     * @param  array<string, list<int>>  $table  Token joined by a null byte, to pids.
-     * @param  list<int>  $terminated
-     * @return array{0: ProcessFinder, 1: \ArrayObject}
+     * @param  list<array{pid: int, name: string, executable: string, command: string}>  $processes
+     * @param  list<array<string, mixed>>  $asked
      */
-    private function finderFor(array $table, array &$terminated = []): array
+    private function finderFor(array $processes, array &$asked = []): ProcessFinder
     {
-        /** @var \ArrayObject<string, list<int>> $asked */
-        $asked = new \ArrayObject;
+        return new ProcessFinder(function (array $spec) use ($processes, &$asked): array {
+            $asked[] = $spec;
 
-        $finder = new ProcessFinder(function (array $tokens) use ($table, $asked, &$terminated): array {
-            $asked[] = $tokens;
-
-            $found = $table[implode("\0", $tokens)] ?? [];
-
-            return $found;
+            return $processes;
         });
-
-        $terminated = [];
-
-        return [$finder, $asked];
     }
 
     public function test_it_finds_a_process_only_when_every_token_is_present(): void
     {
-        $calls = [];
-
-        $finder = new ProcessFinder(function (array $tokens) use (&$calls): array {
-            $calls[] = $tokens;
-
-            return [1234];
-        });
+        $asked = [];
+        $finder = $this->finderFor([
+            ['pid' => 1234, 'name' => 'php.exe', 'executable' => 'C:/papyrus/runtime/bin/php.exe', 'command' => 'php -c C:/papyrus/php.ini artisan queue:work'],
+        ], $asked);
 
         $pids = $finder->find(['C:/papyrus', 'queue:work']);
 
         $this->assertSame([1234], $pids);
-        $this->assertSame([['C:/papyrus', 'queue:work']], $calls);
+        $this->assertSame(['C:/papyrus', 'queue:work'], $asked[0]['tokens']);
     }
 
-    public function test_no_tokens_never_asks_the_operating_system(): void
+    public function test_no_query_never_asks_the_operating_system(): void
     {
         $called = false;
 
         $finder = new ProcessFinder(function () use (&$called): array {
             $called = true;
 
-            return [999];
+            return [['pid' => 999, 'name' => 'php.exe', 'executable' => '', 'command' => '']];
         });
 
         /*
-         * Because an empty token list matches every process on the machine, and the answer to
-         * "which processes are this install's" with nothing to match on cannot be a list of every
-         * process.
+         * Because a query with no anchors would match every process on the machine, and the answer
+         * to "which processes are this install's" with nothing to match on cannot be a list of
+         * every process.
          */
         $this->assertSame([], $finder->find([]));
-        $this->assertFalse($called, 'an empty token list must not reach the OS at all');
+        $this->assertFalse($called, 'an empty query must not reach the OS at all');
     }
 
     public function test_a_root_with_no_match_finds_nothing(): void
     {
-        $finder = new ProcessFinder(fn (array $tokens): array => []);
+        $finder = $this->finderFor([
+            ['pid' => 1234, 'name' => 'php.exe', 'executable' => 'C:/papyrus/runtime/bin/php.exe', 'command' => 'php -c D:/other/php.ini artisan queue:work'],
+        ]);
 
-        $this->assertSame([], $finder->find(['C:/somewhere-else', 'queue:work']));
+        $this->assertSame([], $finder->find(['C:/papyrus', 'queue:work']));
+    }
+
+    /**
+     * The published defect: an editor holding this install's Caddyfile is not the web server.
+     *
+     * The old matcher required every token to be a substring of the whole command line, and the
+     * web role token was the literal `frankenphp`. The data directory contains
+     * `...\Papyrus\frankenphp\Caddyfile`, so an editor, diff tool or backup tool whose command line
+     * named that file matched, and `stop` ran `taskkill /T /F` against it and its children.
+     *
+     * The process table below is the scenario rather than a description of it: both rows carry the
+     * path, and only one is `frankenphp.exe` at this install's executable path.
+     */
+    public function test_an_editor_holding_the_install_caddyfile_is_not_the_web_process(): void
+    {
+        $data = 'C:\\Users\\<you>\\AppData\\Local\\Papyrus';
+        $root = 'C:\\Program Files\\Papyrus';
+        $caddyfile = $data.'\\frankenphp\\Caddyfile';
+
+        $finder = $this->finderFor([
+            [
+                'pid' => 111,
+                'name' => 'notepad.exe',
+                'executable' => 'C:\\Windows\\System32\\notepad.exe',
+                'command' => '"C:\\Windows\\System32\\notepad.exe" "'.$caddyfile.'"',
+            ],
+            [
+                'pid' => 222,
+                'name' => 'frankenphp.exe',
+                'executable' => $root.'\\runtime\\bin\\frankenphp.exe',
+                'command' => '"'.$root.'\\runtime\\bin\\frankenphp.exe" "run" "--config" "'.$caddyfile.'"',
+            ],
+        ]);
+
+        $pids = $finder->find([
+            'name' => 'frankenphp.exe',
+            'executable' => $root.'\\runtime\\bin\\frankenphp.exe',
+            'tokens' => [$data, $caddyfile],
+        ]);
+
+        $this->assertSame(
+            [222],
+            $pids,
+            'the editor names the same Caddyfile and must not be matched, or stop kills unsaved work',
+        );
+    }
+
+    /**
+     * A same-named executable from another install is not this install's either.
+     */
+    public function test_the_executable_path_is_an_anchor_not_just_the_image_name(): void
+    {
+        $finder = $this->finderFor([
+            ['pid' => 111, 'name' => 'frankenphp.exe', 'executable' => 'D:\\other\\runtime\\bin\\frankenphp.exe', 'command' => 'frankenphp run --config D:\\other\\data\\frankenphp\\Caddyfile'],
+        ]);
+
+        $this->assertSame([], $finder->find([
+            'name' => 'frankenphp.exe',
+            'executable' => 'C:\\Program Files\\Papyrus\\runtime\\bin\\frankenphp.exe',
+            'tokens' => [],
+        ]));
     }
 
     public function test_a_role_marker_alone_would_match_too_much(): void
     {
         /*
-         * The reason two tokens are always required, asserted rather than left as a comment.
+         * The reason a token list is never the whole query, asserted rather than left as a comment.
          *
          * A developer with their own checkout open has a real `queue:work` process on this
          * machine. If a role marker were sufficient on its own, a reader typing `stop` would
@@ -106,17 +157,17 @@ class CrossProcessStopTest extends TestCase
          */
         $found = [];
 
-        $finder = new ProcessFinder(function (array $tokens) use (&$found): array {
-            $found[] = $tokens;
+        $finder = new ProcessFinder(function (array $spec) use (&$found): array {
+            $found[] = $spec;
 
             return [];
         });
 
         $finder->find(['C:/papyrus', 'queue:work']);
 
-        $this->assertCount(2, $found[0], 'both the install root and the role must be sent');
-        $this->assertContains('queue:work', $found[0]);
-        $this->assertNotSame($found[0], ['queue:work'], 'the role marker must never travel alone');
+        $this->assertCount(2, $found[0]['tokens'], 'both the install root and the role must be sent');
+        $this->assertContains('queue:work', $found[0]['tokens']);
+        $this->assertNotSame($found[0]['tokens'], ['queue:work'], 'the role marker must never travel alone');
     }
 
     public function test_it_refuses_to_terminate_this_process(): void
@@ -159,7 +210,7 @@ class CrossProcessStopTest extends TestCase
         $this->assertSame('already gone', $finder->terminate($dead));
     }
 
-    public function test_the_probe_requires_all_tokens_not_just_one(): void
+    public function test_the_probe_lists_the_fields_the_matcher_needs(): void
     {
         $method = new \ReflectionMethod(ProcessFinder::class, 'probeScript');
         $method->setAccessible(true);
@@ -167,12 +218,14 @@ class CrossProcessStopTest extends TestCase
         $script = (string) $method->invoke(null);
 
         /*
-         * Longhand, not a nested Where-Object. A filter that reads as though it matches every
-         * token but is really an "any of these" is how a matcher becomes a matcher for one token.
+         * The matcher lives in PHP so a test can hand it a process table. That only works if the
+         * script returns the fields the matcher anchors on. A script that filtered by token again
+         * would put the rule back somewhere no test can reach.
          */
-        $this->assertStringContainsString('$matched = $true', $script);
-        $this->assertStringContainsString('$matched = $false', $script);
-        $this->assertStringContainsString('$proc.CommandLine.Contains($token)', $script);
+        $this->assertStringContainsString('name = [string]$_.Name', $script);
+        $this->assertStringContainsString('executable = [string]$_.ExecutablePath', $script);
+        $this->assertStringContainsString('command = [string]$_.CommandLine', $script);
+        $this->assertStringNotContainsString('$proc.CommandLine.Contains($token)', $script);
     }
 
     public function test_the_probe_script_is_written_with_a_ps1_extension(): void
@@ -229,9 +282,9 @@ class CrossProcessStopTest extends TestCase
             dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
         );
 
-        $start = strpos($supervisor, 'private function tokensFor');
+        $start = strpos($supervisor, 'private function specFor');
 
-        $this->assertIsInt($start, 'tokensFor must exist, or nothing builds the stop tokens');
+        $this->assertIsInt($start, 'specFor must exist, or nothing builds the stop query');
 
         // Read to the closing brace of the method rather than a fixed number of characters: the
         // comment above the return is long, and a window sized to guess at it truncates exactly
@@ -248,7 +301,7 @@ class CrossProcessStopTest extends TestCase
         $code = (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $body);
 
         $this->assertStringContainsString(
-            'return [$this->dataDirectory, $role];',
+            '$this->dataDirectory',
             $code,
             'the data directory must be sent exactly as this install knows it',
         );
@@ -260,23 +313,24 @@ class CrossProcessStopTest extends TestCase
         );
     }
 
-    public function test_the_matcher_keys_on_the_data_directory_and_not_the_install_root(): void
+    public function test_every_lookup_keys_on_the_data_directory_and_uses_the_exe_as_an_anchor(): void
     {
         /*
          * Two launchers can share one install root with different data directories.
          *
          * The lock lives in the data directory, so they do not exclude each other and both start.
-         * Their four processes then carry an identical install root, so a matcher keyed on the
+         * Their four processes then carry an identical install root, so a query keyed only on the
          * root would have `stop` on one install terminate the workers of the other.
          *
-         * Keyed on the data directory this cannot happen, because the data directory is where the
-         * lock is, and every one of the four processes carries it on its own command line.
+         * The executable path is an anchor rather than an identity: it says which program, and the
+         * data directory says which install. Both are needed, which is why the exact editor that
+         * named the Caddyfile is excluded but this install's web server is not.
          */
         $supervisor = (string) file_get_contents(
             dirname(__DIR__, 2).'/packaging/launcher/src/Supervisor.php'
         );
 
-        $start = strpos($supervisor, 'private function tokensFor');
+        $start = strpos($supervisor, 'private function specFor');
         $end = strpos((string) $supervisor, 'private function ini()', $start);
 
         $code = (string) preg_replace(
@@ -285,24 +339,24 @@ class CrossProcessStopTest extends TestCase
             substr((string) $supervisor, $start, (int) $end - $start),
         );
 
-        $this->assertStringNotContainsString(
-            '$this->root',
-            $code,
-            'the install root is shared by two installs of one install, so it cannot identify '
-                .'which processes belong to this one',
-        );
-
         $this->assertStringContainsString(
             '$this->dataDirectory',
             $code,
             'the data directory is unique per install and is on every process command line',
+        );
+
+        $this->assertStringContainsString(
+            "'executable' =>",
+            $code,
+            'the exact executable path is what tells this install\'s web server from an editor '
+                .'that happens to have the same file open',
         );
     }
 
     public function test_every_process_the_stop_loop_looks_for_has_a_token_it_can_match_on(): void
     {
         /*
-         * The stop loop is a list of names, and `tokensFor` is a separate list of names. A name in
+         * The stop loop is a list of names, and `specFor` is a separate list of names. A name in
          * the first with no case in the second is looked for with an empty token list, and an empty
          * token list matches nothing and prints nothing. So it is a process that is silently never
          * stopped, and the stop line looks complete.
@@ -337,10 +391,10 @@ class CrossProcessStopTest extends TestCase
 
         $this->assertNotEmpty($wanted[1], 'the stop loop parsed to nothing, so this would pass for the wrong reason');
 
-        $start = strpos($code, 'private function tokensFor');
+        $start = strpos($code, 'private function specFor');
         $end = strpos($code, 'private function ini()', $start);
 
-        $this->assertIsInt($start, 'tokensFor must exist, or nothing builds the stop tokens');
+        $this->assertIsInt($start, 'specFor must exist, or nothing builds the stop query');
 
         $matcher = substr($code, $start, (int) $end - $start);
 
@@ -348,8 +402,8 @@ class CrossProcessStopTest extends TestCase
             $this->assertMatchesRegularExpression(
                 "/'".preg_quote($name, '/')."'\s*=>/",
                 $matcher,
-                "the stop loop looks for {$name}, so tokensFor must have a token for it. "
-                    .'Without one it is searched for with an empty list, which matches nothing and '
+                "the stop loop looks for {$name}, so specFor must have a query for it. "
+                    .'Without one it is searched for with an empty query, which matches nothing and '
                     .'reports nothing, and the process survives every stop.',
             );
         }
@@ -429,7 +483,7 @@ class CrossProcessStopTest extends TestCase
     private function killerFor(array $answers, array &$issued): ProcessFinder
     {
         return new ProcessFinder(
-            fn (array $tokens): array => [],
+            fn (array $spec): array => [],
             function (string $command) use ($answers, &$issued): array {
                 $issued[] = $command;
 
@@ -476,6 +530,35 @@ class CrossProcessStopTest extends TestCase
             $issued[0],
             'with no `/T` alone anywhere: that pass cannot stop a console process and reports a '
             .'success it did not achieve',
+        );
+    }
+
+    /**
+     * The system tool is named by absolute path, not resolved through the current directory.
+     *
+     * Windows resolves a bare image name through the application directory, then the current
+     * directory, then `System32` and `PATH`. The per-user install lives under
+     * `%LOCALAPPDATA%\Programs`, which the reader owns, and the shortcut's working directory can
+     * be anywhere. A `taskkill.exe` placed there would run with the reader's privileges instead of
+     * the system tool, in the one command that force kills processes.
+     */
+    public function test_the_kill_command_names_the_system_tool_by_absolute_path(): void
+    {
+        $pid = $this->somethingThatIsAlive();
+
+        $issued = [];
+        $this->killerFor([(string) $pid => 0], $issued)->terminate($pid);
+
+        $this->assertStringContainsString(
+            SystemTools::taskkill(),
+            $issued[0],
+            'the command must carry the absolute System32 path',
+        );
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/^(taskkill|"taskkill")\s/',
+            $issued[0],
+            'a bare taskkill is resolved through the reader-owned working directory first',
         );
     }
 

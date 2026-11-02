@@ -155,7 +155,7 @@ class MakeCertificateTest extends TestCase
          * which is a far worse outcome than a test that cannot run.
          */
         exec(sprintf(
-            '%s %s --years=1 --password=probe --out=%s 2>&1',
+            '%s %s --years=1 --out=%s 2>&1',
             escapeshellarg(PHP_BINARY),
             escapeshellarg($this->script()),
             escapeshellarg($this->workspace),
@@ -243,7 +243,7 @@ class MakeCertificateTest extends TestCase
             $status = 1;
 
             exec(sprintf(
-                '%s %s --years=1 --password=probe --out=%s 2>&1',
+                '%s %s --years=1 --out=%s 2>&1',
                 escapeshellarg(PHP_BINARY),
                 escapeshellarg($this->script()),
                 escapeshellarg($home),
@@ -320,6 +320,117 @@ class MakeCertificateTest extends TestCase
 
         $this->assertSame(1, $status);
         $this->assertStringContainsString('unexpected argument', implode("\n", $output));
+    }
+
+    /**
+     * A password on the command line is refused, not quietly accepted.
+     *
+     * The PFX is the release signing identity. `--password=` put the literal in the process list
+     * for the whole run, which is the defect. A refusal that names the safe switch is the only
+     * version a caller cannot mistake for the secure path having been used.
+     */
+    public function test_it_refuses_a_password_on_the_command_line(): void
+    {
+        $this->workspace = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-cert-test-'.bin2hex(random_bytes(6));
+
+        mkdir($this->workspace, 0o777, true);
+        $this->workspaces[] = $this->workspace;
+
+        $output = [];
+        $status = 1;
+
+        exec(sprintf(
+            '%s %s --years=1 --password=probe --out=%s 2>&1',
+            escapeshellarg(PHP_BINARY),
+            escapeshellarg($this->script()),
+            escapeshellarg($this->workspace),
+        ), $output, $status);
+
+        $text = implode("\n", $output);
+
+        $this->assertSame(1, $status, 'a command line password must be refused: '.$text);
+        $this->assertStringContainsString('PAPYRUS_CERT_PASSWORD', $text, 'and the safe switch is named');
+        $this->assertStringContainsString('process list', $text, 'and the reason is stated');
+        $this->assertFileDoesNotExist(
+            $this->workspace.'/papyrus.pfx',
+            'a refusal that still wrote the certificate is not a refusal',
+        );
+    }
+
+    /**
+     * A password from the environment still produces a PFX, and never appears in the output.
+     *
+     * The export passes `-passout file:` to openssl, so the command line carries a temporary path
+     * rather than the secret. The password file is deleted afterwards, which is asserted by taking
+     * a snapshot of the temporary directory before the run.
+     */
+    public function test_a_password_from_the_environment_is_used_and_not_echoed(): void
+    {
+        if ($this->openssl() === null) {
+            $this->markTestSkipped('no openssl on this machine, so no certificate could be made');
+        }
+
+        $this->workspace = sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-cert-test-'.bin2hex(random_bytes(6));
+
+        mkdir($this->workspace, 0o777, true);
+        $this->workspaces[] = $this->workspace;
+
+        $password = 'probe-env-'.bin2hex(random_bytes(4));
+        $before = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-pfx-*') ?: [];
+        $previous = getenv('PAPYRUS_CERT_PASSWORD');
+
+        putenv('PAPYRUS_CERT_PASSWORD='.$password);
+
+        try {
+            $output = [];
+            $status = 1;
+
+            exec(sprintf(
+                '%s %s --years=1 --out=%s 2>&1',
+                escapeshellarg(PHP_BINARY),
+                escapeshellarg($this->script()),
+                escapeshellarg($this->workspace),
+            ), $output, $status);
+        } finally {
+            $previous === false
+                ? putenv('PAPYRUS_CERT_PASSWORD')
+                : putenv('PAPYRUS_CERT_PASSWORD='.$previous);
+        }
+
+        $text = implode("\n", $output);
+
+        $this->assertSame(0, $status, 'the certificate must still be made: '.$text);
+        $this->assertFileExists($this->workspace.'/papyrus.pfx');
+        $this->assertStringNotContainsString($password, $text, 'the password must not be printed');
+
+        // Proved by opening the PFX with the password rather than by trusting the exit status.
+        $opened = [];
+        $openStatus = 1;
+        $probeName = 'PAPYRUS_TEST_PFX_PASSWORD';
+        $previousProbe = getenv($probeName);
+
+        putenv($probeName.'='.$password);
+
+        try {
+            exec(sprintf(
+                '%s pkcs12 -in %s -nokeys -passin env:%s 2>&1',
+                escapeshellarg((string) $this->openssl()),
+                escapeshellarg($this->workspace.'/papyrus.pfx'),
+                $probeName,
+            ), $opened, $openStatus);
+        } finally {
+            $previousProbe === false ? putenv($probeName) : putenv($probeName.'='.$previousProbe);
+        }
+
+        $this->assertSame(0, $openStatus, 'the PFX must open with the environment password: '.implode("\n", $opened));
+
+        $after = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'papyrus-pfx-*') ?: [];
+
+        $this->assertSame(
+            [],
+            array_values(array_diff($after, $before)),
+            'the password file must be deleted, or the secret outlives the command',
+        );
     }
 
     /**
@@ -565,9 +676,9 @@ class MakeCertificateTest extends TestCase
          * No `--password`, so the blank default applies.
          *
          * This is the whole test. `installIntoStore()` refuses any non-empty password by design, so a
-         * test that passed `--password=probe` saw an unchanged store whether or not the guard was
-         * there. The assertion passed against code that installed, which is the one thing it exists to
-         * detect.
+         * test that supplied a non-empty `PAPYRUS_CERT_PASSWORD` saw an unchanged store whether or
+         * not the guard was there. The assertion passed against code that installed, which is the
+         * one thing it exists to detect.
          *
          * Found by mutation: removing the scratch-home guard changed nothing. The reason was not the
          * guard being unreachable, it was a second refusal upstream of it that the test was tripping.

@@ -48,6 +48,7 @@ declare(strict_types=1);
 $repo = dirname(__DIR__, 2);
 
 require_once __DIR__.'/ReleaseRecord.php';
+require_once __DIR__.'/../runtime/SystemTools.php';
 
 /*
  * Paths and the flag are kept apart, deliberately.
@@ -235,6 +236,7 @@ say('size', $megabytes.' MB');
  */
 require_once __DIR__.'/../signing/Signing.php';
 
+use Papyrus\Runtime\SystemTools;
 use Papyrus\Signing\Signing;
 
 $skipSigning = $unsigned;
@@ -622,7 +624,8 @@ function publishCertificate(string $out): ?string
     $target = $out.DIRECTORY_SEPARATOR.'papyrus.crt';
 
     $command = sprintf(
-        'powershell -NoProfile -Command "Export-Certificate -Cert %s -FilePath %s -Type CERT" 2>&1',
+        '"%s" -NoProfile -Command "Export-Certificate -Cert %s -FilePath %s -Type CERT" 2>&1',
+        SystemTools::powershell(),
         escapeshellarg('Cert:\\CurrentUser\\My\\'.trim($thumbprint)),
         escapeshellarg($target),
     );
