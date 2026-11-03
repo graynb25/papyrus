@@ -1091,6 +1091,22 @@ class BackupsPageTest extends TestCase
             ->assertDontSee('An export is running');
     }
 
+    /**
+     * The three cards read their badge through one delegate, so a state colour cannot
+     * land on one card and miss another.
+     */
+    public function test_every_run_card_reads_its_badge_through_the_same_presenter(): void
+    {
+        $this->writeLiveRun(state: LiveBackupRun::RUNNING);
+        $this->writeRestoreRun(state: LiveRestoreRun::REFUSED);
+        $this->writeExportRun(state: LiveExportRun::COMPLETE);
+
+        $this->get('/settings/backups')
+            ->assertSee('bg-blue-400/20', false)
+            ->assertSee('bg-orange-400/20', false)
+            ->assertSee('bg-green-400/20', false);
+    }
+
     // -------------------------------------------------------------------------------------------
 
     /**

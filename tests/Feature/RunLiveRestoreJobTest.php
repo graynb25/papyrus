@@ -14,6 +14,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use PDO;
 use Tests\Support\BuildsTachibkBackups;
 use Tests\Support\MintsTokens;
@@ -385,7 +386,13 @@ class RunLiveRestoreJobTest extends TestCase
     {
         $token = $this->writePair();
 
+        Log::spy();
+
         (new RunLiveRestore(999999, $token))->handle(app(LiveRestore::class));
+
+        Log::shouldHaveReceived('info')
+            ->with('A live run was queued for a reader who no longer exists.', ['user_id' => 999999])
+            ->once();
 
         $run = LiveRestoreRun::query()->sole();
 

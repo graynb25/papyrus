@@ -3,6 +3,8 @@
 use App\Backup\BackupLibrary;
 use App\Backup\BackupSummary;
 use App\Jobs\RunLiveExport;
+use App\Live\Contracts\LiveRun;
+use App\Live\RunPresenter;
 use App\Support\Duration;
 use Papyrus\Launcher\BackupPair;
 use App\Import\ImportRefused;
@@ -106,7 +108,7 @@ new #[Title('Backups')] class extends Component {
     #[Computed]
     public function latestEvent(): ?array
     {
-        /** @var list<array{at: CarbonImmutable, tone: string, label: string, summary: string, outcome: \Papyrus\Launcher\RunOutcome|null, row: LiveBackupRun|LiveExportRun|LiveRestoreRun|null}> $events */
+        /** @var list<array{at: CarbonImmutable, tone: string, label: string, summary: string, outcome: \Papyrus\Launcher\RunOutcome|null, row: LiveRun|null}> $events */
         $events = [];
 
         $launcher = $this->backups()->lastRun();
@@ -139,9 +141,9 @@ new #[Title('Backups')] class extends Component {
 
             $events[] = [
                 'at' => $row->started_at,
-                'tone' => $this->runToneOfAny($row),
-                'label' => $this->runLabelOfAny($row),
-                'summary' => $this->runSummaryOfAny($row),
+                'tone' => $this->badgeColour($row),
+                'label' => $this->stateLabel($row),
+                'summary' => $this->runSummary($row),
                 'outcome' => null,
                 'row' => $row,
             ];
@@ -168,34 +170,13 @@ new #[Title('Backups')] class extends Component {
         };
     }
 
-    /** The badge colour a row of any of the three live doors reads in, its own card's mapping. */
-    public function runToneOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
+    /**
+     * The one reading of a live run's state, shared by the three cards and the last time block.
+     */
+    #[Computed]
+    public function runPresenter(): RunPresenter
     {
-        return match (true) {
-            $run instanceof LiveBackupRun => $this->badgeColour($run),
-            $run instanceof LiveRestoreRun => $this->restoreBadgeColour($run),
-            default => $this->exportBadgeColour($run),
-        };
-    }
-
-    /** The one word a row of any of the three live doors is read as, its own card's words. */
-    public function runLabelOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
-    {
-        return match (true) {
-            $run instanceof LiveBackupRun => $this->stateLabel($run),
-            $run instanceof LiveRestoreRun => $this->restoreStateLabel($run),
-            default => $this->exportStateLabel($run),
-        };
-    }
-
-    /** What a row of any of the three live doors is saying, in its own card's sentences. */
-    public function runSummaryOfAny(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): string
-    {
-        return match (true) {
-            $run instanceof LiveBackupRun => $this->runSummary($run),
-            $run instanceof LiveRestoreRun => $this->restoreRunSummary($run),
-            default => $this->exportRunSummary($run),
-        };
+        return app(RunPresenter::class);
     }
 
     /*
@@ -230,9 +211,6 @@ new #[Title('Backups')] class extends Component {
      * no worker, forever, there is nothing in `live_backup_runs` to look at.
      */
     public bool $polling = false;
-
-    /** How long a run may go without touching its row before the page says something went quiet. */
-    public const STUCK_SECONDS = 300;
 
     public function openDialog(): void
     {
@@ -275,7 +253,7 @@ new #[Title('Backups')] class extends Component {
 
         return $latest['row'] !== null
             && $latest['row']->isRunning()
-            && ! $this->runIsAbandoned($latest['row']);
+            && ! $this->isAbandoned($latest['row']);
     }
 
     /**
@@ -332,7 +310,7 @@ new #[Title('Backups')] class extends Component {
             }
 
             if (is_int($current) && $index === $current) {
-                $state = $run->isRunning() && ! $this->runIsAbandoned($run)
+                $state = $run->isRunning() && ! $this->isAbandoned($run)
                     ? 'running'
                     : 'failed';
             }
@@ -367,7 +345,7 @@ new #[Title('Backups')] class extends Component {
             }
 
             if (is_int($current) && $index === $current) {
-                $state = $run->isRunning() && ! $this->runIsAbandoned($run)
+                $state = $run->isRunning() && ! $this->isAbandoned($run)
                     ? 'running'
                     : 'failed';
             }
@@ -400,7 +378,7 @@ new #[Title('Backups')] class extends Component {
         }
 
         if ($latest['row'] !== null) {
-            return $this->runLabelOfAny($latest['row']);
+            return $this->stateLabel($latest['row']);
         }
 
         return '';
@@ -417,7 +395,7 @@ new #[Title('Backups')] class extends Component {
 
         $pressing = $this->activeRun();
 
-        if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
+        if ($pressing !== null && $pressing->isRunning() && ! $this->isAbandoned($pressing)) {
             Flux::toast(
                 text: __('A backup is already running. Wait for it to finish before starting another one.'),
                 heading: __('Backup in progress'),
@@ -454,17 +432,23 @@ new #[Title('Backups')] class extends Component {
      */
     public function shouldPoll(): bool
     {
-        if (! $this->polling) {
+        return $this->watches($this->polling, $this->activeRun());
+    }
+
+    /**
+     * The one poll gate behind all three cards.
+     *
+     * False before a press, so a page a reader is only reading costs nothing. A run that
+     * is still in the queue with no row yet counts as something to wait for, which is
+     * what hid the first inspect result on the import page.
+     */
+    private function watches(bool $armed, ?LiveRun $run): bool
+    {
+        if (! $armed) {
             return false;
         }
 
-        $run = $this->activeRun();
-
-        if ($run === null) {
-            return true;
-        }
-
-        return $run->isRunning() && ! $this->runIsAbandoned($run);
+        return $run === null || $this->runPresenter()->shouldPoll($run);
     }
 
     /**
@@ -490,15 +474,12 @@ new #[Title('Backups')] class extends Component {
     /**
      * Whether a run says it is running and has not been heard from in far too long.
      *
-     * The import page's reasoning, carried whole: a worker killed at its timeout, an out of
-     * memory kill, or a machine that went down all leave the row reading running with nothing
-     * behind it, and there is no longer a process whose word anyone could ask. The page treats
-     * silence as the end of the run rather than repeating a claim that is no longer true.
+     * The presenter owns the threshold and the test, so the three cards cannot disagree
+     * about what silence means.
      */
-    public function runIsAbandoned(LiveBackupRun|LiveExportRun|LiveRestoreRun $run): bool
+    public function isAbandoned(LiveRun $run): bool
     {
-        return $run->isRunning()
-            && $run->updated_at->diffInSeconds(now()) > self::STUCK_SECONDS;
+        return $this->runPresenter()->isAbandoned($run);
     }
 
     /**
@@ -515,45 +496,17 @@ new #[Title('Backups')] class extends Component {
     }
 
     /**
-     * What a run is saying, in the row's own sentences.
-     *
-     * The notes are written full by the job for exactly this surface, so this computes less and
-     * quotes more: a finished run carries its own closing count sentence, a refused one carries
-     * the sentence the run itself refused by, and a running one carries its stage note.
+     * What a run is saying, in the row's own sentences, through the shared presenter.
      */
-    public function runSummary(LiveBackupRun $run): string
+    public function runSummary(LiveRun $run): string
     {
-        $summary = match (true) {
-            $this->runIsAbandoned($run) => __('This backup stopped before it finished. Nothing from the unfinished copy was kept.'),
-            $run->state === LiveBackupRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
-            $run->state === LiveBackupRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
-            $run->state === LiveBackupRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
-            $run->state === LiveBackupRun::COMPLETE => (string) ($run->progress_note ?? __('Your backup is ready to restore.')),
-            default => (string) $run->state,
-        };
-
-        return $this->humanizeBackupSummary($summary);
+        return $this->runPresenter()->summary($run);
     }
 
-    /** Translate stored notes from before the reader-facing backup vocabulary existed. */
+    /** Translate stored backup notes from before the reader-facing backup vocabulary existed. */
     public function humanizeBackupSummary(string $summary): string
     {
-        if (str_contains($summary, 'downloaded manga half is a real backup of a library that holds nothing')) {
-            return __('The manga server answered, but it has no series to save. The backup was refused and nothing was changed.');
-        }
-
-        if (preg_match('/^([\d,]+) series states and ([\d,]+) chapter states against Suwayomi (.+), taken without stopping anything$/', trim($summary), $matches) === 1) {
-            $chapterWord = (int) str_replace(',', '', $matches[2]) === 1 ? __('chapter') : __('chapters');
-
-            return __('Backup complete: :series series and :chapters :chapter_word saved while Papyrus stayed open. Manga server :version.', [
-                'series' => $matches[1],
-                'chapters' => $matches[2],
-                'chapter_word' => $chapterWord,
-                'version' => $matches[3],
-            ]);
-        }
-
-        return $summary;
+        return $this->runPresenter()->humanizeBackupSummary($summary);
     }
 
     /**
@@ -585,30 +538,16 @@ new #[Title('Backups')] class extends Component {
         return round($value, $value < 10 && $unit > 0 ? 1 : 0).' '.$units[$unit];
     }
 
-    /** The badge colours the run states are read in, the import page's words for the same states. */
-    public function badgeColour(LiveBackupRun $run): string
+    /** The badge colours the run states are read in, shared by all three live cards. */
+    public function badgeColour(LiveRun $run): string
     {
-        return match (true) {
-            $this->runIsAbandoned($run) => 'orange',
-            $run->state === LiveBackupRun::COMPLETE => 'green',
-            $run->state === LiveBackupRun::RUNNING => 'blue',
-            $run->state === LiveBackupRun::FAILED => 'red',
-            $run->state === LiveBackupRun::REFUSED => 'orange',
-            default => 'zinc',
-        };
+        return $this->runPresenter()->badgeColour($run);
     }
 
     /** What a run's state says to a reader, one word, with silence named as an end. */
-    public function stateLabel(LiveBackupRun $run): string
+    public function stateLabel(LiveRun $run): string
     {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('Stopped'),
-            $run->state === LiveBackupRun::COMPLETE => __('Finished'),
-            $run->state === LiveBackupRun::RUNNING => __('Running'),
-            $run->state === LiveBackupRun::FAILED => __('Stopped'),
-            $run->state === LiveBackupRun::REFUSED => __('Refused'),
-            default => (string) $run->state,
-        };
+        return $this->runPresenter()->stateLabel($run);
     }
 
     /*
@@ -723,7 +662,7 @@ new #[Title('Backups')] class extends Component {
 
         $run = $this->activeRestoreRun();
 
-        if ($run !== null && $run->isRunning() && ! $this->runIsAbandoned($run)) {
+        if ($run !== null && $run->isRunning() && ! $this->isAbandoned($run)) {
             Flux::toast(
                 text: __('A restore is already going. Wait for it to finish: two runs swapping the same live database is the one thing this feature must never do.'),
                 heading: __('Already running'),
@@ -783,20 +722,10 @@ new #[Title('Backups')] class extends Component {
         return $run?->finished_at?->toImmutable();
     }
 
-    /** Whether the restore side should be asked what is happening, the same shape as shouldPoll(). */
+    /** Whether the restore side should be asked what is happening, the same gate as shouldPoll(). */
     public function shouldPollRestore(): bool
     {
-        if (! $this->restorePolling) {
-            return false;
-        }
-
-        $run = $this->activeRestoreRun();
-
-        if ($run === null) {
-            return true;
-        }
-
-        return $run->isRunning() && ! $this->runIsAbandoned($run);
+        return $this->watches($this->restorePolling, $this->activeRestoreRun());
     }
 
     /**
@@ -813,7 +742,7 @@ new #[Title('Backups')] class extends Component {
     {
         $run = $this->activeRestoreRun();
 
-        if ($run === null || ! $run->isRunning() || $this->runIsAbandoned($run)) {
+        if ($run === null || ! $run->isRunning() || $this->isAbandoned($run)) {
             return null;
         }
 
@@ -844,47 +773,6 @@ new #[Title('Backups')] class extends Component {
         };
     }
 
-    /**
-     * What a restore run is saying, in its own sentences.
-     */
-    public function restoreRunSummary(LiveRestoreRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('This restore stopped before it finished. The backup on disk was left unchanged.'),
-            $run->state === LiveRestoreRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
-            $run->state === LiveRestoreRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
-            $run->state === LiveRestoreRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
-            $run->state === LiveRestoreRun::COMPLETE => (string) ($run->progress_note ?? __('Your library is back.')),
-            default => (string) $run->state,
-        };
-    }
-
-    /** The badge colours, the backup side's own mapping in the restore's words. */
-    public function restoreBadgeColour(LiveRestoreRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => 'orange',
-            $run->state === LiveRestoreRun::COMPLETE => 'green',
-            $run->state === LiveRestoreRun::RUNNING => 'blue',
-            $run->state === LiveRestoreRun::FAILED => 'red',
-            $run->state === LiveRestoreRun::REFUSED => 'orange',
-            default => 'zinc',
-        };
-    }
-
-    /** What a restore run's state says to a reader, one word, the backup listing's words. */
-    public function restoreStateLabel(LiveRestoreRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('Stopped'),
-            $run->state === LiveRestoreRun::COMPLETE => __('Finished'),
-            $run->state === LiveRestoreRun::RUNNING => __('Running'),
-            $run->state === LiveRestoreRun::FAILED => __('Stopped'),
-            $run->state === LiveRestoreRun::REFUSED => __('Refused'),
-            default => (string) $run->state,
-        };
-    }
-
     /*
      * ## The export side
      *
@@ -912,7 +800,7 @@ new #[Title('Backups')] class extends Component {
 
         $pressing = $this->activeExportRun();
 
-        if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing)) {
+        if ($pressing !== null && $pressing->isRunning() && ! $this->isAbandoned($pressing)) {
             Flux::toast(
                 text: __('An export is already running. Wait for it to finish: two runs sweep the same staging folder, and a file staged under one is a product the other cannot verify.'),
                 heading: __('Already running'),
@@ -933,20 +821,10 @@ new #[Title('Backups')] class extends Component {
         $this->exportPolling = true;
     }
 
-    /** Whether the export side should be asked what is happening, the restore's own shape. */
+    /** Whether the export side should be asked what is happening, the same gate as shouldPoll(). */
     public function shouldPollExport(): bool
     {
-        if (! $this->exportPolling) {
-            return false;
-        }
-
-        $run = $this->activeExportRun();
-
-        if ($run === null) {
-            return true;
-        }
-
-        return $run->isRunning() && ! $this->runIsAbandoned($run);
+        return $this->watches($this->exportPolling, $this->activeExportRun());
     }
 
     /** The latest export run, the shape {@see activeRun()} reads for the backup side. */
@@ -961,45 +839,6 @@ new #[Title('Backups')] class extends Component {
     public function exportRuns(): \Illuminate\Support\Collection
     {
         return LiveExportRun::query()->latest('id')->limit(20)->get();
-    }
-
-    /** What an export run is saying, in its own sentences. */
-    public function exportRunSummary(LiveExportRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('This run stopped without finishing. Its staging was swept, and nothing half written was left where a reader looks for a product.'),
-            $run->state === LiveExportRun::REFUSED => (string) ($run->refusal_reason ?? __('No reason recorded.')),
-            $run->state === LiveExportRun::FAILED => (string) ($run->progress_note ?? __('No reason recorded.')),
-            $run->state === LiveExportRun::RUNNING => (string) ($run->progress_note ?? __('Starting.')),
-            $run->state === LiveExportRun::COMPLETE => (string) ($run->progress_note ?? __('The file is in the exports folder.')),
-            default => (string) $run->state,
-        };
-    }
-
-    /** The badge colours, the backup side's own mapping in the export's words. */
-    public function exportBadgeColour(LiveExportRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => 'orange',
-            $run->state === LiveExportRun::COMPLETE => 'green',
-            $run->state === LiveExportRun::RUNNING => 'blue',
-            $run->state === LiveExportRun::FAILED => 'red',
-            $run->state === LiveExportRun::REFUSED => 'orange',
-            default => 'zinc',
-        };
-    }
-
-    /** What an export run's state says to a reader, one word, the backup listing's words. */
-    public function exportStateLabel(LiveExportRun $run): string
-    {
-        return match (true) {
-            $this->runIsAbandoned($run) => __('Stopped'),
-            $run->state === LiveExportRun::COMPLETE => __('Finished'),
-            $run->state === LiveExportRun::RUNNING => __('Running'),
-            $run->state === LiveExportRun::FAILED => __('Stopped'),
-            $run->state === LiveExportRun::REFUSED => __('Refused'),
-            default => (string) $run->state,
-        };
     }
 }; ?>
 
@@ -1199,9 +1038,9 @@ new #[Title('Backups')] class extends Component {
                 @elseif (($latest = $this->latestEvent()) !== null && $latest['row'] !== null)
                     @php
                         $row = $latest['row'];
-                        $liveLabel = $this->runLabelOfAny($row);
-                        $liveSummary = $this->runSummaryOfAny($row);
-                        $liveTone = $this->runToneOfAny($row);
+                        $liveLabel = $this->stateLabel($row);
+                        $liveSummary = $this->runSummary($row);
+                        $liveTone = $this->badgeColour($row);
                         $liveIsRunning = $this->runModalIsRunning();
                         $liveIsBackup = $row instanceof LiveBackupRun;
                         $liveIsRestore = $row instanceof LiveRestoreRun;
@@ -1433,7 +1272,7 @@ new #[Title('Backups')] class extends Component {
 
                     @php($pressing = $this->activeRun())
 
-                    @if ($pressing !== null && $pressing->isRunning() && ! $this->runIsAbandoned($pressing))
+                    @if ($pressing !== null && $pressing->isRunning() && ! $this->isAbandoned($pressing))
                         <flux:badge size="sm" color="blue" icon="loading">
                             {{ __('A backup is being taken') }}
                         </flux:badge>
@@ -1512,7 +1351,7 @@ new #[Title('Backups')] class extends Component {
 
                     @php($restoring = $this->activeRestoreRun())
 
-                    @if ($restoring !== null && $restoring->isRunning() && ! $this->runIsAbandoned($restoring))
+                    @if ($restoring !== null && $restoring->isRunning() && ! $this->isAbandoned($restoring))
                         <flux:badge size="sm" color="blue" icon="loading">
                             {{ __('A restore is running') }}
                         </flux:badge>
@@ -1587,13 +1426,13 @@ new #[Title('Backups')] class extends Component {
                                         {{ $run->token !== null ? $run->token : __('Restoring now') }}
                                     </span>
 
-                                    <flux:badge size="sm" :color="$this->restoreBadgeColour($run)">
-                                        {{ $this->restoreStateLabel($run) }}
+                                    <flux:badge size="sm" :color="$this->badgeColour($run)">
+                                        {{ $this->stateLabel($run) }}
                                     </flux:badge>
                                 </div>
 
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    {{ $this->restoreRunSummary($run) }}
+                                    {{ $this->runSummary($run) }}
                                 </p>
 
                                 <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
@@ -1625,7 +1464,7 @@ new #[Title('Backups')] class extends Component {
 
                     @php($exporting = $this->activeExportRun())
 
-                    @if ($exporting !== null && $exporting->isRunning() && ! $this->runIsAbandoned($exporting))
+                    @if ($exporting !== null && $exporting->isRunning() && ! $this->isAbandoned($exporting))
                         <flux:badge size="sm" color="blue" icon="loading">
                             {{ __('An export is running') }}
                         </flux:badge>
@@ -1665,13 +1504,13 @@ new #[Title('Backups')] class extends Component {
                                         {{ $run->file_name !== null ? $run->file_name : __('being written now') }}
                                     </span>
 
-                                    <flux:badge size="sm" :color="$this->exportBadgeColour($run)">
-                                        {{ $this->exportStateLabel($run) }}
+                                    <flux:badge size="sm" :color="$this->badgeColour($run)">
+                                        {{ $this->stateLabel($run) }}
                                     </flux:badge>
                                 </div>
 
                                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    {{ $this->exportRunSummary($run) }}
+                                    {{ $this->runSummary($run) }}
                                 </p>
 
                                 @if ($run->state === LiveExportRun::COMPLETE && $run->file_name !== null)

@@ -9,6 +9,7 @@ use App\Models\LiveExportRun;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Tests\Support\BuildsTachibkBackups;
 use Tests\Support\MintsTokens;
@@ -183,8 +184,14 @@ class RunLiveExportJobTest extends TestCase
      */
     public function test_a_vanished_reader_leaves_no_run_at_all(): void
     {
+        Log::spy();
+
         // A user that factory never created, by id, so nothing else about the test matters.
         (new RunLiveExport(999999))->handle(app(TachibkExport::class));
+
+        Log::shouldHaveReceived('info')
+            ->with('A live run was queued for a reader who no longer exists.', ['user_id' => 999999])
+            ->once();
 
         $this->assertSame(0, LiveExportRun::query()->count(), 'no row, because the run cannot answer for a reader who is not there');
         $this->assertCount(0, $this->products());

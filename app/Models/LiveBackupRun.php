@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
+use App\Live\Contracts\LiveRun;
+use App\Models\Concerns\HasRunState;
 use App\Models\Concerns\OwnedModel;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * One press of the Back up now button, from starting the run to whatever it ended as.
@@ -67,8 +68,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'started_at',
     'finished_at',
 ])]
-class LiveBackupRun extends Model
+class LiveBackupRun extends Model implements LiveRun
 {
+    use HasRunState;
+
     /**
      * Cast because every number here is compared or shown, and SQLite hands them back as
      * strings without this. The same reason {@see ImportRun} carries its casts.
@@ -86,28 +89,5 @@ class LiveBackupRun extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
-    }
-
-    public const RUNNING = 'running';
-
-    public const COMPLETE = 'complete';
-
-    public const FAILED = 'failed';
-
-    /** The run refused to take anything, with nothing changed. The sentence says why. */
-    public const REFUSED = 'refused';
-
-    /** @return BelongsTo<User, $this> */
-    public function startedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'started_by_user_id');
-    }
-
-    /**
-     * Whether the run is still going, so the page knows whether to poll.
-     */
-    public function isRunning(): bool
-    {
-        return $this->state === self::RUNNING;
     }
 }

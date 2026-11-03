@@ -5,12 +5,11 @@ namespace App\Jobs;
 use App\Backup\LiveBackup;
 use App\Backup\LiveBackupResult;
 use App\Backup\ReaderHalfRefused;
+use App\Jobs\Concerns\RecordsRunProgress;
 use App\Models\LiveBackupRun;
-use App\Models\User;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -42,6 +41,7 @@ use Throwable;
 class RunLiveBackup implements ShouldQueue
 {
     use Queueable;
+    use RecordsRunProgress;
 
     /**
      * One backup is one job, and it is allowed to be slow.
@@ -83,24 +83,15 @@ class RunLiveBackup implements ShouldQueue
     {
         /*
          * The reader who pressed can be gone by the time the worker picks the job up.
-         * The import job cancels when that happens because its rows would write under an
-         * owner that no longer exists. A backup has no such owner, so the run still goes
-         * and the row starts with its attribution left out. That the exception a notice
-         * named might reach no one is still worth a line in the log, because the row
-         * alone cannot say who was there to see it.
+         * The shared branch logs the orphaned press and leaves the attribution out. A
+         * backup has no owner to cancel for: the pair belongs to the install, so the run
+         * still goes and the log is the only place that might have been expected is said.
          */
-        $pressedBy = User::find($this->userId);
+        $pressedBy = $this->presser();
 
-        if ($pressedBy === null) {
-            Log::info('Running a live backup for a reader who no longer exists.', ['user_id' => $this->userId]);
-        }
-
-        $run = LiveBackupRun::create([
-            'started_by_user_id' => $pressedBy?->id,
-            'state' => LiveBackupRun::RUNNING,
+        $run = $this->openRun(LiveBackupRun::class, $pressedBy, [
             'include_downloads' => $this->includeDownloads,
             'progress_note' => 'Starting the run',
-            'started_at' => now(),
         ]);
 
         try {
@@ -111,8 +102,8 @@ class RunLiveBackup implements ShouldQueue
              */
             $result = $backup->run(
                 $this->includeDownloads,
-                static function (string $stage, string $words) use ($run): void {
-                    $run->update(['progress_stage' => $stage, 'progress_note' => $words]);
+                function (string $stage, string $words) use ($run): void {
+                    $this->noteProgress($run, ['progress_stage' => $stage, 'progress_note' => $words]);
                 },
             );
 
@@ -123,12 +114,7 @@ class RunLiveBackup implements ShouldQueue
              * note is about work the row can no longer claim, so it goes, and the refusal
              * reason from the run itself is the sentence that stays.
              */
-            $run->update([
-                'state' => LiveBackupRun::REFUSED,
-                'progress_note' => null,
-                'refusal_reason' => $e->getMessage(),
-                'finished_at' => now(),
-            ]);
+            $this->refuseRun($run, $e);
 
             return;
         } catch (Throwable $e) {
@@ -136,12 +122,7 @@ class RunLiveBackup implements ShouldQueue
              * The run died without a name to its failure. Rethrown rather than swallowed
              * so `failed_jobs` keeps the trace, which is the only place the stack survives.
              */
-            $run->update([
-                'state' => LiveBackupRun::FAILED,
-                'refusal_reason' => $e->getMessage(),
-                'progress_note' => 'This run stopped on an error: '.$e->getMessage(),
-                'finished_at' => now(),
-            ]);
+            $this->failRun($run, $e, 'run');
 
             throw $e;
         }

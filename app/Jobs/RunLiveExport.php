@@ -5,13 +5,12 @@ namespace App\Jobs;
 use App\Export\ExportLibrary;
 use App\Export\TachibkExport;
 use App\Export\TachibkExportResult;
+use App\Jobs\Concerns\RecordsRunProgress;
 use App\Models\LiveExportRun;
-use App\Models\User;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -46,6 +45,7 @@ use Throwable;
 class RunLiveExport implements ShouldQueue
 {
     use Queueable;
+    use RecordsRunProgress;
 
     /**
      * One export is one job, and it is allowed to be slow.
@@ -75,23 +75,19 @@ class RunLiveExport implements ShouldQueue
 
     public function handle(TachibkExport $export): void
     {
-        $presser = User::find($this->userId);
+        $presser = $this->presser();
 
         if ($presser === null) {
-            // The account was deleted between dispatch and execution. Nothing to merge, and
-            // failing loudly would fill `failed_jobs` with a job that could never succeed.
-            // No row goes down either: a run row that never named its reader would hang on
-            // the page with no future state to reach.
-            Log::info('A queued export named a user that no longer exists.', ['user_id' => $this->userId]);
-
+            // The shared branch logged the orphaned dispatch. An export merges only the
+            // reader's own arrangement, so there is nothing to merge and no row goes down:
+            // a run row that never named its reader would hang on the page with no future
+            // state to reach. Failing loudly would fill `failed_jobs` with a job that could
+            // never succeed.
             return;
         }
 
-        $run = LiveExportRun::create([
-            'started_by_user_id' => $presser->id,
-            'state' => LiveExportRun::RUNNING,
+        $run = $this->openRun(LiveExportRun::class, $presser, [
             'progress_note' => 'Starting the export',
-            'started_at' => now(),
         ]);
 
         /*
@@ -118,7 +114,7 @@ class RunLiveExport implements ShouldQueue
                 $presser,
                 $staged,
                 function (string $words) use ($run): void {
-                    $run->update(['progress_note' => $words]);
+                    $this->noteProgress($run, ['progress_note' => $words]);
                 },
             );
 
@@ -129,12 +125,7 @@ class RunLiveExport implements ShouldQueue
              * stage note is about a file the row can no longer claim, so it goes, and the
              * refusal reason from the run itself is the sentence that stays.
              */
-            $run->update([
-                'state' => LiveExportRun::REFUSED,
-                'progress_note' => null,
-                'refusal_reason' => $e->getMessage(),
-                'finished_at' => now(),
-            ]);
+            $this->refuseRun($run, $e);
 
             return;
         } catch (Throwable $e) {
@@ -142,12 +133,7 @@ class RunLiveExport implements ShouldQueue
              * The run died without a name to its failure. Rethrown rather than swallowed
              * so `failed_jobs` keeps the trace, which is the only place the stack survives.
              */
-            $run->update([
-                'state' => LiveExportRun::FAILED,
-                'refusal_reason' => $e->getMessage(),
-                'progress_note' => 'This run stopped on an error: '.$e->getMessage(),
-                'finished_at' => now(),
-            ]);
+            $this->failRun($run, $e, 'run');
 
             throw $e;
         } finally {

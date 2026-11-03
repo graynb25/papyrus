@@ -6,8 +6,8 @@ use App\Backup\BackupLibrary;
 use App\Backup\LiveRestore;
 use App\Backup\LiveRestoreResult;
 use App\Backup\ReaderHalfRefused;
+use App\Jobs\Concerns\RecordsRunProgress;
 use App\Models\LiveRestoreRun;
-use App\Models\User;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
@@ -64,6 +64,7 @@ use Throwable;
 class RunLiveRestore implements ShouldQueue
 {
     use Queueable;
+    use RecordsRunProgress;
 
     /**
      * One restore is one job, and it is allowed to be slow, the same ceiling its backup
@@ -92,14 +93,10 @@ class RunLiveRestore implements ShouldQueue
     {
         /*
          * The reader who pressed can be gone by the time the worker picks the job up. The
-         * run still goes, the row starts with its attribution left out, and the log line
-         * is the only place that might have been expected is said.
+         * shared branch logs it and leaves the attribution out; the restore still goes,
+         * because the pair belongs to the install and not to whoever pressed.
          */
-        $pressedBy = User::find($this->userId);
-
-        if ($pressedBy === null) {
-            Log::info('Restoring a pair for a reader who no longer exists.', ['user_id' => $this->userId]);
-        }
+        $pressedBy = $this->presser();
 
         $library = BackupLibrary::forThisInstall();
         $manifest = $library->directory().DIRECTORY_SEPARATOR.'backup-'.$this->token.'.json';
@@ -116,7 +113,7 @@ class RunLiveRestore implements ShouldQueue
              * Reads before any row exists yet. Refused is the honest state anyway: nothing
              * can be restored from a manifest that disagrees with itself.
              */
-            $this->receipt(function () use ($pressedBy, $e): void {
+            $this->writeReceipt(function () use ($pressedBy, $e): void {
                 LiveRestoreRun::create([
                     'started_by_user_id' => $pressedBy?->id,
                     'state' => LiveRestoreRun::REFUSED,
@@ -132,7 +129,18 @@ class RunLiveRestore implements ShouldQueue
             return;
         }
 
-        $run = $this->openRun($pressedBy?->id, $this->token);
+        /*
+         * The receipt comes before anything is restored. A create refused by a foreign write
+         * transaction, the lock shape the swap itself refuses with, ends the attempt here
+         * with the refusal live: the queue's own retry opens the run again, and restoring
+         * suffered nothing because nothing had started. The exception passes through raw,
+         * rather than being named a second time at this layer.
+         */
+        $run = $this->openRun(LiveRestoreRun::class, $pressedBy, [
+            'token' => $this->token,
+            'progress_stage' => 'starting',
+            'progress_note' => 'Starting the restore',
+        ]);
 
         /*
          * Whether the manga half was already restored when a refusal arrived. The stage
@@ -149,7 +157,7 @@ class RunLiveRestore implements ShouldQueue
                         $mangaHalfIsRestored = true;
                     }
 
-                    $this->note($run, $stage, $words);
+                    $this->noteProgress($run, ['progress_stage' => $stage, 'progress_note' => $words], "the run's stage note");
                 },
             );
 
@@ -159,15 +167,7 @@ class RunLiveRestore implements ShouldQueue
              * Refused with the reader half untouched, because it moves after the server
              * answers. The last stage note describes work that did not happen, so it goes.
              */
-            $this->receipt(static function () use ($run, $e): void {
-                $run->update([
-                    'state' => LiveRestoreRun::REFUSED,
-                    'progress_stage' => $run->progress_stage,
-                    'progress_note' => null,
-                    'refusal_reason' => $e->getMessage(),
-                    'finished_at' => now(),
-                ]);
-            }, "a server refusal's own sentence on the run row");
+            $this->refuseRun($run, $e, "a server refusal's own sentence on the run row");
 
             return;
         } catch (ReaderHalfRefused $e) {
@@ -185,7 +185,7 @@ class RunLiveRestore implements ShouldQueue
                  * duplicate work is bounded by the job timeout, and a wrong skip is worse
                  * than a slow retry. Accepted for this release; COR-09.
                  */
-                $this->receipt(static function () use ($run, $e): void {
+                $this->writeReceipt(static function () use ($run, $e): void {
                     $run->update([
                         'state' => LiveRestoreRun::FAILED,
                         'progress_stage' => $run->progress_stage,
@@ -204,15 +204,7 @@ class RunLiveRestore implements ShouldQueue
              * Refused before anything was restored at all. Same shape as the refusal
              * above precisely because nothing about the install changed.
              */
-            $this->receipt(static function () use ($run, $e): void {
-                $run->update([
-                    'state' => LiveRestoreRun::REFUSED,
-                    'progress_stage' => $run->progress_stage,
-                    'progress_note' => null,
-                    'refusal_reason' => $e->getMessage(),
-                    'finished_at' => now(),
-                ]);
-            }, "a reader refusal's own sentence on the run row, nothing having moved");
+            $this->refuseRun($run, $e, "a reader refusal's own sentence on the run row, nothing having moved");
 
             return;
         } catch (Throwable $e) {
@@ -220,61 +212,21 @@ class RunLiveRestore implements ShouldQueue
              * A dead run without a name to its failure, record it honestly then rethrow
              * so `failed_jobs` keeps the trace.
              */
-            $this->receipt(static function () use ($run, $e): void {
-                $run->update([
-                    'state' => LiveRestoreRun::FAILED,
-                    'progress_stage' => $run->progress_stage,
-                    'refusal_reason' => $e->getMessage(),
-                    'progress_note' => 'This restore stopped on an error: '.$e->getMessage(),
-                    'finished_at' => now(),
-                ]);
-            }, "an unnamed failure's own sentence on the run row");
+            $this->failRun($run, $e, 'restore', "an unnamed failure's own sentence on the run row");
 
             throw $e;
         }
     }
 
     /**
-     * Open the run row, refusing the attempt without it.
-     *
-     * The receipt comes before anything is restored. A create refused by a foreign write
-     * transaction, the lock shape the swap itself refuses with, is answered here by
-     * ending the attempt with the refusal live: the queue's own retry opens the run
-     * again, and restoring suffered nothing because nothing had started. The exception
-     * passes through raw, rather than being named a second time at this layer.
-     */
-    private function openRun(?int $pressedBy, string $token): LiveRestoreRun
-    {
-        return LiveRestoreRun::create([
-            'started_by_user_id' => $pressedBy,
-            'state' => LiveRestoreRun::RUNNING,
-            'token' => $token,
-            'progress_stage' => 'starting',
-            'progress_note' => 'Starting the restore',
-            'started_at' => now(),
-        ]);
-    }
-
-    /**
-     * One stage note onto the run row, or a note deferred to the run's own retry.
-     */
-    private function note(LiveRestoreRun $run, string $stage, string $words): void
-    {
-        $this->receipt(static function () use ($run, $stage, $words): void {
-            $run->update(['progress_stage' => $stage, 'progress_note' => $words]);
-        }, "the run's stage note");
-    }
-
-    /**
      * Write one piece of the receipt, whatever it is made of.
      *
-     * The catch is shaped to the line above: a stage note or a refusal sentence rides
-     * along with work that is going ahead anyway, so a foreign lock over it is not worth
-     * undoing the run for, and the next attempt or the run's own completion delivers the
-     * truth the row was there to carry. Every other failure is the receipt itself failing
-     * and passes through.
+     * A stage note or a refusal sentence rides along with work that is going ahead
+     * anyway, so a foreign lock over it is not worth undoing the run for, and the next
+     * attempt or the run's own completion delivers the truth the row was there to carry.
+     * Every other failure is the receipt itself failing and passes through.
      */
-    private function receipt(callable $write, string $what): void
+    protected function writeReceipt(callable $write, string $what): void
     {
         try {
             $write();
@@ -304,7 +256,7 @@ class RunLiveRestore implements ShouldQueue
      */
     private function complete(LiveRestoreRun $run, LiveRestoreResult $result): void
     {
-        $this->receipt(static function () use ($run, $result): void {
+        $this->writeReceipt(static function () use ($run, $result): void {
             $run->update([
                 'state' => LiveRestoreRun::COMPLETE,
                 'progress_stage' => 'done',
