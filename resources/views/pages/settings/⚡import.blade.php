@@ -1385,6 +1385,11 @@ new #[Title('Import a backup')] class extends Component
                         $visiblePhases = ($isQueued ? ($this->inspectOnly || $this->installExtensions) : ($isInspection || $isClosedReview))
                             ? ['reading']
                             : $phaseOrder;
+                        $stages = array_map(static fn (string $key): array => [
+                            'key' => $key,
+                            'status' => $statuses[$key] ?? 'pending',
+                            'title' => $phaseTitles[$key],
+                        ], $visiblePhases);
                     @endphp
 
                     @if ($isQueued || $run !== null)
@@ -1608,37 +1613,7 @@ new #[Title('Import a backup')] class extends Component
                             @endif
 
                             @if (! $isReview)
-                            <ol class="mt-4 space-y-2" role="list">
-                                @foreach ($visiblePhases as $key)
-                                    @php
-                                        $status = $statuses[$key] ?? 'pending';
-                                    @endphp
-
-                                    <li role="listitem" class="flex items-center gap-3 py-2">
-                                        <span
-                                            class="flex size-5 flex-none items-center justify-center rounded-full border {{ match ($status) {
-                                                'done' => 'border-zinc-400 bg-zinc-200 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200',
-                                                'running' => 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900',
-                                                'failed' => 'border-red-500 bg-red-500 text-white',
-                                                default => 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-700',
-                                            } }}"
-                                            aria-hidden="true"
-                                        >
-                                            @if ($status === 'done')
-                                                &#10003;
-                                            @elseif ($status === 'failed')
-                                                &#10005;
-                                            @elseif ($status === 'running')
-                                                <flux:icon name="loading" class="size-3" />
-                                            @endif
-                                        </span>
-
-                                        <div class="min-w-0">
-                                            <p class="text-sm font-medium">{{ $phaseTitles[$key] }}</p>
-                                        </div>
-                                    </li>
-                                @endforeach
-                            </ol>
+                            <x-stage-list :stages="$stages" />
 
                             @if ($run !== null)
                                 <p
