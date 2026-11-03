@@ -2,11 +2,11 @@
 
 use App\Downloads\DownloadLedger;
 use App\Jobs\FetchSeriesChapters;
-use App\Models\Download;
-use App\Models\LibraryCheck;
+use App\Live\Series\SeriesCoverRules;
+use App\Live\Series\SeriesFormatting;
+use App\Live\Series\SeriesPageData;
 use App\Models\Source;
 use App\Support\ChapterNotes;
-use App\Support\ImageUrl;
 use App\Support\ReadingState;
 use App\Support\ReaderSettings;
 use App\Suwayomi\SeriesGateway;
@@ -25,6 +25,18 @@ new class extends Component
      * real progress bar instead of a button that goes quiet for two seconds.
      */
     use WithFileUploads;
+
+    /** The page's reads, kept out of this component so their shapes can be tested directly. */
+    private SeriesPageData $data;
+
+    /** The page's pure formatting and range rules, shared with its direct tests. */
+    private SeriesFormatting $formatting;
+
+    public function boot(SeriesPageData $data, SeriesFormatting $formatting): void
+    {
+        $this->data = $data;
+        $this->formatting = $formatting;
+    }
 
     /**
      * Suwayomi's manga id, and nothing else.
@@ -178,26 +190,14 @@ new class extends Component
     /**
      * This series' source in our mirror, or null when we do not hold it.
      *
-     * The lookup is on Suwayomi's own id rather than the name, because names repeat across
-     * language variants: 61 of the 82 sources are named "MangaDex (...)", so a name lookup lands
-     * on an arbitrary one of them. The mirror's `suwayomi_source_id` is the join.
-     *
-     * Null is a real answer rather than a failure. A source can be uninstalled from Suwayomi while
-     * the series it produced is still in the cache, and a link to a page that 404s is worse than
-     * a name with nothing on it.
+     * The lookup joins on Suwayomi's own id rather than the name, because names
+     * repeat across language variants. Null is a real answer: a source can be
+     * uninstalled while the series it produced is still in the cache.
      */
     #[Computed]
     public function sourceMirror(): ?Source
     {
-        $suwayomiId = $this->series()['source']['id'] ?? null;
-
-        if ($suwayomiId === null || $suwayomiId === '') {
-            return null;
-        }
-
-        return Source::query()
-            ->where('suwayomi_source_id', (int) $suwayomiId)
-            ->first();
+        return $this->data->sourceMirror($this->series);
     }
 
     /**
@@ -249,7 +249,7 @@ new class extends Component
 
     public int $page = 1;
 
-    public const PER_PAGE = 50;
+    public const PER_PAGE = SeriesPageData::PER_PAGE;
 
     /**
      * Notified when the server has no chapters for this series.
@@ -482,27 +482,25 @@ new class extends Component
     /**
      * This series' tags, for the editor.
      *
-     * A computed rather than read inline so the component receives an array and not a model's
-     * cast, and so the empty case is an empty array rather than null reaching a `@foreach`.
+     * The empty case is an empty array rather than null reaching a `@foreach`.
      *
      * @return array<int, string>
      */
     #[Computed]
     public function tags(): array
     {
-        return array_values($this->state->tags ?? []);
+        return $this->data->tags($this->state);
     }
 
     /**
      * The rating as the star row should draw it.
      *
-     * Null rather than zero for unrated, because zero is not a rating this app offers and
-     * drawing five lit stars for "no opinion" would be a lie about a state that exists.
+     * Null rather than zero for unrated, because zero is not a rating this app offers.
      */
     #[Computed]
     public function rating(): ?int
     {
-        return $this->state->rating === null ? null : (int) $this->state->rating;
+        return $this->data->rating($this->state);
     }
 
     /*
@@ -681,20 +679,11 @@ new class extends Component
     #[Computed]
     public function series(): ?array
     {
-        try {
-            $series = app(SeriesGateway::class)->find($this->manga);
-        } catch (SuwayomiException $e) {
-            /*
-             * A render-time read, so an unreachable server must render as a named
-             * failure rather than a 500. Clearing on the next successful read is
-             * what lets a poll or a manual retry recover the page.
-             */
-            $this->seriesError = $e->getMessage();
+        $series = $this->data->series($this->manga);
 
-            return null;
-        }
-
-        $this->seriesError = null;
+        // The view renders the read's verdict through this property, so the
+        // delegate carries the error back out in the same request.
+        $this->seriesError = $this->data->seriesError();
 
         return $series;
     }
@@ -705,54 +694,24 @@ new class extends Component
     #[Computed]
     public function state(): \App\Models\SeriesState
     {
-        return app(ReadingState::class)->findSeries(auth()->user(), $this->manga)
-            ?? app(ReadingState::class)->series(auth()->user(), $this->manga);
+        return $this->data->state($this->manga);
     }
 
     /**
      * Every chapter the server has, before scanlator filtering and ordering.
-     *
-     * `manga(id:).chapters` takes no arguments at all, so the whole list arrives
-     * in one response. Filtering and paging happen here.
      *
      * @return array<int, array<string, mixed>>
      */
     #[Computed]
     public function allChapters(): array
     {
-        return $this->series['chapters']['nodes'] ?? [];
+        return $this->data->allChapters($this->series);
     }
 
     #[Computed]
     public function chapterCount(): int
     {
-        return count($this->allChapters);
-    }
-
-    /**
-     * A chapter's scanlator, or null when the name is not a name.
-     *
-     * Measured: one source sends a zero-width space as its scanlator, which `filled()`
-     * counts as present. It produced a fourth group button labelled with nothing, and
-     * a chapter row with an invisible name. Whitespace-only names are the same shape.
-     *
-     * @param  array<string, mixed>  $chapter
-     */
-    public function scanlatorOf(array $chapter): ?string
-    {
-        $name = $chapter['scanlator'] ?? null;
-
-        if (! is_string($name)) {
-            return null;
-        }
-
-        $name = trim($name);
-
-        if (preg_match('/^[\p{Z}\s\x{200B}-\x{200D}\x{FEFF}\x{2060}]*$/u', $name) === 1) {
-            return null;
-        }
-
-        return $name;
+        return $this->data->chapterCount($this->allChapters);
     }
 
     /**
@@ -763,13 +722,7 @@ new class extends Component
     #[Computed]
     public function scanlators(): array
     {
-        return collect($this->allChapters)
-            ->map(fn (array $c): ?string => $this->scanlatorOf($c))
-            ->filter()
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
+        return $this->formatting->scanlators($this->allChapters);
     }
 
     /**
@@ -780,42 +733,13 @@ new class extends Component
     #[Computed]
     public function chapters(): array
     {
-        $excluded = array_map('mb_strtolower', $this->excludedScanlators);
-
-        $filtered = array_values(array_filter($this->allChapters, function (array $chapter) use ($excluded): bool {
-            $scanlator = $this->scanlatorOf($chapter);
-
-            // A chapter with no scanlator is never excluded, since there is
-            // nothing to match against and dropping those would lose chapters.
-            if ($scanlator === null) {
-                return true;
-            }
-
-            return ! in_array(mb_strtolower($scanlator), $excluded, true);
-        }));
-
-        usort($filtered, function (array $a, array $b): int {
-            // sourceOrder is the source's own ordering, which respects volumes
-            // that a bare chapterNumber sort would flatten. chapterNumber breaks
-            // ties so a source with equal sourceOrder still sorts deterministically.
-            $byOrder = ($a['sourceOrder'] ?? 0) <=> ($b['sourceOrder'] ?? 0);
-
-            return $byOrder !== 0
-                ? $byOrder
-                : (($a['chapterNumber'] ?? 0) <=> ($b['chapterNumber'] ?? 0));
-        });
-
-        if ($this->order === 'desc') {
-            $filtered = array_reverse($filtered);
-        }
-
-        return $filtered;
+        return $this->data->chapters($this->allChapters, $this->order, $this->excludedScanlators);
     }
 
     #[Computed]
     public function visibleCount(): int
     {
-        return count($this->chapters);
+        return $this->data->visibleCount($this->chapters);
     }
 
     /**
@@ -824,61 +748,34 @@ new class extends Component
     #[Computed]
     public function chapterStates(): array
     {
-        $ids = array_map(
-            static fn (array $c): int => (int) ($c['id'] ?? 0),
-            array_slice($this->chapters, ($this->page - 1) * self::PER_PAGE, self::PER_PAGE),
-        );
-
-        return app(ReadingState::class)->chapterStates(auth()->user(), $ids);
+        return $this->data->chapterStates($this->chapters, $this->page);
     }
 
     /**
      * Read state for every filtered chapter, not only the open page.
      *
-     * The row markers and `readCount()` stay on the page slice because the reader can
-     * only see one page at a time. The two bulk download controls are different: they
-     * act on the whole filtered list, so their view of "read" has to cover that list
-     * too. Loading the page's map there made every read chapter on another page look
-     * unread: measured against a 641 chapter series, the button offered 591 when only
-     * 8 were unread.
-     *
-     * Chunked because a long series can carry thousands of chapter ids, and an
-     * unbounded `whereIn` eventually runs into a database's parameter limit.
+     * The two bulk download controls act on the whole filtered list. Loading
+     * the page's map there made every read chapter on another page look
+     * unread: measured against a 641 chapter series, the button offered 591
+     * when only 8 were unread.
      *
      * @return array<int, \App\Models\ChapterState>
      */
     #[Computed]
     public function allChapterStates(): array
     {
-        $ids = array_map(static fn (array $c): int => (int) ($c['id'] ?? 0), $this->chapters);
-        $reading = app(ReadingState::class);
-        $states = [];
-
-        foreach (array_chunk($ids, 500) as $chunk) {
-            $states += $reading->chapterStates(auth()->user(), $chunk);
-        }
-
-        return $states;
+        return $this->data->allChapterStates($this->chapters);
     }
 
     /**
      * This reader's notes on the chapters on this page.
-     *
-     * Scoped to the visible page rather than the whole series for the same reason
-     * `chapterStates()` is: 107 chapters would otherwise be one note lookup each, and
-     * the reader cannot see 107 chapters at once either.
      *
      * @return array<int, \App\Models\Note>
      */
     #[Computed]
     public function chapterNotes(): array
     {
-        $ids = array_map(
-            static fn (array $c): int => (int) ($c['id'] ?? 0),
-            array_slice($this->chapters, ($this->page - 1) * self::PER_PAGE, self::PER_PAGE),
-        );
-
-        return app(ChapterNotes::class)->forChapters(auth()->user(), $ids);
+        return $this->data->chapterNotes($this->chapters, $this->page);
     }
 
     /**
@@ -960,7 +857,7 @@ new class extends Component
     #[Computed]
     public function customCover(): ?\App\Models\SeriesCover
     {
-        return app(\App\Covers\CoverStore::class)->find(auth()->user(), $this->manga);
+        return $this->data->customCover($this->manga);
     }
 
     /** The file the reader has chosen but not yet saved. */
@@ -975,24 +872,10 @@ new class extends Component
      */
     public function saveCover(): void
     {
-        $this->validate([
-            'coverUpload' => [
-                'required',
-                'image',
-                'mimes:jpg,jpeg,png,webp',
-
-                /*
-                 * The byte ceiling is the config's product limit, not this server's
-                 * upload_max_filesize: a packaged install takes a 256M backup, and a
-                 * cover is not a backup. The number is printed in the message so a
-                 * reader knows which rule stopped them.
-                 */
-                'max:'.(int) config('papyrus.covers.max_kilobytes'),
-            ],
-        ], [
-            'coverUpload.max' => __('A cover has to be under :max KB. Resize it and try again.'),
-            'coverUpload.mimes' => __('A cover has to be a JPEG, PNG or WebP.'),
-        ]);
+        $this->validate(
+            SeriesCoverRules::rules(),
+            SeriesCoverRules::messages(),
+        );
 
         try {
             app(\App\Covers\CoverStore::class)->store(auth()->user(), $this->manga, $this->coverUpload);
@@ -1080,147 +963,59 @@ new class extends Component
     /**
      * Why there is nothing to read, when there is nothing to read.
      *
-     * ## Why this exists
-     *
-     * `CheckLedger::check()` records what a fetch produced, and this page read none of it. So
-     * every zero-chapter series rendered one sentence, and a source answering
-     * `Cloudflare bypass currently disabled` was reported as "The source has not listed any
-     * chapters for this series", which is a different and far more hopeful statement.
-     *
-     * Measured on the dev library: 8 series had no chapters and 4 of them had that recorded
-     * error. All 8 were told the same thing, and the 4 were sent to a source that cannot
-     * answer. The 4 that genuinely have none upstream are a fact about the source and keep the
-     * sentence they had, because that sentence is true for them.
-     *
-     * ## Why the recorded text is shown verbatim
-     *
-     * Because it is the server's own words and rewriting them would be inventing a diagnosis.
-     * The heading is ours, because `Cloudflare bypass currently disabled` is not a sentence a
-     * reader can act on and the callout needs one.
-     *
-     * Null while a fetch is still in flight or has never run, which is what keeps the plain
-     * "no chapters yet" wording for the case where we genuinely do not know.
+     * Reads the fetch ledger so a source that could not answer is not reported
+     * as a source that answered and had nothing. Null while a fetch is still in
+     * flight or has never run.
      *
      * @return array{0: string, 1: string}|null
      */
     #[Computed]
     public function emptyReason(): ?array
     {
-        if ($this->loadError !== null) {
-            /*
-             * Two different failures arrive on the same property, and `CheckLedger` already
-             * draws the line between them: `No chapters found` is the source answering that it
-             * has nothing, and anything else is the call not completing. Measured, the same
-             * message arrived for a series with no chapters and for a source blocked by
-             * Cloudflare, so "the chapter list did not load" was wrong for one of them.
-             *
-             * Classified on the message rather than on the state, because the manual retry
-             * sets `loadError` directly and never writes a ledger row, so there is no state to
-             * read. It is the same test `CheckLedger` makes, and for the same reason: it is
-             * what the server's message says.
-             */
-            if (str_contains(strtolower((string) $this->loadError), 'no chapters')) {
-                return [
-                    __('The source returned no chapters'),
-                    __('The source answered, but it listed no chapters. If the series moved, you can move it to another source from here. The source may have changed its layout or it may be broken.'),
-                ];
-            }
-
-            return [__('The chapter list did not load'), (string) $this->loadError];
-        }
-
-        $check = LibraryCheck::query()
-            ->forUser((int) auth()->id())
-            ->where('suwayomi_manga_id', $this->manga)
-            ->first();
-
-        if ($check === null) {
-            return null;
-        }
-
-        if ($check->state === LibraryCheck::ERROR) {
-            return [
-                __('This source could not be reached'),
-                (string) ($check->error ?: __('The server could not be reached.')),
-            ];
-        }
-
-        return [
-            __('No chapters yet'),
-            __('The source has not listed any chapters for this series.'),
-        ];
+        return $this->data->emptyReason($this->manga, $this->loadError);
     }
 
     #[Computed]
     public function lastPage(): int
     {
-        return max(1, (int) ceil($this->visibleCount / self::PER_PAGE));
+        return $this->data->lastPage($this->visibleCount);
     }
 
     #[Computed]
     public function readCount(): int
     {
-        $ids = array_map(static fn (array $c): int => (int) ($c['id'] ?? 0), $this->chapters);
-
-        return app(ReadingState::class)->readCount($this->chapters, app(ReadingState::class)->chapterStates(auth()->user(), $ids));
+        return $this->data->readCount($this->chapters);
     }
 
     /**
      * The cover to render: the reader's own if they set one, otherwise the source's.
-     *
-     * One accessor for both, so the template cannot ask for the wrong one. Measured,
-     * source covers are already served through a Laravel route, so a custom cover on its
-     * own route is no new cost class.
      */
     #[Computed]
     public function coverUrl(): ?string
     {
-        if ($this->customCover() !== null) {
-            return route('covers.show', ['manga' => $this->manga]);
-        }
-
-        return ImageUrl::thumbnail($this->manga, ImageUrl::defaultFormat());
+        return $this->data->coverUrl($this->manga, $this->customCover);
     }
 
     /**
      * This series' resolved reader settings.
-     *
-     * Resolved the same way the reader resolves them, so the mode shown here is
-     * the mode the reader will open in.
      *
      * @return array<string, mixed>
      */
     #[Computed]
     public function readingSettings(): array
     {
-        return app(\App\Support\ReaderSettings::class)->resolve(auth()->user(), $this->manga);
+        return $this->data->readingSettings($this->manga);
     }
 
     /**
      * Continue reading, if there is somewhere to continue from.
-     *
-     * Prefers the recorded pointer, then the newest chapter, because a series
-     * opened for the first time has no pointer and "start reading" should still
-     * work.
      *
      * @return array<string, mixed>|null
      */
     #[Computed]
     public function resumeChapter(): ?array
     {
-        $pointer = $this->state->last_read_chapter_id;
-
-        if ($pointer !== null) {
-            $match = collect($this->chapters)->first(fn (array $c): bool => (int) $c['id'] === $pointer);
-
-            if ($match !== null) {
-                return $match;
-            }
-        }
-
-        $ordered = $this->order === 'asc' ? $this->chapters : array_reverse($this->chapters);
-
-        return $ordered[0] ?? null;
+        return $this->data->resumeChapter($this->state, $this->chapters, $this->order);
     }
 
     public function previousPage(): void
@@ -1242,32 +1037,21 @@ new class extends Component
     /**
      * Whether the server has this chapter's pages on disk.
      *
-     * From the chapter list we already fetched, not a query per chapter. The
-     * series page renders fifty rows and asking Suwayomi fifty times would be the
-     * same mistake the library page made once already.
+     * From the chapter list we already fetched, not a query per chapter.
      */
     public function isDownloaded(int $chapterId): bool
     {
-        foreach ($this->chapters as $chapter) {
-            if ((int) $chapter['id'] === $chapterId) {
-                return (bool) ($chapter['isDownloaded'] ?? false);
-            }
-        }
-
-        return false;
+        return $this->data->isDownloaded($this->chapters, $chapterId);
     }
 
     /**
      * This reader's download state for a chapter, or null when there is none.
      *
-     * One query for the visible page's chapters rather than one per row, and read
-     * from the map the render already built.
+     * One query for the visible page's chapters rather than one per row.
      */
     public function downloadState(int $chapterId): ?string
     {
-        $this->loadDownloadStates();
-
-        return $this->downloadStatesFor[$chapterId] ?? null;
+        return $this->data->downloadState($this->chapters, $chapterId);
     }
 
     /**
@@ -1285,8 +1069,7 @@ new class extends Component
             variant: $result['queued'] > 0 ? 'success' : 'warning',
         );
 
-        $this->downloadStatesFor = [];
-        $this->downloadStatesLoaded = false;
+        $this->data->forgetDownloadStates();
     }
 
     /**
@@ -1342,76 +1125,13 @@ new class extends Component
             variant: $result['queued'] > 0 ? 'success' : 'warning',
         );
 
-        $this->downloadStatesFor = [];
-        $this->downloadStatesLoaded = false;
+        $this->data->forgetDownloadStates();
     }
 
     /** How many chapters would "download unread" queue right now. */
     public function unreadDownloadableCount(): int
     {
-        $count = 0;
-        $states = $this->allChapterStates;
-
-        foreach ($this->chapters as $chapter) {
-            $chapterId = (int) $chapter['id'];
-
-            if (! (bool) ($chapter['isDownloaded'] ?? false) && ! ($states[$chapterId] ?? null)?->is_read) {
-                $count++;
-            }
-        }
-
-        return $count;
-    }
-
-    /**
-     * Load the download states for every chapter on this series, once.
-     *
-     * @var array<int, string>
-     */
-    private array $downloadStatesFor = [];
-
-    private bool $downloadStatesLoaded = false;
-
-    private function loadDownloadStates(): void
-    {
-        if ($this->downloadStatesLoaded) {
-            return;
-        }
-
-        $ids = array_map(static fn (array $chapter): int => (int) $chapter['id'], $this->chapters);
-
-        if ($ids === []) {
-            $this->downloadStatesLoaded = true;
-
-            return;
-        }
-
-        $rows = Download::forUser(auth()->id())
-            ->whereIn('suwayomi_chapter_id', $ids)
-            ->get(['suwayomi_chapter_id', 'state']);
-
-        foreach ($rows as $row) {
-            $this->downloadStatesFor[(int) $row->suwayomi_chapter_id] = (string) $row->state;
-        }
-
-        $this->downloadStatesLoaded = true;
-    }
-
-    public function chapterUrl(int $chapterId): string
-    {
-        return route('reader.show', ['manga' => $this->manga, 'chapter' => $chapterId]);
-    }
-
-    /**
-     * The page range currently shown, for the footer.
-     *
-     * @return array{0: int, 1: int}
-     */
-    public function visibleRange(): array
-    {
-        $from = $this->visibleCount === 0 ? 0 : ($this->page - 1) * self::PER_PAGE + 1;
-
-        return [$from, min($from + self::PER_PAGE - 1, $this->visibleCount)];
+        return $this->data->unreadDownloadableCount($this->chapters, $this->allChapterStates);
     }
 }; ?>
 
@@ -1636,7 +1356,7 @@ new class extends Component
                             <flux:button
                                 variant="primary"
                                 icon="book-open"
-                                :href="$this->chapterUrl((int) $resume['id'])"
+                                :href="$this->formatting->chapterUrl($this->manga, (int) $resume['id'])"
                                 wire:navigate
                             >
                                 @if ($this->state->last_read_chapter_id !== null)
@@ -2015,9 +1735,9 @@ new class extends Component
                         wire:poll.2000ms
                     @endif
                 >
-                    @php([$from, $to] = $this->visibleRange())
+                    @php([$from, $to] = $this->formatting->visibleRange($this->visibleCount, $this->page, self::PER_PAGE))
 
-                    @foreach (array_slice($this->chapters, ($page - 1) * self::PER_PAGE, self::PER_PAGE) as $chapter)
+                    @foreach ($this->formatting->pageSlice($this->chapters, $this->page, self::PER_PAGE) as $chapter)
                         @php($state = $this->chapterStates[(int) $chapter['id']] ?? null)
 
                         <li class="group flex items-center gap-3 border-b border-zinc-200/70 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-zinc-100/60 sm:px-4 dark:border-white/[0.05] dark:hover:bg-white/[0.03]">
@@ -2054,7 +1774,7 @@ new class extends Component
                             </button>
 
                             <a
-                                href="{{ $this->chapterUrl((int) $chapter['id']) }}"
+                                href="{{ $this->formatting->chapterUrl($this->manga, (int) $chapter['id']) }}"
                                 wire:navigate
                                 class="min-w-0 flex-1 truncate text-sm transition-colors {{ $state?->is_read ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-zinc-800 hover:text-vermilion-600 dark:text-zinc-100 dark:hover:text-vermilion-400' }}"
                             >
@@ -2062,7 +1782,7 @@ new class extends Component
                                     {{ filled($chapter['name']) ? $chapter['name'] : __('Chapter :number', ['number' => $chapter['chapterNumber'] ?? '?']) }}
                                 </span>
 
-                                @if (($scanlator = $this->scanlatorOf($chapter)) !== null)
+                                @if (($scanlator = $this->formatting->scanlatorOf($chapter)) !== null)
                                     <span class="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">{{ $scanlator }}</span>
                                 @endif
                             </a>
