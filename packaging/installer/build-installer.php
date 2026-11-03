@@ -63,6 +63,9 @@ require_once __DIR__.'/../runtime/SystemTools.php';
 $unsigned = false;
 $options = [];
 
+// PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
+$argv ??= [];
+
 foreach (array_slice($argv, 1) as $argument) {
     if (str_starts_with($argument, '--install=')) {
         $options['install'] = substr($argument, strlen('--install='));

@@ -109,6 +109,9 @@ CONF;
  */
 $options = ['years' => '10', 'out' => null];
 
+// PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
+$argv ??= [];
+
 foreach (array_slice($argv, 1) as $argument) {
     if ($argument === '--export-instructions') {
         exportInstructions();

@@ -152,6 +152,9 @@ $supervisor = new Supervisor(
     appPort: (int) (getenv('PAPYRUS_APP_PORT') ?: 8000),
 );
 
+// PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
+$argv ??= [];
+
 $command = $argv[1] ?? 'status';
 
 try {

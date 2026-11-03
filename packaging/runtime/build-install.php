@@ -291,6 +291,9 @@ const LARVEL_BOOT_PATHS = [
     'storage',
 ];
 
+// PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
+$argv ??= [];
+
 $options = parseArguments($argv);
 
 if ($options['help']) {

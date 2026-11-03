@@ -54,6 +54,9 @@ $repo = dirname(__DIR__, 2);
 $cache = $repo.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'.tools'.DIRECTORY_SEPARATOR.'build-inputs';
 $force = false;
 
+// PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
+$argv ??= [];
+
 foreach (array_slice($argv, 1) as $argument) {
     if ($argument === '--force' || $argument === '-f') {
         $force = true;
