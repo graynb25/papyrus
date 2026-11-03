@@ -3,7 +3,8 @@
 use App\Jobs\CheckLibrary;
 use App\Library\CheckLedger;
 use App\Library\CheckSchedule;
-use App\Library\ContinueReading;
+use App\Live\Library\LibraryFilter;
+use App\Live\Library\LibraryPageData;
 use App\Models\CheckRun;
 use App\Models\LibraryCheck;
 use App\Support\Library;
@@ -20,12 +21,10 @@ new #[Title('Library')] class extends Component
     /**
      * How many entries one page holds.
      *
-     * 60 because this is about images rather than rows. A library page renders a
-     * proxied cover per entry, and 60 is roughly two screens of scrolling. Beyond
-     * that the page stops feeling instant without showing anything the reader
-     * could use, so the rest is behind paging.
+     * The pipeline owns the number; this alias keeps the component's own constant
+     * and its meaning in one place.
      */
-    public const PER_PAGE = 60;
+    public const PER_PAGE = LibraryFilter::PER_PAGE;
 
     /** Current page. Reset whenever a filter changes, see updated(). */
     public int $page = 1;
@@ -94,11 +93,23 @@ new #[Title('Library')] class extends Component
      */
     public array $selected = [];
 
+    /** The page's reads, kept out of this component so their shapes can be tested directly. */
+    private LibraryPageData $data;
+
+    /** The page's filter pipeline, shared with its direct tests. */
+    private LibraryFilter $filter;
+
+    public function boot(LibraryPageData $data, LibraryFilter $filter): void
+    {
+        $this->data = $data;
+        $this->filter = $filter;
+    }
+
     public function updated(string $property): void
     {
         // Landing on page 7 of a result set that now has two pages looks like an
         // empty library, so every filter change returns to the start.
-        if (in_array($property, ['search', 'sort', 'shelf'], true)) {
+        if ($this->filter->resetsPage($property)) {
             $this->page = 1;
         }
 
@@ -399,30 +410,13 @@ new #[Title('Library')] class extends Component
     }
 
     /**
-     * Whether a series is filed in a shelf.
-     *
-     * Reads the preloaded map rather than asking, for the reason the class docblock
-     * gives. Called once per card per shelf from the view.
-     */
-    public function isFiled(int $mangaId, int $shelfId): bool
-    {
-        return in_array($shelfId, $this->filings[$mangaId] ?? [], true);
-    }
-
-    /**
      * The shelves one series is filed in, in the reader's shelf order.
      *
      * @return array<int, array{id: int, name: string}>
      */
     public function filedShelves(int $mangaId): array
     {
-        $ids = $this->filings[$mangaId] ?? [];
-
-        return $this->shelves
-            ->filter(fn (array $one): bool => in_array($one['id'], $ids, true))
-            ->map(fn (array $one): array => ['id' => $one['id'], 'name' => $one['name']])
-            ->values()
-            ->all();
+        return $this->data->filedShelves($this->shelves, $this->filings, $mangaId);
     }
 
     /**
@@ -432,24 +426,12 @@ new #[Title('Library')] class extends Component
      */
     public function unfiledShelves(int $mangaId): array
     {
-        $ids = $this->filings[$mangaId] ?? [];
-
-        return $this->shelves
-            ->reject(fn (array $one): bool => in_array($one['id'], $ids, true))
-            ->map(fn (array $one): array => ['id' => $one['id'], 'name' => $one['name']])
-            ->values()
-            ->all();
+        return $this->data->unfiledShelves($this->shelves, $this->filings, $mangaId);
     }
 
     public function shelfName(int $shelfId): string
     {
-        foreach ($this->shelves as $shelf) {
-            if ($shelf['id'] === $shelfId) {
-                return $shelf['name'];
-            }
-        }
-
-        return __('Shelf');
+        return $this->data->shelfName($this->shelves, $shelfId);
     }
 
     // Data ---------------------------------------------------------------
@@ -460,8 +442,8 @@ new #[Title('Library')] class extends Component
      * Read as `$this->entries`, never as `$this->entries()`. A `#[Computed]`
      * method is memoised per request under its property name; calling it as a
      * method skips the cache and runs the body again. That mistake was live in
-     * this file and cost 30 seconds: the view asks `isFiled()` once per card per
-     * shelf, each of which re-ran this, and each run is a Suwayomi round trip.
+     * this file and cost 30 seconds: the view asked a filing helper once per card
+     * per shelf, each of which re-ran this, and each run is a Suwayomi round trip.
      *
      * `ReadPathTest` cannot see it either, because 28 sequential HTTP calls to a
      * fake in the same test still finish. Only the live server times out.
@@ -471,7 +453,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function entries(): Collection
     {
-        return app(Library::class)->entries(auth()->user());
+        return $this->data->entries();
     }
 
     /**
@@ -480,54 +462,28 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function shelves(): Collection
     {
-        return app(Library::class)->categories(auth()->user());
+        return $this->data->shelves();
     }
 
     /**
      * The shelf, search and sort applied.
      *
      * A computed rather than a plain method for the same reason as `entries`: the
-     * sort runs over the whole library and three things below read it.
+     * sort runs over the whole library and three things below read it. The pipeline
+     * itself is {@see LibraryFilter}, which keeps its own direct tests.
      *
      * @return Collection<int, array<string, mixed>>
      */
     #[Computed]
     public function matching(): Collection
     {
-        $entries = $this->entries;
-
-        if ($this->shelf !== null) {
-            $entries = $entries->filter(
-                fn (array $entry): bool => in_array($this->shelf, $this->filings[$entry['manga_id']] ?? [], true)
-            );
-        }
-
-        $needle = trim($this->search);
-
-        if ($needle !== '') {
-            $needle = mb_strtolower($needle);
-
-            $entries = $entries->filter(
-                fn (array $entry): bool => str_contains(mb_strtolower((string) $entry['title']), $needle)
-            );
-        }
-
-        return match ($this->sort) {
-            'title' => $entries->sortBy(fn (array $entry): string => mb_strtolower((string) $entry['title']))->values(),
-            'added' => $entries->sortByDesc(fn (array $entry): int => (int) ($entry['added_at']?->getTimestamp() ?? 0))->values(),
-            /*
-             * `unread_chapters` is null for a series nobody has fetched, and null
-             * sorts to -1 so those land at the bottom. Putting them at the top
-             * would fill the top of the page with the series this page cannot say
-             * anything about yet.
-             */
-            'unread' => $entries
-                ->sortByDesc(fn (array $entry): int => (int) ($entry['unread_chapters'] ?? -1))
-                ->values(),
-            // 'recent' needs no work: entries already arrives in last read then
-            // date added order and re-sorting only risks disagreeing with it.
-            default => $entries,
-        };
+        return $this->filter->matching(
+            $this->entries,
+            $this->filings,
+            $this->shelf,
+            $this->search,
+            $this->sort,
+        );
     }
 
     /**
@@ -548,14 +504,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function filings(): array
     {
-        $ids = $this->entries
-            ->pluck('manga_id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->sort()
-            ->values()
-            ->all();
-
-        return app(Library::class)->filingsFor(auth()->user(), $ids);
+        return $this->data->filings($this->entries);
     }
 
     /**
@@ -596,9 +545,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function sourceFailure(): ?string
     {
-        count($this->entries);
-
-        return app(Library::class)->sourceFailure();
+        return $this->data->sourceFailure($this->entries);
     }
 
     /**
@@ -641,25 +588,25 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function visibleEntries(): Collection
     {
-        return $this->matching->forPage($this->page, self::PER_PAGE)->values();
+        return $this->filter->page($this->matching, $this->page);
     }
 
     #[Computed]
     public function totalFiltered(): int
     {
-        return $this->matching->count();
+        return $this->data->totalFiltered($this->matching);
     }
 
     #[Computed]
     public function totalAll(): int
     {
-        return $this->entries->count();
+        return $this->data->totalAll($this->entries);
     }
 
     #[Computed]
     public function lastPage(): int
     {
-        return max(1, (int) ceil($this->totalFiltered / self::PER_PAGE));
+        return $this->data->lastPage($this->totalFiltered);
     }
 
     /**
@@ -678,28 +625,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function continueFeed(): Collection
     {
-        /*
-         * Built from `matching`, not `entries`, so the shelf and search filters apply.
-         *
-         * A page filtered to one shelf that then offers a continue card for a series
-         * outside that shelf contradicts itself, and two existing tests already assert
-         * the stricter contract: filtering to a shelf must mean that series is absent
-         * from the page entirely, not just from the grid.
-         */
-        $filtered = $this->matching;
-
-        $resolutions = $filtered
-            ->filter(static fn (array $entry): bool => ($entry['continue_at'] ?? null) !== null)
-            // Filtered rather than cast: a filed series has no manga, and this map builds
-            // the key everything downstream looks a series up by. `(int) null` is 0, which
-            // would collide with a real id and answer "no resume" for the wrong series.
-            ->filter(static fn (array $entry): bool => $entry['manga_id'] !== null)
-            ->mapWithKeys(static fn (array $entry): array => [
-                (int) $entry['manga_id'] => $entry['continue_at'],
-            ])
-            ->all();
-
-        return app(ContinueReading::class)->feed($filtered->all(), $resolutions);
+        return $this->data->continueFeed($this->matching);
     }
 
     /**
@@ -708,14 +634,14 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function hasContinueFeed(): bool
     {
-        return $this->continueFeed->isNotEmpty();
+        return $this->data->hasContinueFeed($this->continueFeed);
     }
 
     /** Unread across everything in the library, for the page header. */
     #[Computed]
     public function totalUnread(): int
     {
-        return (int) $this->entries->sum(fn (array $entry): int => (int) ($entry['unread_chapters'] ?? 0));
+        return $this->data->totalUnread($this->entries);
     }
 
     // Checking ----------------------------------------------------------
@@ -859,10 +785,10 @@ new #[Title('Library')] class extends Component
     /**
      * How long a bulk check may report nothing before the page says the queue is not moving.
      *
-     * Generous, because a slice is a time budget of 45 seconds and a whole run is fifteen of
-     * them. Five minutes is about seven slices with nothing, which is not a slow worker.
+     * The read class owns the number; this alias keeps the component's own constant
+     * and its meaning in one place.
      */
-    public const CHECK_STALL_SECONDS = 300;
+    public const CHECK_STALL_SECONDS = LibraryPageData::CHECK_STALL_SECONDS;
 
     /**
      * The run the page reports, if there is one worth showing.
@@ -875,11 +801,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function checkRun(): ?CheckRun
     {
-        return CheckRun::query()
-            ->forUser(auth()->user())
-            ->visible()
-            ->orderByDesc('id')
-            ->first();
+        return $this->data->checkRun();
     }
 
     /**
@@ -894,30 +816,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function checkProgress(): ?array
     {
-        $run = $this->checkRun;
-
-        if ($run === null) {
-            return null;
-        }
-
-        return [
-            'total' => $run->total,
-            'done' => min($run->checked, $run->total),
-            'percent' => $run->percent(),
-            'running' => $run->isRunning(),
-            'cancelled' => $run->isCancelled(),
-            'failed' => $run->isFailed(),
-            /*
-             * A run that is working but has not reported a series in five minutes
-             * is the dead-queue case. `last_progress_at` moves per series, not per
-             * slice, so a slow source still reports unless it is stuck for longer
-             * than the stall window.
-             */
-            'stalled' => $run->isRunning()
-                && $run->last_progress_at->lt(now()->subSeconds(self::CHECK_STALL_SECONDS)),
-            'new' => $run->new_chapters,
-            'failed_series' => $run->failed,
-        ];
+        return $this->data->checkProgress($this->checkRun);
     }
 
     /**
@@ -989,12 +888,12 @@ new #[Title('Library')] class extends Component
     /**
      * Which series are due, and how the floor is set.
      *
-     * @return array{total: int, due: int, never: int, skipped: int, interval_days: int}
+     * @return array{total: int, due: int, never: int, skipped: int, unreachable: int, interval_days: int}
      */
     #[Computed]
     public function checkSchedule(): array
     {
-        return app(CheckSchedule::class)->summary(auth()->user());
+        return $this->data->checkSchedule();
     }
 
     /**
@@ -1010,16 +909,7 @@ new #[Title('Library')] class extends Component
     #[Computed]
     public function checks(): array
     {
-        $ids = $this->visibleEntries
-            ->pluck('manga_id')
-            // Nulls dropped rather than cast to 0, for the same reason as `selectVisible()`:
-            // every entry in this ledger is keyed by a manga id, and 0 would be a lookup
-            // for a manga that does not exist rather than an empty result.
-            ->filter(fn (mixed $id): bool => $id !== null)
-            ->map(fn (mixed $id): int => (int) $id)
-            ->all();
-
-        return app(CheckLedger::class)->latestFor(auth()->user(), $ids);
+        return $this->data->checks($this->visibleEntries);
     }
 
     /**
@@ -1030,13 +920,7 @@ new #[Title('Library')] class extends Component
      */
     public function newChapters(int $mangaId): ?int
     {
-        // `??` rather than `?->` on the array offset. A computed property holding an
-        // array cannot be indexed with `?->`, so PHP reports "Undefined array key"
-        // for every series that has not been checked, which is every series on a
-        // fresh install and most of them in general.
-        $row = $this->checks[$mangaId] ?? null;
-
-        return $row?->new_chapters;
+        return $this->data->newChapters($this->checks, $mangaId);
     }
 
     /**
@@ -1044,27 +928,20 @@ new #[Title('Library')] class extends Component
      */
     public function isDue(int $mangaId): bool
     {
-        $state = \App\Models\SeriesState::forUser((int) auth()->id())
-            ->where('suwayomi_manga_id', $mangaId)
-            ->first();
-
-        return $state !== null && app(CheckSchedule::class)->isDue($state);
+        return $this->data->isDue($mangaId);
     }
 
     /**
      * Clamp anything that is not one of our options.
      *
-     * All three are user input, whether from a URL or a stale page. A sort of
-     * "title; drop table" must never reach the query builder, and a shelf
-     * belonging to someone else must not become a filter.
+     * All three are user input, whether from a URL or a stale page. The sort is
+     * clamped by {@see LibraryFilter}; the page and shelf stay here because they
+     * are component state and the shelf check reads this reader's own shelves.
      */
     private function normalise(): void
     {
         $this->page = max(1, $this->page);
-
-        if (! in_array($this->sort, ['recent', 'added', 'title', 'unread'], true)) {
-            $this->sort = 'recent';
-        }
+        $this->sort = $this->filter->normaliseSort($this->sort);
 
         if ($this->shelf !== null && ! $this->shelves->contains('id', $this->shelf)) {
             $this->shelf = null;
