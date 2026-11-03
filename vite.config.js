@@ -9,6 +9,7 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/passkeys.js',
+                'resources/js/reader.js',
             ],
             refresh: true,
             fonts: [

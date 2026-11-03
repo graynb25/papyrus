@@ -547,9 +547,11 @@ class ReadPathTest extends TestCase
     public function test_the_reader_uses_no_framework_directives(): void
     {
         $html = $this->get('/read/76/1')->assertOk()->getContent();
+        $code = $this->readerCode();
 
         foreach (['x-data', 'x-text', 'x-show', 'x-model', '@click', 'Alpine.data', 'alpine:init'] as $directive) {
-            $this->assertStringNotContainsString($directive, $html, 'Found: '.$directive);
+            $this->assertStringNotContainsString($directive, $html, 'Found in the page: '.$directive);
+            $this->assertStringNotContainsString($directive, $code, 'Found in the reader module: '.$directive);
         }
     }
 
@@ -560,11 +562,70 @@ class ReadPathTest extends TestCase
     public function test_the_reader_script_carries_its_configuration(): void
     {
         $html = $this->get('/read/76/1')->assertOk()->getContent();
+        $code = $this->readerCode();
 
         $this->assertStringContainsString('data-reader-config=', $html);
         $this->assertStringContainsString('/read/76/1/progress', $html);
         $this->assertStringContainsString('/read/76/settings', $html);
-        $this->assertStringContainsString('navigator.sendBeacon', $html);
+        $this->assertStringContainsString('/read/76/1/note', $html);
+
+        $this->assertStringContainsString('navigator.sendBeacon', $code);
+        $this->assertStringContainsString(basename($this->readerAsset()), $html);
+    }
+
+    /**
+     * The attribute is the module's only input, so every moved value must be in
+     * it and the module must read every one of them.
+     *
+     * A key that reaches one side but not the other is undefined at runtime and
+     * the failure is quiet: a note panel says nothing, or the first paint and the
+     * script disagree about the filters.
+     */
+    public function test_the_reader_configuration_carries_the_settings_and_strings(): void
+    {
+        $html = $this->get('/read/76/1')->assertOk()->getContent();
+
+        $this->assertSame(
+            1,
+            preg_match("~data-reader-config='([^']+)'~", $html, $matches),
+            'The reader page must carry its configuration attribute.',
+        );
+
+        $config = json_decode(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'), true);
+
+        $this->assertIsArray($config);
+
+        $settings = $config['settings'] ?? null;
+
+        $this->assertIsArray($settings);
+
+        foreach ([
+            'mode', 'width', 'gap', 'zoom', 'background',
+            'long_strip', 'fit_height', 'hide_tap_zones',
+            'brightness', 'contrast', 'hue', 'invert', 'grayscale',
+        ] as $key) {
+            $this->assertArrayHasKey($key, $settings);
+        }
+
+        $strings = [
+            'previousPage' => 'Previous page',
+            'nextPage' => 'Next page',
+            'filterTemporary' => 'Temporary, for this visit only.',
+            'noteSaving' => 'Saving...',
+            'noteFailed' => 'Could not save the note.',
+            'noteSaved' => 'Saved.',
+            'noteCleared' => 'Note cleared.',
+        ];
+
+        $this->assertSame($strings, $config['strings'] ?? null);
+
+        $code = $this->readerCode();
+
+        $this->assertStringContainsString('config.settings', $code);
+
+        foreach (array_keys($strings) as $key) {
+            $this->assertStringContainsString('config.strings.'.$key, $code);
+        }
     }
 
     /**
@@ -591,9 +652,38 @@ class ReadPathTest extends TestCase
     public function test_the_reader_does_not_wait_for_every_image_before_starting(): void
     {
         $html = $this->get('/read/76/1')->assertOk()->getContent();
+        $code = $this->readerCode();
 
         $this->assertStringNotContainsString("addEventListener('load'", $html);
         $this->assertStringNotContainsString('onload', $html);
+        $this->assertStringNotContainsString("addEventListener('load'", $code);
+        $this->assertStringNotContainsString('onload', $code);
+    }
+
+    /**
+     * The reader's behaviour is a built module now, not an inline block.
+     *
+     * The page used to carry the whole script between two tags. That block is
+     * gone, and the only place the code can come from is the manifest entry, so
+     * this asserts the new shape rather than a line count.
+     */
+    public function test_the_reader_loads_its_code_from_the_built_module(): void
+    {
+        $html = $this->get('/read/76/1')->assertOk()->getContent();
+        $asset = basename($this->readerAsset());
+
+        $this->assertMatchesRegularExpression(
+            '~<script[^>]*\bsrc="[^"]*'.preg_quote($asset, '~').'"~',
+            $html,
+            'The reader page must reference the built module.',
+        );
+
+        preg_match_all('~<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>~s', $html, $blocks);
+
+        $inline = implode("\n", $blocks[1]);
+
+        $this->assertStringNotContainsString('readerConfig', $inline);
+        $this->assertStringNotContainsString('sendBeacon', $inline);
     }
 
     /**
@@ -620,19 +710,17 @@ class ReadPathTest extends TestCase
     }
 
     /**
-     * The reader's inline script with comments removed.
+     * The reader module with comments removed.
      *
-     * Takes the last bare script block, not the only one. Flux and Livewire put
-     * script tags in the head, and their own markup changes between versions, so
-     * "the last inline block" is a stabler rule than "the only inline block".
+     * Read from disk because the page loads the module through Vite and no
+     * longer carries its code inline. Comments are stripped so the tests below
+     * assert about code: the module explains at length which framework and
+     * rendering APIs it avoids, and naming them in prose must not fail a test
+     * that is about the executable lines.
      */
     private function readerCode(): string
     {
-        $html = $this->get('/read/76/1')->assertOk()->getContent();
-
-        preg_match_all('~<script>(.*?)</script>~s', $html, $blocks);
-
-        $script = $blocks[1] === [] ? '' : (string) end($blocks[1]);
+        $script = (string) file_get_contents(resource_path('js/reader.js'));
 
         /*
          * Block comments, then line comments. String literals are not protected,
@@ -647,18 +735,45 @@ class ReadPathTest extends TestCase
     }
 
     /**
+     * The built reader asset, named by Vite's manifest.
+     *
+     * `public/build` is generated by `npm run build` and is not tracked. The
+     * page cannot load the module without it, so a missing entry is a failure
+     * here rather than a silent pass on a stale build.
+     */
+    private function readerAsset(): string
+    {
+        $path = public_path('build/manifest.json');
+
+        $this->assertFileExists($path);
+
+        $manifest = json_decode((string) file_get_contents($path), true);
+
+        $this->assertIsArray($manifest);
+        $this->assertArrayHasKey('resources/js/reader.js', $manifest);
+
+        $entry = $manifest['resources/js/reader.js'];
+
+        $this->assertIsArray($entry);
+        $this->assertArrayHasKey('file', $entry);
+        $this->assertFileExists(public_path('build/'.$entry['file']));
+
+        return (string) $entry['file'];
+    }
+
+    /**
      * A reader on a phone has no keyboard, so paged mode is only usable if a tap
      * turns the page. The zones carry the chapter href and the script decides
      * whether to intercept, which the test pins by asserting both halves exist.
      */
     public function test_paged_mode_taps_turn_pages_and_fall_through_at_the_edges(): void
     {
-        $html = $this->get('/read/76/1')->assertOk()->getContent();
+        $code = $this->readerCode();
 
-        $this->assertStringContainsString('function bindZone(', $html);
-        $this->assertStringContainsString('function describeZones(', $html);
-        $this->assertStringContainsString('state.pagedIndex >= total - 1', $html);
-        $this->assertStringContainsString('state.pagedIndex <= 0', $html);
+        $this->assertStringContainsString('function bindZone(', $code);
+        $this->assertStringContainsString('function describeZones(', $code);
+        $this->assertStringContainsString('state.pagedIndex >= total - 1', $code);
+        $this->assertStringContainsString('state.pagedIndex <= 0', $code);
     }
 
     // Reader settings ------------------------------------------------------
