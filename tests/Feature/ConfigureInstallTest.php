@@ -207,6 +207,31 @@ class ConfigureInstallTest extends TestCase
     }
 
     /**
+     * A path with a space is quoted, and the quoted form must still count as unchanged.
+     *
+     * This is the case the shipped runtime exposed: its temp directory is under a path containing
+     * a space, so `DB_DATABASE` is written with single quotes. `EnvironmentFile::read()` keeps
+     * the quotes on purpose, for lines this command does not own. Comparing the raw value to the
+     * unquoted path made every second run report `DB_DATABASE` as changed, which is exactly what
+     * a command that runs on every launcher start must not do.
+     */
+    public function test_a_quoted_path_that_already_matches_is_not_rewritten(): void
+    {
+        $data = $this->scratch.DIRECTORY_SEPARATOR.'quoted data';
+
+        $this->artisan('papyrus:configure', [
+            '--env-file' => $this->envFile,
+            '--data' => $data,
+        ])->assertSuccessful();
+
+        $this->artisan('papyrus:configure', [
+            '--env-file' => $this->envFile,
+            '--data' => $data,
+            '--report' => true,
+        ])->expectsOutputToContain('nothing to change')->assertSuccessful();
+    }
+
+    /**
      * The database goes in the data directory, not in the install.
      *
      * Putting it under the application root is what makes uninstall dangerous: a reader who
@@ -218,11 +243,13 @@ class ConfigureInstallTest extends TestCase
     {
         $this->configure()->assertSuccessful();
 
-        $database = $this->envValues()['DB_DATABASE'];
+        $database = $this->parsedEnvFile()['DB_DATABASE'] ?? '';
+        $expected = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->scratch.DIRECTORY_SEPARATOR.'data');
+        $actual = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $database);
 
         $this->assertStringStartsWith(
-            str_replace('/', '\\', $this->scratch).'\\data',
-            str_replace('/', '\\', $database),
+            $expected,
+            $actual,
             "the database must live in the data directory, got {$database}",
         );
         $this->assertStringEndsWith('database.sqlite', $database, 'and name the file, not a directory');
@@ -237,7 +264,7 @@ class ConfigureInstallTest extends TestCase
     {
         $this->configure()->assertSuccessful();
 
-        $database = $this->envValues()['DB_DATABASE'];
+        $database = $this->parsedEnvFile()['DB_DATABASE'] ?? '';
 
         $this->assertTrue(
             str_starts_with($database, '/') || preg_match('#^[A-Za-z]:[\\\\/]#', $database) === 1,
@@ -341,11 +368,11 @@ class ConfigureInstallTest extends TestCase
             '--data' => $data,
         ])->assertSuccessful();
 
-        $expected = $data.DIRECTORY_SEPARATOR.'database.sqlite';
+        $expected = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $data.DIRECTORY_SEPARATOR.'database.sqlite');
 
         $this->assertSame(
             $expected,
-            $this->parsedEnvFile()['DB_DATABASE'] ?? null,
+            str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) ($this->parsedEnvFile()['DB_DATABASE'] ?? '')),
             'dotenv must read back the whole data directory, including everything after the #',
         );
 
@@ -360,7 +387,7 @@ class ConfigureInstallTest extends TestCase
 
         $this->assertSame(
             $expected,
-            $this->parsedEnvFile()['DB_DATABASE'] ?? null,
+            str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) ($this->parsedEnvFile()['DB_DATABASE'] ?? '')),
             'a second configure run must leave the whole path in place',
         );
     }

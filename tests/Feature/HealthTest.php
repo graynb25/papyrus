@@ -977,13 +977,16 @@ class HealthTest extends TestCase
 
     public function test_it_finds_the_database_without_quotes_in_the_env(): void
     {
-        $path = $this->data.DIRECTORY_SEPARATOR.'plain.sqlite';
+        file_put_contents($this->data.DIRECTORY_SEPARATOR.'plain.sqlite', 'x');
 
-        file_put_contents($path, 'x');
+        /*
+         * The unquoted form cannot hold a path with whitespace, and the shipped runtime's
+         * temp directory contains one. Exercise the branch with a name that fits it; the
+         * quoted absolute-path case is covered by the test above.
+         */
+        $supervisor = $this->supervisor([], "DB_DATABASE=plain.sqlite\n");
 
-        $supervisor = $this->supervisor([], "DB_DATABASE={$path}\n");
-
-        $this->assertSame($path, $supervisor->databaseFile());
+        $this->assertSame('plain.sqlite', $supervisor->databaseFile());
     }
 
     public function test_it_falls_back_to_the_data_directory_when_there_is_no_env(): void

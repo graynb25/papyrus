@@ -395,10 +395,10 @@ class SuwayomiConfigurationTest extends TestCase
 
         $value = $matches[1];
 
-        $this->assertStringContainsString(
-            'C:',
+        $this->assertMatchesRegularExpression(
+            '/^[A-Za-z]:[\\\\\/]/',
             $value,
-            'sanity: the value read back is the path and not something else',
+            'sanity: the value read back is an absolute Windows path, not something else',
         );
 
         /*

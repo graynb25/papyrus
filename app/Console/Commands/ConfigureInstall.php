@@ -186,6 +186,51 @@ class ConfigureInstall extends Command
     }
 
     /**
+     * The value a comparison should see, with the writer's outer quotes removed.
+     *
+     * `EnvironmentFile::read()` keeps a value exactly as it sits on the line, because every
+     * line this command does not own is copied through byte for byte. The writer quotes a path
+     * containing a space with single quotes, so the raw read sees `'C:\...'` while the value
+     * this command would write is `C:\...`. Comparing the two directly makes a packaged install
+     * whose data path has a space report `DB_DATABASE` as changed on every start, even though
+     * the file already holds the right path.
+     *
+     * Measured on the shipped runtime, whose resolved `sys_temp_dir` is under
+     * `build\papyrus-data\tmp`: the second `papyrus:configure` run printed
+     * `changed: DB_DATABASE` and the test that requires "nothing to change" failed.
+     *
+     * @param  array<string, string>  $values
+     */
+    private function current(array $values, string $name): ?string
+    {
+        $value = $values[$name] ?? null;
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+        $length = strlen($value);
+
+        if ($length < 2) {
+            return $value;
+        }
+
+        $first = $value[0];
+        $last = $value[$length - 1];
+
+        if ($first === '"' && $last === '"') {
+            return str_replace('\\"', '"', substr($value, 1, -1));
+        }
+
+        if ($first === "'" && $last === "'") {
+            return substr($value, 1, -1);
+        }
+
+        return $value;
+    }
+
+    /**
      * Decide every value, returning the names that actually changed.
      *
      * @param  array<string, string>  $values
@@ -196,7 +241,7 @@ class ConfigureInstall extends Command
         $changed = [];
 
         foreach (self::OVERRIDES as $name => $value) {
-            if (($values[$name] ?? null) !== $value) {
+            if ($this->current($values, $name) !== $value) {
                 $values[$name] = $value;
                 $changed[] = $name;
             }
@@ -210,7 +255,7 @@ class ConfigureInstall extends Command
         foreach (self::PATH_KEYS as $name) {
             $absolute = $this->absolute($values[$name] ?? '');
 
-            if ($absolute !== null && ($values[$name] ?? null) !== $absolute) {
+            if ($absolute !== null && $this->current($values, $name) !== $absolute) {
                 $values[$name] = $absolute;
                 $changed[] = $name;
             }
@@ -218,14 +263,14 @@ class ConfigureInstall extends Command
 
         $url = (string) ($this->option('suwayomi') ?: 'http://127.0.0.1:4567');
 
-        if (($values['SUWAYOMI_URL'] ?? null) !== $url) {
+        if ($this->current($values, 'SUWAYOMI_URL') !== $url) {
             $values['SUWAYOMI_URL'] = $url;
             $changed[] = 'SUWAYOMI_URL';
         }
 
         $appUrl = $this->option('app-url');
 
-        if (is_string($appUrl) && $appUrl !== '' && ($values['APP_URL'] ?? null) !== $appUrl) {
+        if (is_string($appUrl) && $appUrl !== '' && $this->current($values, 'APP_URL') !== $appUrl) {
             $values['APP_URL'] = $appUrl;
             $changed[] = 'APP_URL';
         }
