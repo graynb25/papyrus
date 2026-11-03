@@ -3,21 +3,16 @@
 use App\AniList\Preference as AniListPreference;
 use App\AniList\TitleResolver;
 use App\Jobs\ResolveAniListTitles;
+use App\Live\Search\SearchFilters;
+use App\Live\Search\SearchFormatting;
+use App\Live\Search\SearchPageData;
+use App\Live\Search\SearchQuery;
+use App\Live\Search\SearchRules;
 use App\Livewire\AdultContentPage;
 use App\Models\AniListMedia;
-use App\Models\SearchResult;
 use App\Models\SearchRun;
-use App\Models\SearchSourceResult;
-use App\Models\SeriesState;
-use App\Models\Source;
-use App\Models\User;
-use App\Search\DedupeGroup;
-use App\Search\Deduplicator;
-use App\Search\FilterVocabulary;
-use App\Search\QueryParser;
 use App\Search\SearchFanout;
 use App\Support\Deployment;
-use App\Support\LanguageName;
 use App\Support\ReadingState;
 use Flux\Flux;
 use Illuminate\Support\Collection;
@@ -27,6 +22,30 @@ use Livewire\Attributes\Url;
 
 new #[Title('Search')] class extends AdultContentPage
 {
+    /** The page's reads, kept out of this component so their shapes can be tested directly. */
+    private SearchPageData $data;
+
+    /** The query parsing and vocabulary, shared with its direct tests. */
+    private SearchQuery $searchQuery;
+
+    /** The page's pure formatting rules, shared with its direct tests. */
+    private SearchFormatting $formatting;
+
+    /** The one fanout options array, shared by the action and the cost line. */
+    private SearchFilters $filters;
+
+    /** The search action's validation rules, shared with their direct tests. */
+    private SearchRules $rules;
+
+    public function boot(SearchPageData $data, SearchQuery $query, SearchFormatting $formatting, SearchFilters $filters, SearchRules $rules): void
+    {
+        $this->data = $data;
+        $this->searchQuery = $query;
+        $this->formatting = $formatting;
+        $this->filters = $filters;
+        $this->rules = $rules;
+    }
+
     /**
      * The search terms, in the URL.
      *
@@ -151,7 +170,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function filterHint(): string
     {
-        return app(FilterVocabulary::class)->termsHint();
+        return $this->searchQuery->filterHint();
     }
 
     /**
@@ -159,7 +178,7 @@ new #[Title('Search')] class extends AdultContentPage
      */
     public function filterLabel(string $label): string
     {
-        return app(FilterVocabulary::class)->label($label);
+        return $this->searchQuery->filterLabel($label);
     }
 
     /**
@@ -170,44 +189,34 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function parsed(): array
     {
-        return app(QueryParser::class)->parse(
-            (string) $this->query,
-            app(FilterVocabulary::class),
-        );
+        return $this->searchQuery->parsed((string) $this->query);
     }
 
     /** @return array<string, string> */
     #[Computed]
     public function parsedFilters(): array
     {
-        return $this->parsed()['filters'];
+        return $this->searchQuery->parsedFilters((string) $this->query);
     }
 
     /** @return array<int, string> */
     #[Computed]
     public function ignoredLabels(): array
     {
-        return $this->parsed()['ignored'];
+        return $this->searchQuery->ignoredLabels((string) $this->query);
     }
 
     #[Computed]
     public function parsedText(): string
     {
-        return $this->parsed()['text'];
+        return $this->searchQuery->parsedText((string) $this->query);
     }
 
     public function search(): void
     {
-        $this->validate([
-            'query' => ['required', 'string', 'max:512'],
-            'limit' => ['integer', 'min:1', 'max:150'],
-        ]);
+        $this->validate($this->rules->rules());
 
-        $run = app(SearchFanout::class)->start(Auth::user(), $this->query, [
-            'langs' => $this->langs === [] ? null : $this->langs,
-            'content' => $this->visibleRatings($this->content),
-            'limit' => $this->limit,
-        ]);
+        $run = app(SearchFanout::class)->start(Auth::user(), $this->query, $this->fanoutOptions());
 
         $this->runId = $run->id;
 
@@ -227,7 +236,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function anilistEnabled(): bool
     {
-        return app(AniListPreference::class)->enabled(Auth::user());
+        return $this->data->anilistEnabled(Auth::user());
     }
 
     /**
@@ -251,11 +260,7 @@ new #[Title('Search')] class extends AdultContentPage
         }
 
         $resolver = app(TitleResolver::class);
-        $titles = SearchResult::forUser(Auth::id())
-            ->where('search_run_id', $run->id)
-            ->distinct()
-            ->pluck('title')
-            ->all();
+        $titles = $this->data->resultTitles(Auth::user(), $run);
 
         if ($resolver->missing($titles) === []) {
             return;
@@ -272,23 +277,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function anilistProgress(): array
     {
-        if (! $this->anilistEnabled) {
-            return ['total' => 0, 'answered' => 0];
-        }
-
-        $run = $this->run;
-
-        if ($run === null) {
-            return ['total' => 0, 'answered' => 0];
-        }
-
-        $titles = SearchResult::forUser(Auth::id())
-            ->where('search_run_id', $run->id)
-            ->distinct()
-            ->pluck('title')
-            ->all();
-
-        return app(TitleResolver::class)->progress($titles);
+        return $this->data->anilistProgress(Auth::user(), $this->run, $this->anilistEnabled);
     }
 
     /**
@@ -301,11 +290,7 @@ new #[Title('Search')] class extends AdultContentPage
      */
     public function anilistMediaFor(string $title): ?AniListMedia
     {
-        if (! $this->anilistEnabled) {
-            return null;
-        }
-
-        return app(TitleResolver::class)->mediaFor($title);
+        return $this->data->anilistMediaFor($title, $this->anilistEnabled);
     }
 
     public function clear(): void
@@ -357,36 +342,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function libraryMap(): array
     {
-        /*
-         * Every result in every group, not only the primaries.
-         *
-         * It used to map the primaries alone, because the primary was the only one a card
-         * could act on. A reader can now choose a source, which means the chooser acts on the
-         * alternatives too, and a toggle that shows the wrong state is worse than no toggle:
-         * a source the reader already has would offer "add", and adding it again is a no-op
-         * that reads as a broken button.
-         *
-         * Still one query for the page. A search returns up to 15 rows per source across 40
-         * sources, so this can be several hundred ids in a single `whereIn`, which is the
-         * trade the library page made for the same reason.
-         */
-        $ids = $this->groups
-            ->flatMap(fn (DedupeGroup $group): array => [
-                (int) $group->primary->suwayomi_manga_id,
-                ...$group->alternatives->map(fn (SearchResult $row): int => (int) $row->suwayomi_manga_id)->all(),
-            ])
-            ->unique()
-            ->values()
-            ->all();
-
-        if ($ids === []) {
-            return [];
-        }
-
-        return SeriesState::forUser(Auth::id())
-            ->whereIn('suwayomi_manga_id', $ids)->pluck('in_library', 'suwayomi_manga_id')
-            ->map(fn (mixed $in): bool => (bool) $in)
-            ->all();
+        return $this->data->libraryMap(Auth::user(), $this->groups);
     }
 
     /**
@@ -422,46 +378,14 @@ new #[Title('Search')] class extends AdultContentPage
      * The group is looked up again rather than remembered, so what the chooser lists is what
      * the card is showing and not a copy taken when the click was handled. Looked up by
      * membership, because a search is still streaming when a reader clicks: see
-     * {@see DedupeGroup::hasManga()}.
+     * {@see \App\Search\DedupeGroup::hasManga()}.
      *
      * @return array<int, array{manga: int, source: string, title: string, inLibrary: bool, cover: ?string}>
      */
     #[Computed]
     public function chosenSources(): array
     {
-        if ($this->chosenManga === null) {
-            return [];
-        }
-
-        $group = $this->groups->first(
-            fn (DedupeGroup $g): bool => $g->hasManga($this->chosenManga)
-        );
-
-        if ($group === null) {
-            return [];
-        }
-
-        $library = $this->libraryMap;
-
-        $rows = [];
-
-        foreach ([$group->primary, ...$group->alternatives->all()] as $row) {
-            if (! $row instanceof SearchResult) {
-                continue;
-            }
-
-            $mangaId = (int) $row->suwayomi_manga_id;
-
-            $rows[] = [
-                'manga' => $mangaId,
-                'source' => (string) $row->source_name,
-                'title' => (string) $row->title,
-                'inLibrary' => (bool) ($library[$mangaId] ?? false),
-                'cover' => $row->coverUrl(),
-            ];
-        }
-
-        return $rows;
+        return $this->data->chosenSources($this->chosenManga, $this->groups, $this->libraryMap);
     }
 
     /**
@@ -470,7 +394,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function chosenTitle(): ?string
     {
-        return $this->chosenSources()[0]['title'] ?? null;
+        return $this->data->chosenTitle($this->chosenSources);
     }
 
     /**
@@ -494,36 +418,24 @@ new #[Title('Search')] class extends AdultContentPage
      */
     public function languageName(string $lang): string
     {
-        return LanguageName::name($lang);
+        return $this->formatting->languageName($lang);
     }
 
     /**
-     * A run can only finish if a worker is draining the queue. On a fresh
-     * install there may not be one, and the run would sit at zero forever
-     * looking like a hang. Saying so plainly beats an indefinite spinner.
+     * A run can only finish if a worker is draining the queue.
+     *
+     * The eight second boundary lives in the formatting rule, with the data read.
      */
     #[Computed]
     public function queueStalled(): bool
     {
-        $run = $this->run;
-
-        if ($run === null || $run->isFinished() || $run->sources_done > 0) {
-            return false;
-        }
-
-        return $run->created_at->diffInSeconds(now()) > 8;
+        return $this->formatting->queueStalled($this->run);
     }
 
     #[Computed]
     public function run(): ?SearchRun
     {
-        if ($this->runId === null) {
-            return null;
-        }
-
-        // Named explicitly: relations inherit the tenant scope, which fails
-        // closed for anything without an authenticated user.
-        return SearchRun::forUser(Auth::id())->find($this->runId);
+        return $this->data->run(Auth::user(), $this->runId);
     }
 
     /**
@@ -532,103 +444,54 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function groups(): Collection
     {
-        $run = $this->run;
-
-        if ($run === null) {
-            return new Collection;
-        }
-
-        $results = SearchResult::forUser(Auth::id())
-            ->where('search_run_id', $run->id)
-            ->get();
-
-        /*
-         * A resolver only when this reader opted in.
-         *
-         * That is the whole opt-in: with no resolver the deduplicator keys on
-         * titles exactly as it did before AniList existed, so an opted-out reader
-         * gets the old behaviour rather than a slower version of the new one.
-         */
-        $resolver = $this->anilistEnabled()
-            ? app(TitleResolver::class)
-            : null;
-
-        return new Deduplicator(
-            app(\App\Search\TitleNormalizer::class),
-            (float) config('papyrus.search.dedupe_fuzzy_threshold', 0.95),
-            $resolver,
-        )->group($results);
+        return $this->data->groups(Auth::user(), $this->run, $this->anilistEnabled);
     }
 
     /**
-     * @return Collection<int, SearchSourceResult>
+     * @return Collection<int, \App\Models\SearchSourceResult>
      */
     #[Computed]
     public function outcomes(): Collection
     {
-        $run = $this->run;
-
-        if ($run === null) {
-            return new Collection;
-        }
-
-        return SearchSourceResult::forUser(Auth::id())
-            ->where('search_run_id', $run->id)
-            ->orderByDesc('result_count')
-            ->get();
+        return $this->data->outcomes(Auth::user(), $this->run);
     }
 
     /**
      * Languages with more than one installed source, most common first.
      *
-     * The live catalogue is extremely long-tailed: roughly 70 of the 80
-     * installed languages have exactly one source each. Rendering every one as
-     * a chip produces an unusable wall, so the ones with real choice stay
-     * visible and the singleton tail hides behind a disclosure.
-     *
-     * @return Collection<int, object>
+     * @return Collection<int, \App\Models\Source>
      */
     #[Computed]
     public function languages(): Collection
     {
-        return $this->languageCounts()
-            ->filter(fn (object $row): bool => $row->total > 1)
-            ->values();
+        return $this->data->languages($this->languageCounts);
     }
 
     /**
      * The singleton tail, for a reader who genuinely wants one specific
      * language that happens to have a single source.
      *
-     * @return Collection<int, object>
+     * @return Collection<int, \App\Models\Source>
      */
     #[Computed]
     public function rareLanguages(): Collection
     {
-        return $this->languageCounts()
-            ->filter(fn (object $row): bool => $row->total === 1)
-            ->values();
+        return $this->data->rareLanguages($this->languageCounts);
     }
 
     /**
-     * @return Collection<int, object>
+     * @return Collection<int, \App\Models\Source>
      */
     #[Computed]
     public function languageCounts(): Collection
     {
-        return Source::query()
-            ->installed()
-            ->selectRaw('lang, count(*) as total')
-            ->groupBy('lang')
-            ->orderByDesc('total')
-            ->orderBy('lang')
-            ->get();
+        return $this->data->languageCounts();
     }
 
     #[Computed]
     public function eligibleSources(): int
     {
-        return app(SearchFanout::class)->targets(Auth::user(), $this->fanoutOptions())->count();
+        return $this->data->eligibleSources(Auth::user(), $this->fanoutOptions());
     }
 
     /**
@@ -641,7 +504,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function runnableSourceCount(): int
     {
-        return app(SearchFanout::class)->runnableCount(Auth::user(), $this->fanoutOptions());
+        return $this->data->runnableSourceCount(Auth::user(), $this->fanoutOptions());
     }
 
     /**
@@ -654,11 +517,11 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function sourcesSkippedByCap(): int
     {
-        if ($this->sourcesNotPinned->isNotEmpty()) {
-            return 0;
-        }
-
-        return max(0, $this->runnableSourceCount - $this->eligibleSources);
+        return $this->data->sourcesSkippedByCap(
+            $this->runnableSourceCount,
+            $this->eligibleSources,
+            $this->sourcesNotPinned,
+        );
     }
 
     /**
@@ -673,23 +536,24 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function sourcesNotPinned(): Collection
     {
-        return app(SearchFanout::class)->scopeFor(Auth::user(), $this->fanoutOptions())['skipped'];
+        return $this->data->sourcesNotPinned(Auth::user(), $this->fanoutOptions());
     }
 
     /**
      * The options every read of this page's scope uses: the run that gets scheduled,
      * the cost line above the button and the not-asked list all build the same
-     * array, so one change to the filters reaches every read at once.
+     * array through the filter class, so one change to the filters reaches every
+     * read at once.
      *
      * @return array<string, mixed>
      */
     private function fanoutOptions(): array
     {
-        return [
-            'langs' => $this->langs === [] ? null : $this->langs,
-            'content' => $this->visibleRatings($this->content),
-            'limit' => $this->limit,
-        ];
+        return $this->filters->options(
+            $this->langs,
+            $this->visibleRatings($this->content),
+            $this->limit,
+        );
     }
 
     /**
@@ -704,7 +568,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function installedSourceCount(): int
     {
-        return Source::query()->installed()->count();
+        return $this->data->installedSourceCount();
     }
 
     /**
@@ -718,22 +582,7 @@ new #[Title('Search')] class extends AdultContentPage
     #[Computed]
     public function skippedSources(): array
     {
-        $run = $this->run;
-
-        if ($run === null || ! $run->isFinished()) {
-            return [];
-        }
-
-        return SearchSourceResult::query()
-            ->where('search_run_id', $run->id)
-            ->where('status', SearchSourceResult::SKIPPED)
-            ->orderBy('source_name')
-            ->get(['source_name', 'error'])
-            ->map(fn (SearchSourceResult $row): array => [
-                'source_name' => (string) $row->source_name,
-                'reason' => (string) $row->error,
-            ])
-            ->all();
+        return $this->data->skippedSources(Auth::user(), $this->run);
     }
 }; ?>
 
