@@ -1,25 +1,17 @@
 <?php
 
-use App\Backup\BackupLibrary;
-use App\Backup\BackupSummary;
+use App\Jobs\RunLiveBackup;
 use App\Jobs\RunLiveExport;
+use App\Jobs\RunLiveRestore;
+use App\Live\Backups\BackupFormatting;
+use App\Live\Backups\BackupPageData;
 use App\Live\Contracts\LiveRun;
 use App\Live\RunPresenter;
-use App\Support\Duration;
-use Papyrus\Launcher\BackupPair;
-use App\Import\ImportRefused;
-use App\Import\Tachibk\TachibkReader;
-use App\Jobs\RunLiveBackup;
-use App\Jobs\RunLiveRestore;
 use App\Models\LiveBackupRun;
 use App\Models\LiveExportRun;
 use App\Models\LiveRestoreRun;
-use App\Suwayomi\BackupGateway;
-use App\Suwayomi\SuwayomiException;
-use Carbon\CarbonInterface;
 use Carbon\CarbonImmutable;
 use Flux\Flux;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -52,122 +44,55 @@ new #[Title('Backups')] class extends Component {
      *
      * ## Why it reads the launcher's own record
      *
-     * `RunRecord` and `BackupPair` are autoloadable from here, so there is one implementation of each
-     * format rather than a second one to drift. See `RunOutcome`.
+     * `RunRecord` and `BackupPair` are autoloadable from the application, so there is one
+     * implementation of each format rather than a second one to drift. `BackupPageData` reads
+     * them; see `RunOutcome`.
      */
+
+    /** The page's reads, kept out of this component so their shapes can be tested directly. */
+    private BackupPageData $data;
+
+    /** The page's pure rules, called from the view and tested without a mount. */
+    private BackupFormatting $formatting;
+
+    public function boot(BackupPageData $data, BackupFormatting $formatting): void
+    {
+        $this->data = $data;
+        $this->formatting = $formatting;
+    }
 
     public function mount(): void
     {
         Gate::authorize('manage-install');
     }
 
-    #[Computed]
-    public function backups(): BackupLibrary
-    {
-        return app(BackupLibrary::class);
-    }
-
     /** @return list<\App\Backup\BackupSummary> */
     #[Computed]
     public function pairs(): array
     {
-        return $this->backups()->pairs();
+        return $this->data->pairs();
     }
 
     /** @return list<array{name: string, bytes: int}> */
     #[Computed]
     public function leftovers(): array
     {
-        return $this->backups()->leftovers();
-    }
-
-    public function directory(): string
-    {
-        return $this->backups()->directory();
+        return $this->data->leftovers();
     }
 
     /*
      * ## The last time, in one place
      *
      * The launcher door and the three live doors each keep their own record, and the page's
-     * "The last time" block reads the newest of the four rather than a surface per door. These
-     * methods are that reading: one computed merge, the tone the block paints with, and the
-     * per-row sentences and colours reused from each door's own card so the two readings of a
-     * run can never drift.
+     * "The last time" block reads the newest of the four rather than a surface per door.
+     * BackupPageData owns that merge; the computed here keeps one read per render, and the
+     * presenter delegates below keep each row's words and colours from drifting.
      */
 
-    /**
-     * The newest event on record, from every door that writes one down.
-     *
-     * The launcher's record is parsed through {@see \Papyrus\Launcher\RunOutcome::startedAt()},
-     * and a record whose time cannot be read back is left out rather than shown unsorted: its
-     * own place carries it complete, and "sometime" in a block sorted by time would be
-     * replaceable by any other entry on the next render, which is a lie by omission this block
-     * does not need.
-     */
     #[Computed]
     public function latestEvent(): ?array
     {
-        /** @var list<array{at: CarbonImmutable, tone: string, label: string, summary: string, outcome: \Papyrus\Launcher\RunOutcome|null, row: LiveRun|null}> $events */
-        $events = [];
-
-        $launcher = $this->backups()->lastRun();
-
-        if ($launcher !== null) {
-            try {
-                $at = CarbonImmutable::parse($launcher->startedAt());
-            } catch (\Throwable) {
-                $at = null;
-            }
-
-            if ($at !== null) {
-                $events[] = [
-                    'at' => $at,
-                    'tone' => $launcher->failed() || $launcher->stalled() ? 'red' : 'green',
-                    'label' => $launcher->verdict(),
-                    'summary' => '',
-                    'outcome' => $launcher,
-                    'row' => null,
-                ];
-            }
-        }
-
-        $liveNewest = [$this->liveRuns()->first(), $this->restoreRuns()->first(), $this->exportRuns()->first()];
-
-        foreach ($liveNewest as $row) {
-            if ($row === null) {
-                continue;
-            }
-
-            $events[] = [
-                'at' => $row->started_at,
-                'tone' => $this->badgeColour($row),
-                'label' => $this->stateLabel($row),
-                'summary' => $this->runSummary($row),
-                'outcome' => null,
-                'row' => $row,
-            ];
-        }
-
-        usort($events, fn (array $left, array $right): int => $right['at'] <=> $left['at']);
-
-        return $events[0] ?? null;
-    }
-
-    /**
-     * The border, background and text classes a verdict is read in, the palette the block has
-     * always carried: a run that did not go through cannot be styled like one that did,
-     * however it stopped.
-     */
-    public function verdictTone(string $tone): string
-    {
-        return match ($tone) {
-            'red' => 'border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200',
-            'green' => 'border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-200',
-            'amber' => 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
-            'blue' => 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200',
-            default => 'border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100',
-        };
+        return $this->data->latestEvent();
     }
 
     /**
@@ -257,19 +182,6 @@ new #[Title('Backups')] class extends Component {
     }
 
     /**
-     * The amount of time a run has been going, in the reader's words.
-     *
-     * Carbon returns fractional seconds here. A fraction says more about the render than the
-     * backup, and changes every poll, so the page keeps whole elapsed seconds instead.
-     */
-    public function elapsedTime(CarbonInterface $startedAt): string
-    {
-        $seconds = (int) floor(max(0, $startedAt->diffInSeconds(now())));
-
-        return Duration::forHumans($seconds).' '.__('so far');
-    }
-
-    /**
      * The live backup's actual work, rather than the launcher's stop-and-restart stages.
      *
      * `LiveBackup` reports these keys as it reaches them. Keeping the key alongside the reader
@@ -354,36 +266,6 @@ new #[Title('Backups')] class extends Component {
         }, $steps, array_keys($steps));
     }
 
-    /** The one word the "Last run" line and the modal header read a run by. */
-    public function lastRunVerdictWord(): string
-    {
-        $latest = $this->latestEvent();
-
-        if ($latest === null) {
-            return '';
-        }
-
-        if ($latest['outcome'] !== null) {
-            $outcome = $latest['outcome'];
-
-            if ($outcome->stalled() || $outcome->failed()) {
-                return __('Failed');
-            }
-
-            if (! $outcome->finished()) {
-                return __('Running');
-            }
-
-            return __('Finished');
-        }
-
-        if ($latest['row'] !== null) {
-            return $this->stateLabel($latest['row']);
-        }
-
-        return '';
-    }
-
     public function start(): void
     {
         /*
@@ -461,14 +343,14 @@ new #[Title('Backups')] class extends Component {
     #[Computed]
     public function activeRun(): ?LiveBackupRun
     {
-        return LiveBackupRun::query()->latest('id')->first();
+        return $this->data->activeRun();
     }
 
     /** @return \Illuminate\Support\Collection<int, LiveBackupRun> */
     #[Computed]
     public function liveRuns(): \Illuminate\Support\Collection
     {
-        return LiveBackupRun::query()->latest('id')->limit(20)->get();
+        return $this->data->liveRuns();
     }
 
     /**
@@ -480,19 +362,6 @@ new #[Title('Backups')] class extends Component {
     public function isAbandoned(LiveRun $run): bool
     {
         return $this->runPresenter()->isAbandoned($run);
-    }
-
-    /**
-     * Whether a refusal landed before the run reached its first checkpoint.
-     *
-     * The Refused badge reads the run's own REFUSED state, and `progress_stage` is the row's
-     * own record of the stage it reached. A refusal with no stage behind it has no timeline to
-     * draw; one that did reach a stage keeps the progress it earned.
-     */
-    public function runWasRefusedBeforeStarting(LiveBackupRun|LiveRestoreRun $run): bool
-    {
-        return ($run->state === LiveBackupRun::REFUSED || $run->state === LiveRestoreRun::REFUSED)
-            && $run->progress_stage === null;
     }
 
     /**
@@ -509,33 +378,9 @@ new #[Title('Backups')] class extends Component {
         return $this->runPresenter()->humanizeBackupSummary($summary);
     }
 
-    /**
-     * How big the downloads folder is, so the press is made against a number.
-     *
-     * Asked only while the dialog is open, so a reader reading the page costs Suwayomi nothing.
-     * Unknown is received here as null and said plainly: the alternative to not knowing is not
-     * an invented number.
-     */
     public function downloadsSize(): ?int
     {
-        return $this->dialogOpen
-            ? app(\App\Backup\DownloadsFolder::class)->bytes()
-            : null;
-    }
-
-    /** The bytes the way this page's own list already reads sizes. */
-    public function humanBytes(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $value = (float) $bytes;
-        $unit = 0;
-
-        while ($value >= 1024 && $unit < count($units) - 1) {
-            $value /= 1024;
-            $unit++;
-        }
-
-        return round($value, $value < 10 && $unit > 0 ? 1 : 0).' '.$units[$unit];
+        return $this->data->downloadsSize($this->dialogOpen);
     }
 
     /** The badge colours the run states are read in, shared by all three live cards. */
@@ -586,74 +431,10 @@ new #[Title('Backups')] class extends Component {
         $this->restoreDialogOpen = false;
     }
 
-    /** The pair a confirm is open on, its manifest read through the one reader of that format. */
-    #[Computed]
-    public function restorePair(): ?BackupPair
-    {
-        if ($this->restoreToken === null) {
-            return null;
-        }
-
-        $library = $this->backups();
-        $manifest = $library->directory().DIRECTORY_SEPARATOR.'backup-'.$this->restoreToken.'.json';
-
-        try {
-            return BackupPair::read($manifest, $library->directory());
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * The destructive diff the confirm is pressed against: what the pair holds against
-     * what the app holds now.
-     *
-     * Every number here names its own source: the pair's reader half from the manifest
-     * both halves were written under, the pair's manga half from the file itself read
-     * through the same reader the run verifies with, and the live half from the
-     * app's own tables. The manga half is read only while the dialog is open, the same
-     * courtesy the downloads size asks Suwayomi for, so reading this page costs nothing.
-     *
-     * @return array{pair: array{series: int, chapters: int}, live: array{series: int, chapters: int}, manga: array<string, int|string|null>, mangaProblem: string|null, takenAt: string, version: string}|null
-     */
     #[Computed]
     public function restoreDiff(): ?array
     {
-        if (! $this->restoreDialogOpen) {
-            return null;
-        }
-
-        $pair = $this->restorePair();
-
-        if ($pair === null) {
-            return null;
-        }
-
-        $manga = null;
-        $mangaProblem = null;
-
-        try {
-            $manga = (new TachibkReader)->read($pair->pathOf('suwayomi'))->summary();
-        } catch (ImportRefused $refusal) {
-            /*
-             * Its message, not ours, the shape the pair listing already carries: the
-             * format reader owns what a file that is not a backup is, and a second
-             * sentence about it would be a second opinion.
-             */
-            $mangaProblem = $refusal->getMessage();
-        }
-
-        return [
-            'pair' => ['series' => $pair->seriesStates, 'chapters' => $pair->chapterStates],
-            'live' => [
-                'series' => (int) DB::table('series_states')->count(),
-                'chapters' => (int) DB::table('chapter_states')->count(),
-            ],
-            'manga' => $manga ?? [],
-            'mangaProblem' => $mangaProblem,
-            'takenAt' => $pair->takenAt,
-            'version' => $pair->suwayomiVersion,
-        ];
+        return $this->data->restoreDiff($this->restoreDialogOpen, $this->restoreToken);
     }
 
     public function restore(): void
@@ -700,26 +481,20 @@ new #[Title('Backups')] class extends Component {
     #[Computed]
     public function activeRestoreRun(): ?LiveRestoreRun
     {
-        return LiveRestoreRun::query()->latest('id')->first();
+        return $this->data->activeRestoreRun();
     }
 
     /** @return \Illuminate\Support\Collection<int, LiveRestoreRun> */
     #[Computed]
     public function restoreRuns(): \Illuminate\Support\Collection
     {
-        return LiveRestoreRun::query()->latest('id')->limit(20)->get();
+        return $this->data->restoreRuns();
     }
 
     /** The most recent completed restore for this backup, if it has been used. */
     public function lastRestoredAt(string $token): ?CarbonImmutable
     {
-        $run = LiveRestoreRun::query()
-            ->where('token', $token)
-            ->where('state', LiveRestoreRun::COMPLETE)
-            ->latest('finished_at')
-            ->first();
-
-        return $run?->finished_at?->toImmutable();
+        return $this->data->lastRestoredAt($token);
     }
 
     /** Whether the restore side should be asked what is happening, the same gate as shouldPoll(). */
@@ -728,49 +503,10 @@ new #[Title('Backups')] class extends Component {
         return $this->watches($this->restorePolling, $this->activeRestoreRun());
     }
 
-    /**
-     * What the server reports its own restore doing, while one is in flight.
-     *
-     * Answered only while a run row still claims to be running, so a finished run costs
-     * the server nothing. Unreachable is named as unreachable rather than swallowed: the
-     * row completes itself whatever the bar shows.
-     *
-     * @return array{unreachable: bool, status: array{state: string, mangaProgress: int, totalManga: int}|null}|null
-     */
     #[Computed]
     public function restoreServerStatus(): ?array
     {
-        $run = $this->activeRestoreRun();
-
-        if ($run === null || ! $run->isRunning() || $this->isAbandoned($run)) {
-            return null;
-        }
-
-        try {
-            $status = app(BackupGateway::class)->restoreStatus();
-        } catch (SuwayomiException) {
-            return ['unreachable' => true, 'status' => null];
-        }
-
-        return ['unreachable' => false, 'status' => $status];
-    }
-
-    /**
-     * The server's own restore states, in this app's words, with an unknown name carried
-     * as the name it is rather than a meaning invented for it.
-     */
-    public function restoreStateWords(string $state): string
-    {
-        return match ($state) {
-            'IDLE' => __('waiting to start'),
-            'RESTORING_META' => __('reading the backup'),
-            'RESTORING_CATEGORIES' => __('restoring categories'),
-            'RESTORING_MANGA' => __('restoring series'),
-            'RESTORING_SETTINGS' => __('restoring settings'),
-            'SUCCESS' => __('finished'),
-            'FAILURE' => __('failed'),
-            default => $state,
-        };
+        return $this->data->restoreServerStatus();
     }
 
     /*
@@ -831,14 +567,14 @@ new #[Title('Backups')] class extends Component {
     #[Computed]
     public function activeExportRun(): ?LiveExportRun
     {
-        return LiveExportRun::query()->latest('id')->first();
+        return $this->data->activeExportRun();
     }
 
     /** @return \Illuminate\Support\Collection<int, LiveExportRun> */
     #[Computed]
     public function exportRuns(): \Illuminate\Support\Collection
     {
-        return LiveExportRun::query()->latest('id')->limit(20)->get();
+        return $this->data->exportRuns();
     }
 }; ?>
 
@@ -876,7 +612,7 @@ new #[Title('Backups')] class extends Component {
             </p>
         @else
             <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('Last run was :verdict :when.', ['verdict' => strtolower($this->lastRunVerdictWord()), 'when' => $latest['at']->diffForHumans()]) }}
+                {{ __('Last run was :verdict :when.', ['verdict' => strtolower($this->formatting->lastRunVerdictWord($latest)), 'when' => $latest['at']->diffForHumans()]) }}
 
                 <button
                     type="button"
@@ -997,7 +733,7 @@ new #[Title('Backups')] class extends Component {
                             <span>{{ $doneCount }} of {{ $totalStages }}</span>
 
                             @if ($isRunning)
-                                <span>{{ $this->elapsedTime($latest['at']) }}</span>
+                                <span>{{ $this->formatting->elapsedTime($latest['at']) }}</span>
                             @endif
                         </div>
 
@@ -1064,7 +800,7 @@ new #[Title('Backups')] class extends Component {
                             default => 'bg-zinc-400',
                         };
                         $liveShowsCheckpoints = ($liveIsBackup || $liveIsRestore)
-                            && ! $this->runWasRefusedBeforeStarting($row);
+                            && ! $this->formatting->runWasRefusedBeforeStarting($row);
                     @endphp
 
                     @if ($this->runModalOpen && $liveIsRunning)
@@ -1098,7 +834,7 @@ new #[Title('Backups')] class extends Component {
                                 <span>{{ $liveDoneCount }} of {{ $liveTotalStages }}</span>
 
                                 @if ($liveIsRunning)
-                                    <span>{{ $this->elapsedTime($latest['at']) }}</span>
+                                    <span>{{ $this->formatting->elapsedTime($latest['at']) }}</span>
                                 @endif
                             </div>
 
@@ -1388,7 +1124,7 @@ new #[Title('Backups')] class extends Component {
                     @php($pct = $held ? min(100, (int) round($said['mangaProgress'] * 100 / $said['totalManga'])) : null)
 
                     <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('Manga server: :state', ['state' => $this->restoreStateWords($said['state'])]) }}
+                        {{ __('Manga server: :state', ['state' => $this->formatting->restoreStateWords($said['state'])]) }}
 
                         @if ($held)
                             <span class="ml-1">{{ $said['mangaProgress'] }} of {{ $said['totalManga'] }}</span>
@@ -1527,7 +1263,7 @@ new #[Title('Backups')] class extends Component {
                                             'planned' => $run->series_planned ?? 0,
                                             'shelves' => $run->shelves_appended ?? 0,
                                             'marks' => $run->read_marks ?? 0,
-                                            'bytes' => $this->humanBytes((int) $run->file_bytes),
+                                            'bytes' => $this->formatting->humanBytes((int) $run->file_bytes),
                                         ]) }}
                                     </p>
 
@@ -1595,7 +1331,7 @@ new #[Title('Backups')] class extends Component {
                             @php($size = $this->downloadsSize())
 
                             @if ($size !== null)
-                                {{ __('Your downloads folder holds :size right now, and zipping it makes the backup take as long as it takes to read those files.', ['size' => $this->humanBytes($size)]) }}
+                                {{ __('Your downloads folder holds :size right now, and zipping it makes the backup take as long as it takes to read those files.', ['size' => $this->formatting->humanBytes($size)]) }}
                             @else
                                 {{ __('Papyrus cannot ask Suwayomi how big the downloads folder is right now, so leave the checkbox off unless you know it is small, or wait until the app can reach its server.') }}
                             @endif
