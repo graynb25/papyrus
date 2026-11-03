@@ -1,5 +1,6 @@
 <?php
 
+use App\AniList\Tracking;
 use App\Jobs\CheckLibrary;
 use App\Library\CheckLedger;
 use App\Library\CheckSchedule;
@@ -9,6 +10,7 @@ use App\Models\CheckRun;
 use App\Models\LibraryCheck;
 use App\Support\Library;
 use App\Support\ReadingState;
+use App\Suwayomi\SeriesGateway;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -99,10 +101,42 @@ new #[Title('Library')] class extends Component
     /** The page's filter pipeline, shared with its direct tests. */
     private LibraryFilter $filter;
 
-    public function boot(LibraryPageData $data, LibraryFilter $filter): void
-    {
+    /** The shelf and filing writes behind the bulk and shelf actions. */
+    private Library $library;
+
+    /** Read state written by the bulk and inline controls. */
+    private ReadingState $readingState;
+
+    /** The batch chapter read for a selection. */
+    private SeriesGateway $seriesGateway;
+
+    /** AniList pushes booked after a bulk read-state change. */
+    private Tracking $tracking;
+
+    /** The per-card check write. */
+    private CheckLedger $checkLedger;
+
+    /** The due counts behind the check bar. */
+    private CheckSchedule $schedule;
+
+    public function boot(
+        LibraryPageData $data,
+        LibraryFilter $filter,
+        Library $library,
+        ReadingState $readingState,
+        SeriesGateway $seriesGateway,
+        Tracking $tracking,
+        CheckLedger $checkLedger,
+        CheckSchedule $schedule,
+    ): void {
         $this->data = $data;
         $this->filter = $filter;
+        $this->library = $library;
+        $this->readingState = $readingState;
+        $this->seriesGateway = $seriesGateway;
+        $this->tracking = $tracking;
+        $this->checkLedger = $checkLedger;
+        $this->schedule = $schedule;
     }
 
     public function updated(string $property): void
@@ -163,10 +197,8 @@ new #[Title('Library')] class extends Component
             return;
         }
 
-        $library = app(Library::class);
-
         foreach ($this->selected as $mangaId) {
-            $library->attach(auth()->user(), (int) $mangaId, $shelfId);
+            $this->library->attach(auth()->user(), (int) $mangaId, $shelfId);
         }
 
         $count = count($this->selected);
@@ -194,10 +226,8 @@ new #[Title('Library')] class extends Component
             return;
         }
 
-        $library = app(Library::class);
-
         foreach ($this->selected as $mangaId) {
-            $library->detach(auth()->user(), (int) $mangaId, $this->shelf);
+            $this->library->detach(auth()->user(), (int) $mangaId, $this->shelf);
         }
 
         $count = count($this->selected);
@@ -231,15 +261,13 @@ new #[Title('Library')] class extends Component
             return;
         }
 
-        $reading = app(ReadingState::class);
-
-        foreach (app(\App\Suwayomi\SeriesGateway::class)->fetchMany($ids) as $mangaId => $node) {
+        foreach ($this->seriesGateway->fetchMany($ids) as $mangaId => $node) {
             $chapterIds = array_map(
                 static fn (mixed $chapter): int => (int) ($chapter['id'] ?? 0),
                 $node['chapters']['nodes'] ?? [],
             );
 
-            $reading->markManyRead(auth()->user(), (int) $mangaId, $chapterIds, $read);
+            $this->readingState->markManyRead(auth()->user(), (int) $mangaId, $chapterIds, $read);
 
             /*
              * The same push the series page books after marking chapters read there.
@@ -252,10 +280,10 @@ new #[Title('Library')] class extends Component
              * has no AniList connection, so this costs a lookup per series and nothing
              * more.
              */
-            app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), (int) $mangaId);
+            $this->tracking->scheduleSync(auth()->user(), (int) $mangaId);
 
             if (! $read) {
-                $reading->setPointer(auth()->user(), (int) $mangaId, null);
+                $this->readingState->setPointer(auth()->user(), (int) $mangaId, null);
             }
         }
 
@@ -281,7 +309,7 @@ new #[Title('Library')] class extends Component
     public function removeSelected(): void
     {
         foreach ($this->selected as $mangaId) {
-            app(ReadingState::class)->setInLibrary(auth()->user(), (int) $mangaId, false);
+            $this->readingState->setInLibrary(auth()->user(), (int) $mangaId, false);
         }
 
         $count = count($this->selected);
@@ -309,7 +337,7 @@ new #[Title('Library')] class extends Component
             return;
         }
 
-        $shelf = app(Library::class)->createCategory(auth()->user(), $name);
+        $shelf = $this->library->createCategory(auth()->user(), $name);
 
         $this->newShelfName = '';
 
@@ -328,7 +356,7 @@ new #[Title('Library')] class extends Component
             return;
         }
 
-        $renamed = app(Library::class)->renameCategory(auth()->user(), $shelfId, $name);
+        $renamed = $this->library->renameCategory(auth()->user(), $shelfId, $name);
 
         $this->renaming = [];
 
@@ -356,7 +384,7 @@ new #[Title('Library')] class extends Component
     public function deleteShelf(int $shelfId): void
     {
         $name = $this->shelfName($shelfId);
-        $deleted = app(Library::class)->deleteCategory(auth()->user(), $shelfId);
+        $deleted = $this->library->deleteCategory(auth()->user(), $shelfId);
 
         $this->renaming = [];
 
@@ -385,13 +413,12 @@ new #[Title('Library')] class extends Component
      */
     public function toggleFiling(int $mangaId, int $shelfId): void
     {
-        $library = app(Library::class);
-        $state = app(ReadingState::class)->loadOrCreate(auth()->id(), $mangaId);
+        $state = $this->readingState->loadOrCreate(auth()->id(), $mangaId);
 
-        $isFiled = in_array($shelfId, $library->categoryIdsFor(auth()->id(), (int) $state->id), true);
+        $isFiled = in_array($shelfId, $this->library->categoryIdsFor(auth()->id(), (int) $state->id), true);
 
         if ($isFiled) {
-            $library->detach(auth()->user(), $mangaId, $shelfId);
+            $this->library->detach(auth()->user(), $mangaId, $shelfId);
 
             Flux::toast(
                 text: __('Moved to Unfiled.'),
@@ -399,7 +426,7 @@ new #[Title('Library')] class extends Component
                 variant: 'info',
             );
         } else {
-            $library->attach(auth()->user(), $mangaId, $shelfId);
+            $this->library->attach(auth()->user(), $mangaId, $shelfId);
 
             Flux::toast(
                 text: __('Filed under “:name”.', ['name' => $this->shelfName($shelfId)]),
@@ -657,7 +684,7 @@ new #[Title('Library')] class extends Component
      */
     public function checkSeries(int $mangaId): void
     {
-        $row = app(CheckLedger::class)->check(auth()->user(), $mangaId, force: true);
+        $row = $this->checkLedger->check(auth()->user(), $mangaId, force: true);
 
         $this->report($row);
 
@@ -693,12 +720,12 @@ new #[Title('Library')] class extends Component
         }
 
         /*
-         * `app(CheckSchedule::class)->summary()` rather than the computed property.
+         * `$this->schedule->summary()` rather than the computed property.
          * A computed is exposed as its cached value, so `$this->checkSchedule` is the
          * array the method returns and calling `->summary()` on it is "Call to a
          * member function summary() on array".
          */
-        $summary = app(CheckSchedule::class)->summary(auth()->user());
+        $summary = $this->schedule->summary(auth()->user());
         $due = (int) $summary['due'];
 
         if ($due === 0) {

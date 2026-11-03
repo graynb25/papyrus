@@ -37,13 +37,38 @@ new #[Title('Search')] class extends AdultContentPage
     /** The search action's validation rules, shared with their direct tests. */
     private SearchRules $rules;
 
-    public function boot(SearchPageData $data, SearchQuery $query, SearchFormatting $formatting, SearchFilters $filters, SearchRules $rules): void
-    {
+    /** The fanout the search action starts. */
+    private SearchFanout $fanout;
+
+    /** The AniList opt-in read in mount and written by the toggle. */
+    private AniListPreference $anilistPreference;
+
+    /** The title lookup behind the AniList resolution start. */
+    private TitleResolver $titleResolver;
+
+    /** Library membership writes from the result cards. */
+    private ReadingState $readingState;
+
+    public function boot(
+        SearchPageData $data,
+        SearchQuery $query,
+        SearchFormatting $formatting,
+        SearchFilters $filters,
+        SearchRules $rules,
+        SearchFanout $fanout,
+        AniListPreference $anilistPreference,
+        TitleResolver $titleResolver,
+        ReadingState $readingState,
+    ): void {
         $this->data = $data;
         $this->searchQuery = $query;
         $this->formatting = $formatting;
         $this->filters = $filters;
         $this->rules = $rules;
+        $this->fanout = $fanout;
+        $this->anilistPreference = $anilistPreference;
+        $this->titleResolver = $titleResolver;
+        $this->readingState = $readingState;
     }
 
     /**
@@ -103,7 +128,7 @@ new #[Title('Search')] class extends AdultContentPage
 
     public function mount(): void
     {
-        $this->anilistOn = app(AniListPreference::class)->enabled(Auth::user());
+        $this->anilistOn = $this->anilistPreference->enabled(Auth::user());
 
         /*
          * The rating, narrowed by the gate.
@@ -149,7 +174,7 @@ new #[Title('Search')] class extends AdultContentPage
      */
     public function updatedAnilistOn(bool $enabled): void
     {
-        app(AniListPreference::class)->set(Auth::user(), $enabled);
+        $this->anilistPreference->set(Auth::user(), $enabled);
 
         if ($enabled) {
             $this->startAniListResolution();
@@ -216,7 +241,7 @@ new #[Title('Search')] class extends AdultContentPage
     {
         $this->validate($this->rules->rules());
 
-        $run = app(SearchFanout::class)->start(Auth::user(), $this->query, $this->fanoutOptions());
+        $run = $this->fanout->start(Auth::user(), $this->query, $this->fanoutOptions());
 
         $this->runId = $run->id;
 
@@ -259,7 +284,7 @@ new #[Title('Search')] class extends AdultContentPage
             return;
         }
 
-        $resolver = app(TitleResolver::class);
+        $resolver = $this->titleResolver;
         $titles = $this->data->resultTitles(Auth::user(), $run);
 
         if ($resolver->missing($titles) === []) {
@@ -318,7 +343,7 @@ new #[Title('Search')] class extends AdultContentPage
     {
         $inLibrary = ! (bool) ($this->libraryMap[$manga] ?? false);
 
-        app(ReadingState::class)->setInLibrary(Auth::user(), $manga, $inLibrary);
+        $this->readingState->setInLibrary(Auth::user(), $manga, $inLibrary);
 
         unset($this->libraryMap);
 

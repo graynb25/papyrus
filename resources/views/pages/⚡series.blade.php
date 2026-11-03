@@ -1,5 +1,7 @@
 <?php
 
+use App\AniList\Tracking;
+use App\Covers\CoverStore;
 use App\Downloads\DownloadLedger;
 use App\Jobs\FetchSeriesChapters;
 use App\Live\Series\SeriesCoverRules;
@@ -32,10 +34,47 @@ new class extends Component
     /** The page's pure formatting and range rules, shared with its direct tests. */
     private SeriesFormatting $formatting;
 
-    public function boot(SeriesPageData $data, SeriesFormatting $formatting): void
-    {
+    /** The series refresh the retry button calls. */
+    private SeriesGateway $seriesGateway;
+
+    /** Read state written by the page's toggles, rating, tags and progress controls. */
+    private ReadingState $readingState;
+
+    /** AniList pushes booked after a read-state change. */
+    private Tracking $tracking;
+
+    /** The reading settings written by the order and mode controls. */
+    private ReaderSettings $readerSettings;
+
+    /** The reader's custom cover writes. */
+    private CoverStore $coverStore;
+
+    /** Chapter note writes. */
+    private ChapterNotes $notes;
+
+    /** Download queue writes. */
+    private DownloadLedger $downloads;
+
+    public function boot(
+        SeriesPageData $data,
+        SeriesFormatting $formatting,
+        SeriesGateway $seriesGateway,
+        ReadingState $readingState,
+        Tracking $tracking,
+        ReaderSettings $readerSettings,
+        CoverStore $coverStore,
+        ChapterNotes $notes,
+        DownloadLedger $downloads,
+    ): void {
         $this->data = $data;
         $this->formatting = $formatting;
+        $this->seriesGateway = $seriesGateway;
+        $this->readingState = $readingState;
+        $this->tracking = $tracking;
+        $this->readerSettings = $readerSettings;
+        $this->coverStore = $coverStore;
+        $this->notes = $notes;
+        $this->downloads = $downloads;
     }
 
     /**
@@ -273,7 +312,7 @@ new class extends Component
         unset($this->fetchingChapters);
 
         try {
-            $result = app(SeriesGateway::class)->refresh($this->manga);
+            $result = $this->seriesGateway->refresh($this->manga);
         } catch (SuwayomiException $e) {
             /*
              * A `danger` toast rather than `Flux::error()`, which does not exist in Flux 2:
@@ -308,7 +347,7 @@ new class extends Component
     {
         $inLibrary = ! $this->state->in_library;
 
-        app(ReadingState::class)->setInLibrary(auth()->user(), $this->manga, $inLibrary);
+        $this->readingState->setInLibrary(auth()->user(), $this->manga, $inLibrary);
 
         // The computed was read a moment ago and holds the row as it was, so the
         // button this render produces would say the opposite of the database
@@ -328,7 +367,7 @@ new class extends Component
     {
         $favourite = ! $this->state->favourited_at;
 
-        app(ReadingState::class)->setFavourited(auth()->user(), $this->manga, $favourite);
+        $this->readingState->setFavourited(auth()->user(), $this->manga, $favourite);
 
         unset($this->state);
     }
@@ -337,7 +376,7 @@ new class extends Component
     {
         $queued = ! $this->state->read_later_at;
 
-        app(ReadingState::class)->setReadLater(auth()->user(), $this->manga, $queued);
+        $this->readingState->setReadLater(auth()->user(), $this->manga, $queued);
 
         unset($this->state);
     }
@@ -358,7 +397,7 @@ new class extends Component
     {
         $current = $this->state->rating === null ? null : (int) $this->state->rating;
 
-        app(ReadingState::class)->setRating(
+        $this->readingState->setRating(
             auth()->user(),
             $this->manga,
             $current === $stars ? null : $stars,
@@ -378,7 +417,7 @@ new class extends Component
      */
     public function clearRating(): void
     {
-        app(ReadingState::class)->setRating(auth()->user(), $this->manga, null);
+        $this->readingState->setRating(auth()->user(), $this->manga, null);
 
         unset($this->state);
     }
@@ -411,7 +450,6 @@ new class extends Component
             return;
         }
 
-        $reading = app(ReadingState::class);
         $existing = $this->state->tags ?? [];
 
         if (mb_strlen($draft) > ReadingState::TAG_MAX_LENGTH) {
@@ -452,7 +490,7 @@ new class extends Component
             return;
         }
 
-        $reading->addTag(auth()->user(), $this->manga, $draft);
+        $this->readingState->addTag(auth()->user(), $this->manga, $draft);
 
         unset($this->state);
 
@@ -474,7 +512,7 @@ new class extends Component
      */
     public function removeTag(string $tag): void
     {
-        app(ReadingState::class)->removeTag(auth()->user(), $this->manga, $tag);
+        $this->readingState->removeTag(auth()->user(), $this->manga, $tag);
 
         unset($this->state);
     }
@@ -516,7 +554,7 @@ new class extends Component
      */
     public function toggleRead(int $chapterId): void
     {
-        $read = ! (bool) app(ReadingState::class)->findChapter(auth()->user(), $chapterId)?->is_read;
+        $read = ! (bool) $this->readingState->findChapter(auth()->user(), $chapterId)?->is_read;
 
         $this->setChapterRead($chapterId, $read);
     }
@@ -532,7 +570,7 @@ new class extends Component
     {
         $ids = array_map(static fn (array $chapter): int => (int) $chapter['id'], $this->chapters);
 
-        app(ReadingState::class)->markManyRead(auth()->user(), $this->manga, $ids, true);
+        $this->readingState->markManyRead(auth()->user(), $this->manga, $ids, true);
 
         // The pointer lands on the furthest chapter in source order, whatever
         // direction this reader is displaying the list in: "all read" is a
@@ -542,12 +580,12 @@ new class extends Component
                 ->sortBy(static fn (array $chapter): int => (int) ($chapter['sourceOrder'] ?? 0))
                 ->last();
 
-            app(ReadingState::class)->setPointer(auth()->user(), $this->manga, (int) $furthest['id']);
+            $this->readingState->setPointer(auth()->user(), $this->manga, (int) $furthest['id']);
         }
 
         unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
 
-        app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
+        $this->tracking->scheduleSync(auth()->user(), $this->manga);
 
         Flux::toast(
             text: trans_choice(':count chapter marked read.|:count chapters marked read.', count($ids), ['count' => count($ids)]),
@@ -567,8 +605,8 @@ new class extends Component
     {
         $ids = array_map(static fn (array $chapter): int => (int) $chapter['id'], $this->chapters);
 
-        app(ReadingState::class)->markManyRead(auth()->user(), $this->manga, $ids, false);
-        app(ReadingState::class)->setPointer(auth()->user(), $this->manga, null);
+        $this->readingState->markManyRead(auth()->user(), $this->manga, $ids, false);
+        $this->readingState->setPointer(auth()->user(), $this->manga, null);
 
         unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
 
@@ -589,7 +627,7 @@ new class extends Component
      */
     private function setChapterRead(int $chapterId, bool $read): void
     {
-        app(ReadingState::class)->markRead(auth()->user(), $this->manga, $chapterId, $read);
+        $this->readingState->markRead(auth()->user(), $this->manga, $chapterId, $read);
 
         if ($read) {
             $orderOf = function (int $id): int {
@@ -605,10 +643,10 @@ new class extends Component
             $pointer = (int) ($this->state->last_read_chapter_id ?? 0);
 
             if ($pointer === 0 || $orderOf($chapterId) > $orderOf($pointer)) {
-                app(ReadingState::class)->setPointer(auth()->user(), $this->manga, $chapterId);
+                $this->readingState->setPointer(auth()->user(), $this->manga, $chapterId);
             }
 
-            app(\App\AniList\Tracking::class)->scheduleSync(auth()->user(), $this->manga);
+            $this->tracking->scheduleSync(auth()->user(), $this->manga);
         }
 
         unset($this->state, $this->chapterStates, $this->allChapterStates, $this->readCount);
@@ -632,7 +670,7 @@ new class extends Component
         $this->order = $order;
         $this->page = 1;
 
-        app(ReaderSettings::class)->setSeriesOverride(
+        $this->readerSettings->setSeriesOverride(
             auth()->user(),
             $this->manga,
             ['chapter_order' => $order],
@@ -648,7 +686,7 @@ new class extends Component
      */
     public function setReadingMode(string $mode): void
     {
-        app(\App\Support\ReaderSettings::class)->setSeriesOverride(
+        $this->readerSettings->setSeriesOverride(
             auth()->user(),
             $this->manga,
             ['mode' => $mode],
@@ -878,7 +916,7 @@ new class extends Component
         );
 
         try {
-            app(\App\Covers\CoverStore::class)->store(auth()->user(), $this->manga, $this->coverUpload);
+            $this->coverStore->store(auth()->user(), $this->manga, $this->coverUpload);
         } catch (\App\Covers\CoverRejected $e) {
             Flux::toast(
                 text: $e->getMessage(),
@@ -910,7 +948,7 @@ new class extends Component
      */
     public function removeCover(): void
     {
-        $removed = app(\App\Covers\CoverStore::class)->remove(auth()->user(), $this->manga);
+        $removed = $this->coverStore->remove(auth()->user(), $this->manga);
 
         unset($this->customCover, $this->coverUrl);
 
@@ -942,7 +980,7 @@ new class extends Component
      */
     public function saveNote(int $chapterId, string $body): void
     {
-        $result = app(ChapterNotes::class)->save(
+        $result = $this->notes->save(
             auth()->user(),
             $this->manga,
             $chapterId,
@@ -1059,7 +1097,7 @@ new class extends Component
      */
     public function downloadChapter(int $chapterId): void
     {
-        $result = app(DownloadLedger::class)->enqueue(auth()->user(), [$chapterId], $this->manga);
+        $result = $this->downloads->enqueue(auth()->user(), [$chapterId], $this->manga);
 
         Flux::toast(
             text: $result['queued'] > 0
@@ -1111,7 +1149,7 @@ new class extends Component
             return;
         }
 
-        $result = app(DownloadLedger::class)->enqueue(auth()->user(), $ids, $this->manga);
+        $result = $this->downloads->enqueue(auth()->user(), $ids, $this->manga);
 
         Flux::toast(
             text: $result['queued'] > 0

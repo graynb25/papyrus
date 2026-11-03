@@ -35,12 +35,31 @@ new #[Title('Sources')] class extends AdultContentPage
     /** The per-row and selection rules, shared with their direct tests. */
     private SourcesRules $rules;
 
-    public function boot(SourcesPageData $data, SourcesFilter $filter, SourcesFormatting $formatting, SourcesRules $rules): void
-    {
+    /** The store and catalogue writes behind the store and sync actions. */
+    private SourceCatalog $sourceCatalog;
+
+    /** The extension trust, install, uninstall and update writes. */
+    private ExtensionManager $extensionManager;
+
+    /** The local folder rescan. */
+    private LocalLibrary $localLibrary;
+
+    public function boot(
+        SourcesPageData $data,
+        SourcesFilter $filter,
+        SourcesFormatting $formatting,
+        SourcesRules $rules,
+        SourceCatalog $sourceCatalog,
+        ExtensionManager $extensionManager,
+        LocalLibrary $localLibrary,
+    ): void {
         $this->data = $data;
         $this->filter = $filter;
         $this->formatting = $formatting;
         $this->rules = $rules;
+        $this->sourceCatalog = $sourceCatalog;
+        $this->extensionManager = $extensionManager;
+        $this->localLibrary = $localLibrary;
     }
 
     public string $storeUrl = '';
@@ -234,7 +253,7 @@ new #[Title('Sources')] class extends AdultContentPage
         $this->validate(['storeUrl' => ['required', 'string', 'url', 'max:500']]);
 
         try {
-            $store = app(SourceCatalog::class)->addStore(trim($this->storeUrl));
+            $store = $this->sourceCatalog->addStore(trim($this->storeUrl));
         } catch (SuwayomiException $e) {
             Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -271,7 +290,7 @@ new #[Title('Sources')] class extends AdultContentPage
         Gate::authorize('manage-install');
 
         try {
-            app(SourceCatalog::class)->removeStore($indexUrl);
+            $this->sourceCatalog->removeStore($indexUrl);
         } catch (SuwayomiException $e) {
             Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -329,8 +348,8 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     private function loadCatalogue(): int
     {
-        $count = app(SourceCatalog::class)->refreshExtensions();
-        app(SourceCatalog::class)->syncStores();
+        $count = $this->sourceCatalog->refreshExtensions();
+        $this->sourceCatalog->syncStores();
 
         return $count;
     }
@@ -404,7 +423,7 @@ new #[Title('Sources')] class extends AdultContentPage
     public function syncSources(): void
     {
         try {
-            $result = app(SourceCatalog::class)->syncAll();
+            $result = $this->sourceCatalog->syncAll();
         } catch (SuwayomiException $e) {
             Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -431,7 +450,7 @@ new #[Title('Sources')] class extends AdultContentPage
             return;
         }
 
-        app(ExtensionManager::class)->trust(auth()->user(), $store);
+        $this->extensionManager->trust(auth()->user(), $store);
 
         Flux::toast(
             text: __('You can now install extensions signed by this key.'),
@@ -486,7 +505,7 @@ new #[Title('Sources')] class extends AdultContentPage
             return;
         }
 
-        app(ExtensionManager::class)->revokeTrust(auth()->user(), $store);
+        $this->extensionManager->revokeTrust(auth()->user(), $store);
 
         Flux::toast(
             text: __('Installed extensions stay installed. This publisher is no longer trusted for new ones.'),
@@ -517,7 +536,7 @@ new #[Title('Sources')] class extends AdultContentPage
     private function mirrorSources(): bool
     {
         try {
-            app(SourceCatalog::class)->syncSources();
+            $this->sourceCatalog->syncSources();
         } catch (SuwayomiException) {
             return false;
         }
@@ -572,7 +591,7 @@ new #[Title('Sources')] class extends AdultContentPage
         Gate::authorize('manage-install');
 
         try {
-            app(ExtensionManager::class)->setInstalled($pkgName, false);
+            $this->extensionManager->setInstalled($pkgName, false);
         } catch (SuwayomiException $e) {
             Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -613,7 +632,7 @@ new #[Title('Sources')] class extends AdultContentPage
         }
 
         try {
-            app(ExtensionManager::class)->update($pkgName);
+            $this->extensionManager->update($pkgName);
         } catch (SuwayomiException $e) {
             // Listed as well as toasted, on the same reasoning as the bulk
             // failures: the reader is about to wonder whether it moved.
@@ -643,7 +662,7 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function updateAll(): void
     {
-        $targets = app(ExtensionManager::class)
+        $targets = $this->extensionManager
             ->extensions(['has_update' => true, 'installed' => true], 500, 0)
             ->filter(fn (array $row): bool => $this->rules->isTrusted($row, $this->trustedIds))
             ->pluck('pkgName')
@@ -659,7 +678,7 @@ new #[Title('Sources')] class extends AdultContentPage
             return;
         }
 
-        $result = app(ExtensionManager::class)->updateMany($targets);
+        $result = $this->extensionManager->updateMany($targets);
 
         $this->failures = $result['failed'];
 
@@ -787,7 +806,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
         if (count($names) === 1) {
             try {
-                app(ExtensionManager::class)->setInstalled($names[0], true);
+                $this->extensionManager->setInstalled($names[0], true);
             } catch (SuwayomiException $e) {
                 Flux::toast(text: $e->getMessage(), variant: 'danger');
 
@@ -809,7 +828,7 @@ new #[Title('Sources')] class extends AdultContentPage
             return;
         }
 
-        $result = app(ExtensionManager::class)->installMany($names);
+        $result = $this->extensionManager->installMany($names);
         $this->failures = $result['failed'];
 
         if ($this->failures !== []) {
@@ -1025,7 +1044,7 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function rescanLocal(): void
     {
-        $result = app(LocalLibrary::class)->rescan();
+        $result = $this->localLibrary->rescan();
 
         // Both computeds are dropped because the folder and the server's listing are the
         // two halves of the view and one of them has just changed.
