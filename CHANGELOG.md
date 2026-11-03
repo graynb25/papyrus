@@ -21,6 +21,89 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## 1.5.4 - 2026-11-03
+
+A correctness and hardening release. It fixes the library check loop, the download and
+restore races, and the launcher's process handling, and it shrinks the installed vendor
+tree.
+
+### Fixed
+
+**A capped library check no longer reports complete while work is still due.** The due
+read applied its SQL limit before the interval filter, so a capped pass could finish
+COMPLETE with due series unvisited. It now reads the whole due set and re-books. `ee79de1`
+
+**A double press on Download no longer reaches a 500.** The losing press takes the
+existing row instead of raising a unique violation. `ee79de1`
+
+**Two rapid card checks no longer collide on one row.** The second result fills the
+existing check row. `ee79de1`
+
+**A `#` in a setting value is kept.** A value Papyrus wrote itself is quoted whole, so a
+database path containing `#` is no longer split into a value and a comment. `48b5bf6`
+
+**A missing `.env.example` fails with a sentence, not a stack trace.** The install
+command exits 1 before writing a partial `.env`. `48b5bf6`
+
+**Backup snapshots cannot overwrite each other.** Every snapshot name carries a random
+suffix, and failure cleanup removes only its own temporary file. `b16bc8f`
+
+**A failed cover write keeps the previous cover.** The new image is written to a
+temporary file and moved into place before the old one is removed. `f85b1cb`
+
+**The reader half swap refuses a table whose column order differs.** It names the table
+and both orders instead of failing with an unrelated foreign key error. `f85b1cb`
+
+**Backup and restore jobs use the retry window they declare.** The queue's default
+`retry_after` is now longer than the longest job timeout, and the backup job attempts
+twice as its docblock says. `f85b1cb`
+
+**Launcher stop is loud when the process probe fails.** A failed probe is an error, not
+an empty process table, so the installer preflight cannot write over a live install.
+`113ba47`
+
+**A live instance lock survives a start-time boundary.** The comparison tolerates the
+whole-second truncation of the platform's start time, and an unreadable start time counts
+as held. `212fa44`
+
+### Security
+
+**Symfony MIME is past CVE-2026-45070.** `symfony/mime` moved to 8.1.10, and the lock's
+three polyfills moved with it. `fcb5b04`
+
+**Dependency advisories are checked in CI.** The production Composer audit and the npm
+lock audit run without `continue-on-error`, and Dependabot watches Composer and npm
+weekly. `fcb5b04`
+
+**Translation lookups refuse path-shaped keys.** A sentence or a key containing a path
+separator no longer reaches the filesystem loader. `1a79da1`
+
+### Changed
+
+**The installed vendor tree is production-only.** The build stages a `composer install
+--no-dev` tree instead of copying the checkout's vendor; the install is about 69 MB
+smaller. `c4db974`
+
+**Logs are bounded and deleted accounts lose their uploaded covers.** The packaged app
+uses a daily channel with 14 files, rotates a process log above 5 MB, and removes a
+deleted reader's cover directory before the account row. `2f4c661`
+
+**The PHP floor matches the lock, and the Flux licence absence is recorded.** `b0a1d40`
+
+**The five largest pages and the reader script are split into tested units.** The pages'
+reads, filters, formatting and actions live in support classes, and the reader's inline
+script is a Vite module. No reader-facing behaviour is intended to change. `e81f7bd`
+
+### Known limits
+
+- **A restore retry still re-sends the manga half.** COR-09 is accepted for this release;
+  the retry is safe to repeat but costs the second upload.
+- **`open_basedir` remains off.** The translator guard is in place, but a packaged start
+  with `open_basedir` still fails when Livewire renders a page layout. PKG-06 stays open.
+- **The installer is unsigned.** Verify the published SHA-256 against the release record.
+- **The manual page and reader walks are the acceptance evidence for this release.** The
+  automated suite cannot prove the rendered layouts, cover upload, dialogs or page turns.
+
 ## 1.5.3 - 2026-11-01
 
 A hotfix for a fresh-install failure in 1.5.2, plus the security and update work finished
