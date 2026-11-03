@@ -1,14 +1,15 @@
 <?php
 
+use App\Live\Sources\SourcesFilter;
+use App\Live\Sources\SourcesFormatting;
+use App\Live\Sources\SourcesPageData;
+use App\Live\Sources\SourcesRules;
 use App\Local\LocalLibrary;
 use App\Livewire\AdultContentPage;
 use App\Models\ExtensionStore;
 use App\Models\Source;
-use App\Models\SourceHealth;
 use App\Models\UserSource;
 use App\Support\LanguageName;
-use App\Support\Library;
-use App\Support\SourceNotices;
 use App\Suwayomi\ExtensionManager;
 use App\Suwayomi\SourceCatalog;
 use App\Suwayomi\SuwayomiException;
@@ -22,6 +23,26 @@ use Livewire\Attributes\Url;
 
 new #[Title('Sources')] class extends AdultContentPage
 {
+    /** The page's reads, kept out of this component so their shapes can be tested directly. */
+    private SourcesPageData $data;
+
+    /** The catalogue filter pipeline, shared with its direct tests. */
+    private SourcesFilter $filter;
+
+    /** The page's pure formatting rules, shared with its direct tests. */
+    private SourcesFormatting $formatting;
+
+    /** The per-row and selection rules, shared with their direct tests. */
+    private SourcesRules $rules;
+
+    public function boot(SourcesPageData $data, SourcesFilter $filter, SourcesFormatting $formatting, SourcesRules $rules): void
+    {
+        $this->data = $data;
+        $this->filter = $filter;
+        $this->formatting = $formatting;
+        $this->rules = $rules;
+    }
+
     public string $storeUrl = '';
 
     /**
@@ -67,7 +88,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public int $page = 1;
 
-    public const PER_PAGE = 50;
+    public const PER_PAGE = SourcesPageData::PER_PAGE;
 
     /**
      * Why the catalogue did not load itself, when it did not.
@@ -360,7 +381,7 @@ new #[Title('Sources')] class extends AdultContentPage
         }
 
         try {
-            $holds = app(ExtensionManager::class)->extensionCount();
+            $holds = $this->data->extensionCount();
         } catch (SuwayomiException) {
             return true;
         }
@@ -436,7 +457,7 @@ new #[Title('Sources')] class extends AdultContentPage
     private function loadCatalogueWhenTheServerHasNone(): void
     {
         try {
-            $known = app(ExtensionManager::class)->extensionCount();
+            $known = $this->data->extensionCount();
         } catch (SuwayomiException) {
             // Unread is treated as empty rather than as "skip": the load's own
             // failure handling reports what it could not do, so the reader is
@@ -455,28 +476,6 @@ new #[Title('Sources')] class extends AdultContentPage
         } catch (SuwayomiException $e) {
             $this->loadProblem = $e->getMessage();
         }
-    }
-
-    /**
-     * The site behaviour notice for one extension, or null.
-     *
-     * The kind comes from App\Support\SourceNotices, so the day a site's
-     * behaviour changes there is one file to correct and the facts outlive the
-     * wording; what a reader is told lives here with the page's other copy.
-     *
-     * @param  array<string, mixed>  $extension
-     * @return array{icon: string, text: string}|null
-     */
-    public function noticeFor(array $extension): ?array
-    {
-        $kind = SourceNotices::kind((string) ($extension['name'] ?? ''));
-
-        return $kind === null ? null : [
-            'icon' => $kind === SourceNotices::BAN ? 'exclamation-triangle' : 'arrow-path',
-            'text' => $kind === SourceNotices::BAN
-                ? __('This site is known to block readers that search aggressively. Space searches out or pin it; expect long bans, not errors you can retry away.')
-                : __('Searches from extensions here come back scrambled and pages can arrive broken. It does not ban: it sends you back to its own ad-laden site.'),
-        ];
     }
 
     public function revokeTrust(int $storeId): void
@@ -545,11 +544,11 @@ new #[Title('Sources')] class extends AdultContentPage
          */
         Gate::authorize('manage-install');
 
-        if (! $this->canInstallName($pkgName)) {
+        if (! $this->rules->canInstallName($pkgName, $this->extensions, $this->trustedIds)) {
             return;
         }
 
-        if ($this->noticeFor($this->rowFor($pkgName) ?? []) !== null) {
+        if ($this->formatting->noticeFor($this->rules->rowFor($pkgName, $this->extensions) ?? []) !== null) {
             $this->pendingInstall = [$pkgName];
             $this->pendingClean = [];
 
@@ -609,7 +608,7 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function update(string $pkgName): void
     {
-        if (! $this->canUpdateName($pkgName)) {
+        if (! $this->rules->canUpdateName($pkgName, $this->extensions, $this->trustedIds)) {
             return;
         }
 
@@ -646,7 +645,7 @@ new #[Title('Sources')] class extends AdultContentPage
     {
         $targets = app(ExtensionManager::class)
             ->extensions(['has_update' => true, 'installed' => true], 500, 0)
-            ->filter(fn (array $row): bool => $this->isTrusted($row))
+            ->filter(fn (array $row): bool => $this->rules->isTrusted($row, $this->trustedIds))
             ->pluck('pkgName')
             ->all();
 
@@ -700,7 +699,7 @@ new #[Title('Sources')] class extends AdultContentPage
     {
         Gate::authorize('manage-install');
 
-        $allowed = $this->installableFromSelection();
+        $allowed = $this->rules->installableFromSelection($this->selected, $this->extensions, $this->trustedIds);
 
         $this->reset(['selected', 'failures']);
 
@@ -708,7 +707,7 @@ new #[Title('Sources')] class extends AdultContentPage
             return;
         }
 
-        $flagged = $this->flaggedAmong($allowed);
+        $flagged = $this->rules->flaggedAmong($allowed, $this->extensions);
 
         if ($flagged !== []) {
             $this->pendingInstall = $flagged;
@@ -737,7 +736,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
         $names = array_values(array_filter(
             array_merge($this->pendingInstall, $this->pendingClean),
-            fn (string $pkgName): bool => $this->canInstallName($pkgName),
+            fn (string $pkgName): bool => $this->rules->canInstallName($pkgName, $this->extensions, $this->trustedIds),
         ));
 
         $this->reset(['pendingInstall', 'pendingClean']);
@@ -779,7 +778,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
         $names = array_values(array_filter(
             $names,
-            fn (string $pkgName): bool => $this->canInstallName($pkgName),
+            fn (string $pkgName): bool => $this->rules->canInstallName($pkgName, $this->extensions, $this->trustedIds),
         ));
 
         if ($names === []) {
@@ -863,55 +862,25 @@ new #[Title('Sources')] class extends AdultContentPage
     }
 
     /**
-     * The strip's views: the four slices of the extension catalogue, and after
-     * them the Migrate view, which is not a slice but reads at the same width.
-     *
-     * Built here rather than inline in the template because the template needs a
-     * plain PHP string to interpolate into a component tag's attribute. Blade
-     * compiles `{{ }}` inside one but does not compile `@js()`, which is why the
-     * earlier version of this page threw "Invalid or unexpected token" in Alpine
-     * the moment any of these controls was clicked.
+     * The strip's views, kept as a delegate because the action guard reads them.
      *
      * @return array<string, string>
      */
     #[Computed]
     public function views(): array
     {
-        return [
-            'installed' => (string) __('Installed'),
-            'available' => (string) __('Available'),
-            'updates' => (string) __('Updates'),
-            'all' => (string) __('All'),
-            /*
-             * Last: the four above are one family (slices of the catalogue) and
-             * their order is muscle memory. Migrate is another kind of thing the
-             * strip reaches, and at the end it does not disturb the four.
-             */
-            'migrate' => (string) __('Migrate'),
-        ];
+        return $this->formatting->views();
     }
 
     /**
      * The Migrate view's rows: what the reader holds, per source.
-     *
-     * ## Why there is no catch here
-     *
-     * The lens deliberately does not throw when the server is unreachable: the
-     * batch call records the failure and returns what it can, which is the same
-     * measured choice that keeps a reader's 867 titles from becoming an error
-     * page, and `sourceFailure()` hands the reason out. The reason and the rows
-     * come back together, and the view draws exactly one of them.
      *
      * @return array{rows: \Illuminate\Support\Collection<int, array{source_id: string, display_name: string, lang: string, count: int, installed: bool, named: bool, icon: string|null}>, error: string|null}
      */
     #[Computed]
     public function holdings(): array
     {
-        // One instance: the failure is a fact about the read that happened on it.
-        $library = app(Library::class);
-        $rows = $library->holdingsBySource(auth()->id());
-
-        return ['rows' => $rows, 'error' => $library->sourceFailure()];
+        return $this->data->holdings();
     }
 
     /**
@@ -924,7 +893,7 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function localVisible(): bool
     {
-        return app(LocalLibrary::class)->visible();
+        return $this->data->localVisible();
     }
 
     /**
@@ -933,7 +902,7 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function localRows(): array
     {
-        return app(LocalLibrary::class)->rows();
+        return $this->data->localRows();
     }
 
     /**
@@ -942,79 +911,18 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function localSummary(): array
     {
-        return app(LocalLibrary::class)->summary();
+        return $this->data->localSummary();
     }
 
     /**
      * Installed extensions whose sources are not in the mirror yet.
-     *
-     * The picker is built from the local `Source` table, and nothing else on this page
-     * reads the server's source list, so a source can be installed and browsable while the
-     * picker cannot show it. Mirroring after Papyrus's own installs closes the common case,
-     * but not the one that actually produced the report: Suwayomi has an extension
-     * interface of its own, this page's footer tells readers to deal with Suwayomi
-     * directly, and an extension installed there produces no event Papyrus ever sees.
-     *
-     * So the page also says what it knows is missing, which is the only half that can catch
-     * an install Papyrus did not perform.
-     *
-     * Asked of the extension list rather than of the source count on purpose. Both are one
-     * query, but `sources { totalCount }` measured a 185ms median against 29.8ms for the
-     * filtered extension list, and the extension list names the extensions, so the notice
-     * can say which ones rather than how many.
-     *
-     * Empty when the server cannot be asked. A notice claiming sources are missing, printed
-     * because the server was unreachable, is a lie with a button on it.
      *
      * @return array<int, array{name: string, pkg: string}>
      */
     #[Computed]
     public function unmirroredExtensions(): array
     {
-        try {
-            $installed = app(ExtensionManager::class)->extensions(['installed' => true], 200, 0);
-        } catch (SuwayomiException) {
-            return [];
-        }
-
-        if ($installed->isEmpty()) {
-            return [];
-        }
-
-        $mirrored = Source::query()
-            ->installed()
-            ->pluck('extension_pkg_name')
-            ->filter()
-            ->all();
-
-        $missing = [];
-
-        foreach ($installed as $extension) {
-            $pkg = (string) ($extension['pkgName'] ?? '');
-
-            if ($pkg === '' || in_array($pkg, $mirrored, true)) {
-                continue;
-            }
-
-            /*
-             * An adult rated extension the gate is holding back is not drift.
-             *
-             * The notice is about the mirror's lag: the server holds something
-             * this page has not caught up with yet. While the gate is off the
-             * extension is held back as well, and the count under the
-             * catalogue already says how many are, so naming it here too would
-             * be two notices about one extension saying different things. The
-             * notice fires again the moment the gate is on, which is when the
-             * lag starts to matter.
-             */
-            if (! $this->adultContentOn() && ($extension['contentWarning'] ?? null) === Source::NSFW) {
-                continue;
-            }
-
-            $missing[] = ['name' => (string) ($extension['name'] ?? $pkg), 'pkg' => $pkg];
-        }
-
-        return $missing;
+        return $this->data->unmirroredExtensions($this->adultContentOn());
     }
 
     /**
@@ -1037,7 +945,7 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function pinSite(string $site): void
     {
-        $ids = $this->cardSourceIds($site);
+        $ids = $this->data->cardSourceIds($site);
 
         if ($ids === []) {
             return;
@@ -1060,7 +968,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
     public function unpinSite(string $site): void
     {
-        UserSource::setPinnedFor(auth()->id(), $this->cardSourceIds($site), false);
+        UserSource::setPinnedFor(auth()->id(), $this->data->cardSourceIds($site), false);
 
         unset($this->pinnedIds);
 
@@ -1072,37 +980,18 @@ new #[Title('Sources')] class extends AdultContentPage
     }
 
     /**
-     * The sources behind one card, keyed the way {@see browseSites()} keys its
-     * cards: the home_url's bare host, lowercased, and the local bucket for a
-     * source with none. The pin toggles and the badge all ask through this one
-     * derivation, so a card's write and its read can never disagree.
-     *
-     * @return array<int, int>
-     */
-    private function cardSourceIds(string $site): array
-    {
-        $host = $site === 'local' ? null : strtolower($site);
-
-        return Source::query()
-            ->installed()
-            ->get()
-            ->filter(fn (Source $source): bool => $this->hostOf($source->home_url) === $host)
-            ->pluck('suwayomi_source_id')
-            ->all();
-    }
-
-    /**
      * The sources this reader has pinned, as Suwayomi ids.
      *
-     * One query rather than one per card, and the read lives on the model, so this
-     * badge, the health badges and the fanout's rule are all reading the same rows.
+     * One query rather than one per card. The Livewire computed stays so one render
+     * asks once and an action that writes a pin can drop it; the read itself lives on
+     * the data class.
      *
      * @return array<int, int>
      */
     #[Computed]
     public function pinnedIds(): array
     {
-        return UserSource::pinnedSourceIdsFor((int) auth()->id());
+        return $this->data->pinnedIds();
     }
 
     /**
@@ -1114,205 +1003,18 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function isPinnedSite(string $site): bool
     {
-        $pinned = $this->pinnedIds;
-
-        if ($pinned === []) {
-            return false;
-        }
-
-        return array_intersect($this->cardSourceIds($site), $pinned) !== [];
+        return $this->data->isPinnedSite($site, $this->pinnedIds);
     }
 
     /**
      * Installed sources grouped by the site they belong to, for the browse picker.
      *
-     * Grouped by `home_url` for the same reason the health dashboard groups by it: 82
-     * sources are really 16 extensions, and 61 of those 82 are MangaDex language variants.
-     * A flat list would be one scanlation site followed by 61 rows of MangaDex, which is
-     * the problem this grouping exists to solve rather than to describe.
-     *
-     * The group name prefers the site's own name over its host, because "Asura Scans"
-     * reads better than "asurascans.com" and the host is shown underneath for anyone who
-     * wants to know which domain they are about to trust.
-     *
-     * Only installed sources appear. A browse page 404s on an uninstalled one, so listing
-     * it would offer a link that cannot work.
-     *
-     * @return array<int, array{site: string, host: string|null, health_site: string, sources: array<int, array<string, mixed>>}>
+     * @return array<int, array{site: string, host: string|null, health_site: string, sources: array<int, array<string, mixed>>, icon: string|null, health: array{state: string, label: string}|null}>
      */
-    /**
-     * The host to group a source under, or null when it has none worth grouping by.
-     *
-     * Parsed, not stripped. The first version removed the scheme with a regular expression and
-     * took what was left as the host, which is fine until a `home_url` carries a path: measured
-     * across the installed sources, `lhtranslation.net` is published as
-     * `https://lhtranslation.net/manga/?m_orderby=views`, and stripping the scheme left
-     *
-     * ```
-     * lhtranslation.net/manga/?m_orderby=views
-     * ```
-     *
-     * as the group's host. That string was then printed under the site name, so a reader was
-     * shown a query string as though it were a domain, and it was used as the grouping key,
-     * which means the group a source lands in depends on a sort order in someone else's URL. An
-     * extension that changed its default ordering would silently become a second group for the
-     * same site.
-     *
-     * `parse_url` is the answer and the only reason this needed saying: a host is a component of
-     * a URL, and asking for the component is different from deleting the parts you did not want.
-     *
-     * Null for a source with no `home_url`, and for one whose `home_url` is unparseable, since
-     * both mean "no host to group by" and both get the local group rather than a group named
-     * after a malformed string.
-     */
-    private function hostOf(?string $homeUrl): ?string
-    {
-        if ($homeUrl === null || trim($homeUrl) === '') {
-            return null;
-        }
-
-        $host = parse_url(trim($homeUrl), PHP_URL_HOST);
-
-        if (! is_string($host) || $host === '') {
-            return null;
-        }
-
-        return strtolower($host);
-    }
-
     #[Computed]
     public function browseSites(): array
     {
-        /*
-         * The adult rated sources are left out while the gate is off.
-         *
-         * The picker is a door: every card on it opens a source's own
-         * catalogue, which is where that source's manga is. Offering a door
-         * the app has decided not to open is a dead end dressed as a choice,
-         * so the gate applies here as well as on the catalogue and on the
-         * search.
-         */
-        $rows = Source::query()
-            ->installed()
-            ->when(
-                ! $this->adultContentOn(),
-                fn ($q) => $q->where('content_warning', '!=', Source::NSFW),
-            )
-            ->orderBy('display_name')
-            ->get();
-
-        $sites = [];
-
-        foreach ($rows as $source) {
-            $host = $this->hostOf($source->home_url);
-
-            // The local source has no host and must still get a group of its own.
-            $key = $host ?? 'local';
-
-            if (! isset($sites[$key])) {
-                $sites[$key] = [
-                    'site' => $key === 'local'
-                        ? (string) __('On this machine')
-                        : $this->siteName($rows, $key),
-                    'host' => $key === 'local' ? null : $key,
-                    /*
-                     * The health page's own key for this site: the raw
-                     * `home_url`, or `unknown` for a source that publishes
-                     * none. It groups on that value rather than on the host,
-                     * so sending the host lands on nothing.
-                     */
-                    'health_site' => $source->home_url === null || $source->home_url === ''
-                        ? 'unknown'
-                        : (string) $source->home_url,
-                    /*
-                     * One icon for the site, taken from a variant that has one.
-                     *
-                     * `icon_url` has been stored since the catalogue was mirrored and was
-                     * never rendered, which is most of why this list read as flat: fifty
-                     * rows of a name and a count with nothing to tell them apart. It is a
-                     * per extension path, so a site borrows the first one its variants
-                     * offer. The later fill matters because extensions do not all ship an
-                     * icon and the first variant of a site is not reliably the one that does.
-                     */
-                    'icon' => null,
-                    'sources' => [],
-                ];
-            }
-
-            if ($sites[$key]['icon'] === null && $source->icon_url !== null) {
-                $sites[$key]['icon'] = (string) $source->icon_url;
-            }
-
-            $sites[$key]['sources'][] = [
-                'id' => (int) $source->id,
-                'source_id' => (int) $source->suwayomi_source_id,
-                'name' => (string) $source->display_name,
-                'lang' => (string) $source->lang,
-                'latest' => (bool) $source->supports_latest,
-                'icon' => $source->icon_url === null ? null : (string) $source->icon_url,
-            ];
-        }
-
-        foreach ($sites as $key => $site) {
-            $ids = array_values(array_unique(array_map(
-                fn (array $row): int => (int) ($row['source_id'] ?? 0),
-                $site['sources'],
-            )));
-
-            $healthRows = SourceHealth::query()->whereIn('source_id', $ids)->get();
-
-            if ($healthRows->isEmpty()) {
-                $sites[$key]['health'] = null;
-
-                continue;
-            }
-
-            $state = 'healthy';
-
-            foreach ($healthRows as $row) {
-                if ((bool) $row->is_dead || (int) $row->consecutive_failures >= 2) {
-                    $state = 'not-answering';
-
-                    break;
-                }
-            }
-
-            $sites[$key]['health'] = [
-                'state' => $state,
-                'label' => $state === 'healthy' ? __('Healthy') : __('Not answering'),
-            ];
-        }
-
-        // Biggest first, so MangaDex's 61 languages sit last rather than filling the
-        // first screen a reader sees.
-        usort($sites, static fn (array $a, array $b): int => count($b['sources']) <=> count($a['sources']));
-
-        return array_values($sites);
-    }
-
-    /**
-     * The friendliest name for a site, from the source names that share its host.
-     *
-     * A group is keyed by host, so every source on it is the same site and their names
-     * differ only by the language suffix. The suffix is stripped to recover the site name,
-     * which is why MangaDex reads as "MangaDex" rather than "MangaDex (EN)".
-     *
-     * @param  \Illuminate\Support\Collection<int, Source>  $rows
-     */
-    private function siteName(\Illuminate\Support\Collection $rows, string $host): string
-    {
-        $first = $rows->filter(fn (Source $s): bool => $s->home_url !== null && str_contains((string) $s->home_url, $host))->first();
-
-        $name = (string) ($first?->display_name ?? $host);
-        $lang = (string) ($first?->lang ?? '');
-
-        if ($lang !== '' && str_ends_with($name, ' ('.$lang.')')) {
-            return substr($name, 0, -strlen(' ('.$lang.')'));
-        }
-
-        $stripped = (string) preg_replace('/\s*\(([A-Za-z]{2}(?:-[A-Za-z0-9]+)*)\)\s*$/', '', $name);
-
-        return $stripped !== '' ? $stripped : $host;
+        return $this->data->browseSites($this->adultContentOn());
     }
 
     /**
@@ -1357,7 +1059,7 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function stores(): Collection
     {
-        return ExtensionStore::query()->orderBy('name')->get();
+        return $this->data->stores();
     }
 
     /**
@@ -1366,61 +1068,23 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function trustedIds(): array
     {
-        return app(ExtensionManager::class)->trustedStoreIds(auth()->user());
+        return $this->data->trustedIds();
     }
 
     /**
      * The catalogue as one read: the rows, the count, or why neither could be had.
-     *
-     * One try for both, because a failure here is one fact the page tells once; two
-     * computeds catching independently would each hold half of it and need to agree
-     * on the other half. `extensions()` and `total()` stay the names the page calls.
-     * This is where SuwayomiException is caught so the page renders with the reason
-     * instead of answering 500, which is what the sandbox run of 2026-10-15 measured:
-     * the guest's Suwayomi was up and answering, and this page showed the app's 500
-     * page while all 58 checks passed.
      *
      * @return array{extensions: Collection<int, array<string, mixed>>, total: int, error: string|null, hidden: int}
      */
     #[Computed]
     public function catalogue(): array
     {
-        try {
-            $extensions = app(ExtensionManager::class)->extensions(
-                $this->filters(),
-                self::PER_PAGE,
-                ($this->page - 1) * self::PER_PAGE,
-            );
-
-            $total = app(ExtensionManager::class)->extensionCount($this->filters());
-
-            /*
-             * How many installed extensions the gate is holding back.
-             *
-             * The Installed slice hides the adult-rated ones while the gate is
-             * off, so the count above is the count of what is listed and the
-             * reader is told how many are not. Without this the page would say
-             * "1 extension" on a server that holds two, which is the same lie
-             * as an empty library reading as an empty one.
-             *
-             * It is a second count rather than a subtraction because the slice
-             * with the gate on carries no rating filter at all, and there is
-             * no second number to subtract from. Measured on 2026-10-21: the
-             * count costs 25 to 38 ms against the live server.
-             */
-            $hidden = 0;
-
-            if ($this->view === 'installed' && ! $this->adultContentOn()) {
-                $hidden = app(ExtensionManager::class)->extensionCount([
-                    'installed' => true,
-                    'content' => [Source::NSFW],
-                ]);
-            }
-        } catch (SuwayomiException $e) {
-            return ['extensions' => new Collection(), 'total' => 0, 'error' => $e->getMessage(), 'hidden' => 0];
-        }
-
-        return ['extensions' => $extensions, 'total' => $total, 'error' => null, 'hidden' => $hidden];
+        return $this->data->catalogue(
+            $this->filters(),
+            $this->view,
+            $this->page,
+            $this->adultContentOn(),
+        );
     }
 
     /**
@@ -1429,64 +1093,30 @@ new #[Title('Sources')] class extends AdultContentPage
     #[Computed]
     public function extensions(): Collection
     {
-        return $this->catalogue['extensions'];
+        return $this->data->extensions($this->catalogue);
     }
 
     #[Computed]
     public function total(): int
     {
-        return $this->catalogue['total'];
+        return $this->data->total($this->catalogue);
     }
 
     #[Computed]
     public function lastPage(): int
     {
-        return max(1, (int) ceil($this->total / self::PER_PAGE));
+        return $this->formatting->lastPage($this->total, self::PER_PAGE);
     }
 
     /**
      * The languages the catalogue holds, with how many sources each one has.
-     *
-     * ## Why this asks the server again rather than reading the page's own rows
-     *
-     * Because the page's rows are one page of fifty out of a thousand, and a
-     * language whose sources all sit on page nine would not be on the row of
-     * pills at all. A reader who has switched a language off and then wants it
-     * back has to be able to find it, and it has to be there before they
-     * switch it off in the first place.
-     *
-     * The count is the number of sources in that language under the filters
-     * the reader can see, so a pill reads "English 317" and the reader knows
-     * what turning it on would give them. The language filter itself is left
-     * out of the ask, so the pills do not disappear as the reader switches
-     * them off.
-     *
-     * The name is the catalogue's own code read through the one map that
-     * names language codes, so a pill says "Portuguese (Brazil)" rather than
-     * "pt-BR" and the raw code is still on it for anyone who wants to match it
-     * against the package name.
      *
      * @return array<int, array{code: string, name: string, count: int, on: bool}>
      */
     #[Computed]
     public function catalogueLanguages(): array
     {
-        try {
-            $languages = app(ExtensionManager::class)->extensionLanguages($this->filtersWithoutLanguage());
-        } catch (SuwayomiException) {
-            // A language list that cannot be read is an empty list, not a page
-            // that answers 500. The catalogue below it is still readable, and
-            // a reader who cannot switch a language off is not worse off than
-            // a reader whose server is down.
-            return [];
-        }
-
-        return array_map(fn (array $language): array => [
-            'code' => $language['code'],
-            'name' => LanguageName::name($language['code']),
-            'count' => $language['count'],
-            'on' => ! in_array($language['code'], $this->lang, true),
-        ], $languages);
+        return $this->data->catalogueLanguages($this->filtersWithoutLanguage(), $this->lang);
     }
 
     /**
@@ -1564,115 +1194,17 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     public function isTrusted(array $extension): bool
     {
-        $store = app(ExtensionManager::class)->storeFor($extension);
-
-        return $store !== null && in_array($store->id, $this->trustedIds, true);
-    }
-
-    public function canInstallName(string $pkgName): bool
-    {
-        $row = $this->rowFor($pkgName);
-
-        return $row !== null
-            && ($row['isInstalled'] ?? false) !== true
-            && $this->isTrusted($row);
+        return $this->rules->isTrusted($extension, $this->trustedIds);
     }
 
     /**
-     * Whether this installed extension can be updated from here.
-     *
-     * Same three facts the row was rendered from, re-checked in the action: the
-     * list predates the click, so the badge is not evidence.
-     */
-    public function canUpdateName(string $pkgName): bool
-    {
-        $row = $this->rowFor($pkgName);
-
-        return $row !== null
-            && ($row['isInstalled'] ?? false) === true
-            && ($row['hasUpdate'] ?? false) === true
-            && $this->isTrusted($row);
-    }
-
-    /**
-     * The catalogue row for one package name, or null when the list predates it.
-     *
-     * Every install and update guard reads the row again for the same reason this
-     * page re-checks trust: the rendered list is not evidence.
-     *
-     * @return array<string, mixed>|null
-     */
-    private function rowFor(string $pkgName): ?array
-    {
-        return $this->extensions->firstWhere('pkgName', $pkgName);
-    }
-
-    /**
-     * The pressed names whose site the notice list covers, in the pressed order.
-     *
-     * @param array<int, string> $names
-     * @return array<int, string>
-     */
-    private function flaggedAmong(array $names): array
-    {
-        return array_values(array_filter(
-            $names,
-            fn (string $pkgName): bool => $this->noticeFor($this->rowFor($pkgName) ?? []) !== null,
-        ));
-    }
-
-    /**
-     * One row per name the warning asks about, read from the list at render time
-     * rather than captured at ask time, so the dialog states what the config says
-     * now rather than what it said when the press dispatched.
-     *
-     * Names left out by a catalogue refresh between ask and render are carried by
-     * the pages' pending state and installed on confirm, but they have nothing to
-     * warn about once their notice is gone.
+     * One row per name the warning asks about.
      *
      * @return array<int, array<string, string>>
      */
     public function warningRows(): array
     {
-        $rows = [];
-
-        foreach ($this->pendingInstall as $pkgName) {
-            $row = $this->rowFor($pkgName);
-
-            if ($row === null) {
-                continue;
-            }
-
-            $notice = $this->noticeFor($row);
-
-            if ($notice === null) {
-                continue;
-            }
-
-            $rows[] = [
-                'name' => (string) $row['name'],
-                'icon' => $notice['icon'],
-                'text' => $notice['text'],
-            ];
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Trust is re-checked here, not just for the button. The list was rendered
-     * before the user changed their mind, so the tick is not evidence.
-     *
-     * @return array<int, string>
-     */
-    private function installableFromSelection(): array
-    {
-        $available = $this->extensions
-            ->filter(fn (array $row): bool => ($row['isInstalled'] ?? false) !== true && $this->isTrusted($row))
-            ->pluck('pkgName')
-            ->all();
-
-        return array_values(array_intersect($this->selected, $available));
+        return $this->rules->warningRows($this->pendingInstall, $this->extensions);
     }
 
     /**
@@ -1680,64 +1212,29 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     private function filters(): array
     {
-        $filters = match ($this->view) {
-            'installed' => ['installed' => true],
-            'available' => ['installed' => false, 'obsolete' => false],
-            'updates' => ['has_update' => true, 'installed' => true],
-            default => [],
-        };
-
-        if (trim($this->name) !== '') {
-            $filters['name'] = trim($this->name);
-        }
-
-        /*
-         * The rating, in two different shapes for two different slices.
-         *
-         * The Installed slice carries no rating filter at all while the gate is
-         * on: an extension is either on the server or it is not, and a rating
-         * belongs to the reader rather than to a list of what happens to be
-         * present. While the gate is off it carries the gate's own allow list,
-         * because an adult-rated extension that is installed is one the reader
-         * has not agreed to see, and the count of what is hidden is named
-         * beside the list.
-         *
-         * The other three slices carry what the reader chose, narrowed by the
-         * gate. The gate is applied in the query and not only here, so the
-         * rating cannot come back through the address bar.
-         */
-        if ($this->view === 'installed') {
-            $filters['content'] = $this->adultContentOn()
-                ? []
-                : [Source::SAFE, Source::MIXED];
-        } else {
-            $filters['content'] = $this->visibleRatings($this->content);
-        }
-
-        if ($this->lang !== []) {
-            $filters['lang'] = $this->lang;
-        }
-
-        return $filters;
+        return $this->filter->filters(
+            $this->view,
+            $this->name,
+            $this->lang,
+            $this->visibleRatings($this->content),
+            $this->adultContentOn(),
+        );
     }
 
     /**
      * The same filters, without the reader's language choice.
      *
-     * For the one thing that has to answer without it: which languages there
-     * are. A list of pills that was asked for the languages still in the
-     * result would lose a language the moment the reader switched it off, and
-     * a language that cannot be seen cannot be switched back on.
-     *
      * @return array<string, mixed>
      */
     private function filtersWithoutLanguage(): array
     {
-        $filters = $this->filters();
-
-        unset($filters['lang']);
-
-        return $filters;
+        return $this->filter->filtersWithoutLanguage(
+            $this->view,
+            $this->name,
+            $this->lang,
+            $this->visibleRatings($this->content),
+            $this->adultContentOn(),
+        );
     }
 }; ?>
 
