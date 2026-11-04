@@ -1,0 +1,28 @@
+{
+    "version": "1.5.5",
+    "released": "2026-11-04T22:22:56+00:00",
+    "commit": "e49dbdf",
+    "requires": {
+        "suwayomi": ">=2.4.0",
+        "jvm": ">=25.0.5"
+    },
+    "signed": false,
+    "signature": null,
+    "toolchain": {
+        "inno_setup": "6.7.3"
+    },
+    "artifacts": [
+        {
+            "file": "Papyrus-1.5.5-portable.zip",
+            "sha256": "9a204f6fd232d745513c1d44295ac968d48404744c4e81f5e1c81a0e38e5b1d2",
+            "size": 299489898,
+            "commit": "e49dbdf"
+        },
+        {
+            "file": "Papyrus-1.5.5-setup.exe",
+            "sha256": "7475b649e346bcf91543c67eb28f704002ed633f4af5c976dbac78ed2286161d",
+            "size": 257590598,
+            "commit": "e49dbdf"
+        }
+    ]
+}

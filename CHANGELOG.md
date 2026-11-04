@@ -37,6 +37,10 @@ never names, links or ships a store URL. `40178ef`
 signing key and install buttons remain usable; the tour advances when the action succeeds.
 `40178ef`
 
+**Interactive tour steps can be minimized.** The Available step covered the extension
+grid in a short window; a Minimize control collapses the card to a step pill that can be
+reopened, while the modal steps keep the full card and focus trap. `e49dbdf`
+
 ### Known limits
 
 - **The tour auto-starts for the install owner only.** A reader account cannot add a store

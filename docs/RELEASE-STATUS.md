@@ -2,12 +2,29 @@
 
 Updated 2026-11-04.
 
-- **1.5.4 is built from the final release tree.** It was built from `730225f` in a
-  clean worktree, tagged locally as `v1.5.4`, and has not been pushed or published. The installer is 245.6 MB,
-  SHA-256 `e5bf56bbf6a6e67bc2626d6175c866206f0fab08d31678b4dc6eae8901386f27`; the
-  portable is 285.6 MB, SHA-256
+- **1.5.5 is built and walked, not published.** It was built from `e49dbdf` on
+  `release/1.5.5`. The installer is 257,590,598 bytes, SHA-256
+  `7475b649e346bcf91543c67eb28f704002ed633f4af5c976dbac78ed2286161d`; the portable is
+  299,489,898 bytes, SHA-256
+  `9a204f6fd232d745513c1d44295ac968d48404744c4e81f5e1c81a0e38e5b1d2`. The full suite
+  passed 3,001 tests with 9,491 assertions. A host portable walk on 2026-11-04 passed
+  steps 1 to 9 on the final build: empty library, store, trust, Available with Minimize,
+  MangaTaro install, search One Piece, source chooser, series, Add to library, a real
+  chapter 1 page, Done, and no tour after reload; the database recorded
+  `tour_completed_at`. Replay from Settings > FAQ restarted at step 2 and Skip completed
+  it again. An earlier guest run on the pre-fix installer proved steps 1 to 5 and found
+  the Available card covering the grid; `e49dbdf` adds the Minimize control. The final
+  installer has not been through the manual Windows Sandbox gate, and the tag, push and
+  publication await the owner's approval.
+- **1.5.4 is published.** It was built from `730225f`, recorded and tagged at
+  `b37a6de` as `v1.5.4`, and published on 2026-11-04. The installer is 257,582,579
+  bytes, SHA-256
+  `e5bf56bbf6a6e67bc2626d6175c866206f0fab08d31678b4dc6eae8901386f27`; the portable is
+  299,480,441 bytes, SHA-256
   `e53b5c859f649db1aca8c4057a5fa12cf7f4c48e10c7836c4b751f5fd2877748`. Both name
-  `730225f`, and [`releases/1.5.4.json`](../releases/1.5.4.json) carries both.
+  `730225f`, and [`releases/1.5.4.json`](../releases/1.5.4.json) carries both. The
+  release is https://github.com/graynb25/papyrus/releases/tag/v1.5.4 and CI run
+  `41895466635` passed in 15m5s.
 - **The 1.5.4 final-build manual sandbox passed on 2026-11-04.** The guest verified the
   installer at 257,582,579 bytes, installed per user, registered, added a store, trusted
   its signing key, installed MangaTaro, searched One Piece (14 results from 2 of 2
@@ -73,9 +90,7 @@ Updated 2026-11-04.
   `papyrus rollback`; the installer refuses a downgrade unless it is run with
   `/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`. 1.5.3 carries
   it. The About page links the release Atom feed.
-- **Still open for 1.5.4.** Pushing the local `v1.5.4` tag, publication approval, the
-  automated Windows Sandbox gate on this build, the upgrade and rollback drills, the
-  portable and uninstall drills, and the ahead-schema refusal. The clean-worktree build
-  is done from `730225f`; the tag is local on the release record commit. Do not push or
-  publish without the owner's explicit approval.
+- **Still open for 1.5.4.** The automated Windows Sandbox gate on this build, the
+  upgrade and rollback drills, the portable and uninstall drills, and the ahead-schema
+  refusal. Publication is done.
 
