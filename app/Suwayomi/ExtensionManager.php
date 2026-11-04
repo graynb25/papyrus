@@ -16,7 +16,7 @@ use Illuminate\Support\Collection;
  * acting on an individual extension, and the trust decision, which is per-user
  * because it is a decision about what one person is willing to execute.
  *
- * Filtering happens in Suwayomi, not here. The Keiyoushi store holds 1,379
+ * Filtering happens in Suwayomi, not here. A community store held 1,379
  * extensions, and every web client that pages a catalogue through the browser
  * is the reason they feel slow. ExtensionFilterInput gives us isInstalled,
  * hasUpdate, isObsolete, contentWarning and a case insensitive name match, so

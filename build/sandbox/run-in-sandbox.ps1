@@ -843,7 +843,7 @@ if ($registerToken -ne '') {
     # sentence and appears on no other page; the callout is the app's own words for "the catalogue
     # could not be read", so its absence is the app having read Suwayomi. A 500 page carries
     # neither.
-    $hasEyebrow = $sources.Body -match 'Keiyoushi, on your terms'
+    $hasEyebrow = $sources.Body -match 'Sources, on your terms'
     $hasErrorMarkers = $sources.Body -match 'Server Error|Whoops|Stack trace'
     $hasCallout = $sources.Body -match 'The extension list did not load'
 
@@ -860,12 +860,13 @@ if ($registerToken -ne '') {
 #
 # Run 15 passed every check with an empty catalogue: `/sources` rendered its eyebrow because the
 # page can render without a store, an extension or a chapter. WSL run 3 proved the reader path on
-# Linux, which is a different PHP, JVM and trust store. This section adds the public Keiyoushi
-# store, installs one English extension, mirrors the catalogue, fetches a manga and a chapter, and
-# reads a page through the app's authenticated proxy. A page with an image content type and real
-# bytes is the evidence; a 200 on `/sources` alone is not.
+# Linux, which is a different PHP, JVM and trust store. This section adds a public community
+# store's protobuf index, installs one English extension, mirrors the catalogue, fetches a manga
+# and a chapter, and reads a page through the app's authenticated proxy. A page with an image
+# content type and real bytes is the evidence; a 200 on `/sources` alone is not.
 #
-# The store and extension are public and named. They are not shipped, and the guest is disposable.
+# The store URL is supplied by the host and is not part of the tree. The extension is public. The
+# guest is disposable.
 # The checks are ordered so a failure names the step that stopped the path.
 $graphqlUrl = "http://127.0.0.1:$suwayomiPort/api/graphql"
 
@@ -961,7 +962,22 @@ function Invoke-SourceProbe {
         return
     }
 
-    $storeUrl = 'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb'
+    # The host writes this into the results mount before launching. The tree carries no store
+    # URL, because the app must not name or ship one, and the gate still needs a real catalogue.
+    $storeUrl = ''
+    $storeUrlPath = 'C:\results\store-url.txt'
+
+    if (Test-Path -LiteralPath $storeUrlPath) {
+        $storeUrl = (Get-Content -LiteralPath $storeUrlPath -Raw -ErrorAction SilentlyContinue)
+        if ($null -ne $storeUrl) { $storeUrl = $storeUrl.Trim() }
+    }
+
+    if ($storeUrl -eq '') {
+        Check 'the install added the extension store' $false 'no store URL was supplied to the gate'
+        Check 'a source page was read through the app proxy' $false 'no store URL was supplied'
+        return
+    }
+
     $artisan = Join-Path $root 'artisan'
 
     $store = Invoke-Captured $launcherPhp @(

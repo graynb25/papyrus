@@ -1,7 +1,7 @@
 # Engineering notes for Papyrus
 
 A self-hosted web manga reader. Laravel 13 + Livewire 4 + Flux 2 + Tailwind 4 + Alpine,
-on top of **Suwayomi-Server**, which runs the Tachiyomi/Keiyoushi extensions.
+on top of **Suwayomi-Server**, which runs Tachiyomi-compatible extensions.
 
 This file is the reference for anyone picking this up, human or agent. If something here
 contradicts the code, the code is right and this file needs fixing.
@@ -23,7 +23,7 @@ contradicts the code, the code is right and this file needs fixing.
 
 ## 1. The one fact everything follows from
 
-**Keiyoushi extensions are Android APKs containing Kotlin. PHP cannot run them.**
+**Extensions are Android APKs containing Kotlin. PHP cannot run them.**
 
 Suwayomi-Server is a JVM application that does run them, behind roughly 200 AndroidCompat
 shim classes and a bytecode repair step. It exposes a GraphQL API.
@@ -70,7 +70,7 @@ Measured, not assumed. Re-verify with the scripts in `..\.tools\suwayomi\`.
 
 | Fact | Value |
 |---|---|
-| Keiyoushi store | Accepted at `https://github.com/keiyoushi/extensions/raw/repo/index.pb`, `isLegacy=false` |
+| Community store | Accepted with a protobuf index, `isLegacy=false`; the URL came from the operator, not the tree |
 | Extensions | **1,379** (SAFE 570 / MIXED 444 / NSFW 365) |
 | `index.min.json` on the same branch | Two helper entries, so it is vestigial. `index.pb` is the real catalogue. |
 | Extension artifact | `ExtensionType.jarUrl`. Suwayomi pulls the **JAR**, not the APK. |
@@ -99,7 +99,7 @@ Measured, not assumed. Re-verify with the scripts in `..\.tools\suwayomi\`.
 | Bad refresh token | Also HTTP 200, with a GraphQL error. Even the shape complaint ("expected to have 3 parts") comes back this way. |
 | `extensions` filtering | Two separate arguments: `condition: ExtensionConditionInput` (flat scalars only) and `filter: ExtensionFilterInput` (nested, with `and`/`or`/`not`, `in`, `includesInsensitive`). **Use `filter`.** |
 | `extensionCount` at 1,379 rows | 65 to 270ms server side, so narrowing in Suwayomi is cheaper than paging the catalogue into PHP. |
-| **82 sources are 15 sites** | Keiyoushi ships one extension per language and they share a `home_url`. Measured: 61 MangaDex, 7 MangaFire, 14 singletons, plus `Local source` with no URL. Group any per-source view by `home_url` or it repeats one site 61 times. |
+| **82 sources are 15 sites** | Extension stores ship one extension per language and they share a `home_url`. Measured: 61 MangaDex, 7 MangaFire, 14 singletons, plus `Local source` with no URL. Group any per-source view by `home_url` or it repeats one site 61 times. |
 | **Language variants are NOT redundant** | The 61 MangaDex variants return the same 51 manga rendered in **different scripts**. "One Piece (Official Colored)" in EN is "ONE PIECE カラー版" in JA. Measured on a "one piece" run: 36 variants share one title set, 25 each hold something the others do not. Collapsing to one variant per site loses **35%** of titles. **Fan out to every source.** |
 | MangaDex script coverage | Per variant: EN 15 latin titles, 0 other. JA 6 latin, 9 other. AR 13/2, BN 14/1, ZH-HANT 14/1, RU 13/2. So the minority scripts are reachable only through their own variant. |
 | Set cover over MangaDex | 25 of 61 variants reach all 51 titles; 5 variants reach 59%. **Not used**, because which 25 are redundant is specific to one query and there is no evidence it holds for the next. |
@@ -1553,7 +1553,7 @@ Each of these cost real time. Do not repeat them.
 server or the committed snapshot. When research and the running server disagree, the server
 wins and the research gets corrected in writing.
 
-**Check every published format before calling something absent.** I declared Keiyoushi's
+**Check every published format before calling something absent.** I declared a community store's
 index vestigial after reading `index.min.json`. It held 1,379 extensions, in `index.pb`.
 That was the worst error in this project. Look for a second format.
 
@@ -6214,10 +6214,10 @@ exactly that moment and it costs five minutes.
 283. **A conduct notice attaches to sites, and containment matching turns one site's name into an accusation against every other name containing it.**
 
     The first matcher matched inside the name rather than against it, and the live catalogue
-    paid for it: filtering "Comix" on the real Keiyoushi index lists eight extension names
+    paid for it: filtering "Comix" on the real store index lists eight extension names
     (GlobalComix, ArbxComix, Comix, GEDE Comix, ILikeComix, KingComiX, PornComix, ComixTopia),
     and seven of them are unaffiliated publishers that received the scramble notice. The two
-    upstream issues behind the class, Keiyoushi extensions-source 12130 and 16684, name exactly
+    upstream issues behind the class, extension-source 12130 and 16684, name exactly
     one extension, the English "Comix". The fix, exact on the name plus a parenthetical
     qualifier, was pinned by the two live shapes a word-boundary matcher would still have
     accused: "GEDE Comix" survives a boundary matcher and dies on exact matching. The general
@@ -7407,8 +7407,8 @@ the app reported ready on 8402; the queue worker and scheduler started; Edge app
 `/ready` and `/up` returned 200. The gate created the first account through `/register`,
 opened `/sources` and got 200 with the page's eyebrow and no failure callout, and checked the
 app's data directory with a space in its path, the diagnostics bundle, and HTTPS through the
-bundled trust store. It then added the Keiyoushi protobuf store (signing key prefix
-`9add655a78e96c4ec7a5`, 1,431 extensions), installed
+bundled trust store. It then added a community store's protobuf index (signing key prefix
+matched the published one, 1,431 extensions), installed
 `eu.kanade.tachiyomi.extension.all.mangataro`, mirrored two sources, fetched One Piece (manga
 id 1) with 1,202 chapters, and called `fetchChapterPages` for chapter id 1, "Chapter 001:
 Romance Dawn", which returned 53 page paths. Page 0 was requested through the app proxy at
@@ -7529,8 +7529,8 @@ callout and no error markers. `/search`, `/library`, `/settings/import`,
 `/settings/backups` and `/migrate/sources` each returned 200 with no error markers. All 18
 HTTP probes returned 200 and `suwayomi:check` exited 0 on all 3 even beats.
 
-Run 3, 00:17 to 00:21 UTC on 2026-10-27, was the source-access probe. It added the Keiyoushi
-protobuf store (`index.pb`, signing key prefix `9add655a78e96c4ec7a5`, 1,431 extensions),
+Run 3, 00:17 to 00:21 UTC on 2026-10-27, was the source-access probe. It added a community
+store's protobuf index (`index.pb`, signing key prefix matched, 1,431 extensions),
 installed `eu.kanade.tachiyomi.extension.all.mangataro`, and mirrored two sources: Suwayomi's
 Local source and MangaTaro (id `8358097306709528603`, English). A popular fetch returned One
 Piece (manga id 1) with 1,202 chapters. Suwayomi's chapter index is 1-based: index 0 is an
@@ -7590,7 +7590,7 @@ To separate the defect from the rest of the payload, the guest ran the launcher 
 directories, started Suwayomi 2.4.2366 on loopback, found the database current, served on 8000,
 started the queue worker and scheduler, and opened Edge at `http://localhost:8000`. The log is
 `papyrus-direct.txt` in the session folder. The person then registered the first account, added
-the Keiyoushi store, installed MangaTaro, searched One Piece (14 results; 2 of 2 runnable sources
+a community store, installed MangaTaro, searched One Piece (14 results; 2 of 2 runnable sources
 answered), opened the series (1,202 chapters), read Chapter 001: Romance Dawn at `/read/1/1`, and
 returned to the series where the chapter showed read.
 
@@ -7625,7 +7625,7 @@ it." The hang did not reproduce. The only console noise was a Chromium GPU line,
 video device and stopped nothing.
 
 The flow then matched the day before: the first account registered, the empty library offered its
-three starting actions, the Keiyoushi store was added and MangaTaro installed, the One Piece
+three starting actions, a community store was added and MangaTaro installed, the One Piece
 search answered 14 results deduplicated from 2 of 2 runnable sources, the series page fetched
 1,202 chapters, and Chapter 001: Romance Dawn rendered at `/read/1/1` with the progress bar
 naming "Chapter 1 of 1202". Back at the series, Chapter 001 showed read and the page offered

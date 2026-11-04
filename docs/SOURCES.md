@@ -41,17 +41,19 @@ An extension store has:
 
 ### Where to find one
 
-- **Suwayomi publishes the official store.** Its documentation names the current index URL. Start
-  there if you want the smallest set of sources the project maintains.
-- **Keiyoushi is the well-known community store** and carries far more sources. Its project page
-  publishes the index URL. It is run by volunteers, not by the Suwayomi project.
+Papyrus does not link or recommend a store, and it ships no URL. That is deliberate. Which
+extension repository to trust is your decision, and a project that ships a name is making that
+decision for you.
+
+- **Suwayomi publishes an official store.** Its own documentation names the current index URL. It
+  carries the smallest set of sources the Suwayomi project maintains.
+- **Community stores exist**, run by volunteers rather than by the Suwayomi project. They usually
+  carry far more sources, with uneven quality. Find one through its own project page, and read who
+  publishes it before you paste anything.
 
 Both work the same way. There is no wrong answer, only a trade: official is fewer sources and more
-likely maintained; community is many more sources with uneven quality.
-
-Papyrus deliberately does not hardcode either. Shipping a list would mean deciding on your behalf
-which projects to trust and which to leave out, and that decision belongs to whoever runs the server.
-If you are self-hosting for yourself, that is you.
+likely maintained; community is many more sources with uneven quality. What matters is that you
+found the repository yourself and can check its signing key against what its publisher says.
 
 ---
 

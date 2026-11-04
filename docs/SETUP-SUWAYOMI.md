@@ -131,10 +131,13 @@ reminder of the guard that was once planned.
 **We ship no curated source list, by design.** The user pastes their own repository URLs in the
 app (Phase 1), and Suwayomi fetches the catalogue from there.
 
-Keiyoushi, the main community repository, publishes its index in **protobuf** at
-`https://github.com/keiyoushi/extensions/raw/repo/index.pb`, gzip-compressed, ~696 KB decompressed,
-containing ~1,400 extensions, and growing. The sibling `index.min.json` on the same branch holds only two helper
-entries and is a leftover; **`index.pb` is the real catalogue and what Mihon reads.**
+A store publishes its catalogue as an index file, and the URL must point at that file rather than
+the repository root. The largest community store measured for this project publishes a
+**protobuf** index at `index.pb`, gzip-compressed, ~696 KB decompressed, containing ~1,400
+extensions and growing.
+A sibling `index.min.json` on the same branch holds only two helper entries and is a leftover;
+**the protobuf index is the real catalogue and what Mihon reads.** Papyrus does not name the store
+or ship its URL: use the index URL published by whichever repository you choose to trust.
 
 We deliberately do *not* parse that file ourselves. Suwayomi models `ExtensionStoreType` with
 `indexUrl`, `extensionListUrl` and a `signingKey`, and exposes `addExtensionStore`,

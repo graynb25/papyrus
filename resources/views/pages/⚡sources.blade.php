@@ -67,8 +67,8 @@ new #[Title('Sources')] class extends AdultContentPage
     /**
      * Which slice of the catalogue to show.
      *
-     * Installed is the default rather than everything, because the Keiyoushi
-     * store carries 1,379 extensions and "everything" is a number, not a view.
+     * Installed is the default rather than everything, because a community store
+     * carries 1,379 extensions and "everything" is a number, not a view.
      */
     #[Url(as: 'view', except: 'installed')]
     public string $view = 'installed';
@@ -78,7 +78,7 @@ new #[Title('Sources')] class extends AdultContentPage
      *
      * ## Why the list is what is left out and not what is wanted
      *
-     * The catalogue the Keiyoushi store ships is one extension per language,
+     * The catalogue a community store ships is one extension per language,
      * and it held 1,443 of them across 24 languages on 2026-10-21, so a reader
      * who reads two languages is looking at twenty-two they have no use for.
      *
@@ -194,8 +194,8 @@ new #[Title('Sources')] class extends AdultContentPage
          *
          * Backward: the Installed tab must carry no content filter at all. An
          * extension is either on the server or it is not, and a rating belongs to
-         * the reader rather than to a list of what happens to be present. Keiyoushi
-         * currently ships no NSFW extension among the installed set, so this
+         * the reader rather than to a list of what happens to be present. The store measured
+         * here currently ships no NSFW extension among the installed set, so this
          * hides nothing today, which is exactly why it needs a test rather than
          * a look.
          *
@@ -467,7 +467,7 @@ new #[Title('Sources')] class extends AdultContentPage
      * That shape is reachable from both directions: the store was added on a
      * machine whose fetch failed at add time, or it was mirrored earlier while
      * the server still held nothing (this checkout's own reader trusted
-     * Keiyoushi days before its catalogue was ever fetched). Trusting is then
+     * a community store days before its catalogue was ever fetched). Trusting is then
      * the first action left, so trust fetches, but only then. A server that
      * already holds the catalogue is left alone: re-reading more than a
      * thousand extension rows to announce a trust state spends upstream for
@@ -1259,7 +1259,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
 <div class="w-full space-y-8" x-on:open-install-warning.window="$dispatch('modal-show', { name: 'install-warning' })" x-on:close-install-warning.window="$dispatch('modal-close', { name: 'install-warning' })">
     <x-page.header back="{{ route('library') }}" :back-label="__('Back to your library')">
-        <x-slot:eyebrow>{{ __('Keiyoushi, on your terms.') }}</x-slot:eyebrow>
+        <x-slot:eyebrow>{{ __('Sources, on your terms.') }}</x-slot:eyebrow>
         <x-slot:title>{{ __('Sources') }}</x-slot:title>
     </x-page.header>
 
@@ -1760,7 +1760,7 @@ new #[Title('Sources')] class extends AdultContentPage
                     </p>
 
                     <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {{ __('The index file itself, not the repository root. Keiyoushi publishes protobuf at index.pb.') }}
+                        {{ __('The index file itself, not the repository root. It is usually named index.pb or index.min.json.') }}
                     </p>
                 </div>
 
@@ -1816,7 +1816,7 @@ new #[Title('Sources')] class extends AdultContentPage
 
             {{--
                 One press for the whole update set, which is the reason the
-                Updates view exists at all: Keiyoushi ships updates constantly,
+                Updates view exists at all: a community store ships updates constantly,
                 and forty of them is not a queue a reader should walk.
             --}}
             @if ($view === 'updates' && $this->total > 0)

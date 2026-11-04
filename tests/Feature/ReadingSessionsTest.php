@@ -61,7 +61,7 @@ class ReadingSessionsTest extends TestCase
             'suwayomi_source_id' => self::ASURA,
             'name' => 'Asura Scans (EN)',
             'display_name' => 'Asura Scans (EN)',
-            // Not nullable, and named after the Keiyoushi package rather than the site, which
+            // Not nullable, and named after the extension package rather than the site, which
             // is why a source row cannot be written without it even in a test.
             'extension_pkg_name' => 'tachiyomi-en.asurascans',
             'home_url' => 'https://asurascans.com',

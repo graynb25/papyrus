@@ -35,7 +35,8 @@
 
 param(
     [switch]$NoLaunch,
-    [ValidateSet('C', 'D')][string]$Drive = 'D'
+    [ValidateSet('C', 'D')][string]$Drive = 'D',
+    [string]$StoreUrl = $env:PAPYRUS_TEST_STORE_URL
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,6 +108,23 @@ if ($hash -ne $sidecarHash) {
 Say "ok   archive is $version, $size bytes, sha256 $hash"
 Say "ok   layout is $driveLetter ($driveKind), app $appRoot, data $dataRoot"
 
+# The portable run has to prove the source flow, and the tree must not carry a store URL. The
+# host supplies one and the guest reads it from the results mount.
+$StoreUrl = if ($null -eq $StoreUrl) { '' } else { $StoreUrl.Trim() }
+
+if ($StoreUrl -eq '') {
+    Say 'REFUSING TO LAUNCH: no store index URL was supplied.'
+    Say 'Pass -StoreUrl, or set PAPYRUS_TEST_STORE_URL, to the index URL of a repository you trust.'
+    exit 1
+}
+
+if ($StoreUrl -notmatch '^https?://') {
+    Say 'REFUSING TO LAUNCH: the store index URL must start with http:// or https://.'
+    exit 1
+}
+
+Say 'ok   store index URL supplied by the caller'
+
 # A new folder every time. The suffix is only for two launches in the same second.
 $base = 'session-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + $driveLetter.ToLowerInvariant()
 $session = Join-Path $resultsRoot $base
@@ -129,6 +147,8 @@ New-Item -ItemType Directory -Force -Path $session | Out-Null
     "app_root=$appRoot"
     "data_root=$dataRoot"
 ) | Set-Content -Path (Join-Path $session 'expected-portable.txt') -Encoding UTF8
+
+Set-Content -Path (Join-Path $session 'store-url.txt') -Value $StoreUrl -Encoding UTF8
 
 @(
     "started=$((Get-Date).ToString('o'))"
@@ -218,7 +238,7 @@ if (Test-Path -LiteralPath $ready) {
 Say ''
 Say "Inside the guest (${driveLetter}: run, app $appRoot):"
 Say '  1. Double-click Start Papyrus.'
-Say '  2. Register, add the Keiyoushi store, install MangaTaro, search One Piece, read a chapter.'
+Say '  2. Register, add the store URL supplied on the host, install MangaTaro, search One Piece, read a chapter.'
 Say '  3. After the reader page is visible, double-click Check portable layout.'
 Say '  4. Use Capture a step at the moments that matter.'
 Say '  5. Double-click Stop screenshots, wait ten seconds, then close the sandbox.'

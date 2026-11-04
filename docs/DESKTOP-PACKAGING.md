@@ -8,13 +8,13 @@ Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the 
 gate on run 19 with a real Windows source read, and the rebuilt 1.5.0 installer passed the manual
 sandbox on 2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run. The
 1.5.1 setup was built from `9dd0918` and passed the manual sandbox on 2026-10-29: per-user
-install, registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1
+install, registration, a community store, MangaTaro, an One Piece search and a chapter read. The 1.5.1
 portable zip was rebuilt from `8ca2028` after the first-launch storage fix and passed clean-guest
 runs on C: and D: on 2026-10-29, including the same reader flow and a layout check with no
 install or registry entry.** Run 19 copied `build/install` to a fresh guest and started it through
 the reader shortcut. All 86 checks held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app
 reported ready on 8402, Edge opened, the first account was created, `/sources` rendered, the
-Keiyoushi store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
+community store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
 read through the authenticated proxy as a 175,432-byte WebP. The gate does not run the setup
 executable; `launch-manual.ps1` is the separate manual run: its first run installed the 1.5.0
 payload and found the shortcut defect, and its second run proved the rebuilt 1.5.0 installer end
@@ -52,7 +52,7 @@ built-in checks at 12,963 files with 138 licence texts. The unsigned installer c
 275,072,638 bytes (262.3MB) with SHA-256
 `056cc3e55b7cba84bcbcb052652ceec839a7795a1567a05f532f537214993aae`. The 1.5.1 setup passed the
 manual sandbox on 2026-10-29: the guest verified the copied installer at 275,072,638 bytes with
-the hash above, installed it per-user, registered, trusted the Keiyoushi store, installed
+the hash above, installed it per-user, registered, trusted a community store, installed
 MangaTaro, searched One Piece, and read chapter 1 of 1,202.
 
 The portable zip was rebuilt from `8ca2028` after the first-launch storage fix in `2e4a73d`. It
@@ -60,7 +60,7 @@ compiled at 321,034,901 bytes (306.2MB) with 12,964 entries and SHA-256
 `0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab`; the sidecar matches. The
 staged runtime reports PHP 8.5.12, FrankenPHP 1.13.2 and Temurin 25.0.5+8. The rebuilt portable
 passed clean-guest runs on C: and D: on 2026-10-29: extraction, first launch through
-`Papyrus.cmd`, data beside the program folder, registration, Keiyoushi, MangaTaro, One Piece,
+`Papyrus.cmd`, data beside the program folder, registration, a community store, MangaTaro, One Piece,
 chapter 1 of 1,203, and a layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and
 no uninstall entry. The C: run used a path with a space; the D: run used a 4 GB VHD-backed
 second volume.
@@ -480,7 +480,7 @@ the app reports ready
 queue worker and scheduler started
 Papyrus is running at http://127.0.0.1:<port>
 suwayomi answers graphql                             v2.4.2366
-the Keiyoushi store adds 1,431 extensions
+a community store adds 1,431 extensions
 MangaTaro installs and Suwayomi lists it as a source
 the source returns One Piece with 1,202 chapters
 fetchChapterPages returns 53 page paths for chapter 1
@@ -576,7 +576,7 @@ are the index a person can read.
 `-NoLaunch` writes the `.wsb` and the session files without starting a guest. The launcher refuses a
 running guest and refuses an installer whose size or hash does not match `build\dist\manifest.json`.
 Inside the guest, the desktop shortcuts and `START-HERE.txt` carry the order: install, register, add
-the Keiyoushi store, install MangaTaro, search One Piece, read a chapter, name the moments, stop the
+a community store, install MangaTaro, search One Piece, read a chapter, name the moments, stop the
 screenshots, close the sandbox.
 
 The session folder ends up with `READY.txt`, `installer-verified.txt`, `setup.log`, `session.txt`,
@@ -592,7 +592,7 @@ on its shot limit, the named capture wrote its frame and log, and `-NoLaunch` ge
 `.wsb` with the expected installer hash.
 
 The first guest run on 2026-10-26 used the pre-fix installer and proved the setup executable, the
-registration page, the Keiyoushi store, MangaTaro, a One Piece search, the series page and a
+registration page, a community store, MangaTaro, a One Piece search, the series page and a
 chapter read. It also found the preflight defect: `Papyrus.cmd` ran `php -n` with no script, and a
 console leaves stdin open, so the runtime check waited forever and the window stayed blank. The
 gate and `PapyrusCmdTest` had redirected stdin from an empty file and missed it. The check is now
@@ -766,7 +766,7 @@ memory:
 | 0.7 | Data location under `%LOCALAPPDATA%` | done | `DataLocation.php`, with a portable branch beside the program. Live install at `%LOCALAPPDATA%\Papyrus` |
 | 0.8 | Launcher: tray, start, stop, open browser | **partly done** | `Papyrus.cmd` starts, stops, reports, and **opens the browser at the address it actually bound** (`--open`). **No tray icon and no native binary.** The plan called for a 5 to 10MB Go or C# binary; what exists is a batch file. Deliberate, since the batch file is what the clean sandbox could prove, and a native binary would need its own gate |
 | 0.9 | One place for four processes' logs | done | `SummaryLog` writes the one-line-per-process summary; nine parsers normalise the nine native formats; `papyrus diagnostics` bundles them |
-| 0.10 | Clean-sandbox verification | **partly done, re-run on 1.5.0** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Run 19, 2026-10-26: PASS, 86 checks, 0 failures**, on a fresh guest with no Java, no PHP on PATH and no Java installed. It started the install through the reader shortcut with `--open`, created the first account, rendered `/sources`, added the Keiyoushi store, installed MangaTaro, fetched One Piece, read page 0 of chapter 1 through the proxy (200 `image/webp`, 175,432 bytes, SHA-256 `9996ffbb...`), and rendered `/sources` and `/series/1` after the catalogue was populated. The original bar also names importing a backup; run 19 does not, so the backup path in a clean guest remains unproven. The gate copies `build/install`; the separate manual sandbox ran the setup executable on 2026-10-26 (it installed 1.5.0 but its shortcut preflight hung, fixed in `86e033a`) and again on the rebuilt installer on 2026-10-27, when the shortcut double-click started the reader and the full flow passed. That run is manual acceptance evidence, not a gate pass |
+| 0.10 | Clean-sandbox verification | **partly done, re-run on 1.5.0** | `build/sandbox/run-in-sandbox.ps1` and `papyrus.wsb` are tracked. **Run 19, 2026-10-26: PASS, 86 checks, 0 failures**, on a fresh guest with no Java, no PHP on PATH and no Java installed. It started the install through the reader shortcut with `--open`, created the first account, rendered `/sources`, added a community store, installed MangaTaro, fetched One Piece, read page 0 of chapter 1 through the proxy (200 `image/webp`, 175,432 bytes, SHA-256 `9996ffbb...`), and rendered `/sources` and `/series/1` after the catalogue was populated. The original bar also names importing a backup; run 19 does not, so the backup path in a clean guest remains unproven. The gate copies `build/install`; the separate manual sandbox ran the setup executable on 2026-10-26 (it installed 1.5.0 but its shortcut preflight hung, fixed in `86e033a`) and again on the rebuilt installer on 2026-10-27, when the shortcut double-click started the reader and the full flow passed. That run is manual acceptance evidence, not a gate pass |
 | 0.12 | Look at a real install in a sandbox | done | `build/sandbox/hold-open.ps1` and `papyrus-hold.wsb`. A gate stops everything it starts, so it cannot be used to look at the thing. This is the same setup and then it holds. **Verified live: 12,644 files copied, `/ready` 200 in 15s.** Nine tests in `SandboxRunnerTest`, both mutations killed |
 | 0.11 | Decide the Suwayomi runtime shape | done | The `jlink` question was answered by staging rather than building: a pinned JRE is staged beside the jar at build time and digest verified. 353.6 MB of the 623 MB install is Suwayomi and its JVM, none of it ours |
 | 0.12 | Uninstall must not delete the library | done | `papyrus.iss` contains **zero** `[UninstallDelete]` directives. The full install, run, uninstall cycle was run with the library hashed either side and it came back byte identical |

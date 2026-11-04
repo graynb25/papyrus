@@ -14,7 +14,7 @@ flow.
 This started as an attempt to find out how much of a manga reader could be rebuilt on top
 of Suwayomi without touching it. That turned out to be most of it.
 
-Keiyoushi extensions are Kotlin Android apps. PHP cannot run one, and rewriting the extension
+Extensions are Kotlin Android apps. PHP cannot run one, and rewriting the extension
 ecosystem is not a project. So the parsing problem is delegated entirely to Suwayomi, and
 everything a reader actually touches is rebuilt: the library, the shelves, the read state,
 the progress, the notes, the settings, the search, the whole reading experience.
@@ -310,7 +310,7 @@ Register a store and mirror the catalogue:
 
 ```bash
 php artisan suwayomi:check
-php artisan sources:sync --add-store=https://github.com/keiyoushi/extensions/raw/repo/index.pb
+php artisan sources:sync --add-store=<store-index-url>
 php artisan sources:sync --refresh
 ```
 
@@ -758,7 +758,7 @@ in [`build/sandbox/papyrus.wsb`](build/sandbox/papyrus.wsb).
 `build/sandbox-results/sandbox-report.txt` and a screenshot showing Edge on the Papyrus login
 page at `localhost:8402`. The guest had been dying with `0x80370106`; a host policy,
 `HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0, fixed it on this
-build. Run 19 also added the Keiyoushi store, installed the MangaTaro extension, fetched One
+build. Run 19 also added a community store, installed the MangaTaro extension, fetched One
 Piece, and read page 0 of chapter 1 through the authenticated proxy: 200 `image/webp`, 175,432
 bytes, SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`, the same
 first page the WSL run read. `/sources` and `/series/1` rendered after the catalogue was

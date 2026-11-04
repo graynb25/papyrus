@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\DB;
  *
  * ## Why this groups by site
  *
- * Keiyoushi ships one extension per language, and those extensions point at the
+ * Extension stores ship one extension per language, and those extensions point at the
  * same site. Measured over the live catalogue: 82 installed sources, 15 distinct
  * home_url values. MangaDex alone accounts for 61 of the 82.
  *

@@ -11,7 +11,7 @@ release is committed in `86e033a`; its artifacts were rebuilt from that commit, 
 installed in the manual sandbox on 2026-10-27 with the reader flow passing, so the 1.5.0 installer
 payload is proven. The 1.5.1 release is committed locally. Its unsigned setup was built from
 `9dd0918` and passed the manual sandbox on 2026-10-29 with a per-user install, registration,
-Keiyoushi, MangaTaro, an One Piece search and a chapter read, so the 1.5.1 installer payload is
+a community store, MangaTaro, an One Piece search and a chapter read, so the 1.5.1 installer payload is
 proven. The portable zip was rebuilt from `8ca2028` after the first-launch storage fix in
 `2e4a73d` and passed clean-guest runs on C: and D: on 2026-10-29, including the same reader flow
 and a layout check with no install or registry entry, so the portable shape is closed for this

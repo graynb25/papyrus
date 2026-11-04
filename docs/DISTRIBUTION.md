@@ -12,7 +12,7 @@ measurement. Where something is a judgement call rather than a fact it says so.
 The 1.5.1 work is in the rewritten tree. The 1.5.1 release was not published. The unsigned
 275,072,638-byte (262.3MB) installer was built from `9dd0918`, and its manual sandbox run
 passed on 2026-10-29: per-user install,
-registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read. The 1.5.1 installer
+registration, a community store, MangaTaro, an One Piece search and a chapter read. The 1.5.1 installer
 payload is proven. Both automated install harnesses also passed in a clean guest on 2026-10-29:
 the install harness proved a per-user install, data outside the program folder, `/ready` 200 and a
 byte-identical library after uninstall; the zero-write harness proved 12,965 installed files with
@@ -22,7 +22,7 @@ storage fix in `2e4a73d`: 321,034,901 bytes (306.2MB), 12,964 entries, SHA-256
 rebuilt portable passed clean-guest runs on C: and D: on 2026-10-29. The C: run used
 `C:\Papyrus Portable\Papyrus` with a space in the path; the D: run used `D:\Papyrus` on a 4 GB
 VHD-backed second volume. Both verified the archive, started through `Papyrus.cmd`, created
-`papyrus-data` beside the program folder, registered, trusted Keiyoushi, installed MangaTaro,
+`papyrus-data` beside the program folder, registered, trusted a community store, installed MangaTaro,
 searched One Piece, read chapter 1 of 1,203, and passed the layout check with no `%LOCALAPPDATA%`
 install, no Start Menu entry and no uninstall entry. The setup and the portable zip are built from
 different commits: the install tree ships storage placeholders and did not need the first-launch
@@ -30,7 +30,7 @@ fix, and the setup was already proven. No 1.5.1 artifact is published. A local r
 exists at `releases/1.5.1.json`; it records both artifacts, each with the commit it was built from.
 The 1.4.0 record remains the latest published release. The 1.5.0 install tree passed the Windows
 Sandbox gate on run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`,
-first account created, `/sources` rendered, Keiyoushi store and MangaTaro installed, One Piece
+first account created, `/sources` rendered, community store and MangaTaro installed, One Piece
 fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
@@ -81,7 +81,7 @@ Verified on this repository:
 | Thing | In the repo? | Note |
 | --- | --- | --- |
 | Extension store URL as a default | **No** | `extension_stores` in the live database is the user's own row, added by them |
-| Keiyoushi referenced in code | Comments only, 5 places | naming a public project is not distributing it |
+| Any specific store named in code | **No** | comments describe extension stores generically; no name, link, or default URL |
 | Scraped metadata, fixtures, backups | **No** | no `.tmb`, `.tachibk` or `.cbz` anywhere |
 | Suwayomi's GraphQL schema | Yes, `resources/schemas/suwayomi-introspection.json` | an interface definition, not content |
 
@@ -100,8 +100,11 @@ Each of these would convert a code distributor into a content distributor:
 3. **Ship a database.** A reader database contains their library and history. The build must run
    `migrate` on a fresh file, never export one.
 
-Documentation naming Keiyoushi is fine and should stay. What creates exposure is a shipped
-default that fetches on first run, not a sentence in a README.
+A shipped default that fetches on first run is what creates exposure, not a sentence in a README.
+Even so, Papyrus names no store anywhere in the app or its documentation: no endorsement, no link,
+and no suggestion that one repository is the right one. The reader finds one outside Papyrus and
+decides for themselves. The sandbox harnesses follow the same rule: the store URL is supplied by
+the person running them and is never a tracked default.
 
 ## Two distribution shapes
 

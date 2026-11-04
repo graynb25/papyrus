@@ -165,6 +165,32 @@ $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
     "sha256_match=$match"
 ) | Set-Content -Path (Join-Path $results 'session.txt') -Encoding UTF8
 
+# The host writes the store URL into this results folder. The tracked script names no store and
+# carries no URL, and the run still needs a real catalogue to install from.
+$storeUrl = ''
+$storeUrlPath = Join-Path $results 'store-url.txt'
+
+if (Test-Path -LiteralPath $storeUrlPath) {
+    $storeUrl = (Get-Content -LiteralPath $storeUrlPath -Raw -ErrorAction SilentlyContinue)
+    if ($null -ne $storeUrl) { $storeUrl = $storeUrl.Trim() }
+}
+
+if ($storeUrl -ne '') {
+    $storeInstruction = @"
+  4. Open Sources. Add the store whose index URL the host supplied:
+
+         $storeUrl
+
+     Refresh the store, install the MangaTaro extension, then sync sources if the page asks.
+"@
+} else {
+    $storeInstruction = @"
+  4. Open Sources. Add an extension store you trust. The host did not supply a URL for this run,
+     so find one through its own project page and paste its index URL. Refresh the store, install
+     the MangaTaro extension, then sync sources if the page asks.
+"@
+}
+
 $readme = @"
 Papyrus $runVersion manual acceptance run
 
@@ -198,11 +224,7 @@ THE RUN
   3. Register a reader account on the login page. Use any address and password you will remember for
      this disposable guest.
 
-  4. Open Sources. Add the Keiyoushi store:
-
-         https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb
-
-     Refresh the store, install the MangaTaro extension, then sync sources if the page asks.
+$storeInstruction
 
   5. Search for One Piece, open the series, and read a chapter. Let the reader show at least one
      page.

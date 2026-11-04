@@ -136,16 +136,16 @@ Papyrus is or what to do first. After signing in, the reader lands on an empty
 library whose doors are "Add series", "Go to search" and "Bring a library from
 another app", none of which is the thing the reader has to do first, which is
 to add a source. The sources page then opens with a notice that reads
-"Sources are Keiyoushi extensions running inside Suwayomi. Nothing is bundled:
+"Sources are extensions running inside Suwayomi. Nothing is bundled:
 point Papyrus at a store, read its signing key, then trust it if you recognise
 the publisher." followed by a paragraph about trust being a gate in the
-interface rather than an enforcement the Suwayomi API offers. The store URL is
+interface rather than an enforcement the Suwayomi API offers. A store URL was
 pre-filled in the "Add a store" input, the signing key sits below it, and the
 "Trust this key" button asks the reader to compare a 64-character hex string
 against something the publisher published. The Available tab reads "Nothing is
 installable until you trust a store" with "1 store is registered. Compare its
 signing key above against the one its publisher has published, then trust it."
-A reader who has never heard of Keiyoushi, Suwayomi or an extension repository
+A reader who has never heard of that store, Suwayomi or an extension repository
 has no way to know any of this, and nothing on the page says what a source is in
 one sentence or what happens after it is added.
 
@@ -153,9 +153,10 @@ Why it is wrong or could be better: The app's whole point is launching Papyrus
 to read your manga, and a fresh install that serves HTTP perfectly while
 showing the reader nothing has not been proved to work (F26). The onboarding
 requirements in the findings register (F26, F23, F27) ask for three things:
-name Keiyoushi and let the reader add it without hunting for the store URL by
-hand; load the catalogue automatically once a store is added, because manual
-Refresh catalogue is for recovering from failure only; and make the first visit
+say plainly that a store is required, and let the reader add one without the app
+naming it or shipping a URL; load the catalogue automatically once a store is
+added, because manual Refresh catalogue is for recovering from failure only;
+and make the first visit
 usable without reading the docs. Today none of the three holds. The empty
 library's doors point at search and import, both of which presuppose a source
 the reader does not have yet. The sources page's notice is written for a reader
@@ -169,12 +170,13 @@ inside the components the app already carries. First, name the thing the reader
 needs in one sentence on the empty library, beside the existing empty-state
 copy: "Papyrus reads from sources. A source is an extension repository that
 holds manga; Papyrus ships with none, so the first step is to add one." Second,
-name Keiyoushi as the thing to search for, without embedding its URL or any
-store URL, because the app must not ship a link to a third-party extension
-repository: "The most common source is Keiyoushi. Search for 'Keiyoushi
-extensions' in your browser, open the repository, and paste its index URL into
-the field below." Give the "Add a store" input a helper line that says exactly
-that, and keep the input empty so the reader pastes what they found. Third,
+say that Papyrus ships with no store and that the reader has to find an
+extension repository they trust, without naming one or embedding any store URL,
+because the app must not ship a link to a third-party extension repository:
+"Papyrus ships with no store. Search for an extension repository you trust, open
+its project page, and paste its index URL into the field below." Give the "Add a
+store" input a helper line that says exactly that, and keep the input empty so
+the reader pastes what they found. Third,
 once a store is added and trusted, load its catalogue automatically and show
 progress ("Loading the catalogue... N extensions found") instead of asking the
 reader to press Refresh catalogue, which stays on the page only as the recovery
@@ -290,10 +292,10 @@ Severity: H
 
 Surface: Settings > Sources, "Add a store"
 
-What the reader sees today: The "Add a store" input already contains the
-Keiyoushi index URL when the page loads. A reader who has never heard of
-Keiyoushi sees a long GitHub URL sitting in a field, with no explanation of
-where it came from or what it is.
+What the reader sees today: The "Add a store" input must not arrive with a
+store index URL already in it. A reader who has never heard of that store sees a
+long URL sitting in a field, with no explanation of where it came from or what
+it is.
 
 Why it is wrong or could be better: The app must not ship a link to a
 third-party extension store. Doing so is a DMCA concern: the app provides the
@@ -306,8 +308,8 @@ also a legal concern, not only a UX concern.
 
 Concrete proposal: Improve, do not change, the existing "Add a store" input and its helper.
 Empty the input on load. Keep the helper line that tells the reader what to
-look for ("The index file itself, not the repository root. Keiyoushi publishes
-protobuf at index.pb.") and add one sentence above it: "Papyrus does not ship
+look for ("The index file itself, not the repository root. It is usually named
+index.pb or index.min.json.") and add one sentence above it: "Papyrus does not ship
 with any store. Search for an extension repository you trust, paste its index
 URL here, and compare its signing key before you trust it." The field becomes a
 place the reader fills in, which is what the trust step assumes they did.

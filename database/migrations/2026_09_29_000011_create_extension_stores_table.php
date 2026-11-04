@@ -30,8 +30,8 @@ return new class extends Migration
             $table->string('contact_discord')->nullable();
 
             /*
-             * Verified live against Suwayomi: a protobuf index (Keiyoushi) comes
-             * back isLegacy=false. The legacy JSON index is the other format.
+             * Verified live against Suwayomi: a protobuf index comes back with
+             * `isLegacy=false`. The legacy JSON index is the other format.
              */
             $table->boolean('is_legacy')->default(false);
             $table->text('extension_list_url')->nullable();

@@ -93,7 +93,7 @@ the behaviour changes or the deployment posture makes it irrelevant.
   105 linked members placed, 3,322 reading days across 587 series, and both pages rendered
   with the expected values. No reader data or live database was written.
 - [x] Manual installer sandbox, 2026-10-26. The real `Papyrus-1.5.0-setup.exe` installed 1.5.0
-  per-user, and the reader flow passed: first account, Keiyoushi store, MangaTaro, One Piece
+  per-user, and the reader flow passed: first account, community store, MangaTaro, One Piece
   search, Chapter 001 read and marked read. The shortcut did not start because `Papyrus.cmd` ran
   `php -n` with no script and the console stdin stayed open. The check is now `php -n -v`, with a
   regression test that keeps stdin open; all six gates pass. The fix is committed in `86e033a`
@@ -102,7 +102,7 @@ the behaviour changes or the deployment posture makes it irrelevant.
   manifest before launch and again inside the guest. The post-install launch printed its
   preflight and opened the browser; the shortcut double-click printed the complete preflight and
   started the reader, so the hang did not reproduce; and the flow passed: first account,
-  Keiyoushi store, MangaTaro, a One Piece search of 14 results from 2 of 2 runnable sources,
+  community store, MangaTaro, a One Piece search of 14 results from 2 of 2 runnable sources,
   1,202 chapters fetched, Chapter 001 read and marked read with the state persisted. Session
   `session-20261027-103455`. Still manual evidence, not a gate pass.
 - [x] Reader walkthrough from the same session, 2026-10-27. `docs/WALKTHROUGH.md` and seven
@@ -121,7 +121,7 @@ the behaviour changes or the deployment posture makes it irrelevant.
 - [x] 1.5.1, remaining hardening and reader copy. Committed locally on 2026-10-28. Its unsigned
   setup was built from `9dd0918` and its portable from `8ca2028` after the first-launch storage
   fix in `2e4a73d`, both on 2026-10-29. The setup passed the manual sandbox on 2026-10-29:
-  per-user install, registration, Keiyoushi, MangaTaro, an One Piece search and a chapter read.
+  per-user install, registration, a community store, MangaTaro, an One Piece search and a chapter read.
   The portable archive passed clean-guest runs on C: and D: on 2026-10-29, including the same
   reader flow and a layout check with no install or registry entry. Both are manual evidence,
   not gate passes.
@@ -181,8 +181,8 @@ through the reader shortcut with `--open`. The bundled PHP ran 8.5.12, Suwayomi 
 worker and scheduler started, Edge opened, `/ready` and `/up` returned 200, the first account
 was created through `/register`, and `/sources` returned 200 with the page's eyebrow and no
 failure callout. The data directory with a space in its path, the diagnostics bundle and
-HTTPS through the bundled trust store also passed. Run 19 then added the Keiyoushi protobuf
-store (signing key prefix `9add655a78e96c4ec7a5`, 1,431 extensions), installed
+HTTPS through the bundled trust store also passed. Run 19 then added a community store's protobuf
+index (signing key prefix recorded, 1,431 extensions), installed
 `eu.kanade.tachiyomi.extension.all.mangataro`, mirrored two sources, fetched One Piece (manga
 id 1) with 1,202 chapters, and called `fetchChapterPages` for chapter id 1, "Chapter 001:
 Romance Dawn", which returned 53 page paths. Page 0 was requested through the app proxy at
@@ -240,7 +240,7 @@ guest. The guest verified the copy as 275,084,054 bytes with SHA-256
 `build\dist\manifest.json`. The setup completed as a per-user install at
 `%LOCALAPPDATA%\Programs\Papyrus`; `version.txt` read 1.5.0 at commit `6572ba0`, and the install
 tree held no database, `.env` or logs. The reader flow then passed through a direct start
-(`start-direct.cmd`, which bypasses `Papyrus.cmd`): the first account, the Keiyoushi store,
+(`start-direct.cmd`, which bypasses `Papyrus.cmd`): the first account, a community store,
 MangaTaro, a One Piece search of 14 results from 2 of 2 sources, the 1,202 chapter series page,
 and Chapter 001 read at `/read/1/1` and marked read.
 
@@ -272,7 +272,7 @@ reports itself ready", the queue worker, "Papyrus is running at http://localhost
 Chromium GPU line about a missing video device, which the sandbox's absence of a video device
 explains and which stopped nothing.
 
-The flow matched the first run: first account registered, empty library, Keiyoushi store added,
+The flow matched the first run: first account registered, empty library, community store added,
 MangaTaro installed, a One Piece search of 14 results deduplicated from 2 of 2 runnable sources,
 1,202 chapters fetched, and Chapter 001 read at `/read/1/1` with the read state persisted on the
 series page. The watcher took 41 frames and stopped on the stop marker. Verdict: the rebuilt
@@ -289,7 +289,7 @@ against the manifest before the guest started, and the guest verified its copy a
 (`installer-verified.txt`, `match=True`, `version=1.5.1`). The setup completed as a per-user
 install; the post-install launch opened the browser, and the console reported "Papyrus is running
 at http://localhost:8000" with the data directory under `%LOCALAPPDATA%\Papyrus`. The first
-account registered, the Keiyoushi store was trusted, MangaTaro installed, a One Piece search
+account registered, a community store was trusted, MangaTaro installed, a One Piece search
 returned 14 results deduplicated from 2 of 2 runnable sources, and Chapter 1 of 1,202 rendered at
 `/read/1/1/1`. The watcher took 39 frames and stopped on the stop marker. Verdict: the 1.5.1
 installer payload and reader flow are proven on the real setup executable. The portable archive
@@ -331,7 +331,7 @@ Two clean Windows Sandbox guests ran the same archive. The C: run used
 `D:\papyrus-data`; session `session-20261029-201726-d`. Both guests verified the copied archive
 hash before extraction and again inside the guest, started through `Papyrus.cmd`, and wrote
 `papyrus-data` beside the program folder. Both registered the first account, trusted the
-Keiyoushi store, installed MangaTaro, searched One Piece, and rendered chapter 1 of 1,203 at
+community store, installed MangaTaro, searched One Piece, and rendered chapter 1 of 1,203 at
 `/read/1/1`. Both layout checks returned `PASS`: data beside the app, no `%LOCALAPPDATA%`
 install, no Start Menu entry and no uninstall entry. The D: layout records `drive=D`,
 `drive_kind=vhd` and `separate_volume=True`.
@@ -386,7 +386,7 @@ Run 1, 58 beats at 30 seconds from 17:34 to 18:02 UTC on 2026-10-26, stopped at 
 returned 500 on every authenticated probe because `intl` was missing. Run 2, 6 beats at 10
 seconds on 2026-10-27 after installing `intl`, returned 200 for `/sources`, `/search`,
 `/library`, `/settings/import`, `/settings/backups` and `/migrate/sources`; 18 of 18 HTTP
-probes and 3 of 3 CLI checks passed. Run 3 on 2026-10-27 added the Keiyoushi store, installed
+probes and 3 of 3 CLI checks passed. Run 3 on 2026-10-27 added a community store, installed
 MangaTaro, fetched One Piece, and read all 53 pages of Chapter 001 through the authenticated
 app proxy: 53 of 53 returned 200 `image/webp`, 7,766,490 bytes in total. That meets the
 source-access substitute on this Linux userland. It does not touch the Windows installer,
@@ -766,9 +766,9 @@ recorded here so the number of tabs has an owner. Cookies were kept apart from t
 install by browsing the scratch one at `localhost` while the live one sits at `127.0.0.1`.
 
 **Content the probes needed.** The first web account became the owner, Batch A's migration,
-and a second account registered as a reader for the reader-side probes. The Keiyoushi store
-was added through the page, its signing key prefix `9add655a78e96c4ec7a5` matched the one run
-19 trusted, and the catalogue mirrored 1,042 extensions; MangaTaro 1.6.0 installed healthy. A
+and a second account registered as a reader for the reader-side probes. A community store
+was added through the page, its signing key prefix matched the one run 19 trusted, and the
+catalogue mirrored 1,042 extensions; MangaTaro 1.6.0 installed healthy. A
 search for One Piece answered with 14 results deduplicated from 2 sources and a `search_runs`
 row; the series was added and `/series/1` listed 1,202 chapters from 4 scanlator groups. An
 owner export ran to completion, `live_export_runs` state complete, and wrote a 366 byte
@@ -807,7 +807,7 @@ under the reader account, run 1 the unknown format and run 2 the cap.
 **Loopback store address.** The owner typed `http://127.0.0.1:4591`, the install's own server,
 into the add store field, and the page refused with the exact policy sentence "That store
 address points at this server or a private network. Use a public address for the store." The
-`extension_stores` table still holds exactly the one Keiyoushi row, so the refused attempt
+`extension_stores` table still holds exactly the one community store row, so the refused attempt
 wrote nothing.
 
 **Re-walk.** All seven routes rendered at desktop width, 1440 pixels, and mobile width, 390
@@ -892,7 +892,7 @@ Environment: a fresh disposable packaged install built from `0a2407d`, reported 
 Suwayomi used its own ports and data directory. A scratch-only first account was created; no
 reader data or credential from the live install was used.
 
-Setup before the review: the Keiyoushi store was added and trusted through `/sources`, the
+Setup before the review: a community store was added and trusted through `/sources`, the
 catalogue refreshed to 1,431 extensions, and MangaTaro 1.6.0 installed and browsed. One Piece
 opened, its chapters loaded, and chapter 1 rendered 53 pages with the first page image at
 1,364 by 1,004 pixels. The extension was then removed from the scratch Suwayomi and the
@@ -904,7 +904,7 @@ chapters, one marked read, in an `Imported` category. It was uploaded through
 `/settings/import` with "Read the file first and report" cleared.
 
 The review showed "Needs your answer", "1 source in this backup needs an extension this server
-does not have", the Keiyoushi store with its index URL and full signing key, the MangaTaro
+does not have", a community store with its index URL and full signing key, the MangaTaro
 package at 1.6.0 with one series, and the store box unchecked. Before the answer the run row was
 `awaiting`, its stored upload was present at 1,710 bytes, the database held zero trust rows, and
 Suwayomi held no MangaTaro source. That is the fail-closed state: a reader who closes the page
@@ -915,7 +915,7 @@ reported the extension as already present. It was discarded through the page: th
 `declined`, `file_path` was null, and the stored upload was removed. That is the discard arm of
 the upload life cycle, measured rather than inferred.
 
-The second review was answered by ticking Keiyoushi and pressing Import. The same row moved
+The second review was answered by ticking a community store and pressing Import. The same row moved
 through `running` to `complete`: the page showed all four phases done and "1 series imported, 0
 already up to date." The trust row was written, Suwayomi installed MangaTaro again, the One
 Piece mapping resolved to Suwayomi manga id 1 with two chapters seen and one applied, and the

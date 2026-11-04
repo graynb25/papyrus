@@ -29,7 +29,8 @@
 # checking the configuration without starting a guest.
 
 param(
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+    [string]$StoreUrl = $env:PAPYRUS_TEST_STORE_URL
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,6 +86,24 @@ if ($hash -ne ([string]$artifact.sha256).ToLowerInvariant()) {
 
 Say "ok   installer is $version, $size bytes, sha256 $hash"
 
+# The manual run has to prove the source flow, and the tree must not carry a store URL. The host
+# supplies one and the guest reads it from the results mount, which is what the README tells the
+# person to paste. A missing URL is refused before the guest starts.
+$StoreUrl = if ($null -eq $StoreUrl) { '' } else { $StoreUrl.Trim() }
+
+if ($StoreUrl -eq '') {
+    Say 'REFUSING TO LAUNCH: no store index URL was supplied.'
+    Say 'Pass -StoreUrl, or set PAPYRUS_TEST_STORE_URL, to the index URL of a repository you trust.'
+    exit 1
+}
+
+if ($StoreUrl -notmatch '^https?://') {
+    Say 'REFUSING TO LAUNCH: the store index URL must start with http:// or https://.'
+    exit 1
+}
+
+Say 'ok   store index URL supplied by the caller'
+
 # A new folder every time. The suffix is only for two launches in the same second, which is rare but
 # cheaper to handle than a mount that silently points at the previous run.
 $base = 'session-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
@@ -104,6 +123,8 @@ New-Item -ItemType Directory -Force -Path $session | Out-Null
     "sha256=$hash"
     "version=$version"
 ) | Set-Content -Path (Join-Path $session 'expected-installer.txt') -Encoding UTF8
+
+Set-Content -Path (Join-Path $session 'store-url.txt') -Value $StoreUrl -Encoding UTF8
 
 @(
     "started=$((Get-Date).ToString('o'))"
@@ -182,7 +203,7 @@ Say ''
 Say 'Inside the guest:'
 Say '  1. Double-click Install Papyrus on the desktop.'
 Say '  2. Accept the defaults and let it launch.'
-Say '  3. Register, add the Keiyoushi store, install MangaTaro, search One Piece, read a chapter.'
+Say '  3. Register, add the store URL supplied on the host, install MangaTaro, search One Piece, read a chapter.'
 Say '  4. Use Capture a step at the moments that matter.'
 Say '  5. Double-click Stop screenshots, wait ten seconds, then close the sandbox.'
 Say ''

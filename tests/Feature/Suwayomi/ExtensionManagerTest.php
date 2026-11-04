@@ -295,7 +295,7 @@ class ExtensionManagerTest extends TestCase
         ]);
 
         try {
-            app(SourceCatalog::class)->addStore('https://github.com/keiyoushi/extensions');
+            app(SourceCatalog::class)->addStore('https://example.test/extensions');
             $this->fail('Expected a SuwayomiException.');
         } catch (SuwayomiException $e) {
             $this->assertStringContainsString('index', $e->getMessage());

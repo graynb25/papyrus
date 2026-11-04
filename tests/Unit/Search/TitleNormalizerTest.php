@@ -111,7 +111,7 @@ class TitleNormalizerTest extends TestCase
      * kana. So a Japanese-script title and its English translation do not
      * collide.
      *
-     * This is not a corner case: the live Keiyoushi store has 252 `ja` sources
+     * This is not a corner case: the live store catalogue has 252 `ja` sources
      * against 790 `en`, so the same series routinely appears in both scripts and
      * cross-language dedupe is a major case rather than an edge case. Closing it
      * needs kana-to-romaji transliteration, which is a dependency and a product

@@ -360,7 +360,7 @@ class SourcesPageTest extends TestCase
                     'indexUrl' => 'https://example.test/index.pb',
                     'name' => 'Test Store',
                     'badgeLabel' => 'TEST',
-                    'signingKey' => '9add655a78e96c4eFULLKEY',
+                    'signingKey' => '0123456789abcdefFULLKEY',
                     'contactWebsite' => null,
                     'contactDiscord' => null,
                     'isLegacy' => false,
@@ -382,7 +382,7 @@ class SourcesPageTest extends TestCase
                     'indexUrl' => $url,
                     'name' => 'Test Store',
                     'badgeLabel' => 'TEST',
-                    'signingKey' => '9add655a78e96c4eSTOREKEY',
+                    'signingKey' => '0123456789abcdefSTOREKEY',
                     'contactWebsite' => null,
                     'contactDiscord' => null,
                     'isLegacy' => false,
@@ -604,11 +604,11 @@ class SourcesPageTest extends TestCase
 
     public function test_it_lists_stores_with_the_signing_key_shown_in_full(): void
     {
-        $this->store(key: '9add655a78e96c4efullkeyvalue');
+        $this->store(key: '0123456789abcdeffullkeyvalue');
 
         $this->page()
             ->assertSee('Test Store')
-            ->assertSee('9add655a78e96c4efullkeyvalue');
+            ->assertSee('0123456789abcdeffullkeyvalue');
     }
 
     /**
@@ -617,7 +617,7 @@ class SourcesPageTest extends TestCase
      */
     public function test_it_does_not_truncate_the_signing_key(): void
     {
-        $key = '9add655a78e96c4e5f3a91b2c7d84e0f1234567890abcdef1234567890abcdef';
+        $key = '0123456789abcdef5f3a91b2c7d84e0f1234567890abcdef1234567890abcdef';
 
         $this->store(key: $key);
 
@@ -693,7 +693,7 @@ class SourcesPageTest extends TestCase
      *
      * The Installed tab must carry no content filter at all, because an extension is
      * either on the server or it is not. Nothing is hidden today only because
-     * Keiyoushi ships no NSFW extension among the installed set, so glancing at the
+     * a community store ships no NSFW extension among the installed set, so glancing at the
      * page would have called this fine.
      */
     public function test_the_installed_tab_carries_no_content_filter(): void
@@ -1675,7 +1675,7 @@ class SourcesPageTest extends TestCase
     {
         /*
          * Every machine beside one just started already holds the list: this
-         * checkout's reader trusted Keiyoushi on 2026-10-10 and its catalogue lives
+         * checkout's reader trusted a community store on 2026-10-10 and its catalogue lives
          * on the server. Re-fetching over a thousand extension rows on every trust
          * spends upstream for nothing, so the skip is the contract, counted.
          */
@@ -2179,7 +2179,7 @@ class SourcesPageTest extends TestCase
          * ArbxComix, Comix, GEDE Comix, ILikeComix, KingComiX, PornComix and
          * ComixTopia), and the session before this one had shown the scramble
          * notice on all of them. The two upstream issues that corroborate the
-         * class, Keiyoushi extensions-source 12130 and 16684, name exactly one
+         * class, extension-source 12130 and 16684, name exactly one
          * extension, Comix (EN). An accusation of a site's conduct must not
          * ride on a substring, and these two real shapes pin the match against
          * a drift back to substring or word-boundary matching: "GEDE Comix"

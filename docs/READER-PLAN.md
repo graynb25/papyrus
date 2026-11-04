@@ -70,7 +70,7 @@ Everything here was measured, not assumed. Re-verification scripts live in `.too
 
 | Fact | Value |
 |---|---|
-| Keiyoushi store via `index.pb` | **Accepted.** `name=Keiyoushi`, `isLegacy=false`: protobuf parsed, signing key extracted |
+| Community store via `index.pb` | **Accepted.** `isLegacy=false`: protobuf parsed, signing key extracted |
 | Extensions in store | **1,379**: matches the published website exactly |
 | Content split | SAFE 570 · MIXED 444 · NSFW 365 |
 | `lang` values | `en` 398, `all` 129, `ja` 126, **`pt-BR` 112**, `es` 107 …: **region-qualified, not always two letters** |
@@ -323,7 +323,7 @@ code disagree, including several claims in this file.
 - [x] **Install Suwayomi:** v2.4.2366 JAR (upgraded from v2.3.2243), SHA256 verified, on `127.0.0.1:4567`, CEF downloaded, JCEF working
 - [x] **`AuthMode = UI_LOGIN`**, credentials in `.env`
 - [x] **`suwayomi:check`** green; **`suwayomi:schema:dump`** committed (1,884 entries)
-- [x] **Keiyoushi store added via `index.pb`:** 1,379 extensions, 4 installed, live fetches returning real results
+- [x] **Community store added via `index.pb`:** 1,379 extensions, 4 installed, live fetches returning real results
 - [x] **`serveConversions` investigated and deliberately left off.** Measured: `webp`, `avif`
       and `jpg` all return byte-identical `image/webp`, so there is no bandwidth win. The
       setting does exist and is writable, which this file previously said it did not
@@ -342,7 +342,7 @@ code disagree, including several claims in this file.
 
 **Goal:** the "find something to read" loop, complete.
 
-- [x] Extension store add + mirror, with signing-key capture and legacy/protobuf detection (S6, engine side). Keiyoushi publishes `repo/index.pb` (gzip protobuf, 1,379 extensions); the sibling `index.min.json` holds two helper entries and is vestigial. We parse neither. Suwayomi owns the format.
+- [x] Extension store add + mirror, with signing-key capture and legacy/protobuf detection (S6, engine side). A community store publishes `repo/index.pb` (gzip protobuf, 1,379 extensions); the sibling `index.min.json` holds two helper entries and is vestigial. We parse neither. Suwayomi owns the format.
 - [x] Source catalogue mirror: 82 sources; `lang` includes `pt-BR`, `es-419`, `af`
 - [x] **Global search fan-out** (S8): bounded batch, per-source timeout under the 30s cap, partial results, per-source outcome rows
 - [x] **Dedupe engine** (H1): normalise → exact bucket → fuzzy merge → source chips
@@ -553,7 +553,7 @@ The surfaces around it did not.
 
 | Original | Revised | Why |
 |---|---|---|
-| MangaDex-first in pure PHP | Suwayomi-only; `Source` interface kept for test doubles | MangaDex is itself a Keiyoushi extension, so Suwayomi covers it. A PHP MangaDex client is throwaway work. |
+| MangaDex-first in pure PHP | Suwayomi-only; `Source` interface kept for test doubles | MangaDex is itself a extension-store extension, so Suwayomi covers it. A PHP MangaDex client is throwaway work. |
 | 5 phases starting with the reader | 7 phases, foundations first | Tenancy and side-table schema are the two costliest reversals. They gate everything. |
 | Dedupe as one feature among many | Dedupe + global search as the Phase 1 centerpiece | C1 confirms no server-side global search exists. This is the hardest uncontested problem we own. |
 | "Best-in-class reader" as the differentiator | Win vertical; don't fight paged | WebUI's paged reader is ~110 files and years of work. Beating it there is not the play. |

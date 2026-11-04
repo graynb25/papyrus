@@ -8,7 +8,7 @@ namespace App\Support;
  * The four ban entries are what the owner named on 2026-10-16: these sites
  * block readers who search aggressively, and the bans run long enough that the
  * block page reads like the site is gone. Comix is the other class, corroborated
- * upstream in the Keiyoushi extensions-source tracker (issues 12130 and 16684):
+ * upstream in the extension-source tracker (issues 12130 and 16684):
  * searches through its extension return results unrelated to the query, page
  * images arrive scrambled, and the library can error out. No bans, just a push
  * back onto its own site, where the ads are.
@@ -33,8 +33,8 @@ final class SourceNotices
      * when the matcher trusted substring containment it showed the scramble
      * notice on every extension whose name happens to contain "comix", eight
      * cards across seven unrelated publishers ("GlobalComix" and friends),
-     * while the two upstream issues that corroborate this class, Keiyoushi
-     * extensions-source 12130 and 16684, name exactly one extension, the
+     * while the two upstream extension-source issues that corroborate this class,
+     * 12130 and 16684, name exactly one extension, the
      * English "Comix". The one tolerance kept is a parenthetical qualifier
      * appended to the name, because a store writes the language family the
      * reader recognises there: "Comix (all)" is still Comix.

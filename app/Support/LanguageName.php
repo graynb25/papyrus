@@ -9,7 +9,7 @@ namespace App\Support;
  * the search page used to render those raw, so a reader choosing between languages
  * was choosing between `es` and `es-419` with nothing to tell them apart. The map
  * below is explicit rather than delegated to intl for the codes this project has
- * actually seen: Keiyoushi ships one extension per language, so the long tail is
+ * actually seen: Extension stores ship one extension per language, so the long tail is
  * real, and an unmapped code falls back to intl's display name before falling back
  * to the raw code itself.
  */
@@ -21,7 +21,7 @@ final class LanguageName
      * `zh-hant`), and the lookup is case sensitive because the fallback covers
      * whatever casing this map misses.
      *
-     * The first three are not languages at all: they are the codes Keiyoushi
+     * The first three are not languages at all: they are the codes extension stores
      * and Suwayomi use for the three cases where a source publishes in every
      * language, in no particular language, or from a local folder. They were
      * read off the live catalogue on 2026-10-21, where 56 extensions carry

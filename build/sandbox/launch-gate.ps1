@@ -37,9 +37,14 @@ which reads exactly like the app being broken.
 
 .PARAMETER KeepOpen
 Leave the guest running after the report, so it can be opened by hand.
+
+.PARAMETER StoreUrl
+The index URL of an extension repository the operator trusts. The source probe needs a real
+catalogue to fetch, and Papyrus does not ship one. Pass it here or set PAPYRUS_TEST_STORE_URL.
 #>
 param(
-    [switch]$KeepOpen
+    [switch]$KeepOpen,
+    [string]$StoreUrl = $env:PAPYRUS_TEST_STORE_URL
 )
 
 $ErrorActionPreference = 'Continue'
@@ -107,6 +112,26 @@ if ($leftovers.Count -gt 0) {
 }
 
 Say 'ok   results folder cleared'
+
+# The source probe needs a real catalogue, and the tree must not carry a store URL. The host
+# supplies it here, and the guest reads it from the writable results mount. A missing URL is
+# refused before the guest starts, rather than failing twenty minutes later as a source check.
+$StoreUrl = if ($null -eq $StoreUrl) { '' } else { $StoreUrl.Trim() }
+
+if ($StoreUrl -eq '') {
+    Say 'REFUSING TO LAUNCH: no store index URL was supplied.'
+    Say 'The gate has to fetch a real catalogue to prove source access. Pass -StoreUrl, or set'
+    Say 'PAPYRUS_TEST_STORE_URL, to the index URL of a repository you trust.'
+    exit 1
+}
+
+if ($StoreUrl -notmatch '^https?://') {
+    Say 'REFUSING TO LAUNCH: the store index URL must start with http:// or https://.'
+    exit 1
+}
+
+Set-Content -Path (Join-Path $results 'store-url.txt') -Value $StoreUrl -Encoding UTF8
+Say 'ok   store index URL supplied by the caller'
 
 # --- 3. the configuration, the runner and the current install must be there ------------------
 $version = Get-Content (Join-Path $repo 'VERSION') -Raw -ErrorAction SilentlyContinue

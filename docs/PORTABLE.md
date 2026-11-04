@@ -20,7 +20,7 @@ The rebuilt archive was run on a clean Windows Sandbox guest twice on 2026-10-29
 `C:\Papyrus Portable\Papyrus`, a path with a space, and once from `D:\Papyrus` on a 4 GB
 VHD-backed second volume. Both runs verified the archive hash, extracted it, started through
 `Papyrus.cmd`, created `papyrus-data` beside the program folder, registered a reader, added the
-Keiyoushi store, installed MangaTaro, searched One Piece, read chapter 1 of 1,203, and passed the
+community store, installed MangaTaro, searched One Piece, read chapter 1 of 1,203, and passed the
 layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and no uninstall entry. This is
 manual acceptance evidence, not a gate pass. The local session folders
 `build\portable-sandbox-results\session-20261029-200249-c` and

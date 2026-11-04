@@ -527,7 +527,7 @@ new #[Title('Health')] class extends Component {
         </p>
         <p class="text-sm text-zinc-500 dark:text-zinc-400">
             {{ trans_choice(
-                'Keiyoushi ships one extension per language, so a single site arrives many times over. These :total sources are grouped into :sites sites.',
+                'Extension stores ship one extension per language, so a single site arrives many times over. These :total sources are grouped into :sites sites.',
                 $this->tally['sites'],
                 [
                     'total' => Number::format($this->installedSources),
