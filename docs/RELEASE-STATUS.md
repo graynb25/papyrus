@@ -1,15 +1,25 @@
 ﻿# Release status
 
-Updated 2026-11-01.
+Updated 2026-11-04.
 
-- **1.5.3 is built and tagged locally.** It fixes the fresh-install failure in 1.5.2, carries
-  the security work finished since that release, and adds the update contract. It is built from
-  `5ae2794` and tagged `v1.5.3`. Publication waits for the fresh-install manual sandbox.
-- **1.5.3 artifacts.** The installer is 245.6 MB, SHA-256
-  `f813140709d64a892ce5652754bd2824d7cfdf021ab9ef6bb3118cf426eb9501`; the portable is
+- **1.5.4 is a local release candidate.** It is built from `b660ace` and has not been
+  tagged, pushed or published. The installer is 245.6 MB, SHA-256
+  `01f8a954841595a623a5eacfc29e7082199781ee65022336b714557ba4433189`; the portable is
   285.6 MB, SHA-256
-  `7afa7b574640eff061d6c2877b79070c65f42398e3dbc9ce4196f2308bdb1d44`. Both name
-  `5ae2794`, and [`releases/1.5.3.json`](../releases/1.5.3.json) carries both.
+  `2ecad7b436926434d3a9a8338f98f53177f8e0d23eb06380fbaf6eeea533609d`. Both name
+  `b660ace`, and [`releases/1.5.4.json`](../releases/1.5.4.json) carries both.
+- **The 1.5.4 fresh-install manual sandbox passed on 2026-11-04.** The guest ran the
+  real unsigned setup executable, installed per user, registered, added a store,
+  trusted its signing key, installed MangaTaro, searched One Piece (14 results from
+  2 of 2 runnable sources), read chapter 1 of 1,203, and saw Chapter 001 marked
+  read. Session `build/manual-sandbox-results/session-20261104-094038`.
+- **The 1.5.4 copy scrub** removed the store name and URL from the app, docs and
+  tracked harnesses. The Sources page now says `Sources, on your terms.` and the
+  add-store helper names only index file shapes. The sandbox takes the URL from the
+  operator through `-StoreUrl` or `PAPYRUS_TEST_STORE_URL`.
+- **1.5.3 is published.** Built from `5ae2794`, tagged `v1.5.3`, CI run
+  `41385058266` passed in 15m35s. Its artifacts are in
+  [`releases/1.5.3.json`](../releases/1.5.3.json).
 - **1.5.2 has a fresh-install regression.** A new install of 1.5.2 stops before the first
   migration because it tries to snapshot a database that does not exist yet. Existing 1.5.2
   installs can upgrade to 1.5.3. The 1.5.2 release page carries a warning.
@@ -57,7 +67,9 @@ Updated 2026-11-01.
   `papyrus rollback`; the installer refuses a downgrade unless it is run with
   `/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`. 1.5.3 carries
   it. The About page links the release Atom feed.
-- **Still open.** The fresh-install manual sandbox for 1.5.3. D10 and the WP2-S4 runtime
-  drills. DEP-01, DEP-04, DEP-05, DEP-06, DEP-09, the COR batch and the CQ batch remain for
-  1.5.4. The WP2-S7 sandbox install is the manual run in progress.
+- **Still open for 1.5.4.** The automated Windows Sandbox gate on this build, the upgrade
+  and rollback drills, the portable and uninstall drills, the ahead-schema refusal, a
+  final build from a tagged commit in a clean clone, the shipped-runtime gates after
+  tagging, and publication approval. Do not push, tag or publish without the owner's
+  explicit approval.
 

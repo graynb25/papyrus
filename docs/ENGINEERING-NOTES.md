@@ -7637,6 +7637,34 @@ are all proven on the real setup executable. This stays manual acceptance eviden
 pass. The frames live under `build/`, which git ignores, so the committed record of what the run
 showed is the walkthrough and this text.
 
+### 16.6 Manual installer sandbox, 2026-11-04
+
+The 1.5.4 candidate was built from `b660ace` and run through the real unsigned
+`Papyrus-1.5.4-setup.exe` in a disposable Windows Sandbox. The host verified the
+copied installer against `build/dist/manifest.json`: 257,582,376 bytes, SHA-256
+`01f8a954841595a623a5eacfc29e7082199781ee65022336b714557ba4433189`. The guest
+had no PHP, Java or Papyrus before the run. Session
+`build/manual-sandbox-results/session-20261104-094038` holds 17 frames.
+
+The run installed per user, started the installed app, created the first
+account, opened Sources, added a store from the index URL the host
+supplied through `-StoreUrl`, trusted its signing key, installed MangaTaro,
+searched One Piece (14 results from 2 of 2 runnable sources), opened the series,
+added it to the library, and read chapter 1 at `/read/1/1` with real page
+images. The final frame shows 1 of 1,203 chapters read and Chapter 001 marked
+read.
+
+The Sources page rendered the new copy: the eyebrow `Sources, on your terms.`
+and the helper `It is usually named index.pb or index.min.json.` The add-store
+input was empty on arrival; the tester pasted the host-supplied URL. No store
+name is in the app or the tracked harness. The walkthrough images were
+generated from this session by `tools/make-walkthrough.ps1`; the add-store frame
+has the input interior redacted because it held the pasted URL.
+
+This is manual acceptance evidence, not a gate pass. The automated Windows
+Sandbox gate was not run on this build, and the host's own install and reader
+data were not touched.
+
 265. **A history rewrite changes the documents, not just the commits.**
 
     The public history was rewritten on 2026-11-01. It removed `storage/design-review` from

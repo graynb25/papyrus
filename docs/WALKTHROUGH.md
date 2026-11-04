@@ -1,97 +1,116 @@
 # From download to reading: a visual walkthrough
 
-These are real screenshots from the 2026-10-26 manual installer run in Windows
-Sandbox; `docs/ENGINEERING-NOTES.md` section 16.5 records that session. Each
-image is cropped to the one window it shows, so nothing from the desktop or the
-folders behind the browser is in frame. Two third-party extension-store tabs
-that were open in the browser during the run are blurred out of the tab strip:
-this guide stays with what Papyrus itself puts on screen, and where a store
-comes from is [SOURCES.md](SOURCES.md)'s subject, not this page's.
+These are real screenshots from the 2026-11-04 manual installer run in Windows
+Sandbox; `docs/ENGINEERING-NOTES.md` section 16.6 records that session. The
+screenshots are from version 1.5.4. The guest had no PHP, Java or Papyrus
+before the run, and the browser had one tab, so nothing from another tab is in
+frame. Each image is cropped to the one window it shows.
 
-The screenshots are from version 1.5.0's manual acceptance run. Small details
-may differ between versions; the flow does not.
+The guide stays with what Papyrus puts on screen. Where an extension repository
+comes from is [SOURCES.md](SOURCES.md)'s subject, not this page's. Papyrus does
+not name, link or ship a store.
 
 ## 1. Install
 
-![The setup wizard's additional tasks page, offering an optional desktop
-shortcut](walkthrough/01-install.png)
+![The setup wizard asking whether to install for one user or all users](walkthrough/01-install.png)
 
-Run the setup executable. It installs per user, asks for no administrator
-rights, and puts the program in your profile and the library somewhere else
-entirely, where an update or an uninstall cannot reach it. The page above is
-the only choice in the whole wizard: a desktop shortcut, which is optional
-either way, because Papyrus also lands in your Start menu.
+Run the setup executable. It asks whether to install for you only or for all
+users. Choose **Install for me only**: it needs no administrator rights, puts
+the program under your profile, and keeps the library in
+`%LOCALAPPDATA%\Papyrus`, where an update or an uninstall cannot reach it. The
+wizard creates a desktop shortcut and a Start Menu entry, and the app starts
+from either.
 
-The installer is unsigned, so Windows may warn you before running it. The
-project README explains that warning and the hash check that stands in for a
-signature.
+The installer is unsigned. Windows may show a warning before it runs; that is
+expected, and the build record carries the SHA-256 of the file you downloaded.
 
 ## 2. The first run, and your account
 
-![The sign-up page: name, email address, password and its rules, confirm
-password, Create account](walkthrough/02-register.png)
+![The create-account page, with the password rules met](walkthrough/02-register.png)
 
-Start Papyrus from its shortcut. A console window opens, the first launch takes
-15 to 30 seconds while the manga server starts and the database is created, and
-then your browser opens at `http://localhost:8000`. Nobody has signed up yet,
-so the log-in screen that answers carries a "Sign up" link, and it opens the
-form below: a name, an email address, and a password, with the page marking
-which password rules you already meet as you type. The first account becomes
-this install's owner, and the moment it exists the sign-up form closes itself
-behind you.
+Setup can open Papyrus when it finishes. If it does not, use the desktop
+shortcut. Either way the app is at `http://127.0.0.1:8000`. The first account
+created on a fresh install is the owner, so it can manage the server and its
+sources. Later accounts are readers unless the owner changes that.
 
-## 3. The library starts empty
+The form checks the password as you type: twelve characters, upper and lower
+case, a number and a symbol. The name and address in the screenshot are
+disposable test values; use your own.
 
-![An empty library: nothing added yet, with buttons to add a source, go to
-search, or bring a library from another app](walkthrough/03-library.png)
+## 3. The empty library is the correct first state
 
-This is not a fault. Papyrus ships with no sources, on purpose: which sites to
-read from is the one decision the application will not make for you.
+![The empty library, with Add a source, Go to search and Bring a library from another app](walkthrough/03-library.png)
 
-## 4. Add a source
+Papyrus ships with no sources. That is deliberate, and it is why the library is
+empty on the first run. The page says what to do first:
 
-![The Sources page's available extensions: a grid of source cards with Install
-buttons](walkthrough/04-sources.png)
+> Papyrus reads from sources. A source is an extension repository that holds
+> manga; Papyrus ships with none, so the first step is to add one.
 
-Sources come from an extension store, which you add once on the Sources page
-and trust after comparing its signing key with the publisher's. Once a store is
-trusted, its extensions appear here under Available, one card per source with
-an Install button. Install the one that matches the site you want to read
-from, and its source appears in Papyrus.
+**Add a source** is the first door. **Go to search** and **Bring a library from
+another app** both need a source before they can return anything.
 
-## 5. Search
+## 4. Add a store
 
-![Search results for One Piece: 14 results, deduplicated from 2
-sources](walkthrough/05-search.png)
+![The Sources page with no store registered and the Add a store field empty](walkthrough/04-add-store.png)
 
-Search runs against every installed source at once and deduplicates the
-answers. This run's search for One Piece answered 14 results from 2 sources; a
-card's small text names the source a result came from.
+Open **Sources**. No store is registered yet. Paste the **index URL** of an
+extension repository you trust into **Add a store**. Papyrus does not name,
+link or recommend one; the field is empty on a fresh install, and the URL in
+the screenshot has been removed.
 
-## 6. Open the series
+The URL must be the index file, not the repository root. It is usually named
+`index.pb` or `index.min.json`. Once the store is added, its name, badge and
+signing key appear. Compare the key with the one the publisher has published.
+If they match, trust it. Trusting is what makes its extensions installable, and
+it is the only step that does.
 
-![The One Piece series page: cover, tags, an In library button, and the chapter
-list](walkthrough/06-series.png)
+## 5. Install an extension
 
-A result opens into the series page: cover, description, tags, and the chapter
-list, 1,202 chapters in this case. **In library** keeps it on your shelf, and
-the toolbar above the list holds the bulk actions: download unread, mark all
-read, and whether the list starts from the oldest or the newest chapter. The
-tick beside Chapter 001 is where this walkthrough ends up.
+![The Available grid, listing the extensions the trusted store offers](walkthrough/04-sources.png)
 
-## 7. Read
+After a store is trusted, the **Available** view lists what it publishes. One
+extension covers one site or one language variant; install the one that
+matches what you read. This run installed **MangaTaro**.
 
-![The reader: chapter pages stacked down the window, with a chapter and
-progress bar at the bottom](walkthrough/07-reader.png)
+Installed extensions appear as sources, and the Sources page groups the
+language variants of the same site together, so one site does not fill the
+page with flags.
 
-Opening a chapter loads its pages, one after another down the window, and the
-bar at the bottom names the chapter and tracks your position in it. Pages come
-through Papyrus itself, not straight from the source to your browser. **Back to
-the series** returns to the chapter list, where the chapter you finished is
-now ticked.
+## 6. Search every source
 
----
+![Search for One Piece, with 2 of 2 runnable sources answered and 14 results](walkthrough/05-search.png)
 
-Where to go next: [INSTALL.md](INSTALL.md) is the whole install story, from
-backups to troubleshooting by symptom, and [SOURCES.md](SOURCES.md) covers
-sources, stores, and what to do when search returns nothing.
+**Search every source** asks every runnable source at once. This run sent the
+query to 2 of 2 sources and got 14 results, deduplicated from 2 sources. The
+filters above the results narrow by language and content rating; the per-source
+status shows which sources answered and which were left out.
+
+A source that times out or cannot answer is counted rather than allowed to fail
+the whole search.
+
+## 7. Add the series, then read a chapter
+
+![The series page with the In library confirmation and the chapter list loading](walkthrough/06-series.png)
+
+Open a result and choose **Add to library**. The series page shows the cover,
+the source it came from, its status and tags, and the chapter list. The list can
+take a few seconds to arrive; the page says so while it fetches.
+
+![The reader at chapter 1, page 1, showing a real manga page and the progress bar](walkthrough/07-reader.png)
+
+Choose a chapter. The reader shows one page at a time, saves your place, and
+puts the chapter and page at the bottom of the screen. This run opened
+`/read/1/1`, chapter 1 of 1,203.
+
+## 8. The series remembers where you are
+
+![The series page after reading chapter 1, with 1 of 1,203 chapters read and Continue reading offered](walkthrough/08-series-read.png)
+
+Back on the series, Chapter 001 is marked read and the header offers
+**Continue reading**. The library lists the series, and the next chapter is one
+press away. That is the loop: a store supplies extensions, an extension
+supplies sources, a source supplies series, and Papyrus keeps the read state.
+
+From here, [SOURCES.md](SOURCES.md) covers choosing between sources and what to
+do when one breaks; [README.md](../README.md) covers the rest of the app.

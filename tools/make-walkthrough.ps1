@@ -2,74 +2,52 @@
 # session's screenshots.
 #
 # The walkthrough (docs/WALKTHROUGH.md) shows the reader flow from the
-# 2026-10-26 manual installer run; docs/ENGINEERING-NOTES.md section 16.5
+# 2026-11-04 manual installer run; docs/ENGINEERING-NOTES.md section 16.6
 # records that session. The session folder lives under build/, which git
 # ignores, so the committed images in docs/walkthrough are the durable copy
 # and this script is their provenance.
 #
 # Each frame is cropped to the one window it documents, so nothing from the
-# desktop, the screenshots folder or the taskbar survives. In the browser
-# frames the two third-party extension-store tabs and the new-tab button are
-# blurred out of the tab strip: the guide must not show or name them.
+# desktop, the screenshots folder or the taskbar survives. The 2026-11-04
+# session had a single browser tab, so there is no tab-blur step. The
+# add-store frame had the tester's pasted index URL in the input; its interior
+# is filled white, so the guide shows the empty field a fresh install presents
+# and publishes no store URL.
 #
 # Geometry was measured on the source frames, not eyeballed. Frames are
 # 2032x1111. The Edge window's own borders sit at x=17 (left), x=1003 (right),
 # y=10 (top) and y=1041 (bottom); a window parked off-screen to the left shows
 # a sliver at x 0..16 behind Edge's shadow, so the crop starts at the border.
-# In every browser frame the active tab's white area ends at x=294, and the
-# tab strip runs from y=11 (below the top border line) to y=49 (where the
-# address bar's white row starts), so the blur region below covers the two
-# third-party tabs and the new-tab button and nothing else. The setup window
-# spans x 717..1314 and y 296..758 including its borders.
+# The setup mode dialog spans x 833..1182 and y 371..623 including its border.
+# The search frame is cut at y=811 so it ends above covers that were still
+# loading when the frame was taken.
 
 param(
-    [string] $SessionDir = (Join-Path (Split-Path $PSScriptRoot) 'build\manual-sandbox-results\session-20261026-210533'),
+    [string] $SessionDir = (Join-Path (Split-Path $PSScriptRoot) 'build\manual-sandbox-results\session-20261104-094038'),
     [string] $OutDir = (Join-Path (Split-Path $PSScriptRoot) 'docs\walkthrough')
 )
 
 Add-Type -AssemblyName System.Drawing
 
 $edgeRect = New-Object System.Drawing.Rectangle(18, 11, 986, 1031)
-$setupRect = New-Object System.Drawing.Rectangle(717, 296, 598, 463)
-# Blur rect in edge-crop coordinates: x 297..812 and y 11..49 of the frame.
-$blurRect = New-Object System.Drawing.Rectangle(279, 0, 516, 39)
+$setupRect = New-Object System.Drawing.Rectangle(832, 370, 352, 255)
+$searchRect = New-Object System.Drawing.Rectangle(18, 11, 986, 900)
+# Input interior in edge-crop coordinates: x 80..831 and y 933..965 of the frame.
+$storeInputRect = New-Object System.Drawing.Rectangle(62, 922, 751, 32)
 
-# The frames behind each walkthrough image. 01 is the setup wizard; the rest
-# are the Edge window in reading order.
+# The frames behind each walkthrough image, in reading order. The two 04
+# images are the add-store form and the Available grid it leads to.
 $frames = @(
-    @{ Out = '01-install.png';  Src = 'shot-000008-20261026-210700.png';  Rect = $setupRect; Blur = $false },
-    @{ Out = '02-register.png'; Src = 'shot-000135-20261026-212823.png'; Rect = $edgeRect;  Blur = $false },
-    @{ Out = '03-library.png';  Src = 'shot-000139-20261026-212904.png'; Rect = $edgeRect;  Blur = $false },
-    @{ Out = '04-sources.png';  Src = 'shot-000148-20261026-213035.png'; Rect = $edgeRect;  Blur = $true },
-    @{ Out = '05-search.png';   Src = 'shot-000151-20261026-213105.png'; Rect = $edgeRect;  Blur = $true },
-    @{ Out = '06-series.png';   Src = 'shot-000164-20261026-213316.png'; Rect = $edgeRect;  Blur = $true },
-    @{ Out = '07-reader.png';   Src = 'shot-000155-20261026-213146.png'; Rect = $edgeRect;  Blur = $true }
+    @{ Out = '01-install.png';      Src = 'shot-000003-20261104-094125.png'; Rect = $setupRect;  Redact = $false },
+    @{ Out = '02-register.png';     Src = 'shot-000010-20261104-094236.png'; Rect = $edgeRect;   Redact = $false },
+    @{ Out = '03-library.png';      Src = 'shot-000013-20261104-094307.png'; Rect = $edgeRect;   Redact = $false },
+    @{ Out = '04-add-store.png';    Src = 'shot-000011-20261104-094246.png'; Rect = $edgeRect;   Redact = $true },
+    @{ Out = '04-sources.png';      Src = 'shot-000012-20261104-094256.png'; Rect = $edgeRect;   Redact = $false },
+    @{ Out = '05-search.png';       Src = 'shot-000014-20261104-094317.png'; Rect = $searchRect; Redact = $false },
+    @{ Out = '06-series.png';       Src = 'shot-000015-20261104-094327.png'; Rect = $edgeRect;   Redact = $false },
+    @{ Out = '07-reader.png';       Src = 'shot-000016-20261104-094337.png'; Rect = $edgeRect;   Redact = $false },
+    @{ Out = '08-series-read.png';  Src = 'shot-000017-20261104-094347.png'; Rect = $edgeRect;   Redact = $false }
 )
-
-# Blurs by shrinking the region and drawing it back stretched. A 12x
-# reduction destroys 14px tab titles while keeping the region's tone.
-function Invoke-TabBlur($bmp, [System.Drawing.Rectangle] $rect) {
-    $region = $bmp.Clone($rect, $bmp.PixelFormat)
-    $smallW = [Math]::Max(1, [int][Math]::Round($rect.Width / 12.0))
-    $smallH = [Math]::Max(1, [int][Math]::Round($rect.Height / 12.0))
-    $small = New-Object System.Drawing.Bitmap($smallW, $smallH)
-    $shrink = [System.Drawing.Graphics]::FromImage($small)
-    $shrink.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $shrink.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-    $shrink.DrawImage($region, (New-Object System.Drawing.Rectangle(0, 0, $smallW, $smallH)),
-        (New-Object System.Drawing.Rectangle(0, 0, $rect.Width, $rect.Height)),
-        [System.Drawing.GraphicsUnit]::Pixel)
-    $shrink.Dispose()
-    $region.Dispose()
-    $stretch = [System.Drawing.Graphics]::FromImage($bmp)
-    $stretch.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $stretch.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-    $stretch.DrawImage($small, $rect,
-        (New-Object System.Drawing.Rectangle(0, 0, $smallW, $smallH)),
-        [System.Drawing.GraphicsUnit]::Pixel)
-    $stretch.Dispose()
-    $small.Dispose()
-}
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -82,8 +60,12 @@ foreach ($frame in $frames) {
         $frame.Rect, [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose()
     $img.Dispose()
-    if ($frame.Blur) {
-        Invoke-TabBlur $crop $blurRect
+    if ($frame.Redact) {
+        $g = [System.Drawing.Graphics]::FromImage($crop)
+        $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+        $g.FillRectangle($brush, $storeInputRect)
+        $g.Dispose()
+        $brush.Dispose()
     }
     $dstPath = Join-Path $OutDir $frame.Out
     $crop.Save($dstPath, [System.Drawing.Imaging.ImageFormat]::Png)

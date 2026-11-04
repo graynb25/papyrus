@@ -7,7 +7,13 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-11-01
+## Current delivery status, 2026-11-04
+
+The 1.5.3 release is published from `5ae2794` and tagged `v1.5.3`; CI run
+`41385058266` passed in 15m35s. The 1.5.4 release candidate is built from
+`b660ace` and passed the manual fresh-install sandbox on 2026-11-04. Its
+installer and portable are recorded in `releases/1.5.4.json`; it is not tagged
+or published.
 
 The 1.5.1 work is in the rewritten tree. The 1.5.1 release was not published. The unsigned
 275,072,638-byte (262.3MB) installer was built from `9dd0918`, and its manual sandbox run
@@ -28,20 +34,20 @@ install, no Start Menu entry and no uninstall entry. The setup and the portable 
 different commits: the install tree ships storage placeholders and did not need the first-launch
 fix, and the setup was already proven. No 1.5.1 artifact is published. A local release record
 exists at `releases/1.5.1.json`; it records both artifacts, each with the commit it was built from.
-The 1.4.0 record remains the latest published release. The 1.5.0 install tree passed the Windows
-Sandbox gate on run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`,
+That 1.5.1 record remains local; it is not a published release. The 1.5.0 install tree passed the
+Windows Sandbox gate on run 19: 86 checks, 0 failures, started through the reader shortcut with `--open`,
 first account created, `/sources` rendered, community store and MangaTaro installed, One Piece
 fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,432-byte WebP. The
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
 
-The 1.5.1 build will not be published. 1.5.2 is in preparation from the rewritten tree;
-it is not published until the release build and tag are verified. See
-[RELEASE-STATUS.md](RELEASE-STATUS.md).
+The 1.5.1 build was not published. 1.5.2 and 1.5.3 were published from the rewritten
+tree. 1.5.4 is a candidate until the release build, tag and publication are approved.
+See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
-The 1.5.2 installer will be unsigned. The only signing material is a self-signed
-development certificate, which does not remove the Windows warning. The release record
-will say `signed: false`. Flux remains proprietary; no licence text is staged, and the
+The 1.5.2 and later installers are unsigned. The only signing material is a self-signed
+development certificate, which does not remove the Windows warning. The release records
+say `signed: false`. Flux remains proprietary; no licence text is staged, and the
 in-app licences page names it proprietary.
 
 ### History rewrite, 2026-10-30
