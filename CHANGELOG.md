@@ -21,6 +21,32 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## 1.5.5 - 2026-11-04
+
+A guided first-run tour for the install owner.
+
+### Added
+
+**A guided first-run tour.** A fresh install dims the page and walks the install owner
+through adding an extension repository, comparing and trusting its signing key, installing
+an extension, searching, adding a series and opening a chapter. The tour is data-driven,
+resumes at the saved step, can be skipped, and can be replayed from Settings > FAQ. It
+never names, links or ships a store URL. `40178ef`
+
+**The tour explains the store trust step on the real controls.** The highlighted form,
+signing key and install buttons remain usable; the tour advances when the action succeeds.
+`40178ef`
+
+### Known limits
+
+- **The tour auto-starts for the install owner only.** A reader account cannot add a store
+  or install an extension, so it is not shown controls it cannot use. Reader onboarding is
+  a later piece.
+- **The tour ends on the series page.** The reader is outside the app shell; the chapter
+  list is the last spotlight and Done closes the tour.
+- **The store card shows the name and URL of the store you added.** Those are the store's
+  own metadata, not a Papyrus recommendation.
+
 ## 1.5.4 - 2026-11-03
 
 A correctness and hardening release. It fixes the library check loop, the download and
