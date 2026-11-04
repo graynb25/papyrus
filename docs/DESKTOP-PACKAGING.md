@@ -2,7 +2,7 @@
 
 > **Release status (2026-11-04).** 1.5.3 is published. 1.5.4 is a local final
 > build from `730225f`; its manual fresh-install sandbox passed on 2026-11-04.
-> It is not tagged or published. See
+> It is tagged locally as `v1.5.4` and has not been pushed or published. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox

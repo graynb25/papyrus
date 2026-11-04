@@ -13,7 +13,8 @@ The 1.5.3 release is published from `5ae2794` and tagged `v1.5.3`; CI run
 `41385058266` passed in 15m35s. The 1.5.4 final build is from `730225f` and
 passed the manual fresh-install sandbox on 2026-11-04 in session
 `session-20261104-133727`. Its installer and portable are recorded in
-`releases/1.5.4.json`; it is not tagged or published.
+`releases/1.5.4.json`; it is tagged locally as `v1.5.4` and has not been pushed
+or published.
 
 The 1.5.1 work is in the rewritten tree. The 1.5.1 release was not published. The unsigned
 275,072,638-byte (262.3MB) installer was built from `9dd0918`, and its manual sandbox run
