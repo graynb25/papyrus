@@ -11,10 +11,24 @@
                 minimized: false,
                 previousFocus: null,
                 observer: null,
+                cardObserver: null,
                 init() {
                     this.previousFocus = document.activeElement;
                     this.$nextTick(() => {
                         this.measure();
+
+                        /*
+                         * The card is positioned while x-show is still applying
+                         * its display change, so offsetHeight can be zero on the
+                         * first pass and the card lands below a short viewport.
+                         * Re-position once the card has a real size so the
+                         * buttons stay inside the window.
+                         */
+                        if (this.$refs.card && typeof ResizeObserver !== 'undefined') {
+                            this.cardObserver = new ResizeObserver(() => this.positionCard());
+                            this.cardObserver.observe(this.$refs.card);
+                        }
+
                         if (this.mode === 'modal') {
                             this.$nextTick(() => {
                                 const primary = this.$refs.card?.querySelector('[data-tour-primary]');
@@ -31,6 +45,7 @@
                 },
                 destroy() {
                     this.observer?.disconnect();
+                    this.cardObserver?.disconnect();
                 },
                 measure() {
                     const target = document.querySelector(this.selector);
