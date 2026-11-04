@@ -246,6 +246,8 @@ new #[Title('Search')] class extends AdultContentPage
         $this->runId = $run->id;
 
         $this->startAniListResolution();
+
+        $this->dispatch('tour-search-completed');
     }
 
     /*
@@ -647,6 +649,7 @@ new #[Title('Search')] class extends AdultContentPage
             <flux:input
                 wire:model.live.debounce.500ms="query"
                 id="search-query"
+                data-tour="search-field"
                 :label="__('Search')"
                 :placeholder="__('Series title')"
                 :aria-label="__('Search')"
@@ -1131,7 +1134,7 @@ new #[Title('Search')] class extends AdultContentPage
             <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 @foreach ($this->groups as $group)
                     @php($primaryId = (int) $group->primary->suwayomi_manga_id)
-                    <li data-series-card class="group relative">
+                    <li data-series-card @if ($loop->first) data-tour="first-result" @endif class="group relative">
                         {{--
                             A group with more than one source opens a chooser instead of
                             navigating, because the card was already telling the reader there

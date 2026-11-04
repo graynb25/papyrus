@@ -283,6 +283,8 @@ new #[Title('Sources')] class extends AdultContentPage
             heading: __('Store added: :name', ['name' => $store->name]),
             variant: 'success',
         );
+
+        $this->dispatch('tour-store-added');
     }
 
     public function removeStore(string $indexUrl): void
@@ -459,6 +461,8 @@ new #[Title('Sources')] class extends AdultContentPage
         );
 
         $this->loadCatalogueWhenTheServerHasNone();
+
+        $this->dispatch('tour-store-trusted');
     }
 
     /**
@@ -825,6 +829,8 @@ new #[Title('Sources')] class extends AdultContentPage
                 variant: $mirrored ? 'success' : 'info',
             );
 
+            $this->dispatch('tour-extension-installed');
+
             return;
         }
 
@@ -868,6 +874,8 @@ new #[Title('Sources')] class extends AdultContentPage
             heading: __('Installed'),
             variant: $mirrored ? 'success' : 'info',
         );
+
+        $this->dispatch('tour-extension-installed');
     }
 
     public function previousPage(): void
@@ -1258,7 +1266,7 @@ new #[Title('Sources')] class extends AdultContentPage
 }; ?>
 
 <div class="w-full space-y-8" x-on:open-install-warning.window="$dispatch('modal-show', { name: 'install-warning' })" x-on:close-install-warning.window="$dispatch('modal-close', { name: 'install-warning' })">
-    <x-page.header back="{{ route('library') }}" :back-label="__('Back to your library')">
+    <x-page.header data-tour="sources-page" back="{{ route('library') }}" :back-label="__('Back to your library')">
         <x-slot:eyebrow>{{ __('Sources, on your terms.') }}</x-slot:eyebrow>
         <x-slot:title>{{ __('Sources') }}</x-slot:title>
     </x-page.header>
@@ -1661,7 +1669,7 @@ new #[Title('Sources')] class extends AdultContentPage
                 @foreach ($this->stores as $store)
                     @php($isTrusted = in_array($store->id, $this->trustedIds, true))
 
-                    <li>
+                    <li data-tour="store-card">
                         <flux:card class="gap-3 p-4">
                             <div class="flex flex-wrap items-start justify-between gap-3">
                                 <div class="min-w-0">
@@ -1745,7 +1753,7 @@ new #[Title('Sources')] class extends AdultContentPage
         @endif
 
         @can('manage-install')
-            <form wire:submit="addStore" class="flex flex-wrap items-end gap-3">
+            <form wire:submit="addStore" data-tour="add-store" class="flex flex-wrap items-end gap-3">
                 <div class="min-w-72 flex-1">
                     <flux:input
                         wire:model="storeUrl"
@@ -1793,6 +1801,7 @@ new #[Title('Sources')] class extends AdultContentPage
                         :variant="$view === $key ? 'primary' : 'outline'"
                         wire:click="setView('{{ $key }}')"
                         aria-current="{{ $view === $key ? 'page' : 'false' }}"
+                        :data-tour="$key === 'available' ? 'available' : null"
                     >
                         {{ $label }}
                     </flux:button>

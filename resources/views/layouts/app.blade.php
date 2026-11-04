@@ -12,4 +12,9 @@
     >
         {{ $slot }}
     </main>
+
+    <livewire:onboarding.first-run-tour
+        :auto-start="request()->routeIs('library')"
+        :current-route="request()->route()?->getName()"
+    />
 </x-layouts::app.sidebar>

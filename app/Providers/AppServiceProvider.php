@@ -6,6 +6,7 @@ use App\Backup\BackupLibrary;
 use App\Import\BackupReaders;
 use App\Import\Tachibk\TachibkReader;
 use App\Import\Tachimanga\TachimangaReader;
+use App\Livewire\Onboarding\FirstRunTour;
 use App\Models\User;
 use App\Search\Deduplicator;
 use App\Search\TitleNormalizer;
@@ -32,6 +33,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Livewire\Livewire;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -166,6 +168,8 @@ class AppServiceProvider extends ServiceProvider
         $this->allowTemporaryUploadsToTheServerCeiling();
         $this->rememberTheLocalReader();
         $this->defineInstallOwnerGate();
+
+        Livewire::component('onboarding.first-run-tour', FirstRunTour::class);
     }
 
     /**

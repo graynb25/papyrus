@@ -1560,7 +1560,7 @@ new #[Title('Library')] class extends Component
             composed answer. The strings are load-bearing for tests, so they
             stay exactly as they were; only the room around them changed.
         --}}
-        <div class="mx-auto max-w-md py-16 text-center sm:py-24">
+        <div data-tour="empty-library" class="mx-auto max-w-md py-16 text-center sm:py-24">
             <span class="seal mx-auto size-14" aria-hidden="true">
                 <flux:icon name="book-open" class="size-6" />
             </span>
@@ -1577,7 +1577,7 @@ new #[Title('Library')] class extends Component
 
             <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
                 @if ($this->totalAll === 0)
-                    {{ __('Papyrus reads from sources. A source is an extension repository that holds manga; Papyrus ships with none, so the first step is to add one.') }}
+                    {{ __(\App\Support\OnboardingCopy::SOURCE_REQUIREMENT) }}
                 @else
                     {{ __('Try a different search, or pick another shelf.') }}
                 @endif

@@ -361,6 +361,10 @@ new class extends Component
             heading: $inLibrary ? __('In library') : __('Removed'),
             variant: $inLibrary ? 'success' : 'info',
         );
+
+        if ($inLibrary) {
+            $this->dispatch('tour-library-added');
+        }
     }
 
     public function toggleFavourite(): void
@@ -1410,6 +1414,7 @@ new class extends Component
                             icon="bookmark"
                             wire:click="toggleLibrary"
                             wire:loading.attr="disabled"
+                            data-tour="add-to-library"
                         >
                             {{ $this->state->in_library ? __('In library') : __('Add to library') }}
                         </flux:button>
@@ -1524,7 +1529,7 @@ new class extends Component
         </section>
 
         {{-- Chapters ------------------------------------------------------- --}}
-        <section class="space-y-4">
+        <section data-tour="read-chapter" class="space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
                 <div class="flex items-baseline gap-3">
                     <flux:heading level="2" class="font-display font-semibold tracking-tight">{{ __('Chapters') }}</flux:heading>
