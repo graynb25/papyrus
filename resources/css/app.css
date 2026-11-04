@@ -8,6 +8,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+[x-cloak] {
+    display: none !important;
+}
+
 .language-flag {
     display: inline-block;
     width: 1.333em;

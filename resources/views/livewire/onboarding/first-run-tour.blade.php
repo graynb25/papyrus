@@ -8,6 +8,7 @@
                 rect: null,
                 card: { top: 0, left: 0 },
                 ready: false,
+                minimized: false,
                 previousFocus: null,
                 observer: null,
                 init() {
@@ -177,10 +178,23 @@
 
             <div
                 x-ref="card"
-                x-show="ready"
-                class="pointer-events-auto absolute max-h-[calc(100vh-2rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white/95 p-5 text-zinc-900 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-zinc-900/95 dark:text-zinc-100"
+                x-show="ready && !minimized"
+                class="pointer-events-auto absolute max-h-[calc(100vh-2rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white/95 p-5 text-zinc-900 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-zinc-900/95 dark:text-zinc-100 relative"
                 :style="cardStyle()"
             >
+                @if ($current['mode'] === 'interactive')
+                    <flux:button
+                        size="xs"
+                        variant="ghost"
+                        icon="chevron-down"
+                        class="absolute right-3 top-3"
+                        x-on:click="minimized = true; $nextTick(() => $refs.show?.focus())"
+                        aria-label="{{ __('Minimize the tour') }}"
+                    >
+                        {{ __('Minimize') }}
+                    </flux:button>
+                @endif
+
                 <p class="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-vermilion-600 dark:text-vermilion-400">
                     {{ __('Getting started') }}
                 </p>
@@ -224,6 +238,17 @@
                         {{ __('Skip') }}
                     </flux:button>
                 </div>
+            </div>
+
+            <div
+                x-show="minimized"
+                x-cloak
+                class="pointer-events-auto absolute bottom-4 right-4 flex items-center gap-2 rounded-full border border-zinc-200/80 bg-white/95 px-3 py-2 text-zinc-900 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-zinc-900/95 dark:text-zinc-100"
+            >
+                <span class="text-xs font-medium">{{ __('Tour, step :step of :total', ['step' => $step, 'total' => $total]) }}</span>
+                <flux:button x-ref="show" size="xs" variant="outline" x-on:click="minimized = false; $nextTick(() => $refs.card?.querySelector('button')?.focus())">
+                    {{ __('Show') }}
+                </flux:button>
             </div>
         </div>
     @endif

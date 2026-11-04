@@ -167,6 +167,29 @@ class TourTest extends TestCase
             ->assertSet('step', 4);
     }
 
+    public function test_interactive_steps_render_the_minimize_control(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs($owner);
+
+        Livewire::test(FirstRunTour::class, ['autoStart' => false, 'currentRoute' => 'sources'])
+            ->set('step', 5)
+            ->set('visible', true)
+            ->assertSee('Minimize')
+            ->assertSee('Step 5 of 9')
+            ->assertSee('Tour, step 5 of 9');
+    }
+
+    public function test_modal_steps_do_not_render_the_minimize_control(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs($owner);
+
+        Livewire::test(FirstRunTour::class, ['autoStart' => true, 'currentRoute' => 'library'])
+            ->assertSee('Papyrus needs a source')
+            ->assertDontSee('Minimize');
+    }
+
     public function test_the_library_added_event_advances_to_the_read_step(): void
     {
         $owner = $this->owner();
