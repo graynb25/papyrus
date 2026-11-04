@@ -2,17 +2,20 @@
 
 Updated 2026-11-04.
 
-- **1.5.4 is a local release candidate.** It is built from `b660ace` and has not been
-  tagged, pushed or published. The installer is 245.6 MB, SHA-256
-  `01f8a954841595a623a5eacfc29e7082199781ee65022336b714557ba4433189`; the portable is
-  285.6 MB, SHA-256
-  `2ecad7b436926434d3a9a8338f98f53177f8e0d23eb06380fbaf6eeea533609d`. Both name
-  `b660ace`, and [`releases/1.5.4.json`](../releases/1.5.4.json) carries both.
-- **The 1.5.4 fresh-install manual sandbox passed on 2026-11-04.** The guest ran the
-  real unsigned setup executable, installed per user, registered, added a store,
-  trusted its signing key, installed MangaTaro, searched One Piece (14 results from
-  2 of 2 runnable sources), read chapter 1 of 1,203, and saw Chapter 001 marked
-  read. Session `build/manual-sandbox-results/session-20261104-094038`.
+- **1.5.4 is built from the final release tree.** It was built from `730225f` in a
+  clean worktree and has not been tagged, pushed or published. The installer is 245.6 MB,
+  SHA-256 `e5bf56bbf6a6e67bc2626d6175c866206f0fab08d31678b4dc6eae8901386f27`; the
+  portable is 285.6 MB, SHA-256
+  `e53b5c859f649db1aca8c4057a5fa12cf7f4c48e10c7836c4b751f5fd2877748`. Both name
+  `730225f`, and [`releases/1.5.4.json`](../releases/1.5.4.json) carries both.
+- **The 1.5.4 final-build manual sandbox passed on 2026-11-04.** The guest verified the
+  installer at 257,582,579 bytes, installed per user, registered, added a store, trusted
+  its signing key, installed MangaTaro, searched One Piece (14 results from 2 of 2
+  runnable sources), opened the source chooser, read chapter 1 of 1,203 with a real page,
+  and saw Chapter 001 marked read. Session
+  `build/manual-sandbox-results/session-20261104-133727`. The ten second watcher frame at
+  the reader caught the page while it was loading; the owner confirmed the real page
+  rendered and the series frame records the read state.
 - **The 1.5.4 copy scrub** removed the store name and URL from the app, docs and
   tracked harnesses. The Sources page now says `Sources, on your terms.` and the
   add-store helper names only index file shapes. The sandbox takes the URL from the
@@ -67,9 +70,9 @@ Updated 2026-11-04.
   `papyrus rollback`; the installer refuses a downgrade unless it is run with
   `/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`. 1.5.3 carries
   it. The About page links the release Atom feed.
-- **Still open for 1.5.4.** The automated Windows Sandbox gate on this build, the upgrade
-  and rollback drills, the portable and uninstall drills, the ahead-schema refusal, a
-  final build from a tagged commit in a clean clone, the shipped-runtime gates after
-  tagging, and publication approval. Do not push, tag or publish without the owner's
-  explicit approval.
+- **Still open for 1.5.4.** The tag and publication approval, the automated Windows
+  Sandbox gate on this build, the upgrade and rollback drills, the portable and uninstall
+  drills, the ahead-schema refusal, and the shipped-runtime gates after tagging. The
+  clean-worktree build is done from `730225f`; the release record commit is what the tag
+  will point at. Do not push, tag or publish without the owner's explicit approval.
 

@@ -1,8 +1,8 @@
 # Packaging Papyrus for Windows
 
-> **Release status (2026-11-04).** 1.5.3 is published. 1.5.4 is a local release
-> candidate built from `b660ace`; its manual fresh-install sandbox passed on
-> 2026-11-04. It is not tagged or published. See
+> **Release status (2026-11-04).** 1.5.3 is published. 1.5.4 is a local final
+> build from `730225f`; its manual fresh-install sandbox passed on 2026-11-04.
+> It is not tagged or published. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox
@@ -66,15 +66,16 @@ chapter 1 of 1,203, and a layout check with no `%LOCALAPPDATA%` install, no Star
 no uninstall entry. The C: run used a path with a space; the D: run used a 4 GB VHD-backed
 second volume.
 
-The 1.5.4 build on 2026-11-04 ran from `b660ace`. The install payload passed its built-in
-checks at 10,237 files. The unsigned installer compiled at 257,582,376 bytes (245.6MB)
-with SHA-256 `01f8a954841595a623a5eacfc29e7082199781ee65022336b714557ba4433189`;
-the portable compiled at 299,480,443 bytes (285.6MB) with 10,238 entries and SHA-256
-`2ecad7b436926434d3a9a8338f98f53177f8e0d23eb06380fbaf6eeea533609d`. The manual
-fresh-install sandbox passed on 2026-11-04: per-user install, registration, a store,
-MangaTaro, One Piece, 14 results from 2 of 2 runnable sources, a real reader page,
-and 1 of 1,203 chapters read. The automated Windows Sandbox gate has not run on this
-build.
+The 1.5.4 final build on 2026-11-04 ran from `730225f` in a clean worktree. The install
+payload passed its built-in checks at 10,237 files. The unsigned installer compiled at
+257,582,579 bytes (245.6MB) with SHA-256
+`e5bf56bbf6a6e67bc2626d6175c866206f0fab08d31678b4dc6eae8901386f27`; the portable
+compiled at 299,480,441 bytes (285.6MB) with 10,238 entries and SHA-256
+`e53b5c859f649db1aca8c4057a5fa12cf7f4c48e10c7836c4b751f5fd2877748`. The manual
+fresh-install sandbox passed on 2026-11-04 in session `session-20261104-133727`:
+per-user install, registration, a store, MangaTaro, One Piece, 14 results from 2 of 2
+runnable sources, a real reader page, and 1 of 1,203 chapters read. The automated
+Windows Sandbox gate has not run on this build.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

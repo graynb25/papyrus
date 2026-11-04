@@ -1,7 +1,7 @@
 {
     "version": "1.5.4",
-    "released": "2026-11-04T14:37:00+00:00",
-    "commit": "b660ace",
+    "released": "2026-11-04T17:22:49+00:00",
+    "commit": "730225f",
     "requires": {
         "suwayomi": ">=2.4.0",
         "jvm": ">=25.0.5"
@@ -14,15 +14,15 @@
     "artifacts": [
         {
             "file": "Papyrus-1.5.4-portable.zip",
-            "sha256": "2ecad7b436926434d3a9a8338f98f53177f8e0d23eb06380fbaf6eeea533609d",
-            "size": 299480443,
-            "commit": "b660ace"
+            "sha256": "e53b5c859f649db1aca8c4057a5fa12cf7f4c48e10c7836c4b751f5fd2877748",
+            "size": 299480441,
+            "commit": "730225f"
         },
         {
             "file": "Papyrus-1.5.4-setup.exe",
-            "sha256": "01f8a954841595a623a5eacfc29e7082199781ee65022336b714557ba4433189",
-            "size": 257582376,
-            "commit": "b660ace"
+            "sha256": "e5bf56bbf6a6e67bc2626d6175c866206f0fab08d31678b4dc6eae8901386f27",
+            "size": 257582579,
+            "commit": "730225f"
         }
     ]
 }
