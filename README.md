@@ -46,14 +46,16 @@ this is not something to monetise.
 ## Status
 
 Discovery and the read path work in the checkout and have been walked against live Suwayomi.
-The 1.5.0 installer's manual sandbox run passed on 2026-10-27, and the 1.5.1 setup passed on
-2026-10-29 with the same reader flow, including a source read. The automated clean-machine gate
-is still blocked by the Windows Sandbox VM issue. Search, source management, health, downloads,
-migration between sources, the series page, the reader and settings are implemented.
+The 1.5.6 manual installer tour passed on 2026-11-05 through the reader shortcut, including a
+source read and the first-run tour. The 1.5.6 automated clean-machine gate passed every check
+on the same day, including a source page read through the app proxy. Each new build must run
+both again; an earlier version's pass is not evidence for a later one. Search, source
+management, health, downloads, migration between sources, the series page, the reader and
+settings are implemented.
 
-**Release status.** 1.5.3 is the current release. It fixes a fresh-install failure in 1.5.2,
-carries the security work finished since that release, and adds the update contract. 1.5.1 was
-built and proven locally but was not published. See
+**Release status.** 1.5.6 is the current release, published on 2026-11-05. It fixes the
+launcher sending the browser and post-registration redirect to port 8000 when the app bound
+another port. 1.5.1 was built and proven locally but was not published. See
 [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the
@@ -754,18 +756,17 @@ trusting the clock; three ways of running it wrong fail with no output at all, a
 in [`build/sandbox/papyrus.wsb`](build/sandbox/papyrus.wsb).
 [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) lists what it asserts and what it found.
 
-**Current state, 2026-10-26:** the gate passed on run 19. All 86 checks held, and the run wrote
-`build/sandbox-results/sandbox-report.txt` and a screenshot showing Edge on the Papyrus login
-page at `localhost:8402`. The guest had been dying with `0x80370106`; a host policy,
-`HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0, fixed it on this
-build. Run 19 also added a community store, installed the MangaTaro extension, fetched One
-Piece, and read page 0 of chapter 1 through the authenticated proxy: 200 `image/webp`, 175,432
-bytes, SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`, the same
-first page the WSL run read. `/sources` and `/series/1` rendered after the catalogue was
-populated. The gate copies `build/install` and starts it through the reader shortcut; it does
-not run the setup executable. A separate manual sandbox ran the real installer on 2026-10-26
-and found a shortcut preflight hang, fixed in commit `86e033a`; the rebuilt installer passed
-the fresh manual run on 2026-10-27, including the shortcut double-click.
+**Current state, 2026-11-05:** the gate passed on the 1.5.6 build. All 89 checks held, and the
+run wrote `build/sandbox-results/sandbox-report.txt` and a screenshot showing Edge on the
+Papyrus login page. It started the install through the reader shortcut, created the first
+account, rendered `/sources`, added a store, installed MangaTaro, fetched One Piece, and read
+page 0 of chapter 1 through the authenticated proxy: 200 `image/webp`, 175,432 bytes,
+SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`. The app URL
+matched the bound port 8402. The gate copies `build/install` and starts it through the reader
+shortcut; it does not run the setup executable. The separate manual installer tour passed all
+nine steps on 2026-11-05 in the 1.5.6 release worktree, session
+`session-20261105-112810`. The 2026-10-26 run 19 was the first full gate pass; its host policy
+fix was `HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0.
 
 There is a fifth gate and it is not a command: open the page. Three bugs in this project
 passed the whole suite and showed up on the first click.
@@ -813,7 +814,7 @@ something to monetise.
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
 | [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md) | What is published, what is not, and the current release decision |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.1 archive passed clean-machine C: and D: runs; 1.5.1 was not published |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.6 zip is published with a SHA-256 sidecar; the latest clean-machine C: and D: runs are the 1.5.1 archive |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

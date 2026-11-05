@@ -43,21 +43,21 @@ full outcome or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
-| Done | 26 | 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28 |
-| Partial | 3 | 1, 19, 29 |
+| Done | 27 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28 |
+| Partial | 2 | 19, 29 |
 | Active | 0 | None |
 | Remaining | 0 | None |
 
 ```text
-Done       [##########################   ] 26 of 29
-Partial    [###                          ]  3 of 29
+Done       [###########################  ] 27 of 29
+Partial    [##                           ]  2 of 29
 Active     [                             ]  0 of 29
 Remaining  [                             ]  0 of 29
 ```
 
 | Surface | Visual review board |
 | --- | --- |
-| Onboarding | ◐ 1  ✓ 2  ✓ 3  ✓ 4 |
+| Onboarding | ✓ 1  ✓ 2  ✓ 3  ✓ 4 |
 | Login and public shell | ✓ 5  ✓ 6 |
 | Library | ✓ 7  ✓ 8  ✓ 9  ✓ 10 |
 | Search and browse | ✓ 11  ✓ 12 |
@@ -67,11 +67,10 @@ Remaining  [                             ]  0 of 29
 | Series, reader, settings and FAQ | ✓ 24  ✓ 25  ✓ 26  ✓ 27 |
 | Copy and image sizing | ✓ 28  ◐ 29 |
 
-Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 1 stays
-partial until a clean-machine reader can add a source and read through the
-actual shortcut path. Block 19 is partial because its confirm names the pair's
-token and both counts, but the six-checkpoint timeline is in the run modal after
-the restore starts, not in the confirm dialog the block names. Block 29 is
+Legend: `✓` Done, `◐` Partial, `↻` Active, `○` Remaining. Block 19 is
+partial because its confirm names the pair's token and both counts, but the
+six-checkpoint timeline is in the run modal after the restore starts, not in the
+confirm dialog the block names. Block 29 is
 partial because `srcset`, `sizes` and lazy loading are present on cover art and
 reader pages, but the cover `sizes` is wide-first and no phone or desktop
 measurement was taken. The block-level status notes below carry the supporting
@@ -202,10 +201,12 @@ Files it would touch: `resources/views/pages/library.blade.php`,
 
 Estimated cost: 90 minutes.
 
-Status (2026-10-23): Partial. The empty library now names sources and offers an
-Add a source door. The source path also has the empty store field, trust guidance
-and automatic catalogue load from Blocks 2 through 4. A clean-machine run that
-starts from the actual shortcut and proves source access is still required.
+Status (2026-11-05): Done. The empty library names sources and offers an Add a
+source door. The source path has the empty store field, trust guidance and
+automatic catalogue load from Blocks 2 through 4. The 1.5.6 automated gate
+started through the reader shortcut, added and trusted a store, installed an
+extension, searched, and read a real source page through the app proxy; the
+1.5.6 manual installer tour reached step 9 of 9 on the same path.
 
 Preview: The current empty library is captured as
 `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg` and the current

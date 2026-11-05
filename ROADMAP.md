@@ -23,10 +23,11 @@ Severity is the project's existing scale:
 ## Shipped
 
 Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what exists: a Windows
-installer, a portable archive builder, daily backups, a diagnostics bundle, a health check that asks
-real questions, and a Suwayomi version check. A portable package is not published; the 1.5.1 archive
-passed clean-machine C: and D: runs, but 1.5.1 was not published. 1.5.2 is in preparation. See
-[docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+installer, a published portable zip, live backups and restores of both databases, daily backups, a
+diagnostics bundle, a health check that asks real questions, and a Suwayomi version check. 1.5.6
+is the current release; see [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md). The portable zip has
+been published since 1.5.2, but the latest clean-machine C: and D: runs are still the 1.5.1
+archive.
 
 ---
 
@@ -77,22 +78,18 @@ remain. **Reading Phase 1 as live work would be planning work that is already mo
 
 ---
 
-## Now: planned, severe
+## Open and recently shipped, severe
 
-### 1. Orchestrated restore, both databases, one action
+### 1. Orchestrated restore, both databases, one action: done
 
-**Severe. Phase 1.**
+**Severe. Phase 1. Done 2026-11-04.**
 
-A reader restores from two different places at two different times. The manga server's own backups
-are `.tachibk` archives it manages, and Papyrus's half is a SQLite snapshot. Reconstructing a reader's
-library from those means knowing they are related and doing it in the right order. Nothing tells them
-either.
+The Backups page takes a live pair: the reader half through SQLite's `VACUUM INTO` and the manga
+half through Suwayomi's own fresh export. Both halves are verified against a manifest before the
+pair is named. A restore moves both halves as one operation and rolls back if either fails. The
+page lists the pairs, reports the run's stages, and exports a `.tachibk` for another reader.
 
-One action, both halves, and an honest report of what came back. This is the largest remaining item
-and the only one where a reader can lose work.
-
-*Partly there:* `import:run` reads the manga half and carries read state across. The Papyrus-side
-snapshot restore is not surfaced anywhere.
+*What remains:* a clean-machine restore drill is not recorded.
 
 ### 2. A versioned install with a pointer flip
 
@@ -134,28 +131,30 @@ Papyrus.
 
 **Also done, and the reason this was findable:** a port held by something else now says who holds it.
 
-### 5. A verified portable download
+### 5. A verified portable download: published
 
-**In progress.** A 1.5.1 build on 2026-10-29 produced a 306.2MB zip with 12,964 entries; required
-files, privacy exclusions and the SHA256 sidecar were checked. The rebuilt archive passed clean-guest
-runs on C: (a path with a space) and D: (a separate VHD-backed volume): first launch, registration,
-source install, One Piece search, chapter read, and a layout check with no install or registry entry.
-No portable archive is published. The remaining work is publication and the fixed-port limit for
-side-by-side copies.
+**Published 2026-11-05.** The 1.5.6 zip is 299,506,107 bytes with SHA-256
+`bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409` and a matching sidecar.
+The 1.5.1 archive remains the latest clean-machine C: and D: evidence; no 1.5.6 clean-machine
+run was done. The default-port limit is still real for two copies unless `PAPYRUS_APP_PORT` and
+`PAPYRUS_SUWAYOMI_PORT` are set.
 
 ---
 
-## Next: planned, high
+## Next and recently shipped, high
 
-### 6. Surface and manage the manga server's backups in the UI
+### 6. Surface and manage the manga server's backups in the UI: done
 
-**High. Phase 1.** The backups exist and work. A reader cannot see them, list them, or restore one
-without leaving the app.
+**High. Phase 1. Done 2026-11-04.** The Backups page lists verified pairs, takes a live backup
+without stopping the app, restores a pair, shows the run stages, and exports a `.tachibk`. The
+pair's manga half is Suwayomi's own fresh export. The page does not separately list Suwayomi's own
+backup folder.
 
-### 7. SHA256 and a manifest beside the artifacts
+### 7. SHA256 and a manifest beside the artifacts: done for releases
 
-**Medium. Phase 2.** Build-time digests are already verified for inputs. Nothing is published. Without
-a manifest a reader cannot tell a download from a corrupted one.
+**Medium. Phase 2. Done 2026-11-05.** `releases/<version>.json` carries each artifact's size,
+SHA-256 and commit. The portable zip carries a `.sha256` sidecar, and the release notes carry both
+hashes. The setup executable has no separate sidecar.
 
 ### 8. Keyless signatures over that manifest
 

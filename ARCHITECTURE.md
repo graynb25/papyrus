@@ -197,7 +197,7 @@ a Suwayomi that refused everything.**
 
 ## The app
 
-Laravel 13, Livewire 4, Flux 2, Tailwind 4, Alpine. PHP `^8.3` in source; the packaged runtime is
+Laravel 13, Livewire 4, Flux 2, Tailwind 4, Alpine. PHP `^8.4` in source; the packaged runtime is
 8.5.
 
 ### UI conventions worth knowing before you touch it

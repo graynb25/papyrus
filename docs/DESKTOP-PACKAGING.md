@@ -1,18 +1,21 @@
 # Packaging Papyrus for Windows
 
-> **Release status (2026-11-04).** 1.5.3 is published. 1.5.4 is a local final
-> build from `730225f`; its manual fresh-install sandbox passed on 2026-11-04.
-> It is tagged locally as `v1.5.4` and has not been pushed or published. See
+> **Release status (2026-11-05).** 1.5.6 is published from `8a398ab`, tagged
+> `v1.5.6`. Its automated gate and manual installer tour passed. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
-Status: **the 1.5.1 Windows installer builds; the 1.5.0 install tree passed the Windows Sandbox
-gate on run 19 with a real Windows source read, and the rebuilt 1.5.0 installer passed the manual
-sandbox on 2026-10-27, including the shortcut double-click that hung on the 2026-10-26 run. The
-1.5.1 setup was built from `9dd0918` and passed the manual sandbox on 2026-10-29: per-user
-install, registration, a community store, MangaTaro, an One Piece search and a chapter read. The 1.5.1
-portable zip was rebuilt from `8ca2028` after the first-launch storage fix and passed clean-guest
-runs on C: and D: on 2026-10-29, including the same reader flow and a layout check with no
-install or registry entry.** Run 19 copied `build/install` to a fresh guest and started it through
+Status: **the 1.5.6 Windows installer builds.** Its build, hashes, automated gate and manual
+tour are recorded below. The paragraphs that follow also record the 1.5.0 and 1.5.1 work that
+got the packaging layer here.
+
+The 1.5.0 install tree passed the Windows Sandbox gate on run 19 with a real Windows source read,
+and the rebuilt 1.5.0 installer passed the manual sandbox on 2026-10-27, including the shortcut
+double-click that hung on the 2026-10-26 run. The 1.5.1 setup was built from `9dd0918` and passed
+the manual sandbox on 2026-10-29: per-user install, registration, a community store, MangaTaro, an
+One Piece search and a chapter read. The 1.5.1 portable zip was rebuilt from `8ca2028` after the
+first-launch storage fix and passed clean-guest runs on C: and D: on 2026-10-29, including the same
+reader flow and a layout check with no install or registry entry. Run 19 copied `build/install` to
+a fresh guest and started it through
 the reader shortcut. All 86 checks held: the bundled PHP 8.5.12 ran, Suwayomi answered, the app
 reported ready on 8402, Edge opened, the first account was created, `/sources` rendered, the
 community store and MangaTaro were installed, One Piece was fetched, and page 0 of chapter 1 was
@@ -76,6 +79,16 @@ fresh-install sandbox passed on 2026-11-04 in session `session-20261104-133727`:
 per-user install, registration, a store, MangaTaro, One Piece, 14 results from 2 of 2
 runnable sources, a real reader page, and 1 of 1,203 chapters read. The automated
 Windows Sandbox gate has not run on this build.
+
+The 1.5.6 build on 2026-11-05 ran from `8a398ab`. The install payload passed its built-in
+checks at 10,244 files. The unsigned installer compiled at 257,605,124 bytes (245.7MB) with
+SHA-256 `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable
+compiled at 299,506,107 bytes (285.6MB) with 10,245 entries and SHA-256
+`bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The automated
+Windows Sandbox gate passed all 89 checks with 0 failures on 2026-11-05. The manual
+installer tour passed all nine steps in session `session-20261105-112810`. No 1.5.6
+clean-machine portable run was done; the latest clean-machine portable evidence is the
+1.5.1 archive.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved
@@ -816,7 +829,7 @@ wrong by five hours and would report a working scheduler as silent since yesterd
 | # | Item | Sev | Notes |
 | --- | --- | --- | --- |
 | 0.1 | Artifact layout and build pipeline | M | One folder: `runtime/`, `php/`, `suwayomi/`, `app/`, `data/`, `logs/`. Everything the build must materialise is enumerated so a build script can materialise it: `composer install --no-dev`, `npm ci && npm run build`, `.env` generated, `public/storage` created. |
-| 0.2 | Verify FrankenPHP on Windows with this app | H | It ships **PHP 8.5**; the app requires `^8.3`, so it is in range, but this app is developed on 8.4.25 and has never run on 8.5. Run the full suite against it before committing to it. Fallback is `php-cgi` plus a small Caddy or nginx config. |
+| 0.2 | Verify FrankenPHP on Windows with this app | H | It ships **PHP 8.5**; the app requires `^8.4`, so it is in range, but this app is developed on 8.4.27 and has never run on 8.5. Run the full suite against it before committing to it. Fallback is `php-cgi` plus a small Caddy or nginx config. |
 | 0.3 | Process supervisor for four processes | **S** | The core of phase 0. Correct start order (Suwayomi first, it is slowest and everything depends on it), health gating, restart with backoff, and a single stop that leaves no orphans. Must launch by **absolute path**, never by `PATH` or process name. |
 | 0.4 | Readiness probe | H | Nothing exists today. Add a cheap unauthenticated route that answers 200 when the app can serve, and poll Suwayomi's GraphQL `aboutServer` for the other half. |
 | 0.5 | First-run `.env` generation | H | `APP_KEY` is per install and per machine. Also set `DB_DATABASE` to the absolute path in `data/`, and `SUWAYOMI_URL` to whatever the launcher resolved. Never ship a committed `.env`. |
@@ -1197,9 +1210,10 @@ The library line is the one that matters and it is a hash, not an existence chec
 checked the file still existed would pass while the uninstaller quietly emptied it.
 
 Two things it does not yet cover, so they are written down rather than assumed away. It does not
-test an **upgrade**, because there is no upgrade path yet (item 2.3), and the first version a reader
-installs over will be the one that has never been replaced. And it measures the install as a *fresh*
-one: the case where a reader already has a library at a different path is not exercised, and
+test an **upgrade through a versioned folder**, because the versioned pointer path (item 2.3) is
+not built yet. The full-replacement upgrade path exists since 1.5.3, and the 1.5.6 drill upgraded
+1.5.4 to 1.5.6, rolled back, and removed the install successfully. And it measures the install as a
+*fresh* one: the case where a reader already has a library at a different path is not exercised, and
 `DataLocation` choosing `%LOCALAPPDATA%\Papyrus` for a reader whose library is in `Documents` is an
 empty library with no explanation attached, which is its own problem.
 

@@ -3,20 +3,26 @@
 The portable shape: a folder you copy anywhere and run. No installer, no registry, no administrator
 rights.
 
-> **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
-> published. 1.5.2 is in preparation. See
+> **Release status (2026-11-05).** 1.5.6 is published, including a portable zip
+> with a SHA-256 sidecar. The latest clean-machine C: and D: runs are still the
+> 1.5.1 archive; no 1.5.6 clean-machine portable run was done. See
 > [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ---
 
-## Status: clean-machine C: and D: runs passed
+## Status: 1.5.1 clean-machine C: and D: runs passed
 
 The portable builder rebuilt the 1.5.1 zip and matching SHA256 sidecar on 2026-10-29 from commit
 `8ca2028`, after the first-launch storage fix in `2e4a73d`. The archive has 12,964 entries,
-includes the launcher and bundled runtimes, and contains no `.env` or reader databases. It is not
-published. The 1.5.1 release record lists it with that commit and hash.
+includes the launcher and bundled runtimes, and contains no `.env` or reader databases. That
+1.5.1 archive was not published. The 1.5.1 release record lists it with that commit and hash.
 
-The rebuilt archive was run on a clean Windows Sandbox guest twice on 2026-10-29: once from
+The 1.5.6 portable zip was built from `8a398ab` on 2026-11-05 at 299,506,107 bytes with 10,245
+entries and SHA-256 `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The
+sidecar matches, the archive is published with the 1.5.6 release, and the build verified that it
+carries no `.env`, database or storage tree. It has not been run on a clean machine.
+
+The 1.5.1 rebuilt archive was run on a clean Windows Sandbox guest twice on 2026-10-29: once from
 `C:\Papyrus Portable\Papyrus`, a path with a space, and once from `D:\Papyrus` on a 4 GB
 VHD-backed second volume. Both runs verified the archive hash, extracted it, started through
 `Papyrus.cmd`, created `papyrus-data` beside the program folder, registered a reader, added the
@@ -36,9 +42,9 @@ What is true today:
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The archive builder | built and content/hash verified on 2026-10-29 |
-| An archive anyone can download | **no** |
-| A clean first launch with source reading | **manual acceptance passed on C: and D:** |
+| The 1.5.6 archive builder | built and content/hash verified on 2026-11-05 |
+| An archive anyone can download | **yes, 1.5.6 with a SHA-256 sidecar** |
+| A clean first launch with source reading | **1.5.1 passed on C: and D:; no 1.5.6 clean-machine run was done** |
 
 The C: run logged the launcher's warning that temporary uploads would reach 102 characters, close
 to the 260-character limit; it did not block the run. The guest's Storage cmdlets returned no
@@ -46,10 +52,11 @@ volume facts, so both layout files leave the volume fields blank. The D: VHD is 
 diskpart output in `portable.log`, which records the create, attach, format and drive-letter
 assignment.
 
-The archive is not published. These two runs prove this build on two clean volumes; they do not
-cover every Windows configuration. The 1.5.0 install tree passed the Windows Sandbox gate on run
-19 (86 checks, 0 failures, including a real source page read), and the 1.5.1 setup passed the
-manual sandbox on 2026-10-29. Those prove the installer, not the portable zip.
+The 1.5.1 archive was not published. Those two runs prove that build on two clean volumes; they
+do not cover every Windows configuration, and they are not evidence for the 1.5.6 zip, which has
+not had a clean-machine run. The 1.5.0 install tree passed the Windows Sandbox gate on run 19
+(86 checks, 0 failures, including a real source page read), and the 1.5.1 setup passed the manual
+sandbox on 2026-10-29. Those prove the installer, not the portable zip.
 
 ---
 
@@ -103,8 +110,8 @@ separate `--out` directory. Never use the active installation or a reader data d
 target.
 
 The launcher is designed to create `papyrus-data` beside the folder, generate its own `.env`, apply
-migrations and start. The clean-machine path still needs proof that it can browse a source and read
-through to manga pages.
+migrations and start. The 1.5.6 clean-machine path still needs proof that it can browse a source and
+read through to manga pages.
 
 ---
 
@@ -112,17 +119,19 @@ through to manga pages.
 
 Two things, in the order they would bite.
 
-**1. Fixed ports still limit side-by-side copies.** The queue and scheduler lookups now match the
+**1. Default ports still limit side-by-side copies.** The queue and scheduler lookups now match the
 data directory and role, so one copy no longer claims another copy's workers. The web and Suwayomi
 health lines are port probes: a second copy can adopt the Suwayomi already on 4567 and a responding
-web server on 8000. Those lines do not prove the responding server belongs to that copy. See the
-current distinction in [ROADMAP.md](../ROADMAP.md) and the investigation in
-[ENGINEERING-NOTES.md](ENGINEERING-NOTES.md).
+web server on 8000. Those lines do not prove the responding server belongs to that copy.
+`PAPYRUS_APP_PORT` and `PAPYRUS_SUWAYOMI_PORT` let an install use other ports, but the health probes
+still answer for whatever is listening. See the current distinction in [ROADMAP.md](../ROADMAP.md)
+and the investigation in [ENGINEERING-NOTES.md](ENGINEERING-NOTES.md).
 
-**2. The ports are fixed.** Port 8000 for the app and 4567 for the manga server, with no way to
-change them. Two Windows accounts on one machine collide, and a portable copy alongside an installed
-one collides. The documented behaviour for two copies is: stop the other one. The honest behaviour
-would be to detect it and say so, which is item 1.
+**2. The default ports are fixed.** Port 8000 for the app and 4567 for the manga server. Set
+`PAPYRUS_APP_PORT` and `PAPYRUS_SUWAYOMI_PORT` before starting to change them; the installer and
+the shortcuts do not do it for you. Two Windows accounts on one machine collide on the defaults,
+and a portable copy alongside an installed one collides unless one of them is moved. The documented
+behaviour for two copies is: stop the other one.
 
 ---
 

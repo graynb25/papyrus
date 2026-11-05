@@ -3,11 +3,93 @@
 The same release notes as [CHANGELOG.md](CHANGELOG.md), written for a reader rather than a developer.
 No commit hashes, no file names, no jargon.
 
-> **Release status (2026-11-01).** 1.5.1 was built and proven locally but was not
-> published. 1.5.2 is in preparation from the rewritten tree. See
+> **Release status (2026-11-05).** 1.5.6 is the current release. 1.5.1 was built and
+> proven locally but was not published. See
 > [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 ---
+
+## Version 1.5.6, 5 November 2026
+
+This release fixes one launcher problem for installs that do not use port 8000.
+
+### A custom port now opens the right address
+
+If your install was configured on a port other than 8000, Papyrus could bind that port but still
+send your browser, and the page after registration, to port 8000. The launcher now passes the
+address it actually bound. The default install is unchanged.
+
+## Version 1.5.5, 4 November 2026
+
+This release adds a guided first run and updates the bundled Symfony packages for security
+advisories published on 4 November.
+
+### A guided first run
+
+A fresh install now walks the owner through the whole first path: add an extension store, compare
+and trust its signing key, install an extension, search, add a series and open a chapter. The tour
+remembers its step, can be skipped, and can be replayed from Settings > FAQ. It never names or links
+a store.
+
+### The tour fits a short window
+
+The first card could sit below the bottom of a short window and hide its buttons. It now repositions
+once its size is known, and the Available step can be minimized to a small pill.
+
+### Security
+
+The Symfony packages are updated for the 2026-11-04 advisories, and `composer audit` is clean.
+
+## Version 1.5.4, 3 November 2026
+
+This is a correctness and hardening release. It fixes the library check loop, download and restore
+races, and the launcher's process handling.
+
+### The library check finishes the work it promised
+
+A capped check could report complete while series were still due. It now reads the whole due set and
+re-books until the work is done.
+
+### Presses that arrive together no longer collide
+
+Four collision cases are fixed: a double press on Download, two rapid card checks, two backup
+snapshots taken at the same time, and a cover write that fails. None of them now overwrites or
+destroys the other result.
+
+### The update path is safer
+
+The launcher snapshots the reader database before a migration, refuses to start against a database
+newer than the build, and `papyrus rollback` restores the snapshot. A failed backup or restore now
+uses the retry window it declares.
+
+### Settings survive a `#`
+
+A value Papyrus wrote itself is quoted whole, so a database path containing `#` is no longer split
+into a value and a comment. A missing `.env.example` now fails with a sentence instead of a stack
+trace.
+
+## Version 1.5.3, 1 November 2026
+
+This is the hotfix for the fresh-install failure in 1.5.2, plus the security work finished since
+that release.
+
+### A fresh install starts again
+
+1.5.2 tried to snapshot a database that did not exist yet. The launcher now skips the snapshot only
+when there is no database, and still takes one for an existing library.
+
+### An upgrade can be rolled back
+
+The launcher records the pre-migration snapshot, and `papyrus rollback` restores it. The installer
+refuses a downgrade unless it is run with `/FORCEDOWNGRADE`, and it waits for an older Papyrus to
+close.
+
+### Security and update wording
+
+Login, registration, password reset and password confirmation are throttled. Password reset links
+use the configured host. Installing or removing shared extensions is owner-only. The CBZ export is
+throttled. The About page says updates are manual, links the release feed, and does not check for
+new versions.
 
 ## Version 1.5.2, 1 November 2026
 
@@ -259,10 +341,11 @@ and you point it at a list you have chosen to trust. There is a guide to this in
 
 ## Still being verified
 
-- **A portable download.** The 1.5.1 archive starts and reads on a clean machine from C: and D:, but
-  no package is published yet. [docs/PORTABLE.md](docs/PORTABLE.md)
+- **A portable download.** The 1.5.6 zip is published with a hash sidecar. The latest clean-machine
+  C: and D: runs are the 1.5.1 archive; no 1.5.6 clean-machine run was done.
+  [docs/PORTABLE.md](docs/PORTABLE.md)
 - **A Mac version.** On hold.
-- **In-app updates.** Papyrus will tell you a new version exists. It will not download and install
-  it for you without asking.
+- **In-app updates.** Papyrus does not check for new versions. The About page links the release page
+  and says updates are manual.
 
 If something in this list matters to you, [the roadmap](ROADMAP.md) says where it stands.

@@ -18,8 +18,8 @@ below, because it is the single most common reason a first launch does nothing.
 
 ## Installing
 
-1. Download **`Papyrus-<version>-setup.exe`** (about 262 MB). Use the version named
-   in [RELEASE-STATUS.md](RELEASE-STATUS.md); 1.5.2 is in preparation, and 1.5.1 was
+1. Download **`Papyrus-<version>-setup.exe`** (about 246 MB). Use the version named
+   in [RELEASE-STATUS.md](RELEASE-STATUS.md); 1.5.6 is current, and 1.5.1 was
    not published.
 2. Run it. You do **not** need administrator rights and it will not ask for any: Papyrus installs
    per user, into your own Windows profile.
@@ -308,22 +308,23 @@ words.
 
 ### Two Papyrus windows, or "port already in use"
 
-Data is per Windows account and the ports are fixed, so **two different Windows users on one machine
-will collide**: both want port 4567 and 8000. This is a known limitation, not a fault in your setup.
+Data is per Windows account and the default ports are fixed, so **two different Windows users on
+one machine will collide**: both want port 4567 and 8000. This is a known limitation, not a fault
+in your setup.
 
 Within one account, two instances usually means a stop that did not finish. `Papyrus.cmd stop`, wait
 ten seconds, then start again.
 
 ### The first launch takes minutes
 
-Antivirus, mostly, and a slow disk. Papyrus writes 12,672 files on first launch. It is faster every
-time after.
+Antivirus, mostly, and a slow disk. Papyrus writes about 10,000 files on first launch. It is faster
+every time after.
 
 ### Moving Papyrus to another computer
 
 Do not copy the program folder. Install on the new machine, stop Papyrus on the old one, copy
-`%LOCALAPPDATA%\Papyrus` across, and start it. The program folder is version-specific and the data
-folder is not.
+`%LOCALAPPDATA%\Papyrus` across, and start it. The program folder is replaced on each update and
+the data folder is not.
 
 ### It is slow, or the disk is busy
 

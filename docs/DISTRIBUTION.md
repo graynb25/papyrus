@@ -7,14 +7,19 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-11-04
+## Current delivery status, 2026-11-05
 
-The 1.5.3 release is published from `5ae2794` and tagged `v1.5.3`; CI run
-`41385058266` passed in 15m35s. The 1.5.4 final build is from `730225f` and
-passed the manual fresh-install sandbox on 2026-11-04 in session
-`session-20261104-133727`. Its installer and portable are recorded in
-`releases/1.5.4.json`; it is tagged locally as `v1.5.4` and has not been pushed
-or published.
+The 1.5.6 release is published from `8a398ab`, tagged `v1.5.6`, and is the current
+release. Its installer is 257,605,124 bytes and its portable zip is 299,506,107 bytes;
+both hashes are in `releases/1.5.6.json`, and the portable has a `.sha256` sidecar. CI
+run `42067686446` passed in 14m35s. The automated Windows Sandbox gate passed every
+check on 2026-11-05, the manual installer tour passed all nine steps, and the upgrade,
+rollback and uninstall drills passed with 0 failures. The portable zip is published and
+its content and hash were verified, but no 1.5.6 clean-machine portable run was done;
+the latest clean-machine C: and D: evidence is the 1.5.1 archive.
+
+1.5.4 and 1.5.5 are also published. Their records are `releases/1.5.4.json` and
+`releases/1.5.5.json`.
 
 The 1.5.1 work is in the rewritten tree. The 1.5.1 release was not published. The unsigned
 275,072,638-byte (262.3MB) installer was built from `9dd0918`, and its manual sandbox run
@@ -42,9 +47,8 @@ fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,4
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
 
-The 1.5.1 build was not published. 1.5.2 and 1.5.3 were published from the rewritten
-tree. 1.5.4 is a candidate until the release build, tag and publication are approved.
-See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+The 1.5.1 build was not published. 1.5.2 through 1.5.6 were published from the rewritten
+tree. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 The 1.5.2 and later installers are unsigned. The only signing material is a self-signed
 development certificate, which does not remove the Windows warning. The release records
@@ -138,8 +142,9 @@ Layered on the same artifact, per platform:
 | macOS | `pkgdmg` or a signed `.dmg` | `installer -pkg X -target CurrentUserHomeDirectory` |
 | Linux | `deb`, `rpm`, Flatpak | debconf `DEBIAN_FRONTEND=noninteractive` |
 
-The installer is **never** the thing that fetches Suwayomi. It lays down a versioned folder
-and a launcher. Phase 1 owns the Suwayomi question.
+The installer is **never** the thing that fetches Suwayomi. It lays down the program folder and a
+launcher. A versioned folder with a pointer is still planned (ROADMAP item 2). Phase 1 owns the
+Suwayomi question.
 
 ## Code signing and antivirus, honestly
 
@@ -232,8 +237,9 @@ across human beings who happen to log into the same machine, is not something an
 for, and supporting it properly would mean per-user port allocation, a launcher instance per
 account, and an answer to "which of these four processes is mine" on every support call.
 
-So the launcher is per user, ports are fixed and documented, and if the ports are taken the
-app says so plainly and names the process holding them.
+So the launcher is per user, the default ports are documented, and if they are taken the app says
+so plainly and names the process holding them. `PAPYRUS_APP_PORT` and `PAPYRUS_SUWAYOMI_PORT` let
+an install use other ports.
 
 The one thing worth keeping from the discarded section: **when a port is already bound, say
 which process holds it.** A reader who has Suwayomi running from a shortcut, the way this
@@ -507,13 +513,13 @@ an issue by a third party can be.
 | Item | Sev | Phase |
 | --- | --- | --- |
 | `VACUUM INTO` snapshot job for the Papyrus database | **S** | 0 |
-| Orchestrated restore, both databases, one action | **S** | 1 |
+| Orchestrated restore, both databases, one action | **S** | 1, **done.** The Backups page takes and restores a verified pair of both databases |
 | Versioned install with a pointer flip | **S** | 2 |
 | Suwayomi version compatibility check at startup | H | **done.** `packaging/suwayomi.json` is the single source, the build stages and validates it, and `health` compares the running server against it. A server below the floor is a FAIL naming the minimum; a newer one is named without being a fault; an unknown version gets no verdict |
-| Surface and manage Suwayomi's existing backups in the UI | H | 1 |
-| Name the process holding a taken port | H | 1 |
+| Surface and manage Suwayomi's existing backups in the UI | H | 1, **done.** The Backups page lists pairs, takes a live backup and restores one |
+| Name the process holding a taken port | H | 1, **done.** The health lines name the holder and its pid |
 | macOS notarisation budget decision, $99 a year | **H** | 2, on hold |
 | cosign keyless attestations on releases | M | 2 |
-| SHA256 and a machine readable manifest beside the artifacts | M | 2 |
+| SHA256 and a machine readable manifest beside the artifacts | M | 2, **done for releases.** `releases/<version>.json` and the portable sidecar carry the hashes |
 | Linux packaging, which is the cheap proof of the pipeline | M | 2 |
-| In-app update check that reports rather than installs | M | 2 |
+| In-app update check that reports rather than installs | M | 2, **decided.** The About page says updates are manual and links the release page |

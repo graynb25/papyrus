@@ -7,7 +7,8 @@ Updated 2026-11-05.
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is
   299,506,107 bytes, SHA-256
   `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The full suite
-  passed 3,001 tests with 9,484 assertions and one skipped test. The automated Windows
+  on the packaged PHP 8.5.12 passed 3,001 tests with 9,484 assertions and one skipped
+  test. The automated Windows
   Sandbox gate passed every check: the app URL matched the bound port 8402, the browser
   title was `Log in - Papyrus`, registration returned 200, and a real source page was read
   through the app proxy (175,432 bytes, `image/webp`). The manual installer tour on
@@ -20,7 +21,9 @@ Updated 2026-11-05.
   (`php.exe packaging\launcher\papyrus.php rollback --yes`), exited zero, restored the
   pre-migration snapshot, removed the tour migration, kept the data marker, and the
   restart reapplied the migration. The uninstall drill removed the install and kept the
-  data, database and marker. The release is
+  data, database and marker. The portable zip is published and its content and hash were
+  verified, but no 1.5.6 clean-machine portable run was done; the latest clean-machine
+  C: and D: evidence is the 1.5.1 archive. The release is
   https://github.com/graynb25/papyrus/releases/tag/v1.5.6.
 - **1.5.5 is published.** It was built from `13452d2` and released as `v1.5.5`.
   The installer is 257,605,072 bytes, SHA-256
@@ -116,7 +119,9 @@ Updated 2026-11-05.
   `papyrus rollback`; the installer refuses a downgrade unless it is run with
   `/FORCEDOWNGRADE`, and it aborts if Papyrus is still running after `stop`. 1.5.3 carries
   it. The About page links the release Atom feed.
-- **Still open for 1.5.4.** The automated Windows Sandbox gate on this build, the
-  upgrade and rollback drills, the portable and uninstall drills, and the ahead-schema
-  refusal. Publication is done.
+- **The 1.5.4 follow-up items were completed on the 1.5.6 build.** The automated Windows
+  Sandbox gate passed on 2026-11-05, and the upgrade (1.5.4 to 1.5.6), rollback, uninstall
+  and ahead-schema drills passed. The 1.5.6 portable zip is published and its content and
+  hash were verified, but no 1.5.6 clean-machine portable run was done; the latest
+  clean-machine C: and D: evidence is the 1.5.1 archive.
 
