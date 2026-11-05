@@ -2,8 +2,8 @@
 
 Updated 2026-11-04.
 
-- **1.5.5 is built and walked, not published.** It was built from `bd9f8e2` on
-  `release/1.5.5`. The installer is 257,592,363 bytes, SHA-256
+- **1.5.5 is published.** It was built from `bd9f8e2` and released as `v1.5.5`.
+  The installer is 257,592,363 bytes, SHA-256
   `8edc6a8e344fd02a5295211f6f0d90929362c96a30f3e0012e14338e5e3a4185`; the portable is
   299,492,263 bytes, SHA-256
   `7f0b1de669daa32a52226e34cec6bfdc5d4193d6bc4d36b9c9263cf5c25c572d`. The full suite
@@ -18,8 +18,8 @@ Updated 2026-11-04.
   which confirms the short-window fix. Synthetic mouse input on the card's own buttons
   became unreliable after a DevTools prompt, so the full nine-step flow was not repeated
   end to end in that guest; the host walk covers the flow. The manual run is manual
-  evidence, not a gate pass, and the tag, push and publication await the owner's
-  approval.
+  evidence, not a gate pass. The release is
+  https://github.com/graynb25/papyrus/releases/tag/v1.5.5.
 - **1.5.4 is published.** It was built from `730225f`, recorded and tagged at
   `b37a6de` as `v1.5.4`, and published on 2026-11-04. The installer is 257,582,579
   bytes, SHA-256
