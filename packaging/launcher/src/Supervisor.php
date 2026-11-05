@@ -1639,6 +1639,13 @@ final class Supervisor
                     '--env-file='.$this->environmentFile(),
                     '--data='.$this->dataDirectory,
                     '--suwayomi='.sprintf('http://127.0.0.1:%d', $this->suwayomiPort),
+                    /*
+                     * The app's own URL has to be the port it is bound to. Without this,
+                     * APP_URL stays the example's 8000 while PAPYRUS_APP_PORT can be 8402,
+                     * and every redirect, including the one after registration, goes to a
+                     * port nothing is listening on.
+                     */
+                    '--app-url='.$this->readerUrl(),
                 ],
                 logName: 'configure.log',
             );

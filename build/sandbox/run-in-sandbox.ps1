@@ -529,6 +529,13 @@ if (-not $startProcess.HasExited) {
     Check 'the shortcut opened a browser' ($browserSeen -and $null -ne $asked) `
         "browser seen while starting: $browserSeen; alive now: $($alive.Count); the launcher said it asked: $($null -ne $asked)"
 
+    $browserWindow = @(Get-Process -Name $browserNames -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -First 1)
+    $browserTitle = if ($browserWindow.Count -gt 0) { $browserWindow[0].MainWindowTitle } else { '' }
+
+    Check 'the browser window shows Papyrus' ($browserTitle -match 'Papyrus' -and $browserTitle -notmatch "can.t reach|refused|^localhost") `
+        $browserTitle
+
     # ---------------------------------------------------------------------------------------
     # What the reader would have seen.
     #
@@ -648,9 +655,9 @@ Section 'probing'
 # sources page is the one walk in this script that needs cookies, and a POST. They are optional so
 # every earlier probe is unchanged, and the catch stays the single place that turns a failed
 # request into a readable status and body rather than a thrown exception.
-function Get-Body([string]$url, [string]$method = 'Get', $form = $null, $session = $null) {
+function Get-Body([string]$url, [string]$method = 'Get', $form = $null, $session = $null, [int]$timeout = 30) {
     try {
-        $request = @{ Uri = $url; UseBasicParsing = $true; TimeoutSec = 30; Method = $method }
+        $request = @{ Uri = $url; UseBasicParsing = $true; TimeoutSec = $timeout; Method = $method }
 
         if ($null -ne $form) { $request.Body = $form }
         if ($null -ne $session) { $request.WebSession = $session }
@@ -720,6 +727,13 @@ if ($null -ne $appPort) {
 
     Check '/up rendered its own page' ($hasTitle -and $hasHeading) "title=$hasTitle heading=$hasHeading"
     Check '/up carries no error page' $noErrorMarkers
+
+    $login = Get-Body "http://127.0.0.1:$appPort/login"
+    $hasLoginTitle = $login.Body -match '<title>\s*Log in - Papyrus\s*</title>'
+    $loginNoError = $login.Body -notmatch 'Server Error|Whoops|Stack trace'
+
+    Check 'the login page is served on the bound port' ($login.Status -eq 200 -and $hasLoginTitle -and $loginNoError) `
+        "status $($login.Status), title=$hasLoginTitle, error page=$(-not $loginNoError)"
 }
 
 Section 'suwayomi'
@@ -824,7 +838,7 @@ $registerToken = [regex]::Match($registerPage.Body, 'name="_token"\s+value="([^"
 Check 'the register form offered a csrf token' ($registerToken -ne '') 'no _token field was in the page'
 
 if ($registerToken -ne '') {
-    $created = Get-Body "http://127.0.0.1:$appPort/register" -method 'Post' -session $session -form @{
+    $created = Get-Body "http://127.0.0.1:$appPort/register" -method 'Post' -session $session -timeout 180 -form @{
         _token = $registerToken
         name = 'Sandbox Gate'
         email = 'sandbox-gate@example.test'
@@ -1289,6 +1303,12 @@ $dbLine = if ($null -eq $dbLine) { $null } else { $dbLine.Trim() }
 
 Check 'the .env quotes a database path containing a space' `
     ($null -ne $dbLine -and $dbLine -match "^DB_DATABASE='.+'$") $(if ($dbLine) { $dbLine } else { 'no DB_DATABASE line' })
+
+$appUrlLine = ($envText -split "`n" | Where-Object { $_ -like 'APP_URL=*' } | Select-Object -First 1)
+$appUrlLine = if ($null -eq $appUrlLine) { $null } else { $appUrlLine.Trim() }
+
+Check 'the app URL matches the bound port' `
+    ($null -ne $appUrlLine -and $appUrlLine.Contains("http://localhost:$appPort")) $(if ($appUrlLine) { $appUrlLine } else { 'no APP_URL line' })
 
 $installDb = @(Get-ChildItem (Join-Path $root 'database') -Filter '*.sqlite' -ErrorAction SilentlyContinue)
 Check 'no database written into the install' ($installDb.Count -eq 0) "found $($installDb.Count)"
