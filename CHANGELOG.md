@@ -47,6 +47,12 @@ reopened, while the modal steps keep the full card and focus trap. `e49dbdf`
 height before it became visible, so a 1030px-tall window cut off the Next and Back
 buttons. It now repositions when its size is known. `bd9f8e2`
 
+### Security
+
+**Symfony updated for the 2026-11-04 advisories.** The locked Symfony packages
+(http-foundation, http-kernel, routing, serializer and yaml, with their dependencies)
+are at 8.1.11, and `composer audit` is clean. `13452d2`
+
 ### Known limits
 
 - **The tour auto-starts for the install owner only.** A reader account cannot add a store

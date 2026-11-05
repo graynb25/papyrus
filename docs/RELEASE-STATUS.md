@@ -2,24 +2,26 @@
 
 Updated 2026-11-04.
 
-- **1.5.5 is published.** It was built from `bd9f8e2` and released as `v1.5.5`.
-  The installer is 257,592,363 bytes, SHA-256
-  `8edc6a8e344fd02a5295211f6f0d90929362c96a30f3e0012e14338e5e3a4185`; the portable is
-  299,492,263 bytes, SHA-256
-  `7f0b1de669daa32a52226e34cec6bfdc5d4193d6bc4d36b9c9263cf5c25c572d`. The full suite
-  passed 3,001 tests with 9,491 assertions. A host portable walk on 2026-11-04 passed
-  steps 1 to 9 on the `e49dbdf` build: empty library, store, trust, Available with
-  Minimize, MangaTaro install, search One Piece, source chooser, series, Add to library,
-  a real chapter 1 page, Done, and no tour after reload; the database recorded
-  `tour_completed_at`. Replay from Settings > FAQ restarted at step 2 and Skip completed
-  it again. A manual installer run on `bd9f8e2` verified the installer hash, installed
-  per user, launched from the setup wizard, and registered the first account. At a
-  940x1030 viewport the step 1 and step 2 cards were fully visible with Next and Skip,
-  which confirms the short-window fix. Synthetic mouse input on the card's own buttons
-  became unreliable after a DevTools prompt, so the full nine-step flow was not repeated
-  end to end in that guest; the host walk covers the flow. The manual run is manual
-  evidence, not a gate pass. The release is
-  https://github.com/graynb25/papyrus/releases/tag/v1.5.5.
+- **1.5.5 is published.** It was built from `13452d2` and released as `v1.5.5`.
+  The installer is 257,605,072 bytes, SHA-256
+  `79c4e37b7148e810c9188b383d41cb0fc9f95f0f33c6dc927f887f516d5ab748`; the portable is
+  299,505,989 bytes, SHA-256
+  `c9d3ab78e16ee2b6e9eda80b9b5622d3c336640263c1df5cd39bdfbf1cca4bf9`. The full suite
+  passed 3,001 tests with 9,491 assertions, and `composer audit` is clean after the
+  Symfony 8.1.11 update. A host portable walk on 2026-11-04 passed steps 1 to 9 on the
+  `e49dbdf` build: empty library, store, trust, Available with Minimize, MangaTaro
+  install, search One Piece, source chooser, series, Add to library, a real chapter 1
+  page, Done, and no tour after reload; the database recorded `tour_completed_at`.
+  Replay from Settings > FAQ restarted at step 2 and Skip completed it again. A manual
+  installer run on `bd9f8e2` verified the installer hash, installed per user, launched
+  from the setup wizard, and registered the first account. At a 940x1030 viewport the
+  step 1 and step 2 cards were fully visible with Next and Skip, which confirms the
+  short-window fix. The final `13452d2` installer was smoke-tested too: hash verified,
+  installed per user, launched from the wizard, and rendered the login page. The full
+  nine-step tour flow was not repeated end to end in the guest because synthetic mouse
+  input on the card's own buttons became unreliable after a DevTools prompt; the host
+  walk covers the flow. The manual runs are manual evidence, not a gate pass. The
+  release is https://github.com/graynb25/papyrus/releases/tag/v1.5.5.
 - **1.5.4 is published.** It was built from `730225f`, recorded and tagged at
   `b37a6de` as `v1.5.4`, and published on 2026-11-04. The installer is 257,582,579
   bytes, SHA-256
