@@ -1,7 +1,17 @@
 ﻿# Release status
 
-Updated 2026-11-04.
+Updated 2026-11-05.
 
+- **1.5.6 is built and gate-passed, not published.** It was built from `8a398ab`.
+  The installer is 257,605,124 bytes, SHA-256
+  `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is
+  299,506,107 bytes, SHA-256
+  `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The full suite
+  passed 3,001 tests with 9,484 assertions and one skipped test. The automated Windows
+  Sandbox gate passed every check: the app URL matched the bound port 8402, the browser
+  title was `Log in - Papyrus`, registration returned 200, and a real source page was read
+  through the app proxy (175,432 bytes, `image/webp`). The 1.5.5 tag and release are
+  untouched. The tag, push and publication await approval.
 - **1.5.5 is published.** It was built from `13452d2` and released as `v1.5.5`.
   The installer is 257,605,072 bytes, SHA-256
   `79c4e37b7148e810c9188b383d41cb0fc9f95f0f33c6dc927f887f516d5ab748`; the portable is

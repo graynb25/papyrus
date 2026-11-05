@@ -21,6 +21,17 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## 1.5.6 - 2026-11-05
+
+A launcher fix for installs served on a port other than 8000.
+
+### Fixed
+
+**A custom app port no longer sends the browser and the post-registration redirect to 8000.**
+`papyrus:configure` already accepted `--app-url`; the launcher never passed it, so `APP_URL`
+stayed at the example's `http://localhost:8000` while the app bound another port. The launcher
+now passes the address it actually bound. `8a398ab`
+
 ## 1.5.5 - 2026-11-04
 
 A guided first-run tour for the install owner.
