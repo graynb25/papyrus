@@ -41,6 +41,12 @@ signing key and install buttons remain usable; the tour advances when the action
 grid in a short window; a Minimize control collapses the card to a step pill that can be
 reopened, while the modal steps keep the full card and focus trap. `e49dbdf`
 
+### Fixed
+
+**The first tour card no longer falls below a short window.** The card measured its
+height before it became visible, so a 1030px-tall window cut off the Next and Back
+buttons. It now repositions when its size is known. `bd9f8e2`
+
 ### Known limits
 
 - **The tour auto-starts for the install owner only.** A reader account cannot add a store

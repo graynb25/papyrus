@@ -2,20 +2,24 @@
 
 Updated 2026-11-04.
 
-- **1.5.5 is built and walked, not published.** It was built from `e49dbdf` on
-  `release/1.5.5`. The installer is 257,590,598 bytes, SHA-256
-  `7475b649e346bcf91543c67eb28f704002ed633f4af5c976dbac78ed2286161d`; the portable is
-  299,489,898 bytes, SHA-256
-  `9a204f6fd232d745513c1d44295ac968d48404744c4e81f5e1c81a0e38e5b1d2`. The full suite
+- **1.5.5 is built and walked, not published.** It was built from `bd9f8e2` on
+  `release/1.5.5`. The installer is 257,592,363 bytes, SHA-256
+  `8edc6a8e344fd02a5295211f6f0d90929362c96a30f3e0012e14338e5e3a4185`; the portable is
+  299,492,263 bytes, SHA-256
+  `7f0b1de669daa32a52226e34cec6bfdc5d4193d6bc4d36b9c9263cf5c25c572d`. The full suite
   passed 3,001 tests with 9,491 assertions. A host portable walk on 2026-11-04 passed
-  steps 1 to 9 on the final build: empty library, store, trust, Available with Minimize,
-  MangaTaro install, search One Piece, source chooser, series, Add to library, a real
-  chapter 1 page, Done, and no tour after reload; the database recorded
+  steps 1 to 9 on the `e49dbdf` build: empty library, store, trust, Available with
+  Minimize, MangaTaro install, search One Piece, source chooser, series, Add to library,
+  a real chapter 1 page, Done, and no tour after reload; the database recorded
   `tour_completed_at`. Replay from Settings > FAQ restarted at step 2 and Skip completed
-  it again. An earlier guest run on the pre-fix installer proved steps 1 to 5 and found
-  the Available card covering the grid; `e49dbdf` adds the Minimize control. The final
-  installer has not been through the manual Windows Sandbox gate, and the tag, push and
-  publication await the owner's approval.
+  it again. A manual installer run on `bd9f8e2` verified the installer hash, installed
+  per user, launched from the setup wizard, and registered the first account. At a
+  940x1030 viewport the step 1 and step 2 cards were fully visible with Next and Skip,
+  which confirms the short-window fix. Synthetic mouse input on the card's own buttons
+  became unreliable after a DevTools prompt, so the full nine-step flow was not repeated
+  end to end in that guest; the host walk covers the flow. The manual run is manual
+  evidence, not a gate pass, and the tag, push and publication await the owner's
+  approval.
 - **1.5.4 is published.** It was built from `730225f`, recorded and tagged at
   `b37a6de` as `v1.5.4`, and published on 2026-11-04. The installer is 257,582,579
   bytes, SHA-256
