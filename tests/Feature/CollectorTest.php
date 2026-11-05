@@ -668,9 +668,9 @@ class CollectorTest extends TestCase
         $files = $collector->files();
 
         $this->assertNotEmpty($files);
-        $this->assertContainsOnly('string', $files);
 
         foreach ($files as $file) {
+            $this->assertIsString($file);
             $this->assertFileExists($file);
             $this->assertStringEndsWith('.txt', $file);
         }
