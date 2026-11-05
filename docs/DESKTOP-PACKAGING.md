@@ -1,8 +1,8 @@
 # Packaging Papyrus for Windows
 
 > **Release status (2026-11-05).** 1.5.6 is published from `8a398ab`, tagged
-> `v1.5.6`. Its automated gate and manual installer tour passed. See
-> [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> `v1.5.6`. Its automated gate, manual installer tour and portable clean-machine
+> C: and D: runs passed. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 Status: **the 1.5.6 Windows installer builds.** Its build, hashes, automated gate and manual
 tour are recorded below. The paragraphs that follow also record the 1.5.0 and 1.5.1 work that
@@ -86,9 +86,10 @@ SHA-256 `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the 
 compiled at 299,506,107 bytes (285.6MB) with 10,245 entries and SHA-256
 `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The automated
 Windows Sandbox gate passed all 89 checks with 0 failures on 2026-11-05. The manual
-installer tour passed all nine steps in session `session-20261105-112810`. No 1.5.6
-clean-machine portable run was done; the latest clean-machine portable evidence is the
-1.5.1 archive.
+installer tour passed all nine steps in session `session-20261105-112810`. The portable
+zip passed clean-machine C: and D: runs on the same day, in sessions
+`session-20261105-145005-c` and `session-20261105-145450-d`. The D: run used a 4 GB
+VHD-backed second volume and reported `separate_volume=True`.
 
 `--into` must be absolute. A relative root reaches `Supervisor::path()`, which joins it onto whatever it
 resolves, and the build then fails twenty lines later at `the install cannot boot with its own resolved

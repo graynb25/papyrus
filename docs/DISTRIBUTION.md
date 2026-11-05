@@ -15,8 +15,10 @@ both hashes are in `releases/1.5.6.json`, and the portable has a `.sha256` sidec
 run `42067686446` passed in 14m35s. The automated Windows Sandbox gate passed every
 check on 2026-11-05, the manual installer tour passed all nine steps, and the upgrade,
 rollback and uninstall drills passed with 0 failures. The portable zip is published and
-its content and hash were verified, but no 1.5.6 clean-machine portable run was done;
-the latest clean-machine C: and D: evidence is the 1.5.1 archive.
+its content and hash were verified, and it passed clean-machine C: and D: runs on 2026-11-05.
+The release worktree sessions are
+`build/portable-sandbox-results/session-20261105-145005-c` and
+`build/portable-sandbox-results/session-20261105-145450-d`.
 
 1.5.4 and 1.5.5 are also published. Their records are `releases/1.5.4.json` and
 `releases/1.5.5.json`.

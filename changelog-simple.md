@@ -19,6 +19,9 @@ If your install was configured on a port other than 8000, Papyrus could bind tha
 send your browser, and the page after registration, to port 8000. The launcher now passes the
 address it actually bound. The default install is unchanged.
 
+The published portable zip was also run on clean C: and D: volumes on the same day, including a
+real chapter page in both.
+
 ## Version 1.5.5, 4 November 2026
 
 This release adds a guided first run and updates the bundled Symfony packages for security
@@ -341,9 +344,6 @@ and you point it at a list you have chosen to trust. There is a guide to this in
 
 ## Still being verified
 
-- **A portable download.** The 1.5.6 zip is published with a hash sidecar. The latest clean-machine
-  C: and D: runs are the 1.5.1 archive; no 1.5.6 clean-machine run was done.
-  [docs/PORTABLE.md](docs/PORTABLE.md)
 - **A Mac version.** On hold.
 - **In-app updates.** Papyrus does not check for new versions. The About page links the release page
   and says updates are manual.

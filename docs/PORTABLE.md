@@ -4,33 +4,31 @@ The portable shape: a folder you copy anywhere and run. No installer, no registr
 rights.
 
 > **Release status (2026-11-05).** 1.5.6 is published, including a portable zip
-> with a SHA-256 sidecar. The latest clean-machine C: and D: runs are still the
-> 1.5.1 archive; no 1.5.6 clean-machine portable run was done. See
-> [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> with a SHA-256 sidecar. The 1.5.6 zip passed clean-machine C: and D: runs on
+> 2026-11-05. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ---
 
-## Status: 1.5.1 clean-machine C: and D: runs passed
-
-The portable builder rebuilt the 1.5.1 zip and matching SHA256 sidecar on 2026-10-29 from commit
-`8ca2028`, after the first-launch storage fix in `2e4a73d`. The archive has 12,964 entries,
-includes the launcher and bundled runtimes, and contains no `.env` or reader databases. That
-1.5.1 archive was not published. The 1.5.1 release record lists it with that commit and hash.
+## Status: 1.5.6 clean-machine C: and D: runs passed
 
 The 1.5.6 portable zip was built from `8a398ab` on 2026-11-05 at 299,506,107 bytes with 10,245
 entries and SHA-256 `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The
 sidecar matches, the archive is published with the 1.5.6 release, and the build verified that it
-carries no `.env`, database or storage tree. It has not been run on a clean machine.
+carries no `.env`, database or storage tree.
 
-The 1.5.1 rebuilt archive was run on a clean Windows Sandbox guest twice on 2026-10-29: once from
+The 1.5.6 zip was run on a clean Windows Sandbox guest twice on 2026-11-05: once from
 `C:\Papyrus Portable\Papyrus`, a path with a space, and once from `D:\Papyrus` on a 4 GB
 VHD-backed second volume. Both runs verified the archive hash, extracted it, started through
-`Papyrus.cmd`, created `papyrus-data` beside the program folder, registered a reader, added the
-community store, installed MangaTaro, searched One Piece, read chapter 1 of 1,203, and passed the
-layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and no uninstall entry. This is
-manual acceptance evidence, not a gate pass. The local session folders
-`build\portable-sandbox-results\session-20261029-200249-c` and
-`session-20261029-201726-d` hold the screenshots and logs.
+`Papyrus.cmd`, created `papyrus-data` beside the program folder, registered a reader, trusted a
+store, installed MangaTaro, searched One Piece, read chapter 1 of 1,203 with a real page, and
+passed the layout check with no `%LOCALAPPDATA%` install, no Start Menu entry and no uninstall
+entry. The D: run reports `separate_volume=True` in `portable-layout.txt`. This is manual
+acceptance evidence, not a gate pass. The release worktree sessions
+`build\portable-sandbox-results\session-20261105-145005-c` and
+`session-20261105-145450-d` hold the screenshots and logs.
+
+The 1.5.1 archive was also run twice, on 2026-10-29, from the same two layouts. That archive was
+not published, and those runs are history rather than the current evidence. Its hash was:
 
 ```text
 sha256  0a430b7a9ad293ba33343cb55950c667a1c82642f5f044ea913ee25d2191efab
@@ -44,19 +42,19 @@ What is true today:
 | The data location rule | implemented and tested |
 | The 1.5.6 archive builder | built and content/hash verified on 2026-11-05 |
 | An archive anyone can download | **yes, 1.5.6 with a SHA-256 sidecar** |
-| A clean first launch with source reading | **1.5.1 passed on C: and D:; no 1.5.6 clean-machine run was done** |
+| A clean first launch with source reading | **1.5.6 passed on C: and D: on 2026-11-05** |
 
-The C: run logged the launcher's warning that temporary uploads would reach 102 characters, close
-to the 260-character limit; it did not block the run. The guest's Storage cmdlets returned no
-volume facts, so both layout files leave the volume fields blank. The D: VHD is proven by the
+The 1.5.6 C: run logged the launcher's warning that temporary uploads would reach 102 characters,
+close to the 260-character limit; it did not block the run. The guest's Storage cmdlets returned
+no volume facts, so both layout files leave the volume fields blank. The D: VHD is proven by the
 diskpart output in `portable.log`, which records the create, attach, format and drive-letter
 assignment.
 
-The 1.5.1 archive was not published. Those two runs prove that build on two clean volumes; they
-do not cover every Windows configuration, and they are not evidence for the 1.5.6 zip, which has
-not had a clean-machine run. The 1.5.0 install tree passed the Windows Sandbox gate on run 19
-(86 checks, 0 failures, including a real source page read), and the 1.5.1 setup passed the manual
-sandbox on 2026-10-29. Those prove the installer, not the portable zip.
+The 1.5.1 archive was not published. Its two runs prove that build on two clean volumes; the
+1.5.6 runs above are the current evidence, though neither run covers every Windows configuration.
+The 1.5.0 install tree passed the Windows Sandbox gate on run 19 (86 checks, 0 failures, including
+a real source page read), and the 1.5.1 setup passed the manual sandbox on 2026-10-29. Those prove
+the installer, not the portable zip.
 
 ---
 
@@ -110,8 +108,8 @@ separate `--out` directory. Never use the active installation or a reader data d
 target.
 
 The launcher is designed to create `papyrus-data` beside the folder, generate its own `.env`, apply
-migrations and start. The 1.5.6 clean-machine path still needs proof that it can browse a source and
-read through to manga pages.
+migrations and start. The 1.5.6 clean-machine path was run on C: and D: on 2026-11-05 and read a
+real source page in both sessions.
 
 ---
 

@@ -22,8 +22,7 @@ Updated 2026-11-05.
   pre-migration snapshot, removed the tour migration, kept the data marker, and the
   restart reapplied the migration. The uninstall drill removed the install and kept the
   data, database and marker. The portable zip is published and its content and hash were
-  verified, but no 1.5.6 clean-machine portable run was done; the latest clean-machine
-  C: and D: evidence is the 1.5.1 archive. The release is
+  verified, and it passed clean-machine C: and D: runs on 2026-11-05. The release is
   https://github.com/graynb25/papyrus/releases/tag/v1.5.6.
 - **1.5.5 is published.** It was built from `13452d2` and released as `v1.5.5`.
   The installer is 257,605,072 bytes, SHA-256
@@ -121,7 +120,8 @@ Updated 2026-11-05.
   it. The About page links the release Atom feed.
 - **The 1.5.4 follow-up items were completed on the 1.5.6 build.** The automated Windows
   Sandbox gate passed on 2026-11-05, and the upgrade (1.5.4 to 1.5.6), rollback, uninstall
-  and ahead-schema drills passed. The 1.5.6 portable zip is published and its content and
-  hash were verified, but no 1.5.6 clean-machine portable run was done; the latest
-  clean-machine C: and D: evidence is the 1.5.1 archive.
+  and ahead-schema drills passed. The 1.5.6 portable zip is published, its content and hash
+  were verified, and it passed clean-machine C: and D: runs on 2026-11-05. The C: session is
+  `build/portable-sandbox-results/session-20261105-145005-c`; the D: session is
+  `build/portable-sandbox-results/session-20261105-145450-d`.
 

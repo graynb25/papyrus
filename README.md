@@ -48,8 +48,9 @@ this is not something to monetise.
 Discovery and the read path work in the checkout and have been walked against live Suwayomi.
 The 1.5.6 manual installer tour passed on 2026-11-05 through the reader shortcut, including a
 source read and the first-run tour. The 1.5.6 automated clean-machine gate passed every check
-on the same day, including a source page read through the app proxy. Each new build must run
-both again; an earlier version's pass is not evidence for a later one. Search, source
+on the same day, including a source page read through the app proxy. The portable zip passed
+clean-machine C: and D: runs on the same day. Each new build must run all of them again; an
+earlier version's pass is not evidence for a later one. Search, source
 management, health, downloads, migration between sources, the series page, the reader and
 settings are implemented.
 
@@ -814,7 +815,7 @@ something to monetise.
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
 | [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md) | What is published, what is not, and the current release decision |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.6 zip is published with a SHA-256 sidecar; the latest clean-machine C: and D: runs are the 1.5.1 archive |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.6 zip is published with a SHA-256 sidecar and passed clean-machine C: and D: runs on 2026-11-05 |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

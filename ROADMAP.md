@@ -26,8 +26,7 @@ Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what 
 installer, a published portable zip, live backups and restores of both databases, daily backups, a
 diagnostics bundle, a health check that asks real questions, and a Suwayomi version check. 1.5.6
 is the current release; see [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md). The portable zip has
-been published since 1.5.2, but the latest clean-machine C: and D: runs are still the 1.5.1
-archive.
+been published since 1.5.2, and the 1.5.6 zip passed clean-machine C: and D: runs on 2026-11-05.
 
 ---
 
@@ -135,8 +134,8 @@ Papyrus.
 
 **Published 2026-11-05.** The 1.5.6 zip is 299,506,107 bytes with SHA-256
 `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409` and a matching sidecar.
-The 1.5.1 archive remains the latest clean-machine C: and D: evidence; no 1.5.6 clean-machine
-run was done. The default-port limit is still real for two copies unless `PAPYRUS_APP_PORT` and
+It passed clean-machine C: and D: runs on 2026-11-05, including a real source page in both
+sessions. The default-port limit is still real for two copies unless `PAPYRUS_APP_PORT` and
 `PAPYRUS_SUWAYOMI_PORT` are set.
 
 ---
