@@ -29,6 +29,14 @@ Updated 2026-11-06.
   The packaged walk found and fixed the start window reporting an intentional stop as a
   failed start. The build also fixed `build-installer.php` so `--out` reaches Inno Setup as
   `/O` instead of compiling into `build/dist` and failing its own artifact check.
+  The automated Windows Sandbox gate passed every check on 2026-11-06 on this build. It
+  started the packaged tree through `Papyrus.cmd` on `8402`, registered the first account,
+  rendered the sources page, added the extension store, installed MangaTaro, listed One
+  Piece with 1,204 chapters, read chapter 1 page 0 through the app proxy (200,
+  `image/webp`, 175,432 bytes, SHA-256
+  `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`), and stopped every
+  process with both ports released. Suwayomi stayed on loopback. The manual installer tour
+  is the remaining packaged check.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is
