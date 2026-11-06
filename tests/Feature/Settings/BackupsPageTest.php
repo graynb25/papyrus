@@ -429,7 +429,7 @@ class BackupsPageTest extends TestCase
         $this->writePair();
 
         $this->get('/settings/backups')
-            ->assertSee('14 October 2026')
+            ->assertSee('October 14, 2026')
             ->assertDontSee('20261014-203857</span>');
     }
 

@@ -1009,8 +1009,8 @@ class ImportPageTest extends TestCase
         $this->page()
             ->assertSee('667 series imported, 12 already up to date')
             ->assertSee('0 series imported, 679 already up to date')
-            ->assertSee($older->started_at->format('j M Y, H:i'))
-            ->assertSee($newer->started_at->format('j M Y, H:i'));
+            ->assertSee($older->started_at->isoFormat('LL, HH:mm'))
+            ->assertSee($newer->started_at->isoFormat('LL, HH:mm'));
     }
 
     public function test_it_says_so_when_nothing_has_been_imported(): void

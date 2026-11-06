@@ -6,10 +6,19 @@ use App\AniList\OAuth;
 use App\AniList\Tracking;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Connection settings')] class extends Component {
+new class extends Component {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Connection settings'));
+    }
+
     /**
      * Send this reader to AniList to approve the connection.
      *
@@ -318,7 +327,7 @@ new #[Title('Connection settings')] class extends Component {
 
                     <p class="text-xs text-zinc-500 dark:text-zinc-400">
                         @if ($this->account->token_expires_at !== null)
-                            {{ __('The token AniList issued expires :when, and there is no refresh: when it dies, connect again.', ['when' => $this->account->token_expires_at->format('M j, Y')]) }}
+                            {{ __('The token AniList issued expires :when, and there is no refresh: when it dies, connect again.', ['when' => $this->account->token_expires_at->isoFormat('LL')]) }}
                         @else
                             {{ __('AniList issued no expiry for this token. When it stops working, connect again.') }}
                         @endif

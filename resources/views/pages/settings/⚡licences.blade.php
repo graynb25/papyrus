@@ -3,10 +3,19 @@
 use App\Models\LicenceAcknowledgement;
 use App\Support\Licences;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Licences')] class extends Component {
+new class extends Component {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Licences'));
+    }
+
     /*
      * Generated rather than typed out, and honest about it.
      *

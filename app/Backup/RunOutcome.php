@@ -142,27 +142,26 @@ final class RunOutcome
     public function verdict(): string
     {
         if ($this->stalled()) {
-            return 'This did not finish. Papyrus was stopped part way through and nothing restarted it.';
+            return __('This did not finish. Papyrus was stopped part way through and nothing restarted it.');
         }
 
-        $what = $this->operation() === 'restore' ? 'This restore' : 'This backup';
+        $what = $this->operation() === 'restore' ? __('This restore') : __('This backup');
 
         if ($this->failed()) {
             $stage = $this->failure();
 
-            return sprintf(
-                '%s stopped while %s. %s',
-                $what,
-                $this->readable((string) ($stage['stage'] ?? '')),
-                $this->oneline(is_string($stage['message'] ?? null) ? $stage['message'] : null),
-            );
+            return __(':what stopped while :stage. :message', [
+                'what' => $what,
+                'stage' => $this->readable((string) ($stage['stage'] ?? '')),
+                'message' => $this->oneline(is_string($stage['message'] ?? null) ? $stage['message'] : null),
+            ]);
         }
 
         if (! $this->finished()) {
-            return $what.' is still running.';
+            return __(':what is still running.', ['what' => $what]);
         }
 
-        return $what.' finished.';
+        return __(':what finished.', ['what' => $what]);
     }
 
     public function operation(): string
@@ -180,7 +179,7 @@ final class RunOutcome
         $at = $this->startedAt();
 
         if ($at === '') {
-            return 'at an unknown time';
+            return __('at an unknown time');
         }
 
         return $this->readableTime($at);
@@ -196,12 +195,12 @@ final class RunOutcome
     public function readable(string $stage): string
     {
         return match ($stage) {
-            'checking_target' => 'checking the server',
-            'stopping' => 'stopping Papyrus',
-            'copying_manga_half' => 'saving your manga data',
-            'copying_reader_half' => 'saving your library',
-            'writing_manifest' => 'checking the backup details',
-            'restarting' => 'starting Papyrus again',
+            'checking_target' => __('checking the server'),
+            'stopping' => __('stopping Papyrus'),
+            'copying_manga_half' => __('saving your manga data'),
+            'copying_reader_half' => __('saving your library'),
+            'writing_manifest' => __('checking the backup details'),
+            'restarting' => __('starting Papyrus again'),
             default => str_replace('_', ' ', $stage),
         };
     }
@@ -211,14 +210,14 @@ final class RunOutcome
         try {
             return CarbonImmutable::parse($at)->diffForHumans();
         } catch (Throwable) {
-            return 'at an unknown time';
+            return __('at an unknown time');
         }
     }
 
     private function oneline(?string $message): string
     {
         if ($message === null || trim($message) === '') {
-            return 'Nothing further was said.';
+            return __('Nothing further was said.');
         }
 
         foreach (preg_split('#\R#', trim($message)) ?: [] as $line) {
@@ -227,6 +226,6 @@ final class RunOutcome
             }
         }
 
-        return 'Nothing further was said.';
+        return __('Nothing further was said.');
     }
 }

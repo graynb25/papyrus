@@ -10,6 +10,7 @@ use App\Models\LiveRestoreRun;
 use App\Support\Duration;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Number;
 
 /**
  * The backups page's pure rules: bytes, elapsed seconds, verdict words and tones.
@@ -37,7 +38,18 @@ final class BackupFormatting
             $unit++;
         }
 
-        return round($value, $value < 10 && $unit > 0 ? 1 : 0).' '.$units[$unit];
+        if ($unit === 0) {
+            return $bytes.' '.$units[0];
+        }
+
+        $precision = $value < 10 ? 1 : 0;
+        $rounded = round($value, $precision);
+
+        if ((float) $rounded === (float) (int) $rounded) {
+            $precision = 0;
+        }
+
+        return Number::format($rounded, precision: $precision).' '.$units[$unit];
     }
 
     /**

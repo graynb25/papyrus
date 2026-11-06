@@ -15,13 +15,22 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
-new #[Title('Import a backup')] class extends Component
+new class extends Component
 {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Import a backup'));
+    }
+
     use WithFileUploads;
 
     /**
@@ -904,32 +913,32 @@ new #[Title('Import a backup')] class extends Component
         $unexplained = max(0, $didNotComeAcross - $notFound - $missingSources - $ambiguous);
 
         $sentence = __(':count series imported, :unchanged already up to date.', [
-            'count' => number_format($imported),
-            'unchanged' => number_format($unchanged),
+            'count' => Number::format($imported),
+            'unchanged' => Number::format($unchanged),
         ]);
 
         $reasons = [];
 
         if ($notFound > 0) {
-            $reasons[] = __(':count not found', ['count' => number_format($notFound)]);
+            $reasons[] = __(':count not found', ['count' => Number::format($notFound)]);
         }
 
         if ($missingSources > 0) {
-            $reasons[] = __(':count on sources this server does not have installed', ['count' => number_format($missingSources)]);
+            $reasons[] = __(':count on sources this server does not have installed', ['count' => Number::format($missingSources)]);
         }
 
         if ($ambiguous > 0) {
-            $reasons[] = __(':count matched more than one series', ['count' => number_format($ambiguous)]);
+            $reasons[] = __(':count matched more than one series', ['count' => Number::format($ambiguous)]);
         }
 
         if ($unexplained > 0) {
-            $reasons[] = __(':count because of an error', ['count' => number_format($unexplained)]);
+            $reasons[] = __(':count because of an error', ['count' => Number::format($unexplained)]);
         }
 
         if ($didNotComeAcross > 0 && $reasons !== []) {
             $sentence .= ' '.__('The other :count did not come across: :reasons.', [
-                'count' => number_format($didNotComeAcross),
-                'reasons' => Arr::join($reasons, ', ', ' and '),
+                'count' => Number::format($didNotComeAcross),
+                'reasons' => Arr::join($reasons, ', ', __(' and ')),
             ]);
         }
 
@@ -937,7 +946,7 @@ new #[Title('Import a backup')] class extends Component
             $sentence .= ' '.trans_choice(
                 ':count title was added to your library without its source, so you can find it later.|:count titles were added to your library without their source, so you can find them later.',
                 (int) $run->filed_without_source,
-                ['count' => number_format((int) $run->filed_without_source)],
+                ['count' => Number::format((int) $run->filed_without_source)],
             );
         }
 
@@ -1253,7 +1262,7 @@ new #[Title('Import a backup')] class extends Component
                                                 class="text-xs text-zinc-500 dark:text-zinc-400"
                                                 datetime="{{ $ranAt->toIso8601String() }}"
                                             >
-                                                {{ $ranAt->format('j M Y, H:i') }}
+                                                {{ $ranAt->isoFormat('LL, HH:mm') }}
                                             </time>
                                         @endif
 
@@ -1444,7 +1453,7 @@ new #[Title('Import a backup')] class extends Component
                                     @if ($run->format !== null || $run->schema_version !== null)
                                         , {{ $run->format ?? __('unknown') }} {{ __('format') }}
                                         @if ($run->schema_version !== null)
-                                            {{ __('version') }} {{ number_format($run->schema_version) }}
+                                            {{ __('version') }} {{ $run->schema_version }}
                                         @endif
                                     @endif
                                 </p>
@@ -1469,7 +1478,7 @@ new #[Title('Import a backup')] class extends Component
                                     </div>
 
                                     <div class="mt-1 flex justify-between text-xs text-zinc-400">
-                                        <span>{{ number_format($run->series_processed ?? 0) }} {{ __('of') }} {{ number_format($run->library_series) }} {{ __('series') }}</span>
+                                        <span>{{ Number::format($run->series_processed ?? 0) }} {{ __('of') }} {{ Number::format($run->library_series) }} {{ __('series') }}</span>
                                         <span>{{ $this->elapsed($run) }}@if ($isRunning) {{ __('so far') }}@endif</span>
                                     </div>
                                 @endif
@@ -1489,7 +1498,7 @@ new #[Title('Import a backup')] class extends Component
                                         {{ trans_choice(
                                             '{1}:count source in this backup needs an extension this server does not have.|[2,*]:count sources in this backup need an extension this server does not have.',
                                             $missingSources,
-                                            ['count' => number_format($missingSources)],
+                                            ['count' => Number::format($missingSources)],
                                         ) }}
                                     </p>
 
@@ -1499,13 +1508,13 @@ new #[Title('Import a backup')] class extends Component
 
                                     @if ($already > 0)
                                         <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                                            {{ __(':count sources already have an extension here and need nothing.', ['count' => number_format($already)]) }}
+                                            {{ __(':count sources already have an extension here and need nothing.', ['count' => Number::format($already)]) }}
                                         </p>
                                     @endif
 
                                     @if ($obsolete > 0)
                                         <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                                            {{ __(':count series sit on sources the backup itself marks gone. No store can bring those back.', ['count' => number_format($obsolete)]) }}
+                                            {{ __(':count series sit on sources the backup itself marks gone. No store can bring those back.', ['count' => Number::format($obsolete)]) }}
                                         </p>
                                     @endif
                                 </div>
@@ -1546,7 +1555,7 @@ new #[Title('Import a backup')] class extends Component
                                                             </span>
                                                         </span>
                                                         <span class="flex-none text-zinc-500 dark:text-zinc-400">
-                                                            {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => number_format((int) $package['series'])]) }}
+                                                            {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => Number::format((int) $package['series'])]) }}
                                                         </span>
                                                     </li>
                                                 @endforeach
@@ -1565,7 +1574,7 @@ new #[Title('Import a backup')] class extends Component
                                             {{ trans_choice(
                                                 '{1}:count package is in no store this server knows.|[2,*]:count packages are in no store this server knows.',
                                                 count($unresolved),
-                                                ['count' => number_format(count($unresolved))],
+                                                ['count' => Number::format(count($unresolved))],
                                             ) }}
                                         </p>
 
@@ -1581,7 +1590,7 @@ new #[Title('Import a backup')] class extends Component
                                                         <span class="block break-all text-zinc-500 dark:text-zinc-400">{{ $package['pkg_name'] }}</span>
                                                     </span>
                                                     <span class="flex-none text-zinc-500 dark:text-zinc-400">
-                                                        {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => number_format((int) $package['series'])]) }}
+                                                        {{ trans_choice('{1}:count series|[2,*]:count series', (int) $package['series'], ['count' => Number::format((int) $package['series'])]) }}
                                                     </span>
                                                 </li>
                                             @endforeach

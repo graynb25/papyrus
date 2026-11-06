@@ -14,10 +14,19 @@ use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Backups')] class extends Component {
+new class extends Component {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Backups'));
+    }
+
     /*
      * A list of what is on disk, and a truthful account of the last run, from every door.
      *
@@ -979,7 +988,7 @@ new #[Title('Backups')] class extends Component {
                 @foreach ($this->leftovers() as $leftover)
                     <li>
                         <span class="font-mono">{{ $leftover['name'] }}</span>
-                        <span class="text-xs">({{ number_format($leftover['bytes'] / 1048576, 1) }} MB)</span>
+                        <span class="text-xs">({{ Number::format($leftover['bytes'] / 1048576, precision: 1) }} MB)</span>
                         <span>{{ __('the files that were there before a restore replaced them') }}</span>
                     </li>
                 @endforeach

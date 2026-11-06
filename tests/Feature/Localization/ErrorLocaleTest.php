@@ -6,6 +6,7 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\TestCase;
 
@@ -66,6 +67,70 @@ class ErrorLocaleTest extends TestCase
         $response = app(ExceptionHandler::class)->render($request, new RuntimeException('boom'));
 
         $this->assertSame(500, $response->getStatusCode());
+        $this->assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
+    }
+
+    public function test_a_403_renders_the_spanish_page(): void
+    {
+        $request = $this->request('/library', ['locale' => 'es']);
+
+        $response = app(ExceptionHandler::class)->render($request, new HttpException(403));
+
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertStringContainsString('lang="es"', (string) $response->getContent());
+        $this->assertStringContainsString('Prohibido', (string) $response->getContent());
+        $this->assertStringContainsString('Esta estantería no es tuya.', (string) $response->getContent());
+        $this->assertStringContainsString('No tienes permiso para abrir esta página.', (string) $response->getContent());
+    }
+
+    public function test_a_429_renders_the_spanish_page_and_keeps_retry_after(): void
+    {
+        $request = $this->request('/library', ['locale' => 'es']);
+
+        $response = app(ExceptionHandler::class)->render(
+            $request,
+            new HttpException(429, '', null, ['Retry-After' => '60']),
+        );
+
+        $this->assertSame(429, $response->getStatusCode());
+        $this->assertSame('60', $response->headers->get('Retry-After'));
+        $this->assertStringContainsString('lang="es"', (string) $response->getContent());
+        $this->assertStringContainsString('Demasiadas solicitudes', (string) $response->getContent());
+        $this->assertStringContainsString('Baja el ritmo un poco.', (string) $response->getContent());
+    }
+
+    public function test_a_503_renders_the_spanish_page(): void
+    {
+        $request = $this->request('/library', ['locale' => 'es']);
+
+        $response = app(ExceptionHandler::class)->render($request, new HttpException(503));
+
+        $this->assertSame(503, $response->getStatusCode());
+        $this->assertStringContainsString('lang="es"', (string) $response->getContent());
+        $this->assertStringContainsString('Temporalmente no disponible', (string) $response->getContent());
+        $this->assertStringContainsString('La sala de lectura está cerrada un momento.', (string) $response->getContent());
+    }
+
+    public function test_403_and_429_json_responses_are_left_to_laravel(): void
+    {
+        foreach ([403, 429] as $status) {
+            $request = $this->request('/library', ['locale' => 'es'], 'application/json');
+
+            $response = app(ExceptionHandler::class)->render($request, new HttpException($status));
+
+            $this->assertSame($status, $response->getStatusCode());
+            $this->assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
+            $this->assertStringNotContainsString('Prohibido', (string) $response->getContent());
+        }
+    }
+
+    public function test_a_503_json_response_is_left_to_laravel(): void
+    {
+        $request = $this->request('/library', ['locale' => 'es'], 'application/json');
+
+        $response = app(ExceptionHandler::class)->render($request, new HttpException(503));
+
+        $this->assertSame(503, $response->getStatusCode());
         $this->assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
     }
 

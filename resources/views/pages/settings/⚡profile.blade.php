@@ -8,10 +8,19 @@ use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Profile settings')] class extends Component {
+new class extends Component {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Profile settings'));
+    }
+
     use ProfileValidationRules;
 
     public string $name = '';

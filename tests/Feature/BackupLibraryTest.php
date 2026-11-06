@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Backup\BackupLibrary;
 use App\Backup\BackupSummary;
 use App\Backup\RunOutcome;
+use App\Support\Locale;
 use Papyrus\Launcher\BackupPair;
 use Papyrus\Launcher\RestoreRefused;
 use Papyrus\Launcher\RunRecord;
@@ -89,6 +90,18 @@ class BackupLibraryTest extends TestCase
         $this->assertTrue($pair->intact);
         $this->assertNull($pair->problem);
         $this->assertSame('867 series and 21,447 chapters', $pair->describe());
+    }
+
+    public function test_spanish_summary_uses_localized_date_and_numbers(): void
+    {
+        Locale::apply('es');
+
+        $this->writePair();
+
+        $pair = $this->library()->pairs()[0];
+
+        $this->assertSame('867 series y 21.447 capítulos', $pair->describe());
+        $this->assertSame('14 de octubre de 2026, 20:38', $pair->takenAtForHumans());
     }
 
     /**

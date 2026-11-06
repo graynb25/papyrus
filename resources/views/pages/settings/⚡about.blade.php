@@ -3,10 +3,19 @@
 use App\Suwayomi\Gateway;
 use App\Support\Versions;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('About this install')] class extends Component {
+new class extends Component {
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('About this install'));
+    }
+
     /*
      * Everything on this page is read, never written.
      *

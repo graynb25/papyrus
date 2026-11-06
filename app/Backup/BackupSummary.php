@@ -3,6 +3,7 @@
 namespace App\Backup;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Number;
 use Papyrus\Launcher\BackupPair;
 use Throwable;
 
@@ -141,7 +142,7 @@ final class BackupSummary
      */
     public function ageForHumans(): string
     {
-        return $this->takenAtDate()?->diffForHumans() ?? 'at an unknown time';
+        return $this->takenAtDate()?->diffForHumans() ?? __('at an unknown time');
     }
 
     /**
@@ -156,7 +157,7 @@ final class BackupSummary
     {
         return $this->takenAtDate()
             ?->setTimezone((string) config('app.timezone'))
-            ->translatedFormat('j F Y, H:i');
+            ->isoFormat('LL, HH:mm');
     }
 
     /**
@@ -181,14 +182,13 @@ final class BackupSummary
     public function describe(): string
     {
         if (! $this->complete) {
-            return 'Backup is incomplete';
+            return __('Backup is incomplete');
         }
 
-        return sprintf(
-            '%s series and %s chapters',
-            number_format($this->seriesStates),
-            number_format($this->chapterStates),
-        );
+        return __(':series series and :chapters chapters', [
+            'series' => Number::format($this->seriesStates),
+            'chapters' => Number::format($this->chapterStates),
+        ]);
     }
 
     /**
@@ -197,10 +197,10 @@ final class BackupSummary
     public function sizeForHumans(): string
     {
         if ($this->bytes < 1024) {
-            return $this->bytes.' bytes';
+            return Number::format($this->bytes).' bytes';
         }
 
-        return round($this->bytes / 1048576, 1).' MB';
+        return Number::format(round($this->bytes / 1048576, 1), precision: 1).' MB';
     }
 
     /**
@@ -209,15 +209,13 @@ final class BackupSummary
     private static function problem(array $missing, int $checked, int $matched): ?string
     {
         if ($missing !== []) {
-            return sprintf(
-                'This backup is missing %s, so it cannot be restored. A backup needs both your '
-                .'library and manga data.',
-                implode(' and ', $missing),
-            );
+            return __('This backup is missing :files, so it cannot be restored. A backup needs both your library and manga data.', [
+                'files' => implode(__(' and '), $missing),
+            ]);
         }
 
         if ($checked === 2 && $matched < 2) {
-            return 'One file has changed, so this backup is not complete anymore.';
+            return __('One file has changed, so this backup is not complete anymore.');
         }
 
         return null;

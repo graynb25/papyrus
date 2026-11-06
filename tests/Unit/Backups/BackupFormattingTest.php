@@ -6,6 +6,7 @@ use App\Backup\RunOutcome;
 use App\Live\Backups\BackupFormatting;
 use App\Models\LiveBackupRun;
 use App\Models\LiveRestoreRun;
+use App\Support\Locale;
 use Carbon\CarbonImmutable;
 use Papyrus\Launcher\RunRecord;
 use Tests\TestCase;
@@ -41,6 +42,14 @@ class BackupFormattingTest extends TestCase
         $this->assertSame('3 MB', $this->formatting->humanBytes(3 * 1048576));
         $this->assertSame('10 MB', $this->formatting->humanBytes(10 * 1048576));
         $this->assertSame('1 GB', $this->formatting->humanBytes(1024 * 1024 * 1024));
+    }
+
+    public function test_spanish_bytes_use_the_spanish_decimal_separator(): void
+    {
+        Locale::apply('es');
+
+        $this->assertSame('1,5 KB', $this->formatting->humanBytes(1536));
+        $this->assertSame('1 KB', $this->formatting->humanBytes(1024));
     }
 
     public function test_elapsed_time_keeps_whole_seconds_and_names_the_wait(): void

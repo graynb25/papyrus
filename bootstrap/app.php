@@ -154,21 +154,25 @@ $app = Application::configure(basePath: dirname(__DIR__))
 
         /*
          * A 419 is rendered before appended web middleware can set the locale,
-         * because CSRF validation runs first. Resolve the locale here as well and
-         * render the app's own page, so an expired form is not the one response
-         * in the reader's language that stays English.
+         * because CSRF validation runs first. The other statuses here are the
+         * app's own pages too: a refusal, a throttle and a maintenance pause
+         * should not be the responses in the reader's language that stay
+         * English. Resolve the locale in this path and pass the exception's
+         * headers through, so a 429 or 503 keeps its Retry-After.
          *
          * JSON requests are left to Laravel: an API caller needs the status, not
          * the HTML page.
          */
         $exceptions->render(function (HttpException $e, Request $request) use ($localize) {
-            if ($e->getStatusCode() !== 419 || $request->expectsJson()) {
+            $status = $e->getStatusCode();
+
+            if (! in_array($status, [403, 419, 429, 503], true) || $request->expectsJson()) {
                 return null;
             }
 
             $localize($request);
 
-            return response()->view('errors.419', [], 419);
+            return response()->view("errors.{$status}", [], $status, $e->getHeaders());
         });
 
         /*

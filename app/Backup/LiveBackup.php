@@ -14,6 +14,7 @@ use App\Suwayomi\Gateway;
 use App\Suwayomi\SuwayomiException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Number;
 use Papyrus\Launcher\BackupPair;
 use Papyrus\Launcher\RestoreRefused;
 use PDO;
@@ -308,7 +309,7 @@ final class LiveBackup
         $say('downloads', sprintf(
             '%d files holding %s bytes from the downloads folder, packing them',
             count($files),
-            number_format($bytes),
+            Number::format($bytes),
         ));
 
         $zip = new ZipArchive;
