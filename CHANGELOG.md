@@ -30,8 +30,11 @@ can switch language from Settings > Appearance, the sidebar, or the auth footer,
 choice is kept per reader. The migration wizard and the backup, restore, export,
 local-folder and adult-content messages are included. Spanish, French, and Brazilian
 Portuguese are AI drafts that have had an independent AI language review; native review has
-not been performed, and none of them should be described as native-reviewed. Legal pages,
-the FAQ, the installer, the launcher, and raw source or server error text remain English.
+not been performed, and none of them should be described as native-reviewed. Visual QA is
+complete at desktop and mobile widths for the tested web surfaces. The pass translated the
+search filter hint and ComicInfo labels, and the source action buttons now wrap on narrow
+screens. Legal pages, the FAQ, the installer, the launcher, and raw source or server error
+text remain English.
 
 ## 1.5.6 - 2026-11-05
 

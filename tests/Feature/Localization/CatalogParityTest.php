@@ -37,6 +37,7 @@ class CatalogParityTest extends TestCase
         $specific = match ($locale) {
             'fr' => [
                 'Description',
+                'Genre',
                 'Extensions',
                 'Scanlators',
                 'source|sources',
@@ -60,6 +61,8 @@ class CatalogParityTest extends TestCase
             'pt_BR' => [
                 'Backup',
                 'Backups',
+                'Status',
+                'Volume',
                 'Downloads',
                 'Sites',
                 'Scanlators',
@@ -75,7 +78,7 @@ class CatalogParityTest extends TestCase
     {
         $spanish = $this->catalog('es');
 
-        $this->assertCount(1331, $spanish);
+        $this->assertCount(1344, $spanish);
 
         foreach (['fr', 'pt_BR'] as $locale) {
             $this->assertSame(

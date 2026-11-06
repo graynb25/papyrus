@@ -1329,5 +1329,18 @@
     "Which one was never looked at|Which ones were never looked at": "Qual nunca foi verificada|Quais nunca foram verificadas",
     "Move the ticked series|Move the :count ticked series": "Mover a série marcada|Mover as :count séries marcadas",
     "AniList is a public database of manga and anime with a free, keyless API. Turning this on sends the titles you search to them, so that a series listed under three different names in three languages is recognised as one. Nothing else is sent, and the answers are cached so a repeated search is free.": "O AniList é um banco de dados público de mangá e anime com uma API gratuita e sem chave. Ativar isto envia ao AniList os títulos que você busca, para que uma série listada com três nomes diferentes em três idiomas seja reconhecida como uma só. Nada mais é enviado, e as respostas ficam em cache para que uma busca repetida seja gratuita.",
-    "This is the only account. Deleting it would leave this install with no owner and let the sign-up form claim it again. Create another account first if you really want to remove this one.": "Esta é a única conta. Se você excluí-la, esta instalação ficará sem proprietário e o formulário de cadastro poderá reivindicá-la novamente. Crie outra conta primeiro se realmente quiser remover esta."
+    "This is the only account. Deleting it would leave this install with no owner and let the sign-up form claim it again. Create another account first if you really want to remove this one.": "Esta é a única conta. Se você excluí-la, esta instalação ficará sem proprietário e o formulário de cadastro poderá reivindicá-la novamente. Crie outra conta primeiro se realmente quiser remover esta.",
+    "Genre": "Gênero",
+    "Status": "Status",
+    "Sort": "Ordenação",
+    "label:value, where label is one of: :labels. Sources that cannot honour a term are left out and counted.": "label:value, onde label é um de: :labels. As fontes que não conseguem aplicar um termo ficam de fora e são contadas.",
+    "Series": "Série",
+    "Number": "Número",
+    "Volume": "Volume",
+    "Year": "Ano",
+    "Publisher": "Editora",
+    "Writer": "Roteirista",
+    "Penciller": "Desenhista",
+    "Inker": "Arte-finalista",
+    "Summary": "Resumo"
 }

@@ -1329,5 +1329,18 @@
     "Which one was never looked at|Which ones were never looked at": "Laquelle n'a jamais été examinée|Lesquelles n'ont jamais été examinées",
     "Move the ticked series|Move the :count ticked series": "Déplacer la série cochée|Déplacer les :count séries cochées",
     "AniList is a public database of manga and anime with a free, keyless API. Turning this on sends the titles you search to them, so that a series listed under three different names in three languages is recognised as one. Nothing else is sent, and the answers are cached so a repeated search is free.": "AniList est une base de données publique de mangas et d'animes dotée d'une API gratuite et sans clé. L'activer envoie à AniList les titres que vous recherchez, afin qu'une série répertoriée sous trois noms différents dans trois langues soit reconnue comme une seule. Rien d'autre n'est envoyé, et les réponses sont mises en cache pour qu'une recherche répétée soit gratuite.",
-    "This is the only account. Deleting it would leave this install with no owner and let the sign-up form claim it again. Create another account first if you really want to remove this one.": "C'est le seul compte. Le supprimer laisserait cette installation sans propriétaire et permettrait au formulaire d'inscription de la revendiquer. Créez d'abord un autre compte si vous voulez vraiment supprimer celui-ci."
+    "This is the only account. Deleting it would leave this install with no owner and let the sign-up form claim it again. Create another account first if you really want to remove this one.": "C'est le seul compte. Le supprimer laisserait cette installation sans propriétaire et permettrait au formulaire d'inscription de la revendiquer. Créez d'abord un autre compte si vous voulez vraiment supprimer celui-ci.",
+    "Genre": "Genre",
+    "Status": "Statut",
+    "Sort": "Tri",
+    "label:value, where label is one of: :labels. Sources that cannot honour a term are left out and counted.": "label:value, où label est l'un de :labels. Les sources qui ne peuvent pas honorer un terme sont écartées et comptées.",
+    "Series": "Série",
+    "Number": "Numéro",
+    "Volume": "Tome",
+    "Year": "Année",
+    "Publisher": "Éditeur",
+    "Writer": "Scénariste",
+    "Penciller": "Dessinateur",
+    "Inker": "Encreur",
+    "Summary": "Résumé"
 }

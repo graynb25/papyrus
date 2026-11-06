@@ -1554,10 +1554,14 @@ and are selectable from the auth footer, the sidebar, and Settings > Appearance;
 remains the source language. The migration wizard and the backup, restore, export,
 local-folder and adult-content messages are covered. All three non-English catalogs are AI
 drafts that have had an independent AI language review; native review has not been
-performed, and visual QA of text expansion in the shell, auth pages, settings, tour, reader,
-and error pages is still open. Legal pages, the FAQ, the installer, the launcher, and raw
-source or server error text remain English. The catalog parity and locale route tests cover
-key parity, placeholders, plural branches, and representative pages.
+performed. Visual QA is complete at desktop and mobile widths for the shell, auth, library,
+search, sources, downloads, insights, health, settings appearance and backups, and the 404
+page in all three locales. The reader page and the tour beyond its second step were not
+visually exercised because no live source was available. The pass found the search filter
+hint and ComicInfo labels still in English, and the French source action buttons clipped on
+a narrow screen; all three are fixed. Legal pages, the FAQ, the installer, the launcher, and
+raw source or server error text remain English. The catalog parity and locale route tests
+cover key parity, placeholders, plural branches, and representative pages.
 
 ## How each improvement is verified
 

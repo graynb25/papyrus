@@ -111,6 +111,30 @@ class ErrorLocaleTest extends TestCase
         $this->assertStringContainsString('La sala de lectura está cerrada un momento.', (string) $response->getContent());
     }
 
+    public function test_a_maintenance_response_uses_the_browser_language(): void
+    {
+        $this->app->maintenanceMode()->activate([
+            'except' => [],
+            'redirect' => null,
+            'retry' => null,
+            'refresh' => null,
+            'secret' => null,
+            'status' => 503,
+            'template' => null,
+        ]);
+
+        try {
+            $this->withHeader('Accept-Language', 'fr-FR,fr;q=0.9')
+                ->get('/library')
+                ->assertStatus(503)
+                ->assertSee('lang="fr"', false)
+                ->assertSee('Temporairement indisponible')
+                ->assertSee('La salle de lecture est fermée pour un moment.');
+        } finally {
+            $this->app->maintenanceMode()->deactivate();
+        }
+    }
+
     public function test_403_and_429_json_responses_are_left_to_laravel(): void
     {
         foreach ([403, 429] as $status) {

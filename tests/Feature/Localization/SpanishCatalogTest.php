@@ -86,6 +86,7 @@ class SpanishCatalogTest extends TestCase
             'app/Live/Series/SeriesPageData.php',
             'app/Live/Sources/SourcesFormatting.php',
             'app/Live/Sources/SourcesPageData.php',
+            'app/Search/FilterVocabulary.php',
             'app/Search/HealthDashboard.php',
             'app/Support/Duration.php',
             'app/Support/ReadingState.php',

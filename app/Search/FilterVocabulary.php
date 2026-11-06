@@ -130,7 +130,7 @@ class FilterVocabulary
      */
     public function label(string $term): string
     {
-        return self::TERMS[strtolower($term)]['label'] ?? $term;
+        return __(self::TERMS[strtolower($term)]['label'] ?? $term);
     }
 
     /**
@@ -222,9 +222,11 @@ class FilterVocabulary
      */
     public function termsHint(): string
     {
-        return 'label:value, where label is one of: '.implode(', ', array_map(
-            fn (string $t): string => $this->label($t),
-            $this->terms(),
-        )).'. Sources that cannot honour a term are left out and counted.';
+        return __('label:value, where label is one of: :labels. Sources that cannot honour a term are left out and counted.', [
+            'labels' => implode(', ', array_map(
+                fn (string $t): string => $this->label($t),
+                $this->terms(),
+            )),
+        ]);
     }
 }

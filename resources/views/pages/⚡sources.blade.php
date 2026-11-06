@@ -4,8 +4,8 @@ use App\Live\Sources\SourcesFilter;
 use App\Live\Sources\SourcesFormatting;
 use App\Live\Sources\SourcesPageData;
 use App\Live\Sources\SourcesRules;
-use App\Local\LocalLibrary;
 use App\Livewire\AdultContentPage;
+use App\Local\LocalLibrary;
 use App\Models\ExtensionStore;
 use App\Models\Source;
 use App\Models\UserSource;
@@ -802,7 +802,7 @@ new class extends AdultContentPage
      * the reader's current trust, so a name whose store was distrusted between
      * the press and this call installs nothing.
      *
-     * @param array<int, string> $names
+     * @param  array<int, string>  $names
      */
     private function installNames(array $names): void
     {
@@ -1519,7 +1519,7 @@ new class extends AdultContentPage
                 </p>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
                 @if ($this->localVisible)
                     <flux:button
                         size="sm"
@@ -1624,7 +1624,7 @@ new class extends AdultContentPage
                                     <dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                                         @foreach ($row['metadata'] as $field => $value)
                                             <div class="flex gap-1">
-                                                <dt class="text-zinc-500 dark:text-zinc-400">{{ $field }}</dt>
+                                                <dt class="text-zinc-500 dark:text-zinc-400">{{ __($field) }}</dt>
                                                 <dd>{{ $value }}</dd>
                                             </div>
                                         @endforeach
@@ -1643,7 +1643,7 @@ new class extends AdultContentPage
         <div class="flex flex-wrap items-center justify-between gap-4">
             <flux:heading level="2">{{ __('Stores') }}</flux:heading>
 
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
                 <flux:button size="sm" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
                     {{ __('Refresh catalogue') }}
                 </flux:button>

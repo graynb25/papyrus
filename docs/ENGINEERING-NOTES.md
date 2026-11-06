@@ -7686,8 +7686,15 @@ The literal-call coverage test for the reader-facing files listed in
 comparing, because two reader-facing sentences are assembled with concatenation. That audit
 found that the series and source migration wizard and the backup, restore, export,
 local-folder, AniList and adult-content status messages were still English. They are now
-catalogued. Console command output, legal and FAQ copy, and the
-pre-rendered maintenance page remain English.
+catalogued. Console command output, legal and FAQ copy, and a pre-rendered maintenance
+template remain English.
+
+Visual QA ran against an isolated SQLite database with its own application key and file
+session driver, at 1440x900 and 390x844, in all three locales. It found the search filter
+hint (`FilterVocabulary::termsHint`) and the ComicInfo field labels still English, and the
+French source action buttons clipped at 390px. The hint and labels are now catalogued, and
+the source action rows wrap. The reader page and the tour beyond its second step were not
+exercised because no live source was available.
 
 `config/papyrus.php` has two lists. `supported` is the target list; `catalogued` is the
 subset that may be resolved, stored, or offered by the switcher. Add a locale to
@@ -7701,8 +7708,10 @@ including English, because FrankenPHP keeps workers alive. Byte routes skip reso
 Exception responses render outside the middleware, so `bootstrap/app.php` resolves the
 locale for 403, 404, 419, 429, 500, and 503 HTML pages and passes the exception headers
 through, which keeps `Retry-After` on 429 and 503. JSON responses stay JSON. The readiness
-endpoint `/ready` is intentionally JSON and is not a localized page; a future maintenance
-page must use the same exception path rather than inventing a second one.
+endpoint `/ready` is intentionally JSON and is not a localized page. A live
+maintenance-mode 503 uses the same exception path and follows the browser language; the
+test in `ErrorLocaleTest` asserts it. Do not use `php artisan down --render`: its
+pre-rendered template is fixed in the language active when the command runs.
 
 The local Flux toast view at `resources/views/flux/toast/index.blade.php` must keep
 `@blaze(fold: false)`. Its close button calls `__()`, and folding baked the compile-time

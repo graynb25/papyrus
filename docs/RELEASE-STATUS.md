@@ -4,10 +4,14 @@ Updated 2026-11-06.
 
 - **Locale support is in place.** Spanish, French, and Brazilian Portuguese are available
   as interface languages, and all three non-English catalogs are AI drafts that have had an
-  independent AI language review. Native-speaker review has not been performed. Open items:
-  visual QA of text expansion in the shell, auth pages, settings, tour, reader, and error
-  pages. English remains the source language. Legal pages, the FAQ, the installer, the
-  launcher, and raw source or server error text remain English.
+  independent AI language review. Native-speaker review has not been performed. Visual QA
+  is complete at desktop and mobile widths for the shell, auth, library, search, sources,
+  downloads, insights, health, settings appearance and backups, and the 404 page in all
+  three locales. The reader page and the tour beyond its second step were not visually
+  exercised because no live source was available. The QA pass found the search filter hint
+  and ComicInfo labels still in English, and the French source action buttons clipped on a
+  narrow screen; all three are fixed. English remains the source language. Legal pages, the
+  FAQ, the installer, the launcher, and raw source or server error text remain English.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

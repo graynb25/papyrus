@@ -31,6 +31,10 @@ described as native-reviewed.
   concatenated strings, so a sentence added there without a catalog entry fails the test.
 - All three catalogs are AI drafts. An independent AI language review has been completed;
   native-speaker review has not been performed.
+- Visual QA is complete at desktop and mobile widths for the shell, auth, library, search,
+  sources, downloads, insights, health, settings appearance and backups, and 404 in all
+  three locales. The reader and later tour steps were not visually exercised because no
+  live source was available.
 
 ## Still English
 
@@ -41,8 +45,9 @@ described as native-reviewed.
   exception. The label around it is translated; the raw message is not.
 - Progress notes written by background backup and import jobs remain as they were stored.
   The page's status words, labels, and surrounding copy are translated.
-- The pre-rendered Laravel maintenance page can stay in the language that was active when
-  the install was taken down. A thrown 503 response uses the normal locale path.
+- A live maintenance-mode 503 follows the browser language and the configured default
+  through the normal exception path. A pre-rendered page created with
+  `php artisan down --render` is static in the language active at down time.
 - Extension store names and index URLs, manga titles, chapter names, scanlator names,
   package names, URLs, file paths, and source metadata. These are reader data rather than
   UI copy.
