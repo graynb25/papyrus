@@ -92,6 +92,11 @@ yarn-error.log
 # produced by different commands and somebody debugging why the installer is stale needs to be able
 # to delete one and keep the other.
 /build/dist/
+# The i18n candidate install and artifacts, built with --no-record so the published
+# releases/<version>.json is untouched. Same payload class as /build/install and /build/dist, and
+# the same reason not to let git near them.
+/build/install-i18n-candidate/
+/build/dist-i18n-candidate/
 # What a sandbox run leaves behind. Readable from the host, useless in the repository.
 /build/sandbox-results/
 # What a manual sandbox session leaves behind: a screenshot every ten seconds, a CSV index, and

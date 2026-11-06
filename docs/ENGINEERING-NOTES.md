@@ -7749,6 +7749,18 @@ writes the manifest beside the artifact but does not replace the committed
 internal text files, `pause`, cmd.exe's `Access is denied.`, and raw lower-layer exception
 text remain English.
 
+The first i18n candidate build exposed a second output-path defect: `build-installer.php`
+created `--out` and checked for the artifact there, but never passed the directory to ISCC.
+Inno compiled into the `OutputDir` named in `papyrus.iss` (`build\dist`), overwrote that
+directory's setup executable, and the script then reported failure because the requested
+directory was empty. The compiler is now given `/O<dir>`, and `InstallerLanguagesTest`
+asserts the argument is present. The rebuilt candidate at `build/dist-i18n-candidate` is
+1.5.6 from `e29f071`: installer 257,921,564 bytes, SHA-256
+`e8f1a4dc368f88835a26d5e9c0d2a22d5db5a7bea6e55283728306ac6d18a6ab`; portable
+299,839,901 bytes, 10,387 entries, SHA-256
+`a5856168ef6dddf458df680b867680afedc9eee0134d3634f6c804cc5aec19ee`. The setup was not
+run, and the candidate was not sandboxed.
+
 ---
 
 265. **A history rewrite changes the documents, not just the commits.**

@@ -61,6 +61,20 @@ final class InstallerLanguagesTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/^ShowLanguageDialog=no$/m', $this->script);
     }
 
+    /**
+     * The requested output directory has to reach the compiler, not just be created.
+     *
+     * The .iss names `build\dist` in `OutputDir`. Without `/O`, `--out` made an empty directory,
+     * the compile succeeded into `build\dist`, and the script then failed its own artifact check
+     * after overwriting the release directory.
+     */
+    public function test_the_build_script_passes_the_requested_output_directory_to_the_compiler(): void
+    {
+        $script = (string) file_get_contents(dirname(__DIR__, 2).'/packaging/installer/build-installer.php');
+
+        $this->assertStringContainsString("'/O'.\$out,", $script);
+    }
+
     public function test_every_message_the_script_asks_for_exists_in_all_four_languages(): void
     {
         $messages = $this->customMessages();

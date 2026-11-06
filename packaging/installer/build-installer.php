@@ -192,6 +192,15 @@ $arguments = [
     '/DMyAppVersion='.$version,
     '/DMyAppVersionInfo='.$versionInfo,
     '/DSourceRoot='.$install,
+    /*
+     * `/O` overrides the script's `OutputDir`.
+     *
+     * The script names `build\dist` because that is where a release lands, but `--out` is a
+     * documented option and the check below reads the artifact from `$out`. Without this
+     * argument Inno compiled successfully into `build\dist` and the script then failed because
+     * `$out` was empty, which is a false failure that also overwrote the release directory.
+     */
+    '/O'.$out,
     $repo.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'installer'.DIRECTORY_SEPARATOR.'papyrus.iss',
 ];
 

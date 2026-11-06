@@ -14,6 +14,14 @@ Updated 2026-11-06.
   and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then
   English. English remains the source language. Legal pages, the FAQ, raw source or server
   error text, and the diagnostic bundle's internal text files remain English.
+  An i18n candidate was built locally from `e29f071` into `build/dist-i18n-candidate`: the
+  installer is 257,921,564 bytes, SHA-256
+  `e8f1a4dc368f88835a26d5e9c0d2a22d5db5a7bea6e55283728306ac6d18a6ab`; the portable is
+  299,839,901 bytes, SHA-256
+  `a5856168ef6dddf458df680b867680afedc9eee0134d3634f6c804cc5aec19ee`. Both used
+  `--no-record`, so `releases/1.5.6.json` is unchanged. Neither artifact was run. The
+  build also fixed `build-installer.php` so `--out` reaches Inno Setup as `/O` instead of
+  compiling into `build/dist` and failing its own artifact check.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is
