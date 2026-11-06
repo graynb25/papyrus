@@ -7,7 +7,7 @@ use Tests\TestCase;
 class SpanishCatalogTest extends TestCase
 {
     /**
-     * The Phase 1 surfaces whose sentence keys must be in lang/es.json.
+     * The Phase 1 and Phase 2 surfaces whose sentence keys must be in lang/es.json.
      *
      * The framework groups in lang/es/ are checked by the application itself,
      * and the mail and Fortify sentences are exercised by their own tests.
@@ -47,9 +47,21 @@ class SpanishCatalogTest extends TestCase
             'resources/views/errors/419.blade.php',
             'resources/views/errors/500.blade.php',
             'resources/views/errors/partials/ink.blade.php',
+            'resources/views/pages/⚡search.blade.php',
+            'resources/views/pages/⚡browse.blade.php',
+            'resources/views/pages/⚡downloads.blade.php',
+            'resources/views/pages/⚡insights.blade.php',
+            'resources/views/pages/⚡sources.blade.php',
+            'resources/views/pages/⚡health.blade.php',
+            'resources/views/pages/partials/search-skipped.blade.php',
+            'resources/views/components/adult-content/gate.blade.php',
             'app/Live/Library/LibraryPageData.php',
             'app/Live/Series/SeriesCoverRules.php',
             'app/Live/Series/SeriesPageData.php',
+            'app/Live/Sources/SourcesFormatting.php',
+            'app/Live/Sources/SourcesPageData.php',
+            'app/Search/HealthDashboard.php',
+            'app/Support/Duration.php',
             'app/Support/ReadingState.php',
             'app/Support/ReaderSettings.php',
             'app/Support/Library.php',
@@ -60,13 +72,21 @@ class SpanishCatalogTest extends TestCase
     /**
      * A literal key is not renamed, only translated.
      *
-     * Keys that are the same in both languages are legitimate loanwords.
+     * Keys that are the same in both languages are legitimate loanwords or
+     * technical names that must not be rewritten.
      *
      * @return list<string>
      */
     private function identical(): array
     {
-        return ['Scanlators', 'Zoom'];
+        return [
+            'Scanlators',
+            'Zoom',
+            'NSFW',
+            'ComicInfo.xml',
+            'protobuf',
+            ':count series',
+        ];
     }
 
     public function test_every_in_scope_sentence_key_has_a_spanish_value(): void

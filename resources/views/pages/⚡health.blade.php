@@ -10,11 +10,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Number;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Health')] class extends Component {
+new class extends Component {
     #[Url(as: 'state', except: '')]
     public string $state = '';
 
@@ -39,6 +38,16 @@ new #[Title('Health')] class extends Component {
      * ones.
      */
     public const DRILLDOWN_LIMIT = 30;
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Health'));
+    }
 
     /**
      * Clamp the linked site before it is used as a key.
@@ -167,13 +176,27 @@ new #[Title('Health')] class extends Component {
             }
         }
 
+        /*
+         * The three labels are full catalogue keys.
+         *
+         * They used to be built by concatenating a translated adjective into a
+         * trans_choice key, which made the key English-only and invisible to the
+         * catalogue test. A static key per state keeps each one translatable and
+         * keeps the plural branches countable.
+         */
+        $labels = [
+            'dead' => '{1} :count dead|[2,*] :count dead',
+            'failing' => '{1} :count failing|[2,*] :count failing',
+            'silent' => '{1} :count going quiet|[2,*] :count going quiet',
+        ];
+
         $parts = [];
 
-        foreach (['dead' => __('dead'), 'failing' => __('failing'), 'silent' => __('going quiet')] as $key => $label) {
+        foreach ($labels as $key => $line) {
             $count = $counts[$key] ?? 0;
 
             if ($count > 0) {
-                $parts[] = trans_choice('{1} :count '.$label.'|[2,*] :count '.$label, $count, ['count' => Number::format($count)]);
+                $parts[] = trans_choice($line, $count, ['count' => Number::format($count)]);
             }
         }
 
@@ -776,10 +799,9 @@ new #[Title('Health')] class extends Component {
                                         :title="__('Read here without leaving a trace?')"
                                         :body="$libraryHere > 0
                                             ? trans_choice(
-                                                'Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stays in your library.',
-                                                'Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stay in your library.',
-                                                ['count' => Number::format($libraryHere)],
+                                                'Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stays in your library.|Reading from this site will not be recorded: no history, no page position, nothing sent to AniList. Your :count series stay in your library.',
                                                 $libraryHere,
+                                                ['count' => Number::format($libraryHere)],
                                             )
                                             : __('Reading from this site will not be recorded: no history, no page position, nothing sent to AniList.')"
                                         :confirm="__('Go incognito')"

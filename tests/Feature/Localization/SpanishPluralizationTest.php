@@ -27,6 +27,8 @@ class SpanishPluralizationTest extends TestCase
 
                 $this->assertIsString($value);
 
+                preg_match_all('/:([A-Za-z_][A-Za-z0-9_]*)/', $key, $names);
+
                 foreach ([0, 1, 2] as $count) {
                     $line = trans_choice($key, $count, $this->replacements($key, $count));
 
@@ -34,6 +36,14 @@ class SpanishPluralizationTest extends TestCase
                     $this->assertStringNotContainsString('{', $line, "literal brace for: {$key}");
                     $this->assertStringNotContainsString('[', $line, "literal bracket for: {$key}");
                     $this->assertStringNotContainsString('|', $line, "literal pipe for: {$key}");
+
+                    foreach (array_unique($names[1]) as $name) {
+                        $this->assertStringNotContainsString(
+                            ':'.$name,
+                            $line,
+                            "unreplaced :{$name} at count {$count} for: {$key}",
+                        );
+                    }
                 }
             }
         } finally {

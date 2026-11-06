@@ -580,7 +580,7 @@ new class extends Component
             {{ trans_choice(
                 ':count title on this source matches “:term”.|:count titles on this source match “:term”.',
                 count($rows),
-                ['count' => number_format(count($rows)), 'term' => $activeQuery],
+                ['count' => Number::format(count($rows)), 'term' => $activeQuery],
             ) }}
         </p>
     @else

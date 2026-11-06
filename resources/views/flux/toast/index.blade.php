@@ -1,5 +1,5 @@
-@blaze(fold: true, safe: ['position'])
-{{-- Local copy of Flux's toast view. It exists only to give the close button an accessible name on first paint. Re-diff it against vendor/livewire/flux/stubs/resources/views/flux/toast/index.blade.php when Flux is upgraded. --}}
+@blaze(fold: false)
+{{-- Local copy of Flux's toast view. It exists only to give the close button an accessible name on first paint. Re-diff it against vendor/livewire/flux/stubs/resources/views/flux/toast/index.blade.php when Flux is upgraded. Folding is off because the aria-label calls `__()`, and folding bakes the compile-time locale into the cached HTML; a Spanish render would leave an English reader with a Spanish label. --}}
 
 @props([
     'position' => 'bottom end',

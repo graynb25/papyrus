@@ -7,10 +7,9 @@ use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Downloads')] class extends Component
+new class extends Component
 {
     /**
      * How often the page asks for fresh numbers, in milliseconds.
@@ -190,6 +189,16 @@ new #[Title('Downloads')] class extends Component
     public function shared(): array
     {
         return app(DownloadLedger::class)->sharedQueue(auth()->user());
+    }
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Downloads'));
     }
 
     /**
@@ -436,7 +445,7 @@ new #[Title('Downloads')] class extends Component
                 <flux:card class="card-press relative overflow-hidden p-4">
                     <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400">{{ $tile['label'] }}</flux:text>
 
-                    <flux:heading size="lg" class="mt-1 font-display! tabular-nums {{ $tile['tone'] }}">{{ number_format($tile['value']) }}</flux:heading>
+                    <flux:heading size="lg" class="mt-1 font-display! tabular-nums {{ $tile['tone'] }}">{{ Number::format($tile['value']) }}</flux:heading>
 
                     {{-- A quiet measure of each tile's share of the total,
                          so the numbers are comparable at a glance without a

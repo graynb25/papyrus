@@ -18,10 +18,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 
-new #[Title('Sources')] class extends AdultContentPage
+new class extends AdultContentPage
 {
     /** The page's reads, kept out of this component so their shapes can be tested directly. */
     private SourcesPageData $data;
@@ -178,6 +177,16 @@ new #[Title('Sources')] class extends AdultContentPage
      */
     #[Locked]
     public array $pendingClean = [];
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Sources'));
+    }
 
     public function mount(): void
     {
@@ -1604,7 +1613,7 @@ new #[Title('Sources')] class extends AdultContentPage
                                                 'rounded px-1.5 py-0.5 text-xs',
                                                 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' => $file['kind'] === 'other',
                                             ])
-                                            title="{{ number_format($file['bytes'] / 1024, 1) }} KB"
+                                            title="{{ Number::format($file['bytes'] / 1024, precision: 1) }} KB"
                                         >
                                             {{ $file['name'] }}
                                         </span>
@@ -1895,9 +1904,9 @@ new #[Title('Sources')] class extends AdultContentPage
 
                                 <span
                                     class="tabular-nums text-sm text-zinc-500 dark:text-zinc-400"
-                                    title="{{ __(':count series', ['count' => number_format($row['count'])]) }}"
+                                    title="{{ __(':count series', ['count' => Number::format($row['count'])]) }}"
                                 >
-                                    {{ number_format($row['count']) }}
+                                    {{ Number::format($row['count']) }}
                                 </span>
 
                                 <flux:icon name="chevron-right" class="size-4 shrink-0 text-zinc-400" />

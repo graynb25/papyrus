@@ -7,11 +7,10 @@ use App\Suwayomi\SuwayomiException;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Insights')] class extends Component {
+new class extends Component {
     /**
      * The window the page counts from, as a plain date.
      *
@@ -24,6 +23,16 @@ new #[Title('Insights')] class extends Component {
      */
     #[Url(as: 'since', except: '')]
     public string $since = '';
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Insights'));
+    }
 
     public function mount(): void
     {
@@ -194,7 +203,7 @@ new #[Title('Insights')] class extends Component {
         $totals = $this->totals;
         $span = $this->bound === null
             ? __('so far')
-            : __('since :date', ['date' => $this->bound->translatedFormat('F jS Y')]);
+            : __('since :date', ['date' => $this->bound->isoFormat('LL')]);
         $spent = Duration::forHumans($totals['seconds']);
 
         return trans_choice('{1} :time across one series :span.|[2,*] :time across :series series :span.', $totals['series'], [
@@ -336,7 +345,7 @@ new #[Title('Insights')] class extends Component {
                             <div class="h-2 mt-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10" aria-hidden="true">
                                 <div
                                     class="h-full rounded-full bg-vermilion-500"
-                                    style="width: {{ Number::format($largest > 0 ? 100 * $row['seconds'] / $largest : 0, precision: 1) }}%"
+                                    style="width: {{ number_format($largest > 0 ? 100 * $row['seconds'] / $largest : 0, 1, '.', '') }}%"
                                 ></div>
                             </div>
 

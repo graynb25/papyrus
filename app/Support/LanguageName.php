@@ -8,10 +8,10 @@ namespace App\Support;
  * Sources report `lang` as a BCP 47 tag (`en`, `pt-BR`, `es-419`, `zh-Hant`), and
  * the search page used to render those raw, so a reader choosing between languages
  * was choosing between `es` and `es-419` with nothing to tell them apart. The map
- * below is explicit rather than delegated to intl for the codes this project has
- * actually seen: Extension stores ship one extension per language, so the long tail is
- * real, and an unmapped code falls back to intl's display name before falling back
- * to the raw code itself.
+ * below is the English spelling for the codes this project has actually seen.
+ * Another interface language asks intl for its own spelling first, then falls back
+ * through this map and the raw code, so a catalogued language reads naturally and
+ * an unknown tag still shows something a reader can match against the source list.
  */
 final class LanguageName
 {
@@ -146,9 +146,28 @@ final class LanguageName
     }
 
     /**
-     * The display name for a language code, mapped, then intl, then the code.
+     * The codes that are labels rather than language tags.
+     *
+     * Extension stores and Suwayomi use these three for a source that publishes
+     * in every language, in no particular language, or from a local folder. They
+     * are translated as UI copy in {@see self::name()} rather than passed to
+     * intl, which does not know them.
+     *
+     * @var list<string>
      */
-    public static function name(string $code): string
+    private const PSEUDO = ['localsourcelang', 'all', 'other'];
+
+    /**
+     * The display name for a language code, mapped, then intl, then the code.
+     *
+     * A named language is asked of intl in the reader's language, so the same
+     * catalogue reads as "Portuguese (Brazil)" in English and "portugués
+     * (Brasil)" in Spanish. The three pseudo-languages are translated instead,
+     * because they are labels and intl has no name for them. An unknown code
+     * falls back through the English map and intl before the raw code, which is
+     * the value a reader can still match against the source list.
+     */
+    public static function name(string $code, ?string $locale = null): string
     {
         $code = trim($code);
 
@@ -156,25 +175,69 @@ final class LanguageName
             return '';
         }
 
-        if (array_key_exists($code, self::MAP)) {
-            return self::MAP[$code];
+        $locale = $locale ?? self::currentLocale();
+
+        if (in_array($code, self::PSEUDO, true)) {
+            return (string) trans(self::MAP[$code], [], $locale);
         }
 
-        if (class_exists(\Locale::class)) {
-            $name = \Locale::getDisplayName($code, 'en');
+        if ($locale !== 'en') {
+            $name = self::intlName($code, $locale);
 
-            /*
-             * intl answers a well-formed tag it cannot name with something like
-             * "qq (Unknown Region)", which is worse than the code it was asked
-             * about. The raw code is what a reader can at least match against
-             * the source list, so an unhelpful intl answer is not an answer.
-             */
-            if (is_string($name) && $name !== $code
-                && stripos($name, 'unknown') === false) {
+            if ($name !== null) {
                 return $name;
             }
         }
 
-        return $code;
+        if (array_key_exists($code, self::MAP)) {
+            return self::MAP[$code];
+        }
+
+        return self::intlName($code, 'en') ?? $code;
+    }
+
+    /**
+     * The locale the current request is being rendered in.
+     *
+     * `name()` is also called from unit contexts without an application, so the
+     * fallback is explicit rather than an uncaught container error.
+     */
+    private static function currentLocale(): string
+    {
+        if (function_exists('app') && app()->bound('translator')) {
+            return app()->getLocale();
+        }
+
+        return 'en';
+    }
+
+    /**
+     * An intl display name that is worth showing, or null.
+     *
+     * intl answers a well-formed tag it cannot name with something like
+     * "qq (Región desconocida)", which is worse than the code it was asked
+     * about. When the display language is still the tag's primary subtag, the
+     * name carries no information, so it is rejected. The English "unknown"
+     * check stays because the English fallback is what the previous behaviour
+     * promised and what an unmapped code must keep.
+     */
+    private static function intlName(string $code, string $locale): ?string
+    {
+        if (! class_exists(\Locale::class)) {
+            return null;
+        }
+
+        $name = \Locale::getDisplayName($code, $locale);
+        $language = \Locale::getDisplayLanguage($code, $locale);
+        $primary = explode('-', str_replace('_', '-', $code))[0];
+
+        if (! is_string($name) || ! is_string($language)
+            || $name === $code
+            || strtolower($language) === strtolower($primary)
+            || ($locale === 'en' && stripos($name, 'unknown') !== false)) {
+            return null;
+        }
+
+        return $name;
     }
 }

@@ -17,10 +17,9 @@ use App\Support\ReadingState;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 
-new #[Title('Search')] class extends AdultContentPage
+new class extends AdultContentPage
 {
     /** The page's reads, kept out of this component so their shapes can be tested directly. */
     private SearchPageData $data;
@@ -125,6 +124,16 @@ new #[Title('Search')] class extends AdultContentPage
      * would make a reader's back button close a modal they did not open but were sent.
      */
     public ?int $chosenManga = null;
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Search'));
+    }
 
     public function mount(): void
     {
