@@ -7,10 +7,20 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-11-05
+## Current delivery status, 2026-11-06
 
-The 1.5.6 release is published from `8a398ab`, tagged `v1.5.6`, and is the current
-release. Its installer is 257,605,124 bytes and its portable zip is 299,506,107 bytes;
+The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`, and is the current
+release. Its installer is 257,924,136 bytes and its portable zip is 299,842,534 bytes;
+both hashes are in `releases/1.5.7.json`, and the portable has a `.sha256` sidecar. The
+automated Windows Sandbox gate passed every check on 2026-11-06, the manual installer tour
+selected Spanish and passed through the reader page, and the full suite on the packaged
+PHP 8.5.12 passed 3,177 tests with 56,542 assertions. The portable zip was built, content
+and hash verified, and walked locally; its clean-machine C: and D: runs remain the 1.5.6
+evidence and have not been repeated for 1.5.7. The release is
+https://github.com/graynb25/papyrus/releases/tag/v1.5.7.
+
+The 1.5.6 release is also published from `8a398ab`, tagged `v1.5.6`. Its installer is
+257,605,124 bytes and its portable zip is 299,506,107 bytes;
 both hashes are in `releases/1.5.6.json`, and the portable has a `.sha256` sidecar. CI
 run `42067686446` passed in 14m35s. The automated Windows Sandbox gate passed every
 check on 2026-11-05, the manual installer tour passed all nine steps, and the upgrade,

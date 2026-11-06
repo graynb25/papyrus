@@ -19,7 +19,7 @@ below, because it is the single most common reason a first launch does nothing.
 ## Installing
 
 1. Download **`Papyrus-<version>-setup.exe`** (about 246 MB). Use the version named
-   in [RELEASE-STATUS.md](RELEASE-STATUS.md); 1.5.6 is current, and 1.5.1 was
+   in [RELEASE-STATUS.md](RELEASE-STATUS.md); 1.5.7 is current, and 1.5.1 was
    not published.
 2. Run it. You do **not** need administrator rights and it will not ask for any: Papyrus installs
    per user, into your own Windows profile.

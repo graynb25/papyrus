@@ -2,7 +2,7 @@
 
 Updated 2026-11-06.
 
-- **Locale support is in place.** Spanish, French, and Brazilian Portuguese are available
+- **1.5.7 is published.** Spanish, French, and Brazilian Portuguese are available
   as interface languages, and all three non-English catalogs are AI drafts that have had an
   independent AI language review. Native-speaker review has not been performed. Visual QA
   is complete at desktop and mobile widths for the shell, auth, library, search, sources,
@@ -14,12 +14,14 @@ Updated 2026-11-06.
   and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then
   English. English remains the source language. Legal pages, the FAQ, raw source or server
   error text, and the diagnostic bundle's internal text files remain English.
-  The next release is prepared as 1.5.7 from `633eb85`, because the localization payload
-  changes the published artifacts. The installer is 257,924,136 bytes, SHA-256
-  `bf69e2f7c9a00b54cd2ac04762a45719cf164f406149d145d24c991dbc484c0e`; the portable is
-  299,842,534 bytes, SHA-256
-  `3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. Both used
-  `--no-record`, so no release record was written. The portable zip passed a local scratch
+  It was built from `633eb85` and released as `v1.5.7`. The installer is 257,924,136 bytes,
+  SHA-256 `bf69e2f7c9a00b54cd2ac04762a45719cf164f406149d145d24c991dbc484c0e`; the portable
+  is 299,842,534 bytes, SHA-256
+  `3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. Both are recorded
+  in [`releases/1.5.7.json`](../releases/1.5.7.json). The release is
+  https://github.com/graynb25/papyrus/releases/tag/v1.5.7. The full suite on the packaged
+  PHP 8.5.12 passed 3,177 tests with 56,542 assertions, and Pint, PHPStan, dash,
+  machine-detail and the checker self-test pass. The portable zip passed a local scratch
   walk with a minted account: the login and library in Spanish, the shell, search, sources,
   downloads, insights, health, appearance and backups in French and Brazilian Portuguese,
   and the 404 page in Portuguese. No horizontal overflow appeared at 1440px. The old 1.4.0
@@ -51,7 +53,10 @@ Updated 2026-11-06.
   the Available grid was lit, the add-to-library step kept the tour card on screen, and the
   reader opened a real page. The session is
   `build/manual-sandbox-results/session-20261106-155555`; the ten second loop wrote 35
-  frames, and no named captures were used.
+  frames, and no named captures were used. The final portable zip was also unpacked and
+  walked locally in Portuguese with a minted account, and its stop printed the localized
+  sentence; the clean-machine C: and D: portable runs remain the 1.5.6 evidence, and the
+  1.5.7 zip has not been repeated on a clean guest.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

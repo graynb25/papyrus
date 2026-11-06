@@ -1,10 +1,11 @@
 # Packaging Papyrus for Windows
 
-> **Release status (2026-11-05).** 1.5.6 is published from `8a398ab`, tagged
-> `v1.5.6`. Its automated gate, manual installer tour and portable clean-machine
-> C: and D: runs passed. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> **Release status (2026-11-06).** 1.5.7 is published from `633eb85`, tagged
+> `v1.5.7`. Its automated gate and manual installer tour passed on 2026-11-06; its portable
+> zip was built, content and hash verified, and walked locally, while the clean-machine C:
+> and D: runs remain the 1.5.6 evidence. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
-Status: **the 1.5.6 Windows installer builds.** Its build, hashes, automated gate and manual
+Status: **the 1.5.7 Windows installer builds.** Its build, hashes, automated gate and manual
 tour are recorded below. The paragraphs that follow also record the 1.5.0 and 1.5.1 work that
 got the packaging layer here.
 

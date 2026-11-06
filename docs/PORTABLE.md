@@ -3,9 +3,9 @@
 The portable shape: a folder you copy anywhere and run. No installer, no registry, no administrator
 rights.
 
-> **Release status (2026-11-05).** 1.5.6 is published, including a portable zip
-> with a SHA-256 sidecar. The 1.5.6 zip passed clean-machine C: and D: runs on
-> 2026-11-05. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> **Release status (2026-11-06).** 1.5.7 is published, including a portable zip
+> with a SHA-256 sidecar. The 1.5.7 zip was built, content and hash verified, and walked
+> locally; the clean-machine C: and D: runs below remain the 1.5.6 evidence. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ---
 
@@ -40,11 +40,14 @@ What is true today:
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The 1.5.6 archive builder | built and content/hash verified on 2026-11-05 |
-| An archive anyone can download | **yes, 1.5.6 with a SHA-256 sidecar** |
-| A clean first launch with source reading | **1.5.6 passed on C: and D: on 2026-11-05** |
+| The 1.5.7 archive builder | built and content/hash verified on 2026-11-06 |
+| An archive anyone can download | **yes, 1.5.7 with a SHA-256 sidecar** |
+| A clean first launch with source reading | **1.5.6 passed on C: and D: on 2026-11-05; 1.5.7 clean-machine not repeated** |
 
-The 1.5.6 C: run logged the launcher's warning that temporary uploads would reach 102 characters,
+The 1.5.7 zip was built from `633eb85` at 299,842,534 bytes with 10,388 entries, SHA-256
+`3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. It was unpacked and
+walked locally in Portuguese with a minted account, and its stop printed the localized
+sentence. The 1.5.6 C: run logged the launcher's warning that temporary uploads would reach 102 characters,
 close to the 260-character limit; it did not block the run. The guest's Storage cmdlets returned
 no volume facts, so both layout files leave the volume fields blank. The D: VHD is proven by the
 diskpart output in `portable.log`, which records the create, attach, format and drive-letter

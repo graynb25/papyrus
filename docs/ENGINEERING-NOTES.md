@@ -7808,6 +7808,13 @@ was lit under the tour overlay, the add-to-library step kept the card on screen,
 reader opened a real page. The ten second loop wrote 35 frames; no named captures were used.
 The sandbox runs remain the installer-payload and clean-machine evidence.
 
+The packaged-runtime suite on the final install's PHP 8.5.12 passed 3,177 tests with 56,542
+assertions after one test-harness fix. The queue probe test spawned `PHP_BINARY` without
+`-c`, which worked on the checkout because PHP finds a php.ini beside its executable, and
+failed on the packaged PHP as `not-checked|could not find driver`. The test now carries the
+loaded ini exactly as the production probe already did. The fix is test-only; the shipped
+launcher code was not changed.
+
 ---
 
 265. **A history rewrite changes the documents, not just the commits.**

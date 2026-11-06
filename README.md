@@ -46,18 +46,19 @@ this is not something to monetise.
 ## Status
 
 Discovery and the read path work in the checkout and have been walked against live Suwayomi.
-The 1.5.6 manual installer tour passed on 2026-11-05 through the reader shortcut, including a
-source read and the first-run tour. The 1.5.6 automated clean-machine gate passed every check
-on the same day, including a source page read through the app proxy. The portable zip passed
-clean-machine C: and D: runs on the same day. Each new build must run all of them again; an
-earlier version's pass is not evidence for a later one. Search, source
-management, health, downloads, migration between sources, the series page, the reader and
-settings are implemented.
+The 1.5.7 manual installer tour passed on 2026-11-06 through the reader shortcut, including a
+source read and the first-run tour. The 1.5.7 automated clean-machine gate passed every check
+on the same day, including a source page read through the app proxy. The 1.5.7 portable zip
+was built, content and hash verified, and walked locally; the clean-machine C: and D: runs
+remain the 1.5.6 evidence. Each new build must run all of them again; an earlier version's
+pass is not evidence for a later one. Search, source management, health, downloads, migration
+between sources, the series page, the reader and settings are implemented.
 
-**Release status.** 1.5.6 is the current release, published on 2026-11-05. It fixes the
-launcher sending the browser and post-registration redirect to port 8000 when the app bound
-another port. 1.5.1 was built and proven locally but was not published. See
-[docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+**Release status.** 1.5.7 is the current release, published on 2026-11-06. It adds Spanish,
+French, and Brazilian Portuguese across the application, the Windows installer, and the
+packaged launcher, and carries the installer language into the first run. It also fixes the
+launcher stop message and the first-run tour targets. 1.5.1 was built and proven locally but
+was not published. See [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the
 design-review screenshots and machine-identity values. Commit hashes in historical notes
@@ -829,7 +830,7 @@ something to monetise.
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
 | [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md) | What is published, what is not, and the current release decision |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.6 zip is published with a SHA-256 sidecar and passed clean-machine C: and D: runs on 2026-11-05 |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.7 zip is published with a SHA-256 sidecar; the clean-machine C: and D: runs remain the 1.5.6 evidence |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |
