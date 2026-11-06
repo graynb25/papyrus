@@ -29,9 +29,9 @@ checkable: each carries the commit that made the change.
 can switch language from Settings > Appearance, the sidebar, or the auth footer, and the
 choice is kept per reader. The migration wizard and the backup, restore, export,
 local-folder and adult-content messages are included. Spanish, French, and Brazilian
-Portuguese are AI drafts pending native review; none of them should be described as
-reviewed. Legal pages, the FAQ, the installer, the launcher, and raw source or server error
-text remain English.
+Portuguese are AI drafts that have had an independent AI language review; native review has
+not been performed, and none of them should be described as native-reviewed. Legal pages,
+the FAQ, the installer, the launcher, and raw source or server error text remain English.
 
 ## 1.5.6 - 2026-11-05
 

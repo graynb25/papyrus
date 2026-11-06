@@ -7671,8 +7671,15 @@ The sentence catalogs are flat JSON files under `lang/`: `es.json`, `fr.json`, a
 `pt_BR.json`. English is the source language and has no JSON file because its keys are the
 copy. Every translated file carries the same key set, placeholders, and plural branch
 counts. Framework strings live in `lang/{locale}/validation.php`, `auth.php`,
-`passwords.php`, and `pagination.php`. All three non-English catalogs are AI drafts
-pending native review.
+`passwords.php`, and `pagination.php`. All three non-English catalogs are AI drafts that
+have had an independent AI language review. The review found wrong button names in the
+French and Portuguese confirmation copy, several gender and number agreement errors, and
+terminology splits in the trust and import vocabulary. The clear correctness fixes are
+applied. Remaining style questions are recorded here for a later native review if one is
+done: French impersonal status participles (`Terminé`, `Lancé`, `Démarré`), the shared
+Portuguese `Moved` heading for single and bulk moves, and the Spanish `worker` versus
+`proceso` split. No native speaker has reviewed the catalogs, so they must not be described
+as native-reviewed.
 
 The literal-call coverage test for the reader-facing files listed in
 `tests/Feature/Localization/SpanishCatalogTest.php` joins adjacent string literals before

@@ -1,8 +1,9 @@
 # Translation catalogs
 
 English is the source language. Spanish (`es`), French (`fr`), and Brazilian Portuguese
-(`pt_BR`) are translated catalogs. All three are AI drafts, have not been reviewed by
-native speakers, and must not be described as reviewed.
+(`pt_BR`) are translated catalogs. All three are AI drafts. An independent AI language
+review has been completed, but no native speaker has reviewed them, and they must not be
+described as native-reviewed.
 
 ## Layout
 
@@ -28,8 +29,8 @@ native speakers, and must not be described as reviewed.
 - The catalog test in `tests/Feature/Localization/SpanishCatalogTest.php` reads literal
   `__()` and `trans_choice()` calls in the covered reader-facing files, including
   concatenated strings, so a sentence added there without a catalog entry fails the test.
-- All three catalogs are AI drafts. Native review is required before any of them is called
-  reviewed.
+- All three catalogs are AI drafts. An independent AI language review has been completed;
+  native-speaker review has not been performed.
 
 ## Still English
 
@@ -54,4 +55,4 @@ native speakers, and must not be described as reviewed.
 - Preserve HTML fragments and punctuation contracts.
 - Use UTF-8 JSON without a byte order mark and LF line endings.
 - The project does not allow em dashes or en dashes anywhere.
-- Native review is required before a catalog is called reviewed.
+- Native review is still recommended before a catalog is described as native-reviewed.

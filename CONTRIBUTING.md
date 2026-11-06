@@ -122,8 +122,9 @@ Two more things that are specific to that layer:
 ## Translations
 
 English is the source language. Spanish (`es`), French (`fr`), and Brazilian Portuguese
-(`pt_BR`) are translated catalogs and are AI drafts pending native review. Do not call a
-catalog reviewed until a native speaker has reviewed it.
+(`pt_BR`) are translated catalogs and are AI drafts. An independent AI language review has
+been completed, but no native speaker has reviewed them. Do not call a catalog
+native-reviewed until a native speaker has reviewed it.
 
 To update an existing catalog:
 

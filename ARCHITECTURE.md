@@ -215,8 +215,8 @@ Laravel 13, Livewire 4, Flux 2, Tailwind 4, Alpine. PHP `^8.4` in source; the pa
 ### Locales and translation catalogs
 
 English is the source language. The three translated catalogs are Spanish (`es`),
-French (`fr`), and Brazilian Portuguese (`pt_BR`); all three are AI drafts pending
-native review.
+French (`fr`), and Brazilian Portuguese (`pt_BR`); all three are AI drafts that have had
+an independent AI language review, not a native-speaker review.
 
 The sentence catalog is a flat JSON file, `lang/{locale}.json`, whose keys are the English
 source sentences. English has no JSON file because its keys are already the copy. Every

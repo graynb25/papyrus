@@ -1553,11 +1553,11 @@ Status: Partial. Spanish, French, and Brazilian Portuguese interface catalogs no
 and are selectable from the auth footer, the sidebar, and Settings > Appearance; English
 remains the source language. The migration wizard and the backup, restore, export,
 local-folder and adult-content messages are covered. All three non-English catalogs are AI
-drafts pending native review, and visual QA of text expansion in the shell, auth pages,
-settings, tour, reader, and error pages is still open. Legal pages, the FAQ, the installer,
-the launcher, and raw source or
-server error text remain English. The catalog parity and locale route tests cover key
-parity, placeholders, plural branches, and representative pages.
+drafts that have had an independent AI language review; native review has not been
+performed, and visual QA of text expansion in the shell, auth pages, settings, tour, reader,
+and error pages is still open. Legal pages, the FAQ, the installer, the launcher, and raw
+source or server error text remain English. The catalog parity and locale route tests cover
+key parity, placeholders, plural branches, and representative pages.
 
 ## How each improvement is verified
 

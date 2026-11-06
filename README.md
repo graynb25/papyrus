@@ -68,8 +68,9 @@ The rewrite reduces reachability; it is not an erasure guarantee.
 
 The interface is available in English, Spanish, French, and Brazilian Portuguese.
 English is the source language. The Spanish, French, and Brazilian Portuguese catalogs
-are AI drafts and have not been reviewed by native speakers; do not describe them as
-reviewed. Switch language from Settings > Appearance, the sidebar, or the auth footer.
+are AI drafts that have had an independent AI language review, not a native-speaker review;
+do not describe them as native-reviewed. Switch language from Settings > Appearance, the
+sidebar, or the auth footer.
 Legal pages, the FAQ, the installer, the launcher, and raw source or server error text
 remain English. See [lang/README.md](lang/README.md) for the catalog layout and the
 AI-draft status.

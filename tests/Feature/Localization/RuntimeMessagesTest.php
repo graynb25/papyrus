@@ -14,15 +14,28 @@ class RuntimeMessagesTest extends TestCase
 
         app()->setLocale('es');
         $this->assertStringStartsWith('AniList es una base de datos pública', $preference->explanation());
-        $this->assertStringContainsString('Activarlo envía los títulos', $preference->explanation());
+        $this->assertStringContainsString('Activarlo envía a AniList los títulos', $preference->explanation());
 
         app()->setLocale('fr');
         $this->assertStringStartsWith('AniList est une base de données publique', $preference->explanation());
-        $this->assertStringContainsString("L'activer leur envoie les titres", $preference->explanation());
+        $this->assertStringContainsString("L'activer envoie à AniList les titres", $preference->explanation());
 
         app()->setLocale('pt_BR');
         $this->assertStringStartsWith('O AniList é um banco de dados público', $preference->explanation());
-        $this->assertStringContainsString('Ativar isto envia a eles os títulos', $preference->explanation());
+        $this->assertStringContainsString('Ativar isto envia ao AniList os títulos', $preference->explanation());
+    }
+
+    public function test_the_restore_confirmation_names_the_visible_cancel_button(): void
+    {
+        $key = 'Nothing changes until you confirm. Choose Never mind to leave your library as it is.';
+
+        foreach (['es', 'fr', 'pt_BR'] as $locale) {
+            $this->assertStringContainsString(
+                trans('Never mind', [], $locale),
+                trans($key, [], $locale),
+                "{$locale} names a cancel button that is not on screen",
+            );
+        }
     }
 
     public function test_legacy_backup_summaries_are_translated(): void
