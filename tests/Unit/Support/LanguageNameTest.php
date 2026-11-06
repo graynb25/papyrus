@@ -65,10 +65,46 @@ class LanguageNameTest extends TestCase
         $this->assertSame('qq-ZZ', LanguageName::name('qq-ZZ'));
     }
 
+    public function test_french_and_portuguese_names_come_from_intl(): void
+    {
+        app()->setLocale('fr');
+
+        $this->assertSame('portugais (Brésil)', LanguageName::name('pt-BR'));
+        $this->assertSame('espagnol (Amérique latine)', LanguageName::name('es-419'));
+        $this->assertSame('chinois (traditionnel)', LanguageName::name('zh-Hant'));
+        $this->assertSame('anglais', LanguageName::name('en'));
+        $this->assertSame('qq-ZZ', LanguageName::name('qq-ZZ'));
+
+        app()->setLocale('pt_BR');
+
+        $this->assertSame('português (Brasil)', LanguageName::name('pt-BR'));
+        $this->assertSame('espanhol (América Latina)', LanguageName::name('es-419'));
+        $this->assertSame('chinês (tradicional)', LanguageName::name('zh-Hant'));
+        $this->assertSame('inglês', LanguageName::name('en'));
+        $this->assertSame('qq-ZZ', LanguageName::name('qq-ZZ'));
+    }
+
+    public function test_french_and_portuguese_pseudo_languages_are_translated(): void
+    {
+        app()->setLocale('fr');
+
+        $this->assertSame('Fichiers locaux', LanguageName::name('localsourcelang'));
+        $this->assertSame('Toutes les langues', LanguageName::name('all'));
+        $this->assertSame('Autre', LanguageName::name('other'));
+
+        app()->setLocale('pt_BR');
+
+        $this->assertSame('Arquivos locais', LanguageName::name('localsourcelang'));
+        $this->assertSame('Todos os idiomas', LanguageName::name('all'));
+        $this->assertSame('Outro', LanguageName::name('other'));
+    }
+
     public function test_the_locale_can_be_given_explicitly(): void
     {
         $this->assertSame('portugués (Brasil)', LanguageName::name('pt-BR', 'es'));
         $this->assertSame('Portuguese (Brazil)', LanguageName::name('pt-BR', 'en'));
+        $this->assertSame('portugais (Brésil)', LanguageName::name('pt-BR', 'fr'));
+        $this->assertSame('português (Brasil)', LanguageName::name('pt-BR', 'pt_BR'));
         $this->assertSame('Local files', LanguageName::name('localsourcelang', 'en'));
     }
 }

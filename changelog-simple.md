@@ -9,6 +9,17 @@ No commit hashes, no file names, no jargon.
 
 ---
 
+## Unreleased
+
+### Choose your interface language
+
+You can now choose Spanish, French, or Brazilian Portuguese from Settings > Appearance, the
+sidebar, or the auth footer. The choice is kept for your account. All three translations are
+first drafts and have not yet been checked by native speakers.
+
+Legal pages, the FAQ, the installer, the launcher, and technical error text from a source or
+the manga server are still in English.
+
 ## Version 1.5.6, 5 November 2026
 
 This release fixes one launcher problem for installs that do not use port 8000.

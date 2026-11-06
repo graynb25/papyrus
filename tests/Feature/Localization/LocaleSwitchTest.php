@@ -55,21 +55,36 @@ class LocaleSwitchTest extends TestCase
     }
 
     /**
-     * @return array<string, array{string}>
+     * @return array<string, array{string, string}>
      */
-    public static function uncataloguedLocales(): array
+    public static function cataloguedLocales(): array
     {
         return [
-            'French' => ['fr'],
-            'Brazilian Portuguese' => ['pt_BR'],
+            'French' => ['fr', 'fr'],
+            'Brazilian Portuguese' => ['pt_BR', 'pt_BR'],
         ];
     }
 
-    #[DataProvider('uncataloguedLocales')]
-    public function test_an_uncatalogued_locale_is_rejected(string $locale): void
+    #[DataProvider('cataloguedLocales')]
+    public function test_french_and_brazilian_portuguese_are_accepted_and_stored(string $locale, string $stored): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('locale.update'), [
+                'locale' => $locale,
+                'return' => '/settings/appearance',
+            ])
+            ->assertRedirect('/settings/appearance')
+            ->assertSessionHas('locale', $stored);
+
+        $this->assertSame($stored, app(LocalePreference::class)->read($user));
+    }
+
+    public function test_an_uncatalogued_locale_is_rejected(): void
     {
         $this->from('/login')
-            ->post(route('locale.update'), ['locale' => $locale])
+            ->post(route('locale.update'), ['locale' => 'it'])
             ->assertRedirect('/login')
             ->assertSessionHasErrors('locale');
 

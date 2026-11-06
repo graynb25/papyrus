@@ -1547,6 +1547,16 @@ Each line shows the old wording and the new wording.
   could not do and give one recovery action, without showing the upstream error
   to the reader.
 
+## Locale support (2026-11-06)
+
+Status: Partial. Spanish, French, and Brazilian Portuguese interface catalogs now exist
+and are selectable from the auth footer, the sidebar, and Settings > Appearance; English
+remains the source language. All three non-English catalogs are AI drafts pending native review, and
+visual QA of text expansion in the shell, auth pages, settings, tour, reader, and error
+pages is still open. Legal pages, the FAQ, the installer, the launcher, and raw source or
+server error text remain English. The catalog parity and locale route tests cover key
+parity, placeholders, plural branches, and representative pages.
+
 ## How each improvement is verified
 
 The six gates from AGENTS.md section 2 run on the tree that carries each

@@ -32,7 +32,7 @@ use Throwable;
 final class Locale
 {
     /**
-     * The full target list, including codes that do not have catalogs yet.
+     * The full target list.
      *
      * Resolution, storage, and the switcher use {@see self::catalogued()}.
      *

@@ -55,6 +55,21 @@ class LocaleResolutionTest extends TestCase
         $this->assertSame('es', Locale::resolve($request));
     }
 
+    public function test_the_configured_locale_accepts_french_and_brazilian_portuguese(): void
+    {
+        config(['app.locale' => 'fr']);
+        $this->assertSame('fr', Locale::resolve($this->request('de-DE,de;q=0.9')));
+
+        config(['app.locale' => 'pt_BR']);
+        $this->assertSame('pt_BR', Locale::resolve($this->request('de-DE,de;q=0.9')));
+    }
+
+    public function test_browser_negotiation_accepts_french_and_brazilian_portuguese(): void
+    {
+        $this->assertSame('fr', Locale::resolve($this->request('fr-FR,fr;q=0.9,en;q=0.8')));
+        $this->assertSame('pt_BR', Locale::resolve($this->request('pt-BR,pt;q=0.9,en;q=0.8')));
+    }
+
     public function test_english_is_the_final_fallback(): void
     {
         config(['app.locale' => 'de']);
@@ -66,7 +81,7 @@ class LocaleResolutionTest extends TestCase
 
     public function test_an_uncatalogued_app_locale_resolves_to_english(): void
     {
-        config(['app.locale' => 'fr']);
+        config(['app.locale' => 'it']);
 
         $request = $this->request('de-DE,de;q=0.9');
 
@@ -76,8 +91,8 @@ class LocaleResolutionTest extends TestCase
     public function test_an_uncatalogued_fallback_resolves_to_english(): void
     {
         config([
-            'app.locale' => 'fr',
-            'papyrus.locales.fallback' => 'fr',
+            'app.locale' => 'it',
+            'papyrus.locales.fallback' => 'it',
         ]);
 
         $request = $this->request('de-DE,de;q=0.9');
@@ -90,7 +105,7 @@ class LocaleResolutionTest extends TestCase
     {
         $user = User::factory()->create();
 
-        app(UserPreference::class)->writeString($user, LocalePreference::KEY, 'fr');
+        app(UserPreference::class)->writeString($user, LocalePreference::KEY, 'it');
 
         $request = $this->request();
         $request->session()->put('locale', 'en');
@@ -101,7 +116,7 @@ class LocaleResolutionTest extends TestCase
     public function test_an_uncatalogued_session_locale_falls_through(): void
     {
         $request = $this->request('es-ES,es;q=0.9');
-        $request->session()->put('locale', 'fr');
+        $request->session()->put('locale', 'it');
 
         $this->assertSame('es', Locale::resolve($request));
     }
@@ -120,11 +135,11 @@ class LocaleResolutionTest extends TestCase
 
     public function test_an_uncatalogued_session_locale_does_not_set_the_html_language_attribute(): void
     {
-        $this->withSession(['locale' => 'pt_BR'])
+        $this->withSession(['locale' => 'it'])
             ->get('/login')
             ->assertOk()
             ->assertSee('lang="en"', false)
-            ->assertDontSee('lang="pt-BR"', false);
+            ->assertDontSee('lang="it"', false);
     }
 
     public function test_the_spanish_catalog_reaches_the_login_page(): void
@@ -136,14 +151,36 @@ class LocaleResolutionTest extends TestCase
             ->assertSee('Cambiar idioma');
     }
 
-    public function test_the_switcher_offers_only_catalogued_locales(): void
+    public function test_the_french_catalog_reaches_the_login_page(): void
+    {
+        $this->withSession(['locale' => 'fr'])
+            ->get('/login')
+            ->assertOk()
+            ->assertSee('lang="fr"', false)
+            ->assertSee(trans('Language', [], 'fr'))
+            ->assertSee(trans('Change language', [], 'fr'));
+    }
+
+    public function test_the_brazilian_portuguese_catalog_reaches_the_login_page(): void
+    {
+        $this->withSession(['locale' => 'pt_BR'])
+            ->get('/login')
+            ->assertOk()
+            ->assertSee('lang="pt-BR"', false)
+            ->assertSee(trans('Language', [], 'pt_BR'))
+            ->assertSee(trans('Change language', [], 'pt_BR'));
+    }
+
+    public function test_the_switcher_offers_every_catalogued_locale(): void
     {
         $response = $this->withSession(['locale' => 'en'])->get('/login')->assertOk();
 
         $response->assertSee('<option value="en"', false)
             ->assertSee('<option value="es"', false)
-            ->assertDontSee('<option value="fr"', false)
-            ->assertDontSee('<option value="pt_BR"', false)
+            ->assertSee('<option value="fr"', false)
+            ->assertSee('<option value="pt_BR"', false)
+            ->assertSee('Français')
+            ->assertSee('Português (Brasil)')
             ->assertDontSee('compact="compact"', false)
             ->assertDontSee('onchange="this.form.submit()"', false);
     }
@@ -163,6 +200,23 @@ class LocaleResolutionTest extends TestCase
         $this->assertSame('January', CarbonImmutable::create(2026, 1, 1)->translatedFormat('F'));
         $this->assertSame('January', Carbon::create(2026, 1, 1)->translatedFormat('F'));
         $this->assertSame('1.5', Number::format(1.5));
+    }
+
+    public function test_carbon_and_number_follow_french_and_brazilian_portuguese(): void
+    {
+        $this->withSession(['locale' => 'fr'])->get('/login')->assertOk();
+
+        $this->assertSame('fr', app()->getLocale());
+        $this->assertSame('janvier', CarbonImmutable::create(2026, 1, 1)->translatedFormat('F'));
+        $this->assertSame('janvier', Carbon::create(2026, 1, 1)->translatedFormat('F'));
+        $this->assertSame('1,5', Number::format(1.5));
+
+        $this->withSession(['locale' => 'pt_BR'])->get('/login')->assertOk();
+
+        $this->assertSame('pt_BR', app()->getLocale());
+        $this->assertSame('janeiro', CarbonImmutable::create(2026, 1, 1)->translatedFormat('F'));
+        $this->assertSame('janeiro', Carbon::create(2026, 1, 1)->translatedFormat('F'));
+        $this->assertSame('1,5', Number::format(1.5));
     }
 
     public function test_a_419_response_uses_the_session_locale(): void

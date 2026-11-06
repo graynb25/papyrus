@@ -30,7 +30,7 @@ class LocaleTest extends TestCase
     public function test_the_supported_list_keeps_the_target_codes(): void
     {
         $this->assertSame(['en', 'es', 'fr', 'pt_BR'], Locale::supported());
-        $this->assertSame(['en', 'es'], Locale::catalogued());
+        $this->assertSame(['en', 'es', 'fr', 'pt_BR'], Locale::catalogued());
         $this->assertSame('en', Locale::fallback());
     }
 
@@ -45,19 +45,24 @@ class LocaleTest extends TestCase
         config(['papyrus.locales.fallback' => 'es']);
         $this->assertSame('es', Locale::fallback());
 
-        // papyrus.locales.fallback is wired to APP_FALLBACK_LOCALE.
         config(['papyrus.locales.fallback' => 'fr']);
-        $this->assertSame('en', Locale::fallback());
+        $this->assertSame('fr', Locale::fallback());
 
         config(['papyrus.locales.fallback' => 'pt_BR']);
+        $this->assertSame('pt_BR', Locale::fallback());
+
+        config(['papyrus.locales.fallback' => 'it']);
         $this->assertSame('en', Locale::fallback());
     }
 
     public function test_it_has_native_and_display_names(): void
     {
         $this->assertStringContainsString('Español', Locale::nativeName('es'));
+        $this->assertStringContainsString('Français', Locale::nativeName('fr'));
         $this->assertStringContainsString('Português', Locale::nativeName('pt_BR'));
         $this->assertStringContainsString('Spanish', Locale::displayName('es', 'en'));
+        $this->assertStringContainsString('Français', Locale::displayName('fr', 'fr'));
+        $this->assertStringContainsString('Português', Locale::displayName('pt_BR', 'pt_BR'));
     }
 
     public function test_the_spanish_catalog_is_valid_and_carries_the_foundation_keys(): void

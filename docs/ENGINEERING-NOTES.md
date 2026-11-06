@@ -7665,6 +7665,37 @@ This is manual acceptance evidence, not a gate pass. The automated Windows
 Sandbox gate was not run on this build, and the host's own install and reader
 data were not touched.
 
+## 17. Locale catalogs, request locale, and the 503 residual
+
+The sentence catalogs are flat JSON files under `lang/`: `es.json`, `fr.json`, and
+`pt_BR.json`. English is the source language and has no JSON file because its keys are the
+copy. Every translated file carries the same key set, placeholders, and plural branch
+counts. Framework strings live in `lang/{locale}/validation.php`, `auth.php`,
+`passwords.php`, and `pagination.php`. All three non-English catalogs are AI drafts
+pending native review.
+
+`config/papyrus.php` has two lists. `supported` is the target list; `catalogued` is the
+subset that may be resolved, stored, or offered by the switcher. Add a locale to
+`catalogued` only after its catalogs and parity tests exist. `App\Support\Locale` resolves
+stored preference, session, browser negotiation limited to catalogued locales,
+`APP_LOCALE`, and a catalogued fallback, then English. `pt-BR` and `pt` normalize to
+`pt_BR`; `pt-PT` deliberately does not.
+
+`SetLocale` applies the resolved locale to Laravel, Carbon, and `Number` on every request,
+including English, because FrankenPHP keeps workers alive. Byte routes skip resolution.
+Exception responses render outside the middleware, so `bootstrap/app.php` resolves the
+locale for 403, 404, 419, 429, 500, and 503 HTML pages and passes the exception headers
+through, which keeps `Retry-After` on 429 and 503. JSON responses stay JSON. The readiness
+endpoint `/ready` is intentionally JSON and is not a localized page; a future maintenance
+page must use the same exception path rather than inventing a second one.
+
+The local Flux toast view at `resources/views/flux/toast/index.blade.php` must keep
+`@blaze(fold: false)`. Its close button calls `__()`, and folding baked the compile-time
+locale into the cached HTML: a Spanish render left the next English render with a Spanish
+aria-label. Re-diff the local copy against the vendor view on every Flux upgrade.
+
+---
+
 265. **A history rewrite changes the documents, not just the commits.**
 
     The public history was rewritten on 2026-11-01. It removed `storage/design-review` from

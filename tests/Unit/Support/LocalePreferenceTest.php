@@ -47,6 +47,15 @@ class LocalePreferenceTest extends TestCase
         $this->assertSame('es', $this->locales->read($this->user));
     }
 
+    public function test_french_and_brazilian_portuguese_are_accepted(): void
+    {
+        $this->locales->write($this->user, 'fr');
+        $this->assertSame('fr', $this->locales->read($this->user));
+
+        $this->locales->write($this->user, 'pt-BR');
+        $this->assertSame('pt_BR', $this->locales->read($this->user));
+    }
+
     public function test_an_unsupported_locale_is_refused(): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -58,12 +67,12 @@ class LocalePreferenceTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        $this->locales->write($this->user, 'fr');
+        $this->locales->write($this->user, 'it');
     }
 
     public function test_an_uncatalogued_stored_value_reads_as_absent(): void
     {
-        app(UserPreference::class)->writeString($this->user, LocalePreference::KEY, 'fr');
+        app(UserPreference::class)->writeString($this->user, LocalePreference::KEY, 'it');
 
         $this->assertNull($this->locales->read($this->user));
         $this->assertNull($this->user->preferredLocale());

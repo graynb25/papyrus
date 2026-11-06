@@ -119,6 +119,43 @@ Two more things that are specific to that layer:
 - Anything the launcher spawns needs the ini **and** `PHPRC`, because a flag reaches the process you
   pass it to and an environment variable reaches everything it spawns. Lesson 224.
 
+## Translations
+
+English is the source language. Spanish (`es`), French (`fr`), and Brazilian Portuguese
+(`pt_BR`) are translated catalogs and are AI drafts pending native review. Do not call a
+catalog reviewed until a native speaker has reviewed it.
+
+To update an existing catalog:
+
+- Add or change the English source sentence where it is used. Do not rename existing
+  sentence keys as part of a translation change.
+- Add the value to every `lang/{locale}.json` for the translated catalogs. Keep exactly
+  the same key and preserve every `:placeholder`, every `|` plural branch and
+  `{1}`/`[2,*]` selector, and every HTML fragment or punctuation contract.
+- Put framework strings in `lang/{locale}/validation.php`, `auth.php`, `passwords.php`,
+  and `pagination.php`, mirroring the English and Spanish key shape.
+- Keep proper nouns and technical identifiers as names: Papyrus, Suwayomi, PHP,
+  JavaScript, package names, licence names, URLs, file paths, and BCP 47 codes.
+- Use UTF-8 with no BOM, LF line endings, and no em dashes or en dashes.
+
+To add a language:
+
+1. Add its code to `supported` in `config/papyrus.php`.
+2. Create the sentence catalog and the four framework groups.
+3. Add or extend the catalog parity, placeholder, branch, and locale route tests.
+4. Add the code to `catalogued` only after the catalogs are complete and the focused
+   localization tests pass.
+5. Update `lang/README.md`, `README.md`, `ARCHITECTURE.md`, and this file if the process
+   changes.
+
+The catalog parity tests compare every translated catalog against `lang/es.json` and the
+framework groups against the Spanish shape. They also reject English values that were left
+behind. A missing translation, a changed placeholder, or a dropped plural branch fails the
+test rather than falling back silently.
+
+Legal pages, the FAQ, the installer, the launcher, and raw source, server, passkey, or
+exception text remain English by scope.
+
 ## Tests
 
 - **A claim that can be checked should be checked by a test.** "It works" is not a finding.

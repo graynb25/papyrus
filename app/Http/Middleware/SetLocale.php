@@ -13,9 +13,9 @@ use Symfony\Component\HttpFoundation\Response;
  * ## Why this is appended to the web group
  *
  * The session and the authenticated user are available by then, which are the
- * first two sources in the resolution order. The exception is a 419 response:
- * CSRF validation runs before appended middleware, so that page is localized
- * from the exception handler in `bootstrap/app.php` instead.
+ * first two sources in the resolution order. Error pages rendered before
+ * appended middleware, including 403, 404, 419, 429, 500, and 503, resolve
+ * the locale from the exception path in `bootstrap/app.php` instead.
  *
  * ## Why every request sets the locale
  *

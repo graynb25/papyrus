@@ -64,6 +64,16 @@ design-review screenshots and machine-identity values. Commit hashes in historic
 and changelog entries written before that date refer to the owner-held offline archive.
 The rewrite reduces reachability; it is not an erasure guarantee.
 
+## Languages
+
+The interface is available in English, Spanish, French, and Brazilian Portuguese.
+English is the source language. The Spanish, French, and Brazilian Portuguese catalogs
+are AI drafts and have not been reviewed by native speakers; do not describe them as
+reviewed. Switch language from Settings > Appearance, the sidebar, or the auth footer.
+Legal pages, the FAQ, the installer, the launcher, and raw source or server error text
+remain English. See [lang/README.md](lang/README.md) for the catalog layout and the
+AI-draft status.
+
 | Screen | Route | What it does |
 |---|---|---|
 | Search | `/search` | Fans one query out across every eligible source, deduplicates, shows per-source outcomes. Results carry a library toggle, so keeping a series is one click from the card |

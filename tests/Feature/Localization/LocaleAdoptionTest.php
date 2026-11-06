@@ -69,7 +69,7 @@ class LocaleAdoptionTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->withSession(['locale' => 'fr'])
+        $this->withSession(['locale' => 'it'])
             ->post(route('login.store'), [
                 'email' => $user->email,
                 'password' => 'password',

@@ -212,6 +212,39 @@ Laravel 13, Livewire 4, Flux 2, Tailwind 4, Alpine. PHP `^8.4` in source; the pa
 - **The design is settled.** A redesign was done and is what ships. Changing markup is fine; changing
   the design is not.
 
+### Locales and translation catalogs
+
+English is the source language. The three translated catalogs are Spanish (`es`),
+French (`fr`), and Brazilian Portuguese (`pt_BR`); all three are AI drafts pending
+native review.
+
+The sentence catalog is a flat JSON file, `lang/{locale}.json`, whose keys are the English
+source sentences. English has no JSON file because its keys are already the copy. Every
+translated file must carry exactly the same key set, placeholders, and plural branch
+counts as the English call sites. The framework groups live in `lang/{locale}/validation.php`,
+`auth.php`, `passwords.php`, and `pagination.php`, and mirror the framework key shape.
+
+`config/papyrus.php` separates two lists:
+
+- `supported` is the complete target list.
+- `catalogued` is the subset that may be resolved, stored, or offered by the switcher.
+  A locale is added to `catalogued` only after its sentence catalog and framework groups
+  exist and the parity tests pass.
+
+`App\Support\Locale` owns resolution and formatting. Resolution order is stored reader
+preference, session, browser `Accept-Language` limited to catalogued locales, `APP_LOCALE`,
+then the configured fallback only when it is catalogued, then English. `Locale::normalize`
+maps regional tags to the application codes; `pt-BR` and `pt` both become `pt_BR`, while
+`pt-PT` is deliberately not folded.
+
+`SetLocale` applies the resolved locale to Laravel, Carbon, and `Number` on every request,
+including English, because FrankenPHP keeps workers alive. Byte routes skip resolution.
+Pages rendered outside the web middleware, including 403, 404, 419, 429, 500, and 503,
+resolve the locale in the exception path in `bootstrap/app.php`; JSON responses stay JSON.
+
+The locale switcher is built from `catalogued` and shows each language's native name. The
+auth footer, the sidebar, and Settings > Appearance all use the same control.
+
 ### Where the code is
 
 | Directory | What lives there |
