@@ -226,6 +226,12 @@
                     {{ $current['body'] }}
                 </p>
 
+                @if ($step === 1)
+                    <div class="mt-4">
+                        <x-locale-switcher compact :return-to="route('library', absolute: false)" />
+                    </div>
+                @endif
+
                 <p class="sr-only" aria-live="polite">
                     {{ $current['title'] }}. {{ __('Step :step of :total', ['step' => $step, 'total' => $total]) }}
                 </p>

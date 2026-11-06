@@ -22,12 +22,13 @@ use Illuminate\Support\Facades\DB;
  * preferences that each carry their own copy of the same four lines are two
  * copies that can drift, and the copy that drifts is the one nobody reads.
  *
- * ## Why the value is a boolean
+ * ## What the value can be
  *
- * The column is JSON and the storage is generic, but every preference in it so
- * far is a yes or a no, and a value that means one thing is easier to read back
- * than a value that could mean several. A preference that needs a date beside
- * it can carry one in its own table, the way a store's trust does.
+ * The column is JSON and the storage is generic. Most preferences are a yes or
+ * a no; a locale is a short string. Both shapes go through the same reading and
+ * writing here, so the SQL lives in one place rather than in each preference.
+ * A preference that needs a date beside it can carry one in its own table, the
+ * way a store's trust does.
  */
 final class UserPreference
 {
@@ -40,6 +41,50 @@ final class UserPreference
      */
     public function read(User|int $user, string $key): ?bool
     {
+        $value = $this->value($user, $key);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return in_array($value, [1, '1', 'true'], true);
+    }
+
+    /**
+     * The stored string, or null when this reader has never set it.
+     */
+    public function readString(User|int $user, string $key): ?string
+    {
+        $value = $this->value($user, $key);
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * Record a boolean preference for one reader.
+     */
+    public function write(User|int $user, string $key, bool $value): void
+    {
+        $this->writeValue($user, $key, $value);
+    }
+
+    /**
+     * Record a string preference for one reader.
+     */
+    public function writeString(User|int $user, string $key, string $value): void
+    {
+        $this->writeValue($user, $key, $value);
+    }
+
+    /**
+     * The stored JSON value, decoded, or null when the row is absent.
+     */
+    private function value(User|int $user, string $key): mixed
+    {
         $userId = UserKey::of($user);
 
         $row = DB::connection()->table('user_settings')
@@ -51,14 +96,7 @@ final class UserPreference
             return null;
         }
 
-        // The column is JSON, so a stored `true` arrives as the string "1".
-        $value = json_decode((string) $row, true);
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        return in_array($value, [1, '1', 'true'], true);
+        return json_decode((string) $row, true);
     }
 
     /**
@@ -70,7 +108,7 @@ final class UserPreference
      * reads the column today; it is written honestly so that something that
      * does read it later is not reading a lie.
      */
-    public function write(User|int $user, string $key, bool $value): void
+    private function writeValue(User|int $user, string $key, bool|string $value): void
     {
         $userId = UserKey::of($user);
 

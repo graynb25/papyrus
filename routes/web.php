@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CbzExportController;
 use App\Http\Controllers\CoverController;
+use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReaderProgressController;
 use App\Http\Controllers\ShowcaseController;
@@ -18,6 +19,19 @@ Route::get('/', function () {
         ? redirect()->route('library')
         : redirect()->route('login');
 })->name('home');
+
+/*
+ * The language switch.
+ *
+ * Public because a reader who cannot read the sign-in screen has to be able to
+ * change it before they have an account. A POST because it writes the session
+ * and, when signed in, the reader's stored preference. The form posts and this
+ * controller redirects, so the next response is rendered with the new locale and
+ * the server-side `html lang` attribute.
+ */
+Route::post('locale', LocaleController::class)
+    ->middleware('throttle:30,1')
+    ->name('locale.update');
 
 /*
  * The Reading Room's showcase: the login screen's cover wall. Public because

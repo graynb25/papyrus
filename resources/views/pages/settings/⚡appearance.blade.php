@@ -50,5 +50,17 @@ new #[Title('Appearance settings')] class extends Component {
                 </div>
             </div>
         </div>
+
+        <div class="mt-8 max-w-md">
+            <flux:heading level="2">{{ __('Language') }}</flux:heading>
+
+            <flux:text class="mt-1">
+                {{ __('Choose the language Papyrus uses for you.') }}
+            </flux:text>
+
+            <div class="mt-3">
+                <x-locale-switcher :return-to="route('appearance.edit', absolute: false)" />
+            </div>
+        </div>
     </x-pages::settings.layout>
 </section>

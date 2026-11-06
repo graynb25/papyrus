@@ -12,6 +12,7 @@ use App\Search\Deduplicator;
 use App\Search\TitleNormalizer;
 use App\Support\Deployment;
 use App\Support\Library;
+use App\Support\LocalePreference;
 use App\Support\LocalReaderAccount;
 use App\Support\Registration;
 use App\Support\Suwayomi\Timestamps;
@@ -23,6 +24,8 @@ use App\Suwayomi\StoreHostResolver;
 use App\Suwayomi\SystemStoreHostResolver;
 use App\Suwayomi\Transport;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Translation\Loader;
@@ -167,6 +170,8 @@ class AppServiceProvider extends ServiceProvider
         $this->forceConfiguredRootUrl();
         $this->allowTemporaryUploadsToTheServerCeiling();
         $this->rememberTheLocalReader();
+        $this->rememberGuestLocaleOnAuthentication();
+        $this->forgetGuestLocaleOnLogout();
         $this->defineInstallOwnerGate();
 
         Livewire::component('onboarding.first-run-tour', FirstRunTour::class);
@@ -279,6 +284,56 @@ class AppServiceProvider extends ServiceProvider
     private function defineInstallOwnerGate(): void
     {
         Gate::define('manage-install', fn (User $user): bool => $user->isInstallOwner());
+    }
+
+    /**
+     * Keep a guest's language choice when the account has no usable preference.
+     *
+     * A reader who switches language before signing in has made a choice, but
+     * the session is the only place it lives until an account exists. Login and
+     * registration are the two moments it can become durable. An existing
+     * catalogued preference always wins, and an uncatalogued session value is
+     * ignored.
+     */
+    private function rememberGuestLocaleOnAuthentication(): void
+    {
+        $remember = function (User $user): void {
+            if (! app()->bound('session') || ! session()->isStarted()) {
+                return;
+            }
+
+            $locale = session('locale');
+
+            app(LocalePreference::class)->adopt($user, is_string($locale) ? $locale : null);
+        };
+
+        Event::listen(Login::class, function (Login $event) use ($remember): void {
+            if ($event->user instanceof User) {
+                $remember($event->user);
+            }
+        });
+
+        Event::listen(Registered::class, function (Registered $event) use ($remember): void {
+            if ($event->user instanceof User) {
+                $remember($event->user);
+            }
+        });
+    }
+
+    /**
+     * Do not let one reader's guest language follow the next reader on a shared install.
+     *
+     * Fortify invalidates the session after this event, so the forget is belt and
+     * braces. It also covers the Livewire logout action, which calls the guard
+     * directly.
+     */
+    private function forgetGuestLocaleOnLogout(): void
+    {
+        Event::listen(Logout::class, function (): void {
+            if (app()->bound('session') && session()->isStarted()) {
+                session()->forget('locale');
+            }
+        });
     }
 
     /**

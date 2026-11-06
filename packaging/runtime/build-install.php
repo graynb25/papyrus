@@ -83,6 +83,7 @@ const APP_ENTRIES = [
     '.env.example',
     'config',
     'database',
+    'lang',
     'package.json',
     'public',
     'resources',
@@ -276,9 +277,10 @@ const REQUIRED_AFTER_BUILD = [
  * missing from the allowlist, Laravel reads it to resolve the application namespace, and the
  * first artisan command died with a failed `file_get_contents`.
  *
- * `lang/` is in the list because the framework reads it and it is absent from this repository,
- * which is a legitimate state rather than a build error. It is checked for presence only when it
- * exists in the source, so a repository without translations still builds.
+ * `lang/` is the application's translation directory. It is copied like every
+ * other application entry and checked like every other boot path, so a catalog
+ * that exists in the source but not in the install fails the build by name
+ * instead of producing an install that silently renders English.
  */
 const LARVEL_BOOT_PATHS = [
     'app',
@@ -286,6 +288,7 @@ const LARVEL_BOOT_PATHS = [
     'composer.json',
     'config',
     'database',
+    'lang',
     'public',
     'resources',
     'storage',
@@ -916,7 +919,8 @@ $unbootable = [];
 foreach (LARVEL_BOOT_PATHS as $relative) {
     if (! is_dir($repo.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative))
         && ! is_file($repo.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative))) {
-        // Not in the source tree, so not something to copy. `lang/` is the expected case.
+        // Not in the source tree, so not something to copy. A checkout without
+        // translation catalogs is a legitimate state.
         continue;
     }
 
@@ -1457,7 +1461,7 @@ const LEAK_SCAN_LIMIT = 1024 * 1024;
  * $ours, scanned like every file this project wrote.
  */
 $ours = [
-    'app', 'bootstrap', 'config', 'database', 'packaging', 'public', 'resources', 'routes',
+    'app', 'bootstrap', 'config', 'database', 'lang', 'packaging', 'public', 'resources', 'routes',
     '.env.example', 'artisan', 'composer.json', 'package.json', 'Papyrus.cmd', 'suwayomi.json',
     'version.txt', 'LICENSE',
 ];

@@ -3,13 +3,16 @@
 use App\Http\Controllers\ReadinessController;
 use App\Http\Middleware\RegistrationMustBeAllowed;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\ThrottleAuthPosts;
+use App\Support\Locale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /*
  * The environment file, named by the launcher.
@@ -54,7 +57,14 @@ $app = Application::configure(basePath: dirname(__DIR__))
          * be attached to them from routes/web.php. The middleware itself only acts on two
          * named routes, so the cost on every other request is one `routeIs` call.
          */
+        /*
+         * The locale goes first in the appended list so a 404 from the
+         * registration gate is rendered in the reader's language. A CSRF
+         * failure happens before appended middleware, so the exception handler
+         * handles that page separately.
+         */
         $middleware->web(append: [
+            SetLocale::class,
             RegistrationMustBeAllowed::class,
             ThrottleAuthPosts::class,
         ]);
@@ -104,6 +114,25 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        /*
+         * A 419 is rendered before appended web middleware can set the locale,
+         * because CSRF validation runs first. Resolve the locale here as well and
+         * render the app's own page, so an expired form is not the one response
+         * in the reader's language that stays English.
+         *
+         * JSON requests are left to Laravel: an API caller needs the status, not
+         * the HTML page.
+         */
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419 || $request->expectsJson()) {
+                return null;
+            }
+
+            Locale::apply(Locale::resolve($request));
+
+            return response()->view('errors.419', [], 419);
+        });
 
         /*
          * An exception response is rendered outside the middleware pipeline, so without this a

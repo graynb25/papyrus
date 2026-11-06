@@ -20,6 +20,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Reader languages
+    |--------------------------------------------------------------------------
+    |
+    | "supported" is the full target list. It keeps French and Brazilian
+    | Portuguese named before their catalogs exist. "catalogued" is the subset
+    | that may be resolved, stored, or offered today: English is the source
+    | language, and Spanish is the first translated slice.
+    |
+    | The browser's Accept-Language header is negotiated only among catalogued
+    | locales. That keeps a page from being labelled in a language it cannot
+    | render while the untranslated catalogs are still being written. The
+    | fallback is held to the same rule: an uncatalogued value becomes English.
+    |
+    */
+
+    'locales' => [
+        'supported' => ['en', 'es', 'fr', 'pt_BR'],
+        'catalogued' => ['en', 'es'],
+        'fallback' => env('APP_FALLBACK_LOCALE', 'en'),
+        'negotiate' => (bool) env('PAPYRUS_LOCALE_NEGOTIATION', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | The local reader
     |--------------------------------------------------------------------------
     |
