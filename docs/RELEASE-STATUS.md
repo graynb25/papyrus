@@ -14,16 +14,21 @@ Updated 2026-11-06.
   and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then
   English. English remains the source language. Legal pages, the FAQ, raw source or server
   error text, and the diagnostic bundle's internal text files remain English.
-  The next release is prepared as 1.5.7, because the localization payload changes the
-  published artifacts. The first candidate was built from `1390c7f`; a launcher stop fix in
-  `daf4b48` required a rebuild, so the final artifact hashes are recorded here after that
-  rebuild. The portable zip passed a local scratch walk with a minted account: the login and
-  library in Spanish, the shell, search, sources, downloads, insights, health, appearance
-  and backups in French and Brazilian Portuguese, and the 404 page in Portuguese. No
-  horizontal overflow appeared at 1440px. The old 1.4.0 install has been removed, so the
-  installer can now be walked in a scratch directory before the sandbox runs. The build also
-  fixed `build-installer.php` so `--out` reaches Inno Setup as `/O` instead of compiling
-  into `build/dist` and failing its own artifact check.
+  The next release is prepared as 1.5.7 from `56217f4`, because the localization payload
+  changes the published artifacts. The installer is 257,923,148 bytes, SHA-256
+  `e0f29539ce7a3cbc540dfab0b191836b5b9a5cc6e703c6fd730545b97169ae6e`; the portable is
+  299,841,467 bytes, SHA-256
+  `e1e3cab588d2607e9ade83f19ef7ce3c0bf22d6d57f5dcd5f35bcd8ed3beca12`. Both used
+  `--no-record`, so no release record was written. The portable zip passed a local scratch
+  walk with a minted account: the login and library in Spanish, the shell, search, sources,
+  downloads, insights, health, appearance and backups in French and Brazilian Portuguese,
+  and the 404 page in Portuguese. No horizontal overflow appeared at 1440px. The old 1.4.0
+  install was removed, preserving its data, and the 1.5.7 setup was then installed into a
+  scratch directory, registered with a minted account, walked in Spanish, French and
+  Portuguese, stopped, and uninstalled. The uninstall removed the program and kept the data.
+  The packaged walk found and fixed the start window reporting an intentional stop as a
+  failed start. The build also fixed `build-installer.php` so `--out` reaches Inno Setup as
+  `/O` instead of compiling into `build/dist` and failing its own artifact check.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

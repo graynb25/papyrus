@@ -7768,12 +7768,21 @@ had served pages. It is fixed in `daf4b48` by a `stop-requested` marker in the d
 directory: `stop` writes it before stopping anything, `start` consumes it, prints
 `launcher.start.stopped_by_request`, and exits 0. A child that stops without a marker still
 exits 1 and keeps the failure message. `StopRequestTest` covers the marker and the entry
-point wiring. The fix required a rebuild, so the final candidate hashes are recorded in
-`docs/RELEASE-STATUS.md`.
+point wiring.
 
-The installer was not run on the host while a 1.4.0 install shared the AppId. That install
-has since been removed, and the 1.5.7 setup is exercised in a scratch directory and then in
-the manual sandbox.
+The rebuilt candidate is from `56217f4`: installer 257,923,148 bytes, SHA-256
+`e0f29539ce7a3cbc540dfab0b191836b5b9a5cc6e703c6fd730545b97169ae6e`; portable
+299,841,467 bytes, 10,388 entries, SHA-256
+`e1e3cab588d2607e9ade83f19ef7ce3c0bf22d6d57f5dcd5f35bcd8ed3beca12`. The old 1.4.0
+install was removed first, preserving `%LOCALAPPDATA%\Papyrus`. The setup then installed
+into a scratch directory with `/DIR` and `/NOICONS`, registered a minted account, served the
+Spanish login and library, the French and Portuguese shell, and the Portuguese 404 page at
+1440px with no horizontal overflow. A stop from a second process printed
+`Papyrus se detuvo a petición` in the start window and did not print the failure sentence.
+The uninstall removed the program and kept the data directory. The final portable zip was
+unpacked separately and walked in Portuguese and French with its own minted account; its stop
+also exited 0 with the localized sentence. The sandbox runs remain the installer-payload
+and clean-machine evidence.
 
 ---
 
