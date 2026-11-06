@@ -6,13 +6,18 @@ use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\ThrottleAuthPosts;
 use App\Support\Locale;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /*
  * The environment file, named by the launcher.
@@ -116,6 +121,38 @@ $app = Application::configure(basePath: dirname(__DIR__))
         );
 
         /*
+         * Resolve the locale for pages rendered outside the web middleware.
+         *
+         * A matched route has already run SetLocale. These callbacks cover the
+         * pages that have not: a 404 that never found a route, a 419 rejected by
+         * CSRF before appended middleware, and a 500 rendered after the pipeline
+         * failed. Falling back to English keeps a broken preference store from
+         * turning an error page into a second error.
+         */
+        $localize = function (Request $request): void {
+            try {
+                Locale::apply(Locale::resolve($request));
+            } catch (Throwable) {
+                Locale::apply(Locale::fallback());
+            }
+        };
+
+        /*
+         * An unmatched URL reaches this callback only if the fallback route did
+         * not catch it first. The fallback route is the normal path because it
+         * starts the session, which is where a guest's language lives.
+         */
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) use ($localize) {
+            if ($request->expectsJson()) {
+                return null;
+            }
+
+            $localize($request);
+
+            return response()->view('errors.404', [], 404);
+        });
+
+        /*
          * A 419 is rendered before appended web middleware can set the locale,
          * because CSRF validation runs first. Resolve the locale here as well and
          * render the app's own page, so an expired form is not the one response
@@ -124,14 +161,39 @@ $app = Application::configure(basePath: dirname(__DIR__))
          * JSON requests are left to Laravel: an API caller needs the status, not
          * the HTML page.
          */
-        $exceptions->render(function (HttpException $e, Request $request) {
+        $exceptions->render(function (HttpException $e, Request $request) use ($localize) {
             if ($e->getStatusCode() !== 419 || $request->expectsJson()) {
                 return null;
             }
 
-            Locale::apply(Locale::resolve($request));
+            $localize($request);
 
             return response()->view('errors.419', [], 419);
+        });
+
+        /*
+         * The production 500 page. Debug mode keeps Laravel's diagnostic page,
+         * and the exceptions Laravel handles as validation, authentication or a
+         * prepared response keep their own rendering.
+         */
+        $exceptions->render(function (Throwable $e, Request $request) use ($localize) {
+            if ($request->expectsJson() || (bool) config('app.debug')) {
+                return null;
+            }
+
+            if ($e instanceof ValidationException
+                || $e instanceof AuthenticationException
+                || $e instanceof HttpResponseException) {
+                return null;
+            }
+
+            if ($e instanceof HttpExceptionInterface && $e->getStatusCode() !== 500) {
+                return null;
+            }
+
+            $localize($request);
+
+            return response()->view('errors.500', [], 500);
         });
 
         /*

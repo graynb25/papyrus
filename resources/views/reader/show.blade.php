@@ -1284,7 +1284,7 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
                             data-state="{{ $one['state'] }}"
                             data-current="{{ $one['is_current'] ? 'true' : 'false' }}"
                             aria-current="{{ $one['is_current'] ? 'true' : 'false' }}"
-                            style="--fill: {{ number_format($one['progress'] * 100, 1) }}%"
+                            style="--fill: {{ number_format($one['progress'] * 100, 1, '.', '') }}%"
                             title="{{ $one['name'] !== '' ? $one['name'] : __('Chapter :id', ['id' => $one['id']]) }}{{ $one['state'] === 'partial' ? ': '.__(':read of :pages', ['read' => $one['page'], 'pages' => $one['pages']]) : '' }}"
                         >
                             <span class="reader-nav-fill" aria-hidden="true"></span>

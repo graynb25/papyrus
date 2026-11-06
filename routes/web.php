@@ -7,6 +7,7 @@ use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReaderProgressController;
 use App\Http\Controllers\ShowcaseController;
 use App\Http\Controllers\SuwayomiProxyController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -313,3 +314,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 require __DIR__.'/settings.php';
+
+/*
+ * The unmatched URL.
+ *
+ * A route fallback rather than only the 404 exception callback, because this
+ * path runs the web middleware: the session is started and SetLocale can read
+ * the reader's stored or guest language. The exception callback still covers
+ * 404s raised by a matched route.
+ */
+Route::fallback(function (Request $request) {
+    if ($request->expectsJson()) {
+        abort(404);
+    }
+
+    return response()->view('errors.404', [], 404);
+});

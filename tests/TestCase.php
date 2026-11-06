@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Support\Locale;
 use FilesystemIterator;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Laravel\Fortify\Features;
@@ -11,6 +12,20 @@ use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Static formatter state survives the application instance between tests.
+     *
+     * A Spanish test that leaves Carbon or Number in another locale would make
+     * the next English Livewire test assert a different number format. Reset
+     * both through the same seam the request middleware uses.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Locale::apply((string) config('app.locale', 'en'));
+    }
+
     protected function skipUnlessFortifyHas(string $feature, ?string $message = null): void
     {
         if (! Features::enabled($feature)) {

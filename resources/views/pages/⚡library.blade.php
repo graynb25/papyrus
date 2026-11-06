@@ -13,12 +13,12 @@ use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
 use Flux\Flux;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Number;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Title('Library')] class extends Component
+new class extends Component
 {
     /**
      * How many entries one page holds.
@@ -763,7 +763,7 @@ new #[Title('Library')] class extends Component
             text: trans_choice(
                 'Checking :count series. This takes about ten minutes for a large library.|Checking :count series. This takes about ten minutes for a large library.',
                 $due,
-                ['count' => number_format($due)],
+                ['count' => Number::format($due)],
             ),
             heading: __('Checking'),
             variant: 'info',
@@ -799,8 +799,8 @@ new #[Title('Library')] class extends Component
 
         Flux::toast(
             text: __('Stopped after :done of :total series. Every series already checked keeps its result.', [
-                'done' => number_format($run->checked),
-                'total' => number_format($run->total),
+                'done' => Number::format($run->checked),
+                'total' => Number::format($run->total),
             ]),
             heading: __('Stopped'),
             variant: 'info',
@@ -974,6 +974,17 @@ new #[Title('Library')] class extends Component
             $this->shelf = null;
         }
     }
+
+    /**
+     * The browser tab follows the selected language.
+     *
+     * `#[Title]` is a PHP attribute and cannot call `__()`, so the title is set
+     * at render time, the same way the series page does.
+     */
+    public function render(): \Illuminate\View\View
+    {
+        return $this->view()->title(__('Library'));
+    }
 }; ?>
 
 <div class="w-full space-y-7 @if (count($this->selected) > 0) pb-28 @endif">
@@ -1100,8 +1111,8 @@ new #[Title('Library')] class extends Component
                         <span class="text-zinc-600 dark:text-zinc-300" aria-live="polite">
                             {{
                                 __('Checked :done of :total series, :pct percent.', [
-                                    'done' => number_format($progress['done']),
-                                    'total' => number_format($progress['total']),
+                                    'done' => Number::format($progress['done']),
+                                    'total' => Number::format($progress['total']),
                                     'pct' => $progress['percent'],
                                 ])
                             }}
@@ -1141,8 +1152,8 @@ new #[Title('Library')] class extends Component
                         <span aria-live="polite">
                             {{
                                 __('Stopped after :done of :total series. Every series already checked keeps its result.', [
-                                    'done' => number_format($progress['done']),
-                                    'total' => number_format($progress['total']),
+                                    'done' => Number::format($progress['done']),
+                                    'total' => Number::format($progress['total']),
                                 ])
                             }}
 
@@ -1151,7 +1162,7 @@ new #[Title('Library')] class extends Component
                                     trans_choice(
                                         'Found :count new chapter.|Found :count new chapters.',
                                         $progress['new'],
-                                        ['count' => number_format($progress['new'])],
+                                        ['count' => Number::format($progress['new'])],
                                     )
                                 }}
                             @endif
@@ -1164,8 +1175,8 @@ new #[Title('Library')] class extends Component
                         <span aria-live="polite">
                             {{
                                 __('The check stopped after :done of :total series. What was already checked is kept.', [
-                                    'done' => number_format($progress['done']),
-                                    'total' => number_format($progress['total']),
+                                    'done' => Number::format($progress['done']),
+                                    'total' => Number::format($progress['total']),
                                 ])
                             }}
 
@@ -1184,14 +1195,14 @@ new #[Title('Library')] class extends Component
                                     trans_choice(
                                         'Checked all :count series.|Checked all :count series.',
                                         $progress['total'],
-                                        ['count' => number_format($progress['total'])],
+                                        ['count' => Number::format($progress['total'])],
                                     )
                                 }}
                             @else
                                 {{
                                     __('Checked :done of :total series.', [
-                                        'done' => number_format($progress['done']),
-                                        'total' => number_format($progress['total']),
+                                        'done' => Number::format($progress['done']),
+                                        'total' => Number::format($progress['total']),
                                     ])
                                 }}
                             @endif
@@ -1201,7 +1212,7 @@ new #[Title('Library')] class extends Component
                                     trans_choice(
                                         'Found :count new chapter.|Found :count new chapters.',
                                         $progress['new'],
-                                        ['count' => number_format($progress['new'])],
+                                        ['count' => Number::format($progress['new'])],
                                     )
                                 }}
                             @endif
@@ -1211,7 +1222,7 @@ new #[Title('Library')] class extends Component
                                     trans_choice(
                                         ':count series could not be checked.|:count series could not be checked.',
                                         $progress['failed_series'],
-                                        ['count' => number_format($progress['failed_series'])],
+                                        ['count' => Number::format($progress['failed_series'])],
                                     )
                                 }}
                             @endif

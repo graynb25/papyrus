@@ -33,8 +33,8 @@ class AccessibleNamesTest extends TestCase
      *
      * The app keeps a local copy of the Flux view at
      * resources/views/flux/toast/index.blade.php. It is an exact copy of the
-     * vendor view apart from aria-label="Close notification" on that button and
-     * a comment recording why. FluxServiceProvider registers
+     * vendor view apart from a translated aria-label on that button and a
+     * comment recording why. FluxServiceProvider registers
      * resource_path('views/flux') before the vendor stub path, so the local
      * copy shadows the vendor one. Re-diff the two files whenever Flux is
      * upgraded; that is the cost of the override.

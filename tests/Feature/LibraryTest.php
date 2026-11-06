@@ -1339,6 +1339,23 @@ class LibraryTest extends TestCase
         $this->assertSame(1, $page->instance()->page);
     }
 
+    public function test_the_shell_and_library_speak_spanish_when_selected(): void
+    {
+        $response = $this->withSession(['locale' => 'es'])->get('/library');
+
+        $response->assertOk()
+            ->assertSee('lang="es"', false)
+            ->assertSee('Biblioteca')
+            ->assertSee('Buscar')
+            ->assertSee('Fuentes')
+            ->assertSee('Ajustes')
+            ->assertSee('Cerrar sesión')
+            ->assertSee('Buena lectura.')
+            ->assertSee('Tu biblioteca está vacía')
+            ->assertSee('Añadir series')
+            ->assertSee('Biblioteca - Papyrus');
+    }
+
     /**
      * The library page's rendered HTML.
      *

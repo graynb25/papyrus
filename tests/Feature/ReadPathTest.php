@@ -223,6 +223,16 @@ class ReadPathTest extends TestCase
             ->assertSee('Series 76 - '.config('app.name'));
     }
 
+    public function test_the_browser_tab_falls_back_to_the_series_id_in_spanish(): void
+    {
+        $this->overrides['query Series'] = ['data' => ['manga' => null]];
+
+        $this->withSession(['locale' => 'es'])
+            ->get('/series/76')
+            ->assertOk()
+            ->assertSee('Serie 76 - '.config('app.name'));
+    }
+
     /**
      * One number, no source segment, because manga ids are global. Verified
      * against the live server: manga 174 is One Piece on MangaDex and 76 is a
@@ -1050,6 +1060,29 @@ class ReadPathTest extends TestCase
 
         $this->assertSame(2, $chapter?->last_page_read);
         $this->assertFalse((bool) $chapter?->is_read);
+    }
+
+    public function test_the_series_page_speaks_spanish_when_selected(): void
+    {
+        app()->setLocale('es');
+
+        $this->series()
+            ->assertSee('Empezar a leer')
+            ->assertSee('Capítulos')
+            ->assertSee('Marcar todo como leído')
+            ->assertSee('Más recientes')
+            ->assertSee('Etiquetas');
+    }
+
+    public function test_the_reader_speaks_spanish_when_selected(): void
+    {
+        $this->withSession(['locale' => 'es'])
+            ->get('/read/76/1')
+            ->assertOk()
+            ->assertSee('Ajustes del lector')
+            ->assertSee('Página 1')
+            ->assertSee('Capítulo siguiente')
+            ->assertSee('Lectura &middot; Papyrus', false);
     }
 
     /**
