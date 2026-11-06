@@ -17,6 +17,7 @@ return [
     'launcher.start.browser_failed' => 'Impossible d\'ouvrir un navigateur depuis ici. L\'adresse ci-dessus est tout ce qu\'il vous faut.',
     'launcher.start.hold' => 'Appuyez sur Ctrl+C pour l\'arrêter.',
     'launcher.start.child_stopped' => ':name s\'est arrêté de lui-même, le reste va être arrêté.',
+    'launcher.start.stopped_by_request' => 'Papyrus a été arrêté à la demande.',
     'launcher.stop.nothing_running' => 'Rien de cette installation n\'est en cours d\'exécution, donc rien n\'a été arrêté.',
     'launcher.stop.forced' => ':name a été arrêté de force, la seule façon dont Windows peut l\'arrêter.',
     'launcher.stop.failed' => ':name did not stop. Un élément extérieur à Papyrus le retient peut-être.',

@@ -17,6 +17,7 @@ return [
     'launcher.start.browser_failed' => 'No se pudo abrir un navegador desde aquí. La dirección de arriba es todo lo que necesitas.',
     'launcher.start.hold' => 'Pulsa Ctrl+C para detenerlo.',
     'launcher.start.child_stopped' => ':name se detuvo por su cuenta; se cerrará el resto.',
+    'launcher.start.stopped_by_request' => 'Papyrus se detuvo a petición.',
     'launcher.stop.nothing_running' => 'No se está ejecutando nada de esta instalación, así que no se detuvo nada.',
     'launcher.stop.forced' => ':name se detuvo por la fuerza, que es la única forma en que Windows puede detenerlo.',
     'launcher.stop.failed' => ':name did not stop. Puede que algo fuera de Papyrus lo esté reteniendo.',

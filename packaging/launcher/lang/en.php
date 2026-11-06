@@ -19,6 +19,7 @@ return [
     'launcher.start.browser_failed' => 'Could not open a browser from here. The address above is all you need.',
     'launcher.start.hold' => 'Press Ctrl+C to stop it.',
     'launcher.start.child_stopped' => ':name stopped on its own, shutting the rest down.',
+    'launcher.start.stopped_by_request' => 'Papyrus was stopped by request.',
     'launcher.stop.nothing_running' => 'Nothing belonging to this install is running, so nothing was stopped.',
     'launcher.stop.forced' => ':name was stopped by force, which is the only way Windows can stop it.',
     'launcher.stop.failed' => ':name did not stop. Something outside Papyrus may be holding it.',

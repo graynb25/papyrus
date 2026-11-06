@@ -77,6 +77,7 @@ require __DIR__.'/src/LayoutRefused.php';
 require __DIR__.'/src/InstallLayout.php';
 
 require __DIR__.'/src/SummaryLog.php';
+require __DIR__.'/src/StopRequest.php';
 require __DIR__.'/src/Health.php';
 require __DIR__.'/src/Supervisor.php';
 
@@ -188,6 +189,12 @@ try {
                 ]));
             $say('');
 
+            /*
+             * A request from a previous stop must not excuse a crash in this run. Clear it
+             * before anything starts; the stop command writes a fresh one when it runs.
+             */
+            StopRequest::clear($data);
+
             $supervisor->start($say);
             $say('');
 
@@ -246,6 +253,18 @@ try {
 
                 foreach ($supervisor->status() as $name => $running) {
                     if (! $running) {
+                        /*
+                         * An intentional stop exits 0 and says so. A child that stopped on its
+                         * own is still a failure, and Papyrus.cmd still prints its failure
+                         * message for it.
+                         */
+                        if (StopRequest::consume($data)) {
+                            $say($translator->get('launcher.start.stopped_by_request'));
+                            $supervisor->stopAll($say);
+
+                            exit(0);
+                        }
+
                         $say($translator->get('launcher.start.child_stopped', ['name' => $name]));
                         $supervisor->stopAll($say);
 
@@ -262,7 +281,12 @@ try {
              * application is too broken to explain itself, and the tray icon is documented as
              * calling it. Both arrive as their own process, which is why it has to find the
              * running processes rather than ask its own empty list. See Supervisor::stopAll.
+             *
+             * The marker goes down first, so the start window knows what the disappearing
+             * children mean before it sees the first one go.
              */
+            StopRequest::request($data);
+
             $outcomes = $supervisor->stopAll($say);
 
             if ($outcomes === []) {

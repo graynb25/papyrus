@@ -17,6 +17,7 @@ return [
     'launcher.start.browser_failed' => 'Não foi possível abrir um navegador daqui. O endereço acima é tudo de que você precisa.',
     'launcher.start.hold' => 'Pressione Ctrl+C para parar.',
     'launcher.start.child_stopped' => ':name parou sozinho; o restante será encerrado.',
+    'launcher.start.stopped_by_request' => 'O Papyrus foi encerrado a pedido.',
     'launcher.stop.nothing_running' => 'Nada desta instalação está em execução, então nada foi parado.',
     'launcher.stop.forced' => ':name foi encerrado à força, que é a única forma de o Windows encerrá-lo.',
     'launcher.stop.failed' => ':name did not stop. Algo fora do Papyrus pode estar segurando ele.',
