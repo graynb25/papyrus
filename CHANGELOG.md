@@ -43,7 +43,19 @@ keeps its own standalone catalogues so it works when the application does not. L
 the FAQ, raw source or server error text, and the diagnostic bundle's internal text files
 remain English.
 
+**The language picked in the installer becomes the first-run language.** The setup wizard
+writes the choice beside the launcher, the launcher and `Papyrus.cmd` start in it, and
+`papyrus:configure` writes `APP_LOCALE` and stops browser negotiation from overruling a
+non-English choice on the first page. The reader can still change language per account.
+`d94ec76`
+
 ### Fixed
+
+**The tour card stays on screen when a series is added.** The read step was anchored to the
+whole chapter section, so the card moved out of view after the add and the reader had to
+skip. It now targets the first chapter row. The extension step now targets the Available
+grid rather than its tab, so the install buttons no longer sit dimmed under the overlay.
+`d94ec76`
 
 **An intentional stop no longer makes the start window say Papyrus failed to start.** The
 start command watched a child disappear and exited 1, so `Papyrus.cmd` printed "Papyrus did

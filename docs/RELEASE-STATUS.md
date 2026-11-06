@@ -35,8 +35,12 @@ Updated 2026-11-06.
   Piece with 1,204 chapters, read chapter 1 page 0 through the app proxy (200,
   `image/webp`, 175,432 bytes, SHA-256
   `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`), and stopped every
-  process with both ports released. Suwayomi stayed on loopback. The manual installer tour
-  is the remaining packaged check.
+  process with both ports released. Suwayomi stayed on loopback. The first manual installer
+  run reached tour step 8 and a real reader page. It found three fixes now in `d94ec76`:
+  the installer language is carried into the first run, the tour card no longer leaves the
+  screen after a series is added, and the extension step targets the Available grid rather
+  than its tab so the install controls are not dimmed under the overlay. The artifacts must
+  be rebuilt and the automated gate and manual tour repeated on that build.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

@@ -7743,6 +7743,17 @@ French, and Brazilian Portuguese files. `ShowLanguageDialog=yes` and
 page under its silent flags. Every `[Code]` message is a `CustomMessage()` or `FmtMessage()`
 entry, and `InstallerLanguagesTest` checks that every name used exists in all four languages.
 
+The wizard's language is written to `installer-locale.txt` beside the launcher at
+`ssPostInstall`, and only when the file does not already exist, so an upgrade keeps the
+language the install already uses. `Papyrus.cmd` reads the marker after `PAPYRUS_LOCALE` and
+before the Windows UI language, the launcher does the same, and `papyrus:configure` turns it
+into `APP_LOCALE`. A non-English choice also sets `PAPYRUS_LOCALE_NEGOTIATION=false`, because
+a deliberate installer choice should not be overruled by the browser's first request;
+English keeps negotiation, since it is also the setup fallback. The read step of the tour
+targets the first chapter row rather than the whole chapter section, and the extension step
+targets the Available grid rather than its tab, because both large or missing targets had
+moved the card away from the control the reader was asked to use.
+
 A candidate build uses `--no-record` on `build-installer.php` and `build-portable.php`. It
 writes the manifest beside the artifact but does not replace the committed
 `releases/<version>.json`; a release build omits the flag. The launcher diagnostic bundle's

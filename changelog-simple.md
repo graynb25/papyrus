@@ -22,10 +22,18 @@ search filter hint and local-source labels are translated, and the source button
 narrow screen.
 
 The Windows installer now offers the same four languages, and the launcher follows
-`PAPYRUS_LOCALE`, then the Windows display language, then English.
+`PAPYRUS_LOCALE`, then the Windows display language, then English. The language you pick in
+the installer is also the language Papyrus starts in, so you do not have to choose it again.
 
 Legal pages, the FAQ, technical error text from a source or the manga server, and the
 diagnostic bundle's internal text files are still in English.
+
+### The tour keeps its place
+
+After you added a series, the tour card could move off the screen at the moment the next step
+should appear. The read step now points at the first chapter, and the extension step points
+at the list of available extensions, so you can install one without the page looking
+disabled.
 
 ### A stop no longer looks like a failed start
 
