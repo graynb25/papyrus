@@ -7674,6 +7674,14 @@ counts. Framework strings live in `lang/{locale}/validation.php`, `auth.php`,
 `passwords.php`, and `pagination.php`. All three non-English catalogs are AI drafts
 pending native review.
 
+The literal-call coverage test for the reader-facing files listed in
+`tests/Feature/Localization/SpanishCatalogTest.php` joins adjacent string literals before
+comparing, because two reader-facing sentences are assembled with concatenation. That audit
+found that the series and source migration wizard and the backup, restore, export,
+local-folder, AniList and adult-content status messages were still English. They are now
+catalogued. Console command output, legal and FAQ copy, and the
+pre-rendered maintenance page remain English.
+
 `config/papyrus.php` has two lists. `supported` is the target list; `catalogued` is the
 subset that may be resolved, stored, or offered by the switcher. Add a locale to
 `catalogued` only after its catalogs and parity tests exist. `App\Support\Locale` resolves

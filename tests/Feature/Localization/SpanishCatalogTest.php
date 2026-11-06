@@ -53,6 +53,8 @@ class SpanishCatalogTest extends TestCase
             'resources/views/pages/⚡insights.blade.php',
             'resources/views/pages/⚡sources.blade.php',
             'resources/views/pages/⚡health.blade.php',
+            'resources/views/pages/⚡migrate.blade.php',
+            'resources/views/pages/⚡migrate-sources.blade.php',
             'resources/views/pages/partials/search-skipped.blade.php',
             'resources/views/components/adult-content/gate.blade.php',
             'resources/views/pages/settings/layout.blade.php',
@@ -90,6 +92,16 @@ class SpanishCatalogTest extends TestCase
             'app/Support/ReaderSettings.php',
             'app/Support/Library.php',
             'app/Http/Controllers/ReaderController.php',
+            'app/Migration/BulkSourceMatcher.php',
+            'app/Migration/SeriesMigrator.php',
+            'app/Live/RunPresenter.php',
+            'app/Local/LocalLibrary.php',
+            'app/Livewire/AdultContentPage.php',
+            'app/Support/AdultContent.php',
+            'app/AniList/Preference.php',
+            'app/Http/Controllers/AniListCallbackController.php',
+            'app/Models/BulkMigration.php',
+            'app/Models/MigrationSearch.php',
         ];
     }
 
@@ -129,21 +141,17 @@ class SpanishCatalogTest extends TestCase
 
         $this->assertIsArray($catalog);
 
-        $pattern = "/(?:__|trans_choice)\(\s*'((?:\\\\.|[^'\\\\])*)'/s";
-
         foreach ($this->files() as $relative) {
             $path = base_path($relative);
             $this->assertFileExists($path);
 
-            preg_match_all($pattern, (string) file_get_contents($path), $matches, PREG_OFFSET_CAPTURE);
+            $source = (string) file_get_contents($path);
 
-            foreach ($matches[1] as [$raw, $offset]) {
-                $key = str_replace(["\\'", '\\\\'], ["'", '\\'], $raw);
-
+            foreach ($this->translationKeys($source) as [$key, $offset]) {
                 $this->assertArrayHasKey(
                     $key,
                     $catalog,
-                    "{$relative}:".$this->lineAt((string) file_get_contents($path), $offset).' has no Spanish value',
+                    "{$relative}:".$this->lineAt($source, $offset).' has no Spanish value',
                 );
 
                 $value = $catalog[$key];
@@ -180,6 +188,108 @@ class SpanishCatalogTest extends TestCase
         sort($placeholders);
 
         return $placeholders;
+    }
+
+    /**
+     * The literal keys passed to __() or trans_choice(), including concatenations.
+     *
+     * @return list<array{string, int}>
+     */
+    private function translationKeys(string $text): array
+    {
+        $keys = [];
+
+        preg_match_all(
+            '/(?<![\w>])(?:__|trans_choice)\s*\(/',
+            $text,
+            $matches,
+            PREG_OFFSET_CAPTURE,
+        );
+
+        foreach ($matches[0] as [$call, $offset]) {
+            $cursor = $offset + strlen($call);
+            $key = $this->stringArgument($text, $cursor);
+
+            if ($key !== null) {
+                $keys[] = [$key, $offset];
+            }
+        }
+
+        return $keys;
+    }
+
+    private function stringArgument(string $text, int &$cursor): ?string
+    {
+        $value = $this->readString($text, $cursor);
+
+        if ($value === null) {
+            return null;
+        }
+
+        while (true) {
+            $dot = $cursor;
+            $this->skipWhitespace($text, $dot);
+
+            if (($text[$dot] ?? '') !== '.') {
+                return $value;
+            }
+
+            $dot++;
+            $next = $this->readString($text, $dot);
+
+            if ($next === null) {
+                return $value;
+            }
+
+            $value .= $next;
+            $cursor = $dot;
+        }
+    }
+
+    private function readString(string $text, int &$cursor): ?string
+    {
+        $this->skipWhitespace($text, $cursor);
+        $quote = $text[$cursor] ?? '';
+
+        if ($quote !== "'" && $quote !== '"') {
+            return null;
+        }
+
+        $cursor++;
+        $value = '';
+        $length = strlen($text);
+
+        while ($cursor < $length) {
+            $char = $text[$cursor];
+
+            if ($char === '\\') {
+                $next = $text[$cursor + 1] ?? '';
+                $value .= ($next === $quote || $next === '\\') ? $next : $char.$next;
+                $cursor += 2;
+
+                continue;
+            }
+
+            if ($char === $quote) {
+                $cursor++;
+
+                return $value;
+            }
+
+            $value .= $char;
+            $cursor++;
+        }
+
+        return null;
+    }
+
+    private function skipWhitespace(string $text, int &$cursor): void
+    {
+        $length = strlen($text);
+
+        while ($cursor < $length && ctype_space($text[$cursor])) {
+            $cursor++;
+        }
     }
 
     private function lineAt(string $text, int $offset): int

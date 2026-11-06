@@ -20,10 +20,14 @@ native speakers, and must not be described as reviewed.
 
 - Spanish covers the authentication pages, the app shell, the library, the series page, the
   reader, search, browse, downloads, insights, sources, health, profile, appearance,
-  security, connections, about, licences, backups, import, the nine first-run tour steps,
-  and the 403, 404, 419, 429, 500, and 503 error pages.
+  security, connections, about, licences, backups, import, the series and source migration
+  wizard, the backup, restore, export, local-folder and adult-content status messages, the
+  nine first-run tour steps, and the 403, 404, 419, 429, 500, and 503 error pages.
 - French and Brazilian Portuguese mirror the same key set and are selectable as of this
   change.
+- The catalog test in `tests/Feature/Localization/SpanishCatalogTest.php` reads literal
+  `__()` and `trans_choice()` calls in the covered reader-facing files, including
+  concatenated strings, so a sentence added there without a catalog entry fails the test.
 - All three catalogs are AI drafts. Native review is required before any of them is called
   reviewed.
 
@@ -31,10 +35,13 @@ native speakers, and must not be described as reviewed.
 
 - Legal pages and the FAQ, including the FAQ inside Settings.
 - The Windows installer and the launcher.
+- Console command output, which is operator-facing rather than reader-facing.
 - Technical error text that comes from a source, the manga server, a passkey, or an
   exception. The label around it is translated; the raw message is not.
 - Progress notes written by background backup and import jobs remain as they were stored.
   The page's status words, labels, and surrounding copy are translated.
+- The pre-rendered Laravel maintenance page can stay in the language that was active when
+  the install was taken down. A thrown 503 response uses the normal locale path.
 - Extension store names and index URLs, manga titles, chapter names, scanlator names,
   package names, URLs, file paths, and source metadata. These are reader data rather than
   UI copy.

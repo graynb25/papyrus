@@ -27,9 +27,11 @@ checkable: each carries the commit that made the change.
 
 **Interface language support for Spanish, French, and Brazilian Portuguese.** The reader
 can switch language from Settings > Appearance, the sidebar, or the auth footer, and the
-choice is kept per reader. Spanish, French, and Brazilian Portuguese are AI drafts pending
-native review; none of them should be described as reviewed. Legal pages, the FAQ, the
-installer, the launcher, and raw source or server error text remain English.
+choice is kept per reader. The migration wizard and the backup, restore, export,
+local-folder and adult-content messages are included. Spanish, French, and Brazilian
+Portuguese are AI drafts pending native review; none of them should be described as
+reviewed. Legal pages, the FAQ, the installer, the launcher, and raw source or server error
+text remain English.
 
 ## 1.5.6 - 2026-11-05
 

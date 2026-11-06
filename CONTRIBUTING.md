@@ -151,7 +151,9 @@ To add a language:
 The catalog parity tests compare every translated catalog against `lang/es.json` and the
 framework groups against the Spanish shape. They also reject English values that were left
 behind. A missing translation, a changed placeholder, or a dropped plural branch fails the
-test rather than falling back silently.
+test rather than falling back silently. `SpanishCatalogTest` also reads literal `__()` and
+`trans_choice()` calls in the covered reader-facing files, including concatenated strings,
+so a sentence added there without a catalog entry fails the test.
 
 Legal pages, the FAQ, the installer, the launcher, and raw source, server, passkey, or
 exception text remain English by scope.

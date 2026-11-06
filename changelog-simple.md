@@ -14,8 +14,9 @@ No commit hashes, no file names, no jargon.
 ### Choose your interface language
 
 You can now choose Spanish, French, or Brazilian Portuguese from Settings > Appearance, the
-sidebar, or the auth footer. The choice is kept for your account. All three translations are
-first drafts and have not yet been checked by native speakers.
+sidebar, or the auth footer. The choice is kept for your account. The series migration
+wizard and the backup, restore, and export messages are included too. All three translations
+are first drafts and have not yet been checked by native speakers.
 
 Legal pages, the FAQ, the installer, the launcher, and technical error text from a source or
 the manga server are still in English.

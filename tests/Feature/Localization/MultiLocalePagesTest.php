@@ -243,6 +243,28 @@ class MultiLocalePagesTest extends TestCase
     }
 
     #[DataProvider('locales')]
+    public function test_the_migration_pages_speak_the_locale(string $locale, string $htmlLang): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withSession(['locale' => $locale])
+            ->get('/migrate/76')
+            ->assertOk()
+            ->assertSee('lang="'.$htmlLang.'"', false)
+            ->assertSee(trans('A new home for an old friend.', [], $locale))
+            ->assertSee(trans('What moving does', [], $locale));
+
+        $this->actingAs($user)
+            ->withSession(['locale' => $locale])
+            ->get('/migrate/sources')
+            ->assertOk()
+            ->assertSee('lang="'.$htmlLang.'"', false)
+            ->assertSee(trans('Move your library to another source', [], $locale))
+            ->assertSee(trans('What this does', [], $locale));
+    }
+
+    #[DataProvider('locales')]
     public function test_the_profile_page_speaks_the_locale(string $locale, string $htmlLang): void
     {
         $user = User::factory()->create();
