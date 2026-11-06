@@ -7,8 +7,8 @@ Updated 2026-11-06.
   independent AI language review. Native-speaker review has not been performed. Visual QA
   is complete at desktop and mobile widths for the shell, auth, library, search, sources,
   downloads, insights, health, settings appearance and backups, and the 404 page in all
-  three locales. The reader page and the tour beyond its second step were not visually
-  exercised because no live source was available. The QA pass found the search filter hint
+  three locales. The reader page and the later tour steps were later exercised in the manual
+  sandbox with a live source. The QA pass found the search filter hint
   and ComicInfo labels still in English, and the French source action buttons clipped on a
   narrow screen; all three are fixed. The Windows installer now offers the same four languages
   and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then
@@ -45,9 +45,13 @@ Updated 2026-11-06.
   run reached tour step 8 and a real reader page. It found three fixes now in `d94ec76`:
   the installer language is carried into the first run, the tour card no longer leaves the
   screen after a series is added, and the extension step targets the Available grid rather
-  than its tab so the install controls are not dimmed under the overlay. The artifacts have
-  been rebuilt from `633eb85`, and the automated gate passed again on that build. The manual
-  tour is the remaining check.
+  than its tab so the install controls are not dimmed under the overlay. The artifacts were
+  rebuilt from `633eb85`, and the automated gate passed again on that build. The manual tour
+  on that build selected Spanish in setup; the launcher and login page opened in Spanish,
+  the Available grid was lit, the add-to-library step kept the tour card on screen, and the
+  reader opened a real page. The session is
+  `build/manual-sandbox-results/session-20261106-155555`; the ten second loop wrote 35
+  frames, and no named captures were used.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

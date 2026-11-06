@@ -7799,8 +7799,14 @@ The installer-language pass-through was then checked in a scratch install with
 `PAPYRUS_LOCALE` set, `papyrus:configure` wrote `APP_LOCALE=es` and
 `PAPYRUS_LOCALE_NEGOTIATION=false`, and `/login` returned `<html lang="es">` for an
 `Accept-Language: en-US` request. The uninstall removed both the program and the marker and
-left the data directory. The sandbox runs remain the installer-payload and clean-machine
-evidence.
+left the data directory.
+
+The final manual tour ran from `633eb85` in
+`build/manual-sandbox-results/session-20261106-155555`. The setup language was Spanish, and
+the launcher and login page opened in Spanish without a second choice. The Available grid
+was lit under the tour overlay, the add-to-library step kept the card on screen, and the
+reader opened a real page. The ten second loop wrote 35 frames; no named captures were used.
+The sandbox runs remain the installer-payload and clean-machine evidence.
 
 ---
 
