@@ -97,6 +97,8 @@ yarn-error.log
 # the same reason not to let git near them.
 /build/install-i18n-candidate/
 /build/dist-i18n-candidate/
+/build/install-1.5.7-candidate/
+/build/dist-1.5.7-candidate/
 # What a sandbox run leaves behind. Readable from the host, useless in the repository.
 /build/sandbox-results/
 # What a manual sandbox session leaves behind: a screenshot every ten seconds, a CSV index, and

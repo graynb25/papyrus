@@ -21,7 +21,9 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.5.7 - 2026-11-06
+
+A localization release for the application, the Windows installer, and the packaged launcher.
 
 ### Added
 
