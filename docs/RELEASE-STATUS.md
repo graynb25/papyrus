@@ -14,11 +14,11 @@ Updated 2026-11-06.
   and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then
   English. English remains the source language. Legal pages, the FAQ, raw source or server
   error text, and the diagnostic bundle's internal text files remain English.
-  The next release is prepared as 1.5.7 from `56217f4`, because the localization payload
-  changes the published artifacts. The installer is 257,923,148 bytes, SHA-256
-  `e0f29539ce7a3cbc540dfab0b191836b5b9a5cc6e703c6fd730545b97169ae6e`; the portable is
-  299,841,467 bytes, SHA-256
-  `e1e3cab588d2607e9ade83f19ef7ce3c0bf22d6d57f5dcd5f35bcd8ed3beca12`. Both used
+  The next release is prepared as 1.5.7 from `633eb85`, because the localization payload
+  changes the published artifacts. The installer is 257,924,136 bytes, SHA-256
+  `bf69e2f7c9a00b54cd2ac04762a45719cf164f406149d145d24c991dbc484c0e`; the portable is
+  299,842,534 bytes, SHA-256
+  `3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. Both used
   `--no-record`, so no release record was written. The portable zip passed a local scratch
   walk with a minted account: the login and library in Spanish, the shell, search, sources,
   downloads, insights, health, appearance and backups in French and Brazilian Portuguese,
@@ -29,6 +29,11 @@ Updated 2026-11-06.
   The packaged walk found and fixed the start window reporting an intentional stop as a
   failed start. The build also fixed `build-installer.php` so `--out` reaches Inno Setup as
   `/O` instead of compiling into `build/dist` and failing its own artifact check.
+  The rebuilt installer was then exercised with `/LANG=spanish` in a scratch directory. It
+  wrote `installer-locale.txt` with `es`, the launcher printed Spanish, the login page stayed
+  `<html lang="es">` even when the request carried `Accept-Language: en-US`, and the generated
+  `.env` held `APP_LOCALE=es` and `PAPYRUS_LOCALE_NEGOTIATION=false`. The uninstall removed
+  the program and the marker and kept the data directory.
   The automated Windows Sandbox gate passed every check on 2026-11-06 on this build. It
   started the packaged tree through `Papyrus.cmd` on `8402`, registered the first account,
   rendered the sources page, added the extension store, installed MangaTaro, listed One
@@ -39,8 +44,9 @@ Updated 2026-11-06.
   run reached tour step 8 and a real reader page. It found three fixes now in `d94ec76`:
   the installer language is carried into the first run, the tour card no longer leaves the
   screen after a series is added, and the extension step targets the Available grid rather
-  than its tab so the install controls are not dimmed under the overlay. The artifacts must
-  be rebuilt and the automated gate and manual tour repeated on that build.
+  than its tab so the install controls are not dimmed under the overlay. The artifacts have
+  been rebuilt from `633eb85`; the automated gate and manual tour still need to be repeated
+  on that build.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is

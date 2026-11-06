@@ -7781,10 +7781,10 @@ directory: `stop` writes it before stopping anything, `start` consumes it, print
 exits 1 and keeps the failure message. `StopRequestTest` covers the marker and the entry
 point wiring.
 
-The rebuilt candidate is from `56217f4`: installer 257,923,148 bytes, SHA-256
-`e0f29539ce7a3cbc540dfab0b191836b5b9a5cc6e703c6fd730545b97169ae6e`; portable
-299,841,467 bytes, 10,388 entries, SHA-256
-`e1e3cab588d2607e9ade83f19ef7ce3c0bf22d6d57f5dcd5f35bcd8ed3beca12`. The old 1.4.0
+The final candidate is from `633eb85`: installer 257,924,136 bytes, SHA-256
+`bf69e2f7c9a00b54cd2ac04762a45719cf164f406149d145d24c991dbc484c0e`; portable
+299,842,534 bytes, 10,388 entries, SHA-256
+`3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. The old 1.4.0
 install was removed first, preserving `%LOCALAPPDATA%\Papyrus`. The setup then installed
 into a scratch directory with `/DIR` and `/NOICONS`, registered a minted account, served the
 Spanish login and library, the French and Portuguese shell, and the Portuguese 404 page at
@@ -7792,8 +7792,15 @@ Spanish login and library, the French and Portuguese shell, and the Portuguese 4
 `Papyrus se detuvo a petición` in the start window and did not print the failure sentence.
 The uninstall removed the program and kept the data directory. The final portable zip was
 unpacked separately and walked in Portuguese and French with its own minted account; its stop
-also exited 0 with the localized sentence. The sandbox runs remain the installer-payload
-and clean-machine evidence.
+also exited 0 with the localized sentence.
+
+The installer-language pass-through was then checked in a scratch install with
+`/LANG=spanish`. `installer-locale.txt` held `es`, `Papyrus.cmd` printed Spanish with no
+`PAPYRUS_LOCALE` set, `papyrus:configure` wrote `APP_LOCALE=es` and
+`PAPYRUS_LOCALE_NEGOTIATION=false`, and `/login` returned `<html lang="es">` for an
+`Accept-Language: en-US` request. The uninstall removed both the program and the marker and
+left the data directory. The sandbox runs remain the installer-payload and clean-machine
+evidence.
 
 ---
 
