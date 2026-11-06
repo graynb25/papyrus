@@ -23,7 +23,7 @@ checkable: each carries the commit that made the change.
 
 ## 1.5.7 - 2026-11-06
 
-A localization release for the application, the Windows installer, and the packaged launcher.
+A localization release for the application, the Windows installer, and the packaged launcher, plus a launcher stop fix found during the packaged walk.
 
 ### Added
 
@@ -42,6 +42,15 @@ launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then English. T
 keeps its own standalone catalogues so it works when the application does not. Legal pages,
 the FAQ, raw source or server error text, and the diagnostic bundle's internal text files
 remain English.
+
+### Fixed
+
+**An intentional stop no longer makes the start window say Papyrus failed to start.** The
+start command watched a child disappear and exited 1, so `Papyrus.cmd` printed "Papyrus did
+not start" over an app that had served pages. A stop from another process now leaves a
+request marker in the data directory; the start process consumes it, prints a sentence that
+says the app was stopped by request, and exits 0. A child that crashes without a request
+still exits 1. `daf4b48`
 
 ## 1.5.6 - 2026-11-05
 

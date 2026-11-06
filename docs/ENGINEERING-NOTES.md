@@ -7754,12 +7754,26 @@ created `--out` and checked for the artifact there, but never passed the directo
 Inno compiled into the `OutputDir` named in `papyrus.iss` (`build\dist`), overwrote that
 directory's setup executable, and the script then reported failure because the requested
 directory was empty. The compiler is now given `/O<dir>`, and `InstallerLanguagesTest`
-asserts the argument is present. The rebuilt candidate at `build/dist-i18n-candidate` is
-1.5.6 from `e29f071`: installer 257,921,564 bytes, SHA-256
-`e8f1a4dc368f88835a26d5e9c0d2a22d5db5a7bea6e55283728306ac6d18a6ab`; portable
-299,839,901 bytes, 10,387 entries, SHA-256
-`a5856168ef6dddf458df680b867680afedc9eee0134d3634f6c804cc5aec19ee`. The setup was not
-run, and the candidate was not sandboxed.
+asserts the argument is present.
+
+The first 1.5.7 candidate was built from `1390c7f` and its portable zip was unpacked into a
+scratch folder and started through `Papyrus.cmd` with a minted account. The login and
+library rendered in Spanish, the shell and settings pages rendered in French and Brazilian
+Portuguese, and the 404 page rendered in Portuguese at 1440px with no horizontal overflow.
+The installed layout was used, not a live reader install.
+
+That walk reproduced a pre-existing launcher message problem. Running `stop` from a second
+process made the original `start` console report that Papyrus did not start, even though it
+had served pages. It is fixed in `daf4b48` by a `stop-requested` marker in the data
+directory: `stop` writes it before stopping anything, `start` consumes it, prints
+`launcher.start.stopped_by_request`, and exits 0. A child that stops without a marker still
+exits 1 and keeps the failure message. `StopRequestTest` covers the marker and the entry
+point wiring. The fix required a rebuild, so the final candidate hashes are recorded in
+`docs/RELEASE-STATUS.md`.
+
+The installer was not run on the host while a 1.4.0 install shared the AppId. That install
+has since been removed, and the 1.5.7 setup is exercised in a scratch directory and then in
+the manual sandbox.
 
 ---
 

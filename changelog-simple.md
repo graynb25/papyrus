@@ -27,6 +27,12 @@ The Windows installer now offers the same four languages, and the launcher follo
 Legal pages, the FAQ, technical error text from a source or the manga server, and the
 diagnostic bundle's internal text files are still in English.
 
+### A stop no longer looks like a failed start
+
+If you stopped Papyrus from another window, the window that started it could still say that
+Papyrus did not start. It now says that Papyrus was stopped on request. A real crash still
+reports a failure.
+
 ## Version 1.5.6, 5 November 2026
 
 This release fixes one launcher problem for installs that do not use port 8000.
