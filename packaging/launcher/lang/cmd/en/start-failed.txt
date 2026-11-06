@@ -1,0 +1,4 @@
+Papyrus did not start. The lines above say why.
+<blank>
+Keeping this window open so they can be read, or copied into a bug report.
+Press any key to close it.

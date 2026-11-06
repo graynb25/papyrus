@@ -1,0 +1,5 @@
+Papyrus ne peut pas démarrer : le moteur PHP est absent de
+  "%PAPYRUS_ROOT%runtime\bin"
+<blank>
+Cette installation est incomplète. Réinstaller Papyrus corrigera le problème.
+<blank>

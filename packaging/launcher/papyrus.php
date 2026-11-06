@@ -33,13 +33,21 @@ declare(strict_types=1);
 
 namespace Papyrus\Launcher;
 
+/*
+ * The two files below come before the SAPI check because the message a browser gets is a reader
+ * message too, and the rest of the launcher cannot be loaded until the translation layer exists.
+ */
+require __DIR__.'/src/SystemTools.php';
+require __DIR__.'/src/Translator.php';
+
+$translator = Translator::fromEnvironment();
+
 if (PHP_SAPI !== 'cli') {
-    fwrite(STDERR, "The launcher runs from a terminal, not a browser.\n");
+    fwrite(STDERR, $translator->get('launcher.terminal_only').PHP_EOL);
 
     exit(1);
 }
 
-require __DIR__.'/src/SystemTools.php';
 require __DIR__.'/src/ProcessIdentity.php';
 require __DIR__.'/src/InstanceLock.php';
 require __DIR__.'/src/BrowserLauncher.php';
@@ -150,6 +158,7 @@ $supervisor = new Supervisor(
     logDirectory: $logs,
     suwayomiPort: (int) (getenv('PAPYRUS_SUWAYOMI_PORT') ?: 4567),
     appPort: (int) (getenv('PAPYRUS_APP_PORT') ?: 8000),
+    translator: $translator,
 );
 
 // PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
@@ -172,8 +181,11 @@ try {
              * at all is exactly the reader who needs to be told.
              */
             $say($dataChosen
-                ? 'Your data directory is '.$data.', set by PAPYRUS_DATA.'
-                : 'Your data directory is '.$data.', '.$decision['reason'].'.');
+                ? $translator->get('launcher.data.chosen', ['path' => $data])
+                : $translator->get('launcher.data.default', [
+                    'path' => $data,
+                    'reason' => $translator->get('data.reason.'.$decision['reason_key']),
+                ]));
             $say('');
 
             $supervisor->start($say);
@@ -190,7 +202,7 @@ try {
              */
             $url = $supervisor->readerUrl();
 
-            $say(sprintf('Papyrus is running at %s', $url));
+            $say($translator->get('launcher.start.running', ['url' => $url]));
 
             /*
              * Open the browser, so nobody has to know or guess the port.
@@ -219,13 +231,13 @@ try {
                  * the thing failing.
                  */
                 if ((new BrowserLauncher)->open($url)) {
-                    $say('Asked your browser to open it.');
+                    $say($translator->get('launcher.start.browser_asked'));
                 } else {
-                    $say('Could not open a browser from here. The address above is all you need.');
+                    $say($translator->get('launcher.start.browser_failed'));
                 }
             }
 
-            $say('Press Ctrl+C to stop it.');
+            $say($translator->get('launcher.start.hold'));
 
             // Hold the terminal open. The children are not daemons and this process is what
             // keeps them alive, so returning here would be a stop dressed as an exit.
@@ -234,7 +246,7 @@ try {
 
                 foreach ($supervisor->status() as $name => $running) {
                     if (! $running) {
-                        $say(sprintf('%s stopped on its own, shutting the rest down.', $name));
+                        $say($translator->get('launcher.start.child_stopped', ['name' => $name]));
                         $supervisor->stopAll($say);
 
                         exit(1);
@@ -254,7 +266,7 @@ try {
             $outcomes = $supervisor->stopAll($say);
 
             if ($outcomes === []) {
-                $say('Nothing belonging to this install is running, so nothing was stopped.');
+                $say($translator->get('launcher.stop.nothing_running'));
 
                 exit(0);
             }
@@ -275,11 +287,11 @@ try {
                      * handle and one force-killed are different signals about whether something is
                      * wrong, and `stopAll` reports them differently.
                      */
-                    $say(sprintf('%s was stopped by force, which is the only way Windows can stop it.', $name));
+                    $say($translator->get('launcher.stop.forced', ['name' => $name]));
                 }
 
                 if ($outcome === 'still running' || $outcome === 'could not be stopped') {
-                    $say(sprintf('%s did not stop. Something outside Papyrus may be holding it.', $name));
+                    $say($translator->get('launcher.stop.failed', ['name' => $name]));
 
                     $failed = true;
                 }
@@ -296,11 +308,15 @@ try {
             $status = $supervisor->status();
 
             if ($status === []) {
-                $say('This session has nothing running. Papyrus is not installed under this launcher.');
+                $say($translator->get('launcher.status.nothing'));
             }
 
             foreach ($status as $name => $running) {
-                $say(sprintf('%-10s %s', $name, $running ? 'running' : 'not running'));
+                $say(sprintf(
+                    '%-10s %s',
+                    $name,
+                    $running ? $translator->get('launcher.status.running') : $translator->get('launcher.status.not_running'),
+                ));
             }
 
             exit(0);
@@ -363,10 +379,11 @@ try {
                 $supervisor,
                 new Prober,
                 $supervisor->summary(),
+                $translator,
             );
 
             $say('');
-            $say('  Papyrus health');
+            $say($translator->get('launcher.health.heading'));
             $say('');
 
             $report = $health->render();
@@ -401,12 +418,12 @@ try {
             $directory = $bundle->write();
 
             $say('');
-            $say('  Papyrus diagnostics');
+            $say($translator->get('launcher.diagnostics.heading'));
             $say('');
-            $say('  Bundle written to');
+            $say($translator->get('launcher.diagnostics.written'));
             $say('    '.$directory);
             $say('');
-            $say('  It contains');
+            $say($translator->get('launcher.diagnostics.contains'));
 
             foreach ($bundle->listing($directory) as $name) {
                 $say('    '.$name);
@@ -414,20 +431,18 @@ try {
 
             if (in_array('--zip', $argv, true)) {
                 $say('');
-                $say('  One file to attach');
+                $say($translator->get('launcher.diagnostics.one_file'));
                 $say('    '.$bundle->zip($directory));
             }
 
             $say('');
-            $say('  Please attach the whole bundle. Four files chosen at random is a worse');
-            $say('  report than the whole thing, because we cannot tell what is missing from');
-            $say('  what was never there.');
+            $say($translator->get('launcher.diagnostics.attach'));
             $say('');
 
             exit(0);
 
         default:
-            fwrite(STDERR, "Usage: papyrus.php [start|stop|status|health|diagnostics|snapshot|restore|rollback] [--zip] [--open] [--yes] [--into=DIR]\n");
+            fwrite(STDERR, $translator->get('launcher.usage').PHP_EOL);
 
             exit(2);
     }

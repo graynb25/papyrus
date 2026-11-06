@@ -71,9 +71,12 @@ English is the source language. The Spanish, French, and Brazilian Portuguese ca
 are AI drafts that have had an independent AI language review, not a native-speaker review;
 do not describe them as native-reviewed. Switch language from Settings > Appearance, the
 sidebar, or the auth footer.
-Legal pages, the FAQ, the installer, the launcher, and raw source or server error text
-remain English. See [lang/README.md](lang/README.md) for the catalog layout and the
-AI-draft status.
+
+The Windows installer offers a language picker for the same four languages. The packaged
+launcher uses `PAPYRUS_LOCALE` when it is set, then the Windows UI language, then English.
+Legal pages, the FAQ, raw source or server error text, and the diagnostic bundle's internal
+text files remain English. See [lang/README.md](lang/README.md) for the catalog layout and
+the AI-draft status.
 
 | Screen | Route | What it does |
 |---|---|---|

@@ -139,9 +139,19 @@ final class Supervisor
          */
         private readonly ?string $frankenphpConfig = null,
         private ?Prober $prober = null,
+        ?Translator $translator = null,
     ) {
         $this->prober = $prober ?? new Prober;
+        $this->translator = $translator ?? new Translator;
         $this->finder = new ProcessFinder;
+    }
+
+    /** The messages this install speaks, shared with the commands it starts. */
+    private readonly Translator $translator;
+
+    public function translator(): Translator
+    {
+        return $this->translator;
     }
 
     /**
@@ -294,11 +304,9 @@ final class Supervisor
              * confident wrong value. Returning a path that is known to be unusable here would put
              * that decision somewhere the message cannot reach.
              */
-            throw new RuntimeException(sprintf(
-                'The PHP configuration at %s still contains unresolved placeholders, so a PHP started '
-                .'against it would load no extensions at all. Start Papyrus once to resolve it.',
-                $ini,
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.ini_unresolved', [
+                'path' => $ini,
+            ]));
         }
 
         return $ini;
@@ -330,8 +338,8 @@ final class Supervisor
     {
         return $this->existing(
             $this->phpIni ?? $this->path('runtime', 'php', 'php.ini'),
-            'PHP configuration file',
-            'Without it PHP loads no extensions at all, so the app cannot open its database.',
+            $this->translator->get('supervisor.missing_php_config'),
+            $this->translator->get('supervisor.php_config_consequence'),
         );
     }
 
@@ -345,8 +353,8 @@ final class Supervisor
     {
         return $this->existing(
             $this->frankenphpConfig ?? $this->path('runtime', 'frankenphp', 'Caddyfile'),
-            'web server configuration',
-            'The web server exits immediately when it cannot read this, without logging why.',
+            $this->translator->get('supervisor.missing_web_config'),
+            $this->translator->get('supervisor.web_config_consequence'),
         );
     }
 
@@ -359,12 +367,11 @@ final class Supervisor
     private function existing(string $path, string $what, string $consequence): string
     {
         if (! is_file($path)) {
-            throw new RuntimeException(sprintf(
-                'The %s is not where this install expects it. Looking for %s. %s',
-                $what,
-                $path,
-                $consequence,
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.missing_file', [
+                'what' => $what,
+                'path' => $path,
+                'consequence' => $consequence,
+            ]));
         }
 
         return $path;
@@ -488,7 +495,7 @@ final class Supervisor
             $outcome = $process->stop();
 
             $outcomes[$name] = $outcome;
-            $say(sprintf('%s: %s', $name, $outcome));
+            $say($name.': '.$this->outcome($outcome));
         }
 
         $this->started = [];
@@ -513,7 +520,11 @@ final class Supervisor
 
             foreach ($this->finder->find($this->specFor($name)) as $pid) {
                 $outcomes[$name] = $this->finder->terminate($pid);
-                $say(sprintf('%s: %s (pid %d, found rather than started here)', $name, $outcomes[$name], $pid));
+                $say($this->translator->get('supervisor.outcome.found', [
+                    'name' => $name,
+                    'outcome' => $this->outcome($outcomes[$name]),
+                    'pid' => $pid,
+                ]));
             }
         }
 
@@ -576,15 +587,16 @@ final class Supervisor
             $holder = $this->prober->portHolder($this->suwayomiPort);
 
             if (! $this->isThisInstallsSuwayomi($holder)) {
-                throw new RuntimeException(sprintf(
-                    'Something is listening on port %d, but it is not the Suwayomi this install '
-                    .'started%s. Close it, or change the Suwayomi port, then start again.',
-                    $this->suwayomiPort,
-                    $holder === null ? '' : sprintf(' (%s, pid %d)', $holder['name'], $holder['pid']),
-                ));
+                throw new RuntimeException($this->translator->get('supervisor.suwayomi_port_other', [
+                    'port' => $this->suwayomiPort,
+                    'holder' => $holder === null ? '' : $this->translator->get('supervisor.suwayomi_port_holder', [
+                        'name' => $holder['name'],
+                        'pid' => $holder['pid'],
+                    ]),
+                ]));
             }
 
-            $say('using the Suwayomi already running from this install');
+            $say($this->translator->get('supervisor.using_suwayomi'));
 
             return;
         }
@@ -598,13 +610,10 @@ final class Supervisor
         $jar = $this->suwayomiJar ?? $this->locateJar();
 
         if ($jar === null) {
-            throw new RuntimeException(
-                'No Suwayomi jar was found. Papyrus cannot run without it, and it is not installed '
-                .'here. Reinstall, or point the install at an existing Suwayomi.'
-            );
+            throw new RuntimeException($this->translator->get('supervisor.no_jar'));
         }
 
-        $say('starting Suwayomi, which takes the longest of the four');
+        $say($this->translator->get('supervisor.starting_suwayomi'));
 
         /*
          * The root directory and the port are both set before the JVM is started, and both have to
@@ -642,20 +651,19 @@ final class Supervisor
         $ready = $this->prober->waitFor(
             fn (): bool => $this->suwayomiAnswers(),
             180,
-            'Suwayomi to answer its GraphQL API',
+            $this->translator->get('supervisor.waiting_suwayomi'),
             $say,
+            $this->translator,
         );
 
         if (! $ready) {
-            throw new RuntimeException(sprintf(
-                'Suwayomi did not answer on port %d within three minutes. Its own log is at %s, and '
-                .'it is almost always a JVM the machine could not afford or a port already in use.',
-                $this->suwayomiPort,
-                $this->logDirectory.DIRECTORY_SEPARATOR.'suwayomi.log',
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.suwayomi_timeout', [
+                'port' => $this->suwayomiPort,
+                'log' => $this->logDirectory.DIRECTORY_SEPARATOR.'suwayomi.log',
+            ]));
         }
 
-        $say('Suwayomi is answering');
+        $say($this->translator->get('supervisor.suwayomi_answering'));
     }
 
     /**
@@ -709,16 +717,14 @@ final class Supervisor
          * skipped, because the first migration is about to create its tables.
          */
         if ($this->hasDatabase()) {
-            $say('taking a snapshot before migrating');
+            $say($this->translator->get('supervisor.snapshot_before_migrating'));
 
             $snapshot = $this->runArtisan(['papyrus:snapshot', '--keep=14'], [], 'snapshot.log');
 
             if ($snapshot !== 0) {
-                throw new RuntimeException(sprintf(
-                    'Papyrus could not snapshot the database before migrating, so it will not migrate. '
-                    .'The output is in %s.',
-                    $this->logDirectory.DIRECTORY_SEPARATOR.'snapshot.log',
-                ));
+                throw new RuntimeException($this->translator->get('supervisor.snapshot_failed', [
+                    'log' => $this->logDirectory.DIRECTORY_SEPARATOR.'snapshot.log',
+                ]));
             }
 
             /*
@@ -732,20 +738,19 @@ final class Supervisor
             $snapshotPath = $this->newestSnapshot(dirname($this->databaseFile()).DIRECTORY_SEPARATOR.'reader-snapshots');
 
             if ($snapshotPath === null) {
-                throw new RuntimeException(
-                    'The snapshot command reported success but wrote no reader-half file, so Papyrus '
-                    .'will not migrate without a snapshot it can name.'
-                );
+                throw new RuntimeException($this->translator->get('supervisor.snapshot_not_written'));
             }
 
             $record->write($snapshotPath);
 
-            $say('recorded the pre-migration snapshot at '.$snapshotPath);
+            $say($this->translator->get('supervisor.snapshot_recorded', [
+                'path' => $snapshotPath,
+            ]));
         } else {
-            $say('no existing database, so the first migration has nothing to snapshot');
+            $say($this->translator->get('supervisor.no_database'));
         }
 
-        $say('checking whether the database needs migrating');
+        $say($this->translator->get('supervisor.checking_migrations'));
 
         /*
          * Truncated before the run, because `runArtisan` appends to its log. A previous
@@ -757,12 +762,9 @@ final class Supervisor
         $result = $this->runArtisan(['migrate', '--force']);
 
         if ($result !== 0) {
-            throw new RuntimeException(sprintf(
-                'The database could not be migrated. Papyrus will not start against a schema it does '
-                .'not understand, because every page after that would fail differently. The output is '
-                .'in %s.',
-                $this->logDirectory.DIRECTORY_SEPARATOR.'migrate.log',
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.migrate_failed', [
+                'log' => $this->logDirectory.DIRECTORY_SEPARATOR.'migrate.log',
+            ]));
         }
 
         /*
@@ -775,13 +777,15 @@ final class Supervisor
          */
         if ($previousRecord !== null && $this->migrateWasNoop()) {
             if (file_put_contents($record->path(), $previousRecord) === false) {
-                throw new RuntimeException('Could not keep the previous migration record at '.$record->path());
+                throw new RuntimeException($this->translator->get('supervisor.migration_record_failed', [
+                    'path' => $record->path(),
+                ]));
             }
 
-            $say('no migrations were pending, so the previous rollback record was kept');
+            $say($this->translator->get('supervisor.previous_record_kept'));
         }
 
-        $say('database is current');
+        $say($this->translator->get('supervisor.database_current'));
     }
 
     /**
@@ -823,14 +827,14 @@ final class Supervisor
     private function startWebServer(callable $say): void
     {
         if ($this->prober->isPortTaken($this->appPort)) {
-            throw new RuntimeException(sprintf(
-                'Something is already listening on port %d, which is the one Papyrus uses. Close it and '
-                .'start again. This is almost always a Papyrus already running.',
-                $this->appPort,
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.web_port_taken', [
+                'port' => $this->appPort,
+            ]));
         }
 
-        $say(sprintf('starting the web server on port %d', $this->appPort));
+        $say($this->translator->get('supervisor.starting_web', [
+            'port' => $this->appPort,
+        ]));
 
         /*
          * PHPRC, not a flag.
@@ -865,26 +869,24 @@ final class Supervisor
         $ready = $this->prober->waitFor(
             fn (): bool => $this->appIsReady(),
             60,
-            'the web server to report itself ready',
+            $this->translator->get('supervisor.waiting_web'),
             $say,
+            $this->translator,
         );
 
         if ($this->schemaAhead > 0) {
-            throw new RuntimeException(sprintf(
-                'The database has %d migration(s) this build does not know. It is newer than this build. '
-                .'Restore the previous version or a database snapshot; do not start this version against it.',
-                $this->schemaAhead,
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.schema_ahead', [
+                'count' => $this->schemaAhead,
+            ]));
         }
 
         if (! $ready) {
-            throw new RuntimeException(sprintf(
-                'The web server started but never reported ready. Its log is at %s.',
-                $this->logDirectory.DIRECTORY_SEPARATOR.'web.log',
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.web_not_ready', [
+                'log' => $this->logDirectory.DIRECTORY_SEPARATOR.'web.log',
+            ]));
         }
 
-        $say('the app reports ready');
+        $say($this->translator->get('supervisor.app_ready'));
     }
 
     private function startWorkers(callable $say): void
@@ -947,7 +949,7 @@ final class Supervisor
         $this->started['queue'] = $queue;
         $this->started['scheduler'] = $schedule;
 
-        $say('queue worker and scheduler started');
+        $say($this->translator->get('supervisor.workers_started'));
     }
 
     /**
@@ -1035,7 +1037,7 @@ final class Supervisor
      */
     private function assertSuwayomiIsReadable(callable $say): void
     {
-        $say('checking that Suwayomi will answer this install');
+        $say($this->translator->get('supervisor.checking_suwayomi'));
 
         $refusal = (new SuwayomiCredentials(
             environmentFile: $this->environmentFile(),
@@ -1183,15 +1185,11 @@ final class Supervisor
             }
         }
 
-        fwrite(STDERR, sprintf(
-            PHP_EOL.'  the application is answering and reporting that it is not ready (%s).'.PHP_EOL
-            .'  checks: %s'.PHP_EOL
-            .'  A failed "key" means the app is not reading the .env this launcher wrote. It is at %s'.PHP_EOL
-            .'  and is passed in as PAPYRUS_ENV.'.PHP_EOL.PHP_EOL,
-            $status !== '' ? $status : 'no status line',
-            $checks === [] ? 'none reported' : implode(', ', $checks),
-            $this->environmentFile(),
-        ));
+        fwrite(STDERR, $this->translator->get('supervisor.unready_block', [
+            'status' => $status !== '' ? $status : $this->translator->get('supervisor.unready_no_status'),
+            'checks' => $checks === [] ? $this->translator->get('supervisor.unready_no_checks') : implode(', ', $checks),
+            'env' => $this->environmentFile(),
+        ]));
     }
 
     /**
@@ -1573,7 +1571,7 @@ final class Supervisor
     /** The summary log, for the health command and for the messages `start` writes. */
     public function summary(): SummaryLog
     {
-        return $this->summary ??= new SummaryLog($this->logDirectory);
+        return $this->summary ??= new SummaryLog($this->logDirectory, $this->translator);
     }
 
     /**
@@ -1612,7 +1610,9 @@ final class Supervisor
         $made = $layout->prepare($say);
 
         if ($made !== []) {
-            $say('created '.count($made).' directories for this install');
+            $say($this->translator->get('supervisor.created_directories', [
+                'count' => count($made),
+            ]));
         }
 
         $this->resolveWebConfig();
@@ -1785,11 +1785,10 @@ final class Supervisor
             }
 
             if (preg_match('#\{\{[A-Z_]+\}\}#', $line) === 1) {
-                throw new RuntimeException(sprintf(
-                    'The PHP configuration resolved into %s still contains a template token: %s',
-                    $target,
-                    trim($line),
-                ));
+                throw new RuntimeException($this->translator->get('supervisor.template_token', [
+                    'path' => $target,
+                    'line' => trim($line),
+                ]));
             }
         }
     }
@@ -1801,11 +1800,9 @@ final class Supervisor
         $lock = new InstanceLock($this->lockPath());
 
         if (! $lock->acquire()) {
-            throw new RuntimeException(sprintf(
-                'Another Papyrus launcher already owns this install (%s). Close it first, or use '
-                .'that one.',
-                $lock->describe(),
-            ));
+            throw new RuntimeException($this->translator->get('supervisor.lock_held', [
+                'holder' => $lock->describe(),
+            ]));
         }
 
         $this->lock = $lock;
@@ -1814,6 +1811,19 @@ final class Supervisor
     private function lockPath(): string
     {
         return $this->dataDirectory.DIRECTORY_SEPARATOR.'launcher.lock';
+    }
+
+    /**
+     * The reader's word for a process outcome, with the raw token as a last resort.
+     *
+     * `ManagedProcess` and `ProcessFinder` return stable English tokens used by the command logic.
+     * Only the display is translated, so `stopAll` and the installer can keep comparing the tokens.
+     */
+    private function outcome(string $outcome): string
+    {
+        $key = 'supervisor.outcome.'.str_replace(' ', '_', $outcome);
+
+        return $this->translator->has($key) ? $this->translator->get($key) : $outcome;
     }
 
     private function path(string ...$parts): string

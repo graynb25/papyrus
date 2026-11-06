@@ -31,7 +31,10 @@
  *
  * ## Usage:
  *
- *   php packaging/installer/build-installer.php [--install=<dir>] [--out=<dir>] [--unsigned]
+ *   php packaging/installer/build-installer.php [--install=<dir>] [--out=<dir>] [--unsigned] [--no-record]
+ *
+ * `--no-record` is for a candidate build: it writes the manifest beside the installer but does not
+ * replace the committed `releases/<version>.json`. Release builds never pass it.
  *
  * ## Signing
  *
@@ -61,6 +64,7 @@ require_once __DIR__.'/../runtime/SystemTools.php';
  * and the alternative was a cast, which is the thing the analysis guidance exists to prevent.
  */
 $unsigned = false;
+$record = true;
 $options = [];
 
 // PHP 8.5's stubs allow $argv to be absent when register_argc_argv is off.
@@ -73,6 +77,8 @@ foreach (array_slice($argv, 1) as $argument) {
         $options['out'] = substr($argument, strlen('--out='));
     } elseif ($argument === '--unsigned') {
         $unsigned = true;
+    } elseif ($argument === '--no-record') {
+        $record = false;
     } else {
         fail('unexpected argument: '.$argument);
     }
@@ -439,11 +445,16 @@ if (file_put_contents($beside, $encoded) === false) {
     fail('could not write '.$beside);
 }
 
-$committed = ReleaseRecord::merge($repo, $manifest);
-
 say('manifest', $beside);
 say('', 'sha256 '.$manifest['artifacts'][0]['sha256']);
-say('', 'also written to '.$committed.', which is committed');
+
+if ($record) {
+    $committed = ReleaseRecord::merge($repo, $manifest);
+    say('', 'also written to '.$committed.', which is committed');
+} else {
+    say('', 'release record not written, because --no-record was passed');
+}
+
 say('', 'requires suwayomi '.$manifest['requires']['suwayomi'].', jvm '.($jvm ?? 'unknown'));
 
 // --- and the one property that makes it an installer rather than an archive -----------------

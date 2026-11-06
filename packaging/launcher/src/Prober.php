@@ -155,7 +155,10 @@ class Prober
         int $timeoutSeconds,
         string $describe,
         ?callable $onAttempt = null,
+        ?Translator $translator = null,
     ): bool {
+        $translator ??= new Translator;
+
         $deadline = microtime(true) + $timeoutSeconds;
         $interval = self::FASTEST_MS;
         $attempts = 0;
@@ -164,7 +167,10 @@ class Prober
             $attempts++;
 
             if ($onAttempt !== null) {
-                $onAttempt(sprintf('waiting for %s, attempt %d', $describe, $attempts));
+                $onAttempt($translator->get('supervisor.progress', [
+                    'what' => $describe,
+                    'attempt' => $attempts,
+                ]));
             }
 
             try {

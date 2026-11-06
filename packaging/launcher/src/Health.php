@@ -38,7 +38,12 @@ final class Health
         private readonly Supervisor $supervisor,
         private readonly Prober $prober,
         private readonly SummaryLog $summary,
-    ) {}
+        ?Translator $translator = null,
+    ) {
+        $this->translator = $translator ?? $supervisor->translator();
+    }
+
+    private readonly Translator $translator;
 
     /**
      * How a caller can answer the queue question without a real database.
@@ -128,7 +133,12 @@ final class Health
         }
 
         $out .= PHP_EOL;
-        $out .= sprintf('  overall     %s%s', $this->overall ? 'ok' : 'something is wrong, see the FAIL lines', PHP_EOL);
+        $out .= sprintf(
+            '  %-10s  %s%s',
+            $this->translator->get('health.overall.label'),
+            $this->overall ? $this->translator->get('health.overall.ok') : $this->translator->get('health.overall.fail'),
+            PHP_EOL,
+        );
 
         return $out;
     }
@@ -152,7 +162,10 @@ final class Health
 
             $this->add(
                 'suwayomi',
-                'not answering on port '.$port.($holder !== null ? ', which is '.$holder : ''),
+                $this->translator->get('health.suwayomi.not_answering', [
+                    'port' => $port,
+                    'holder' => $holder !== null ? $this->translator->get('health.suwayomi.holder', ['holder' => $holder]) : '',
+                ]),
                 false,
             );
 
@@ -163,8 +176,12 @@ final class Health
 
         $this->add(
             'suwayomi',
-            'running  '.($version !== '' ? $version : 'version unknown').'  port '.$port
-                .$this->compatibilityNote($version).$this->bindSentence($port),
+            $this->translator->get('health.suwayomi.running', [
+                'version' => $version !== '' ? $version : $this->translator->get('health.version_unknown'),
+                'port' => $port,
+                'note' => $this->compatibilityNote($version),
+                'bind' => $this->bindSentence($port),
+            ]),
             ! $this->isTooOld($version) && $this->isNotExposed($port),
         );
     }
@@ -195,24 +212,28 @@ final class Health
         $compatibility = $this->compatibility();
 
         if (! $compatibility->isKnown()) {
-            return '  (this build records no Suwayomi version, so compatibility was not checked)';
+            return $this->translator->get('health.compat.no_file');
         }
 
         $tooOld = $this->isTooOld($version);
 
         if ($tooOld === true) {
-            return '  TOO OLD, Papyrus needs at least '.$compatibility->minimum();
+            return $this->translator->get('health.compat.too_old', [
+                'minimum' => $compatibility->minimum(),
+            ]);
         }
 
         if ($tooOld === null) {
-            return '  (it did not report a version, so compatibility was not checked)';
+            return $this->translator->get('health.compat.no_version');
         }
 
         if ($compatibility->isTested($version) !== true) {
-            return '  newer than the tested '.$compatibility->tested().', which should work but is unproven here';
+            return $this->translator->get('health.compat.newer', [
+                'tested' => $compatibility->tested(),
+            ]);
         }
 
-        return '  the version Papyrus ships and tests against';
+        return $this->translator->get('health.compat.tested');
     }
 
     /**
@@ -247,7 +268,7 @@ final class Health
         $port = $this->supervisor->appPort();
 
         if (! $this->prober->isPortTaken($port)) {
-            $this->add('web', 'not listening on port '.$port, false);
+            $this->add('web', $this->translator->get('health.web.not_listening', ['port' => $port]), false);
 
             return;
         }
@@ -259,7 +280,10 @@ final class Health
 
             $this->add(
                 'web',
-                'listening on '.$port.' but /ready did not answer'.($holder !== null ? ', which is '.$holder : ''),
+                $this->translator->get('health.web.ready_not_answering', [
+                    'port' => $port,
+                    'holder' => $holder !== null ? $this->translator->get('health.suwayomi.holder', ['holder' => $holder]) : '',
+                ]),
                 false,
             );
 
@@ -268,14 +292,13 @@ final class Health
 
         $this->add(
             'web',
-            sprintf(
-                'listening  port %d  /ready %d  key %s  database %s%s',
-                $port,
-                $readiness['status'],
-                $readiness['checks']['key'] ? 'ok' : 'FAILED',
-                $readiness['checks']['database'] ? 'ok' : 'FAILED',
-                $this->bindSentence($port),
-            ),
+            $this->translator->get('health.web.summary', [
+                'port' => $port,
+                'status' => $readiness['status'],
+                'key' => $readiness['checks']['key'] ? $this->translator->get('health.overall.ok') : $this->translator->get('health.failed'),
+                'database' => $readiness['checks']['database'] ? $this->translator->get('health.overall.ok') : $this->translator->get('health.failed'),
+                'bind' => $this->bindSentence($port),
+            ]),
             $readiness['status'] === 200 && $this->isNotExposed($port),
         );
     }
@@ -307,7 +330,7 @@ final class Health
         $addresses = $this->prober->listeningAddresses($port);
 
         if ($addresses === null) {
-            return '  bound to: not checked';
+            return $this->translator->get('health.bind.not_checked');
         }
 
         $seen = [];
@@ -316,7 +339,9 @@ final class Health
             $seen[] = $this->describeAddress($address);
         }
 
-        return '  bound to: '.implode(', ', $seen);
+        return $this->translator->get('health.bind.prefix', [
+            'addresses' => implode(', ', $seen),
+        ]);
     }
 
     /**
@@ -369,15 +394,17 @@ final class Health
         $address = trim($address);
 
         if ($address === '0.0.0.0') {
-            return 'every interface (0.0.0.0), which is the whole network';
+            return $this->translator->get('health.address.every_ipv4');
         }
 
         if ($address === '::') {
-            return 'every interface (::), which is the whole network';
+            return $this->translator->get('health.address.every_ipv6');
         }
 
         if ($this->isLoopback($address)) {
-            return $address.' (this machine only)';
+            return $this->translator->get('health.address.loopback', [
+                'address' => $address,
+            ]);
         }
 
         return $address;
@@ -396,8 +423,8 @@ final class Health
     private function workers(): void
     {
         $consequences = [
-            'queue' => ['queue:work', 'downloads and library checks are never done'],
-            'scheduler' => ['schedule:work', 'series are never refreshed'],
+            'queue' => ['queue:work', 'health.worker.queue_consequence'],
+            'scheduler' => ['schedule:work', 'health.worker.scheduler_consequence'],
         ];
 
         foreach ($consequences as $name => [$command, $consequence]) {
@@ -406,8 +433,11 @@ final class Health
             $this->add(
                 $name,
                 $running
-                    ? 'running  '.$command
-                    : 'NOT RUNNING, '.$command.' is not up, so '.$consequence,
+                    ? $this->translator->get('health.worker.running', ['command' => $command])
+                    : $this->translator->get('health.worker.not_running', [
+                        'command' => $command,
+                        'consequence' => $this->translator->get($consequence),
+                    ]),
                 $running,
             );
         }
@@ -464,7 +494,7 @@ final class Health
 
         if (! is_file($log)) {
             // Nothing has been scheduled yet, which is not a fault. A fresh install has no log.
-            $this->add('schedule', 'not checked  the scheduler has not written anything yet', true);
+            $this->add('schedule', $this->translator->get('health.schedule.not_written'), true);
 
             return;
         }
@@ -476,7 +506,7 @@ final class Health
         if ($age === null) {
             $this->add(
                 'schedule',
-                'not checked  the scheduler log could not be read, so this says nothing either way',
+                $this->translator->get('health.schedule.unreadable'),
                 true,
             );
 
@@ -486,9 +516,8 @@ final class Health
         $this->add(
             'schedule',
             $age <= self::SCHEDULER_SILENCE_SECONDS
-                ? 'dispatching, last wrote '.$age.'s ago'
-                : 'NOT DISPATCHING, the scheduler has written nothing for '.$age.'s, so series are '
-                    .'never refreshed',
+                ? $this->translator->get('health.schedule.dispatching', ['age' => $age])
+                : $this->translator->get('health.schedule.not_dispatching', ['age' => $age]),
             $age <= self::SCHEDULER_SILENCE_SECONDS,
         );
     }
@@ -548,7 +577,7 @@ final class Health
 
         if (! is_file($path)) {
             // Nothing has been dispatched yet, which is not a fault.
-            $this->add('queue', 'idle  nothing queued yet', true);
+            $this->add('queue', $this->translator->get('health.queue.idle'), true);
 
             return;
         }
@@ -560,14 +589,23 @@ final class Health
         if ($reported === null) {
             $this->add(
                 'queue',
-                'not checked  the queue table could not be read, so this says nothing either way',
+                $this->translator->get('health.queue.not_checked'),
                 true,
             );
 
             return;
         }
 
-        $this->add('queue', $reported, $this->queueIsHealthy($reported));
+        /*
+         * A structured answer carries its state before a `|` and the localised sentence after it.
+         * Legacy callers, including the test seam, answer with a plain sentence and are displayed
+         * exactly as they were.
+         */
+        $display = str_contains($reported, '|')
+            ? substr($reported, (int) strpos($reported, '|') + 1)
+            : $reported;
+
+        $this->add('queue', $display, $this->queueIsHealthy($reported));
     }
 
     /**
@@ -599,11 +637,16 @@ final class Health
             'idle' => true,
             'draining' => true,
             'not checked' => true,
+            'not-draining' => false,
             'NOT DRAINING' => false,
         ];
 
+        $state = str_contains($reported, '|')
+            ? explode('|', $reported, 2)[0]
+            : $reported;
+
         foreach ($sentences as $prefix => $healthy) {
-            if (str_starts_with($reported, $prefix)) {
+            if (str_starts_with($state, $prefix)) {
                 return $healthy;
             }
         }
@@ -614,6 +657,10 @@ final class Health
 
     /**
      * Ask the install's own PHP to read the queue table, and return one line describing it.
+     *
+     * The child prints a stable state and numbers, such as `draining|40|12`, rather than prose. It
+     * cannot translate on its own, and the parent can: this method turns the numbers into the
+     * reader's language and keeps the state before the `|` for the health decision.
      *
      * A child process, because the launcher's own interpreter cannot read the table at all. That is
      * measured rather than assumed: `php_ini_loaded_file()` is empty here and `extension_dir` is
@@ -691,20 +738,31 @@ final class Health
         $line = trim(implode(' ', $output));
 
         /*
-         * Anything that is not one of our sentences is treated as no answer at all.
-         *
-         * A PHP notice, a warning about the ini, a path echoed by a misconfigured environment: all
-         * of them would otherwise become the queue's reported status, which is a confident wrong
-         * answer about the thing a reader is relying on. `queueIsHealthy()` matches on the same
-         * prefixes, so the two agree on what counts as a sentence.
+         * Anything that is not one of the probe's structured answers is treated as no answer at
+         * all. A PHP notice, a warning about the ini, a path echoed by a misconfigured environment:
+         * all of them would otherwise become the queue's reported status, which is a confident
+         * wrong answer about the thing a reader is relying on.
          */
-        foreach (['idle', 'draining', 'NOT DRAINING', 'not checked'] as $prefix) {
-            if (str_starts_with($line, $prefix)) {
-                return $line;
-            }
-        }
+        $parts = explode('|', $line);
 
-        return null;
+        return match ($parts[0]) {
+            'idle' => 'idle|'.$this->translator->get('health.queue.probe.idle'),
+            'draining-all' => 'draining|'.$this->translator->get('health.queue.probe.draining_all', [
+                'count' => $parts[1] ?? '0',
+            ]),
+            'draining' => 'draining|'.$this->translator->get('health.queue.probe.draining', [
+                'count' => $parts[1] ?? '0',
+                'age' => $parts[2] ?? '0',
+            ]),
+            'not-draining' => 'not-draining|'.$this->translator->get('health.queue.probe.not_draining', [
+                'count' => $parts[1] ?? '0',
+                'minutes' => $parts[2] ?? '0',
+            ]),
+            'not-checked' => 'not checked|'.$this->translator->get('health.queue.probe.not_checked', [
+                'message' => implode('|', array_slice($parts, 1)),
+            ]),
+            default => null,
+        };
     }
 
     /**
@@ -725,7 +783,7 @@ try {
     $pdo = new PDO('sqlite:'.$path);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (Throwable $e) {
-    echo 'not checked  '.$e->getMessage();
+    echo 'not-checked|'.$e->getMessage();
 
     return;
 }
@@ -742,13 +800,13 @@ try {
 
     [$undrained, $oldest] = $statement->fetch(PDO::FETCH_NUM);
 } catch (Throwable $e) {
-    echo 'not checked  '.$e->getMessage();
+    echo 'not-checked|'.$e->getMessage();
 
     return;
 }
 
 if ($queued === 0) {
-    echo 'idle  nothing queued';
+    echo 'idle|0';
 
     return;
 }
@@ -756,20 +814,18 @@ if ($queued === 0) {
 $age = $oldest === null ? 0 : $now - (int) $oldest;
 
 if ((int) $undrained === 0) {
-    echo 'draining  '.$queued.' queued, all being taken';
+    echo 'draining-all|'.$queued;
 
     return;
 }
 
 if ($age < 60) {
-    echo 'draining  '.$queued.' queued, oldest due '.$age.'s ago';
+    echo 'draining|'.$queued.'|'.$age;
 
     return;
 }
 
-echo 'NOT DRAINING, '.$undrained.' queued and the oldest has been due for '
-    .round($age / 60).' minutes with no worker taking it. A queue:work process may be running '
-    .'for a different install.';
+echo 'not-draining|'.$undrained.'|'.round($age / 60);
 PHP;
 
     private function database(): void
@@ -777,17 +833,20 @@ PHP;
         $path = $this->supervisor->databaseFile();
 
         if (! is_file($path)) {
-            $this->add('database', 'not created yet at '.$path, false);
+            $this->add('database', $this->translator->get('health.database.not_created', ['path' => $path]), false);
 
             return;
         }
 
         $size = (int) filesize($path);
-        $megabytes = round($size / 1048576, 1);
+        $megabytes = number_format($size / 1048576, 1);
 
         $this->add(
             'database',
-            sprintf('ok  %s  %.1f MB', basename($path), $megabytes),
+            $this->translator->get('health.database.ok', [
+                'file' => basename($path),
+                'size' => $megabytes,
+            ]),
             $size > 0,
         );
     }
@@ -806,7 +865,7 @@ PHP;
         if ($status === 'ok') {
             $this->add(
                 'logging',
-                'ok, and a diagnostics bundle can be written on request',
+                $this->translator->get('health.logging.ok'),
                 true,
             );
 
@@ -815,7 +874,7 @@ PHP;
 
         // Named as one failure. A reader who cannot write logs cannot send us a bundle either, and
         // the action is the same for both: free up the directory.
-        $this->add('logging', $status.' (so no bundle can be written either)', false);
+        $this->add('logging', $this->translator->get('health.logging.failed', ['status' => $status]), false);
     }
 
     /**
@@ -827,6 +886,6 @@ PHP;
             return;
         }
 
-        throw new RuntimeException('This install is not healthy. Run papyrus health for the detail.');
+        throw new RuntimeException($this->translator->get('health.assert'));
     }
 }

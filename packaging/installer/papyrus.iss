@@ -1,4 +1,4 @@
-; The Windows installer for Papyrus.
+﻿; The Windows installer for Papyrus.
 ;
 ; ## What this is for
 ;
@@ -97,6 +97,12 @@ DisableWelcomePage=no
 WizardStyle=modern
 AllowNoIcons=yes
 
+; A normal install shows the language picker and silent mode does not. `yes` is the documented way
+; to offer it whenever more than one [Languages] entry exists; Inno suppresses wizard pages,
+; including this one, when Setup runs with /SILENT or /VERYSILENT, and /LANG suppresses it too.
+ShowLanguageDialog=yes
+LanguageDetectionMethod=uilanguage
+
 OutputDir=..\..\build\dist
 OutputBaseFilename={#MyAppName}-{#MyAppVersion}-setup
 
@@ -123,7 +129,62 @@ UninstallDisplayIcon={app}\public\favicon.ico
 UninstallDisplayName={#MyAppName}
 
 [Languages]
+; English first, so it remains the default source language when Windows matches no other entry.
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+
+[CustomMessages]
+; The strings this installer owns. A plain entry is the English default; a language prefix
+; overrides it for that language only. `%n` is a line break and `%1` is the version argument.
+StartMenuComment=Start Papyrus
+DesktopShortcutComment=Start Papyrus
+DowngradeRefused=This installer is older than the version already installed (%1).%nNothing was changed. To roll back on purpose, run the previous installer with /FORCEDOWNGRADE after papyrus rollback.
+AlreadyInstalledConfirm=Papyrus is already installed here, and it may be running.%n%nInstall over it? Papyrus will be stopped first, and your library will not be touched.
+AlreadyInstalledDeclined=Papyrus is already installed here.%nNothing was changed.
+OlderLauncherWarning=This older Papyrus cannot confirm that every process closed.%n%n
+LauncherDidNotRun=Papyrus could not be stopped because its launcher did not run.%nNothing was changed. Close Papyrus and try again.
+LauncherFailed=Papyrus could not be stopped because its launcher failed.%nNothing was changed. Close Papyrus and try again.
+StillRunningSilent=Papyrus is still running, so the installer stopped before changing anything.%nClose Papyrus and run setup again.
+StillRunningRetry=Papyrus is still running. Close it from its window, then click Retry.
+StillRunningCancelled=Papyrus is still running.%nNothing was changed.
+
+spanish.StartMenuComment=Iniciar Papyrus
+spanish.DesktopShortcutComment=Iniciar Papyrus
+spanish.DowngradeRefused=Este instalador es más antiguo que la versión ya instalada (%1).%nNo se cambió nada. Para volver atrás a propósito, ejecuta el instalador anterior con /FORCEDOWNGRADE después de papyrus rollback.
+spanish.AlreadyInstalledConfirm=Papyrus ya está instalado aquí y puede que se esté ejecutando.%n%n¿Instalar encima? Primero se detendrá Papyrus y tu biblioteca no se tocará.
+spanish.AlreadyInstalledDeclined=Papyrus ya está instalado aquí.%nNo se cambió nada.
+spanish.OlderLauncherWarning=Esta versión anterior de Papyrus no puede confirmar que todos los procesos se hayan cerrado.%n%n
+spanish.LauncherDidNotRun=Papyrus no se pudo detener porque su lanzador no se ejecutó.%nNo se cambió nada. Cierra Papyrus e inténtalo de nuevo.
+spanish.LauncherFailed=Papyrus no se pudo detener porque su lanzador falló.%nNo se cambió nada. Cierra Papyrus e inténtalo de nuevo.
+spanish.StillRunningSilent=Papyrus sigue en ejecución, así que el instalador se detuvo antes de cambiar nada.%nCierra Papyrus y vuelve a ejecutar el instalador.
+spanish.StillRunningRetry=Papyrus sigue en ejecución. Ciérralo desde su ventana y luego haz clic en Reintentar.
+spanish.StillRunningCancelled=Papyrus sigue en ejecución.%nNo se cambió nada.
+
+french.StartMenuComment=Démarrer Papyrus
+french.DesktopShortcutComment=Démarrer Papyrus
+french.DowngradeRefused=Ce programme d'installation est plus ancien que la version déjà installée (%1).%nRien n'a été modifié. Pour revenir volontairement à une version antérieure, exécutez le programme d'installation précédent avec /FORCEDOWNGRADE après papyrus rollback.
+french.AlreadyInstalledConfirm=Papyrus est déjà installé ici et il est peut-être en cours d'exécution.%n%nVoulez-vous installer par-dessus ? Papyrus sera d'abord arrêté et votre bibliothèque ne sera pas modifiée.
+french.AlreadyInstalledDeclined=Papyrus est déjà installé ici.%nRien n'a été modifié.
+french.OlderLauncherWarning=Cette version plus ancienne de Papyrus ne peut pas confirmer que tous les processus se sont arrêtés.%n%n
+french.LauncherDidNotRun=Papyrus n'a pas pu être arrêté car son lanceur ne s'est pas exécuté.%nRien n'a été modifié. Fermez Papyrus et réessayez.
+french.LauncherFailed=Papyrus n'a pas pu être arrêté car son lanceur a échoué.%nRien n'a été modifié. Fermez Papyrus et réessayez.
+french.StillRunningSilent=Papyrus est toujours en cours d'exécution, le programme d'installation s'est donc arrêté avant de modifier quoi que ce soit.%nFermez Papyrus et relancez le programme d'installation.
+french.StillRunningRetry=Papyrus est toujours en cours d'exécution. Fermez-le depuis sa fenêtre, puis cliquez sur Réessayer.
+french.StillRunningCancelled=Papyrus est toujours en cours d'exécution.%nRien n'a été modifié.
+
+brazilianportuguese.StartMenuComment=Iniciar Papyrus
+brazilianportuguese.DesktopShortcutComment=Iniciar Papyrus
+brazilianportuguese.DowngradeRefused=Este instalador é mais antigo que a versão já instalada (%1).%nNada foi alterado. Para voltar de propósito, execute o instalador anterior com /FORCEDOWNGRADE depois de papyrus rollback.
+brazilianportuguese.AlreadyInstalledConfirm=O Papyrus já está instalado aqui e pode estar em execução.%n%nInstalar por cima? O Papyrus será interrompido primeiro e sua biblioteca não será alterada.
+brazilianportuguese.AlreadyInstalledDeclined=O Papyrus já está instalado aqui.%nNada foi alterado.
+brazilianportuguese.OlderLauncherWarning=Esta versão mais antiga do Papyrus não consegue confirmar que todos os processos foram fechados.%n%n
+brazilianportuguese.LauncherDidNotRun=Não foi possível parar o Papyrus porque o inicializador não foi executado.%nNada foi alterado. Feche o Papyrus e tente novamente.
+brazilianportuguese.LauncherFailed=Não foi possível parar o Papyrus porque o inicializador falhou.%nNada foi alterado. Feche o Papyrus e tente novamente.
+brazilianportuguese.StillRunningSilent=O Papyrus ainda está em execução, então o instalador parou antes de alterar qualquer coisa.%nFeche o Papyrus e execute o instalador novamente.
+brazilianportuguese.StillRunningRetry=O Papyrus ainda está em execução. Feche-o pela janela e clique em Tentar novamente.
+brazilianportuguese.StillRunningCancelled=O Papyrus ainda está em execução.%nNada foi alterado.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -136,9 +197,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\Papyrus.cmd"; IconFilename: "{app}\public\favicon.ico"; Comment: "Start Papyrus"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\Papyrus.cmd"; IconFilename: "{app}\public\favicon.ico"; Comment: "{cm:StartMenuComment}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Papyrus.cmd"; IconFilename: "{app}\public\favicon.ico"; Comment: "Start Papyrus"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Papyrus.cmd"; IconFilename: "{app}\public\favicon.ico"; Comment: "{cm:DesktopShortcutComment}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Papyrus.cmd"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
@@ -290,22 +351,18 @@ begin
      (CompareVersions(Installed, '{#MyAppVersion}') > 0) and
      (not ForcedDowngrade()) then
   begin
-    Result := 'This installer is older than the version already installed (' + Installed + ').' + #13#10 +
-              'Nothing was changed. To roll back on purpose, run the previous installer with ' +
-              '/FORCEDOWNGRADE after papyrus rollback.';
+    Result := FmtMessage(CustomMessage('DowngradeRefused'), [Installed]);
 
     Exit;
   end;
 
   if (not WizardSilent) and
      (MsgBox(
-       'Papyrus is already installed here, and it may be running.' + #13#10 + #13#10 +
-       'Install over it? Papyrus will be stopped first, and your library will not be touched.',
+       CustomMessage('AlreadyInstalledConfirm'),
        mbConfirmation, MB_YESNO
      ) = IDNO) then
   begin
-    Result := 'Papyrus is already installed here.' + #13#10 +
-              'Nothing was changed.';
+    Result := CustomMessage('AlreadyInstalledDeclined');
 
     Exit;
   end;
@@ -320,7 +377,7 @@ begin
   Older := '';
 
   if (Installed <> '') and (CompareVersions(Installed, '{#StopFixVersion}') < 0) then
-    Older := 'This older Papyrus cannot confirm that every process closed.' + #13#10 + #13#10;
+    Older := CustomMessage('OlderLauncherWarning');
 
   while True do
   begin
@@ -339,8 +396,7 @@ begin
       ResultCode
     ) then
     begin
-      Result := 'Papyrus could not be stopped because its launcher did not run.' + #13#10 +
-                'Nothing was changed. Close Papyrus and try again.';
+      Result := CustomMessage('LauncherDidNotRun');
 
       Exit;
     end;
@@ -350,27 +406,24 @@ begin
 
     if not StopLogSaysRunning(StopLog) then
     begin
-      Result := 'Papyrus could not be stopped because its launcher failed.' + #13#10 +
-                'Nothing was changed. Close Papyrus and try again.';
+      Result := CustomMessage('LauncherFailed');
 
       Exit;
     end;
 
     if WizardSilent then
     begin
-      Result := 'Papyrus is still running, so the installer stopped before changing anything.' + #13#10 +
-                'Close Papyrus and run setup again.';
+      Result := CustomMessage('StillRunningSilent');
 
       Exit;
     end;
 
     if MsgBox(
-      Older + 'Papyrus is still running. Close it from its window, then click Retry.',
+      Older + CustomMessage('StillRunningRetry'),
       mbConfirmation, MB_RETRYCANCEL
     ) = IDCANCEL then
     begin
-      Result := 'Papyrus is still running.' + #13#10 +
-                'Nothing was changed.';
+      Result := CustomMessage('StillRunningCancelled');
 
       Exit;
     end;

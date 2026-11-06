@@ -49,7 +49,12 @@ final class SnapshotCommand
         private readonly string $databaseFile,
         private readonly MangaSnapshot $manga = new MangaSnapshot,
         private readonly ReaderSnapshot $reader = new ReaderSnapshot,
-    ) {}
+        ?Translator $translator = null,
+    ) {
+        $this->translator = $translator ?? new Translator;
+    }
+
+    private readonly Translator $translator;
 
     /**
      * Build one wired to the launcher, which is how the entry point uses it.
@@ -63,6 +68,7 @@ final class SnapshotCommand
             $control,
             $supervisor->dataDirectory(),
             $supervisor->databaseFile(),
+            translator: $supervisor->translator(),
         );
     }
 
@@ -76,8 +82,8 @@ final class SnapshotCommand
 
         if ($options['unknown'] !== null) {
             $say('');
-            $say(sprintf('  There is no option %s.', $options['unknown']));
-            $say('  Nothing has been changed, because an unknown option is not a decision to go ahead.');
+            $say($this->translator->get('common.no_option', ['option' => $options['unknown']]));
+            $say($this->translator->get('common.unknown_option'));
 
             $this->usage($say);
 
@@ -102,10 +108,10 @@ final class SnapshotCommand
         ];
 
         $say('');
-        $say('  Papyrus snapshot');
+        $say($this->translator->get('snapshot.heading'));
         $say('');
-        $say('  Going to    '.$directory);
-        $say('  Both halves your reading history, and '.basename($this->mangaFile()));
+        $say($this->translator->get('snapshot.going_to', ['directory' => $directory]));
+        $say($this->translator->get('snapshot.both_halves', ['file' => basename($this->mangaFile())]));
 
         /*
          * The destination is checked before the run is written down, not after.
@@ -127,7 +133,7 @@ final class SnapshotCommand
             ]);
         } catch (RestoreRefused $e) {
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
             $say('');
             $say('  '.$e->getMessage());
             $say('');
@@ -145,7 +151,7 @@ final class SnapshotCommand
             );
         } catch (RestoreRefused $e) {
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
             $say('');
             $say('  '.$e->getMessage());
             $say('');
@@ -158,7 +164,7 @@ final class SnapshotCommand
 
         if (! $options['yes'] && ! $this->confirm($say)) {
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
 
             $this->abandon($record, 'declined, so the snapshot never started');
 
@@ -197,12 +203,9 @@ final class SnapshotCommand
             $this->listWhatIsThere($say, $directory, $paths, true);
 
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
             $say('');
-            $say('  Another Papyrus window is already running this install, as process '.$supervisor.'.');
-            $say('  Close that one first, or stop it there, then run this again. Papyrus is stopped and');
-            $say('  started by whoever is holding it open, and two of them at once would fight over');
-            $say('  the same processes.');
+            $say($this->translator->get('snapshot.other_launcher', ['pid' => $supervisor]));
             $say('');
 
             return 1;
@@ -214,12 +217,12 @@ final class SnapshotCommand
         $record->enter('stopping', 'asking the launcher to stop everything');
 
         $say('');
-        $say('  Stopping Papyrus...');
+        $say($this->translator->get('snapshot.stopping'));
 
         $stopped = $this->control->stop($say);
 
         if ($stopped === []) {
-            $say('  Nothing was running, so nothing needed stopping.');
+            $say($this->translator->get('snapshot.nothing_running'));
         }
 
         $wasRunning = $stopped !== [];
@@ -309,26 +312,22 @@ final class SnapshotCommand
     private function checkTarget(string $directory, array $targets): void
     {
         if (! is_dir($directory) && ! @mkdir($directory, 0o777, true) && ! is_dir($directory)) {
-            throw new RestoreRefused(sprintf(
-                'There is nowhere to put a backup: %s could not be created. Nothing has been changed.',
-                $directory,
-            ));
+            throw new RestoreRefused($this->translator->get('snapshot.target_not_created', [
+                'directory' => $directory,
+            ]));
         }
 
         if (! is_writable($directory)) {
-            throw (new RestoreRefused(sprintf(
-                'There is nowhere to put a backup: %s cannot be written to. Nothing has been changed.',
-                $directory,
-            )))->attempted($directory);
+            throw (new RestoreRefused($this->translator->get('snapshot.target_not_writable', [
+                'directory' => $directory,
+            ])))->attempted($directory);
         }
 
         foreach ($targets as $target) {
             if (file_exists($target)) {
-                throw (new RestoreRefused(sprintf(
-                    'There is already a file at %s. This snapshot will not replace it, because a backup '
-                    .'that quietly overwrote the previous one leaves nothing to go back to.',
-                    $target,
-                )))->attempted($target);
+                throw (new RestoreRefused($this->translator->get('snapshot.target_exists', [
+                    'path' => $target,
+                ])))->attempted($target);
             }
         }
     }
@@ -343,13 +342,10 @@ final class SnapshotCommand
     private function copyManga(string $target, ?int $wasRunningPid, array $pids, RunRecord $record): void
     {
         if (count($pids) > 1) {
-            throw (new RestoreRefused(sprintf(
-                'There are %d Suwayomi processes answering for this install (pids %s), so there is no way '
-                .'to tell which one is writing the manga database. Copying it now could catch it '
-                .'mid-write. Nothing has been copied.',
-                count($pids),
-                implode(', ', $pids),
-            )))->attempted(implode(', ', $pids));
+            throw (new RestoreRefused($this->translator->get('snapshot.manga_multiple', [
+                'count' => count($pids),
+                'pids' => implode(', ', $pids),
+            ])))->attempted(implode(', ', $pids));
         }
 
         $record->enter('copying_manga_half', $wasRunningPid === null
@@ -357,10 +353,7 @@ final class SnapshotCommand
             : 'waiting for Suwayomi (pid '.$wasRunningPid.') to go');
 
         if (! $this->manga->tryCapture($this->mangaFile(), $target, $wasRunningPid, 2)) {
-            throw (new RestoreRefused(
-                'The manga database was not copied, so there is no pair to record and no manifest has '
-                .'been written. Nothing has been claimed as backed up.',
-            ))->attempted($target);
+            throw (new RestoreRefused($this->translator->get('snapshot.manga_not_copied')))->attempted($target);
         }
 
         /*
@@ -420,11 +413,9 @@ final class SnapshotCommand
 
         foreach ([$paths['reader'], $paths['manga']] as $half) {
             if (! is_file($half)) {
-                throw (new RestoreRefused(sprintf(
-                    'The manifest cannot be written because %s is not there, so the two files would not '
-                    .'be a pair. Nothing has been recorded as backed up.',
-                    basename($half),
-                )))->attempted($half);
+                throw (new RestoreRefused($this->translator->get('snapshot.manifest_half_missing', [
+                    'file' => basename($half),
+                ])))->attempted($half);
             }
         }
 
@@ -436,10 +427,7 @@ final class SnapshotCommand
          * answer only when the reader cannot tell them apart, and this is a case where they cannot.
          */
         if ($held === null) {
-            throw new RestoreRefused(
-                'What the reader database held was never established, so the manifest cannot say, and a '
-                .'manifest that cannot say is worse than none.',
-            );
+            throw new RestoreRefused($this->translator->get('snapshot.manifest_no_counts'));
         }
 
         $encoded = json_encode([
@@ -461,11 +449,9 @@ final class SnapshotCommand
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
         if ($encoded === false || @file_put_contents($paths['manifest'], $encoded) === false) {
-            throw (new RestoreRefused(sprintf(
-                'The manifest could not be written to %s. Both halves are on disk but unbound, so '
-                .'nothing has been recorded as a backup you can restore.',
-                $paths['manifest'],
-            )))->attempted($paths['manifest']);
+            throw (new RestoreRefused($this->translator->get('snapshot.manifest_write_failed', [
+                'path' => $paths['manifest'],
+            ])))->attempted($paths['manifest']);
         }
 
         $record->finish('writing_manifest', basename($paths['manifest']).', naming both halves');
@@ -505,7 +491,7 @@ final class SnapshotCommand
          */
         if ($wasRunning) {
             $say('');
-            $say('  Starting Papyrus again...');
+            $say($this->translator->get('snapshot.restarting'));
         }
 
         $started = $wasRunning ? $this->control->start($say) : [];
@@ -515,8 +501,7 @@ final class SnapshotCommand
             $this->abandon($record, 'the install did not come back up, so nothing after it was reached');
 
             $say('');
-            $say('  Papyrus did not come back up. The lines above say why.');
-            $say('  Whatever reached disk before that is listed below either way.');
+            $say($this->translator->get('snapshot.not_back'));
             $say('');
 
             $this->listWhatIsThere($say, $directory, $paths, $failure !== null);
@@ -530,8 +515,7 @@ final class SnapshotCommand
             $this->abandon($record, 'the snapshot stopped before reaching this');
 
             $say('');
-            $say('  The snapshot did not complete, so there is no pair and nothing has been recorded');
-            $say('  as backed up.');
+            $say($this->translator->get('snapshot.failed'));
 
             foreach (explode("\n", $failure->getMessage()) as $line) {
                 $say('  '.$line);
@@ -543,13 +527,12 @@ final class SnapshotCommand
         }
 
         $say('');
-        $say('  A pair has been written to');
+        $say($this->translator->get('snapshot.pair_written'));
         $say('    '.$directory);
         $say('');
-        $say('  It holds '.$held?->describe());
+        $say($this->translator->get('snapshot.holds', ['counts' => $held?->describe($this->translator)]));
         $say('');
-        $say('  To put it back later, stop Papyrus and run');
-        $say('    papyrus restore "'.$paths['manifest'].'"');
+        $say($this->translator->get('snapshot.restore_hint', ['manifest' => $paths['manifest']]));
         $say('');
 
         return 0;
@@ -567,20 +550,21 @@ final class SnapshotCommand
     private function listWhatIsThere(callable $say, string $directory, array $paths, bool $incomplete): void
     {
         $say('');
-        $say('  '.$directory.' now holds');
+        $say($this->translator->get('snapshot.now_holds', ['directory' => $directory]));
 
         foreach (['reader', 'manga', 'manifest'] as $which) {
             $say(sprintf(
                 '    %-44s %s',
                 basename($paths[$which]),
-                is_file($paths[$which]) ? number_format((int) filesize($paths[$which])).' bytes' : 'not written',
+                is_file($paths[$which])
+                    ? $this->translator->get('snapshot.bytes', ['bytes' => number_format((int) filesize($paths[$which]))])
+                    : $this->translator->get('snapshot.not_written'),
             ));
         }
 
         if ($incomplete) {
             $say('');
-            $say('  There is no manifest, so these are not a pair and papyrus restore will refuse them.');
-            $say('  That is deliberate. Half a pair restored is a library that reads as empty.');
+            $say($this->translator->get('snapshot.no_manifest'));
         }
 
         $say('');
@@ -617,11 +601,11 @@ final class SnapshotCommand
     private function confirm(callable $say): bool
     {
         $say('');
-        $say('  Papyrus will stop for a moment while this runs. Go ahead? [y/N] ');
+        $say($this->translator->get('snapshot.confirm'));
 
         $answer = fgets(STDIN);
 
-        return is_string($answer) && in_array(strtolower(trim($answer)), ['y', 'yes'], true);
+        return is_string($answer) && $this->translator->isYes($answer);
     }
 
     private function mangaFile(): string
@@ -676,17 +660,15 @@ final class SnapshotCommand
     private function usage(callable $say): void
     {
         $say('');
-        $say('  papyrus snapshot');
+        $say($this->translator->get('snapshot.usage.heading'));
         $say('');
-        $say('    Takes both databases as one pair, or takes neither. Papyrus is stopped while it runs');
-        $say('    and started again afterwards, including when it fails.');
+        $say($this->translator->get('snapshot.usage.summary'));
         $say('');
-        $say('    --into=DIR  Where to write it. Defaults to the backups folder in your data directory.');
-        $say('    --yes       Do not ask first. For a script, not for a person.');
-        $say('    --help      This.');
+        $say($this->translator->get('snapshot.usage.into'));
+        $say($this->translator->get('snapshot.usage.yes'));
+        $say($this->translator->get('snapshot.usage.help'));
         $say('');
-        $say('    The two databases point at each other, so one half on its own restores into a library');
-        $say('    that reads as empty with nothing saying why. That is why both go together.');
+        $say($this->translator->get('snapshot.usage.both'));
         $say('');
     }
 }

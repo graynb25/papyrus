@@ -1559,9 +1559,11 @@ search, sources, downloads, insights, health, settings appearance and backups, a
 page in all three locales. The reader page and the tour beyond its second step were not
 visually exercised because no live source was available. The pass found the search filter
 hint and ComicInfo labels still in English, and the French source action buttons clipped on
-a narrow screen; all three are fixed. Legal pages, the FAQ, the installer, the launcher, and
-raw source or server error text remain English. The catalog parity and locale route tests
-cover key parity, placeholders, plural branches, and representative pages.
+a narrow screen; all three are fixed. The Windows installer now offers the same four
+languages, and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language,
+then English. Legal pages, the FAQ, raw source or server error text, and the diagnostic
+bundle's internal text files remain English. The catalog parity and locale route tests cover
+key parity, placeholders, plural branches, and representative pages.
 
 ## How each improvement is verified
 

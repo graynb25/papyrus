@@ -33,19 +33,21 @@ final class RestoreOutcome
      *
      * @return list<string>
      */
-    public function lines(): array
+    public function lines(Translator $translator): array
     {
         return [
-            sprintf('Restored %s.', $this->pair->describe()),
-            sprintf('  reader half : %s', $this->pair->papyrusFile),
-            sprintf('  manga half  : %s, from Suwayomi %s', $this->pair->suwayomiFile, $this->pair->suwayomiVersion),
-            sprintf(
-                '  it now holds : %s series and %s chapter states',
-                number_format($this->seriesStates),
-                number_format($this->chapterStates),
-            ),
+            $translator->get('restore.restored', ['description' => $this->pair->describe($translator)]),
+            $translator->get('restore.reader_half', ['file' => $this->pair->papyrusFile]),
+            $translator->get('restore.manga_half', [
+                'file' => $this->pair->suwayomiFile,
+                'version' => $this->pair->suwayomiVersion,
+            ]),
+            $translator->get('restore.holds', [
+                'series' => number_format($this->seriesStates),
+                'chapters' => number_format($this->chapterStates),
+            ]),
             '',
-            'Your previous files were kept rather than deleted, in case this was the wrong backup:',
+            $translator->get('restore.previous_kept'),
         ];
     }
 

@@ -245,6 +245,16 @@ resolve the locale in the exception path in `bootstrap/app.php`; JSON responses 
 The locale switcher is built from `catalogued` and shows each language's native name. The
 auth footer, the sidebar, and Settings > Appearance all use the same control.
 
+The packaged launcher has its own standalone catalogues under `packaging/launcher/lang/`.
+It cannot use Laravel, because it has to keep working when the application does not. It
+resolves `PAPYRUS_LOCALE`, then the Windows UI language, then English. `Papyrus.cmd` stays
+ASCII because cmd.exe misreads accented UTF-8 in a batch file; it switches to code page 65001
+and reads the translated guard messages from `packaging/launcher/lang/cmd/`.
+
+The installer is an Inno Setup script. `[Languages]` names the four languages, Inno's
+language files supply the wizard text, and `[CustomMessages]` carries the messages the
+installer owns. The script is UTF-8 with a BOM so Inno reads its accents correctly.
+
 ### Where the code is
 
 | Directory | What lives there |

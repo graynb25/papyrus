@@ -1,0 +1,5 @@
+Papyrus cannot start: the PHP runtime is missing from
+  "%PAPYRUS_ROOT%runtime\bin"
+<blank>
+This install is incomplete. Reinstalling Papyrus will fix it.
+<blank>

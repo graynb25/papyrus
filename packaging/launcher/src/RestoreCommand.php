@@ -30,7 +30,12 @@ final class RestoreCommand
         private readonly string $dataDirectory,
         private readonly string $databaseFile,
         private readonly FileMover $mover = new LocalFileMover,
-    ) {}
+        ?Translator $translator = null,
+    ) {
+        $this->translator = $translator ?? new Translator;
+    }
+
+    private readonly Translator $translator;
 
     /**
      * Build one wired to the launcher, which is how the entry point uses it.
@@ -41,6 +46,7 @@ final class RestoreCommand
             new SupervisorControl($supervisor),
             $supervisor->dataDirectory(),
             $supervisor->databaseFile(),
+            translator: $supervisor->translator(),
         );
     }
 
@@ -61,8 +67,8 @@ final class RestoreCommand
          */
         if ($options['unknown'] !== null) {
             $say('');
-            $say(sprintf('  There is no option %s.', $options['unknown']));
-            $say('  Nothing has been changed, because an unknown option is not a decision to go ahead.');
+            $say($this->translator->get('common.no_option', ['option' => $options['unknown']]));
+            $say($this->translator->get('common.unknown_option'));
 
             $this->usage($say);
 
@@ -93,7 +99,7 @@ final class RestoreCommand
             $pair = BackupPair::read($options['manifest'], dirname($options['manifest']));
         } catch (RestoreRefused $e) {
             $say('');
-            $say('  This backup cannot be restored. Nothing has been changed.');
+            $say($this->translator->get('restore.cannot'));
             $say('  '.$e->getMessage());
 
             return 1;
@@ -105,22 +111,22 @@ final class RestoreCommand
 
         if (! $options['yes'] && ! $this->confirm($say)) {
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
 
             return 0;
         }
 
         // Stopped here, not above, because everything above this line is free to refuse.
         $say('');
-        $say('  Stopping Papyrus...');
+        $say($this->translator->get('restore.stopping'));
 
         $stopped = $this->control->stop($say);
 
         if ($stopped === []) {
-            $say('  Nothing was running, so nothing needed stopping.');
+            $say($this->translator->get('restore.nothing_running'));
         }
 
-        $say('  Putting the databases back...');
+        $say($this->translator->get('restore.putting_back'));
 
         try {
             $outcome = (new Restorer($this->mover))->restore($pair, $live);
@@ -184,20 +190,19 @@ final class RestoreCommand
     private function describe(callable $say, BackupPair $pair, array $live): void
     {
         $say('');
-        $say('  About to restore');
-        $say('    backup  '.$pair->describe());
+        $say($this->translator->get('restore.about'));
+        $say($this->translator->get('restore.backup', ['description' => $pair->describe($this->translator)]));
         $say('');
-        $say('  This will replace BOTH of these, together:');
+        $say($this->translator->get('restore.replace_both'));
 
-        foreach (['papyrus' => 'your reading', 'suwayomi' => 'your manga'] as $half => $label) {
+        foreach (['papyrus', 'suwayomi'] as $half) {
             $say(sprintf('    %-9s %s', $half, $live[$half]['target']));
         }
 
         $say('');
-        $say('  The two databases point at each other, so restoring only one of them would leave');
-        $say('  your library looking empty with nothing saying why. Both go in or neither does.');
+        $say($this->translator->get('restore.explain'));
         $say('');
-        $say('  Whatever is there now is kept, not deleted, and you will be told where.');
+        $say($this->translator->get('restore.kept'));
     }
 
     /**
@@ -209,11 +214,11 @@ final class RestoreCommand
      */
     private function confirm(callable $say): bool
     {
-        $say('  Go ahead? [y/N] ');
+        $say($this->translator->get('restore.confirm'));
 
         $answer = fgets(STDIN);
 
-        return is_string($answer) && in_array(strtolower(trim($answer)), ['y', 'yes'], true);
+        return is_string($answer) && $this->translator->isYes($answer);
     }
 
     /**
@@ -226,14 +231,14 @@ final class RestoreCommand
     {
         if ($wasRunning) {
             $say('');
-            $say('  Starting Papyrus again...');
+            $say($this->translator->get('restore.starting'));
 
             $this->control->start($say);
         }
 
         $say('');
 
-        foreach ($outcome->lines() as $line) {
+        foreach ($outcome->lines($this->translator) as $line) {
             $say($line);
         }
 
@@ -253,13 +258,13 @@ final class RestoreCommand
     {
         if ($wasRunning) {
             $say('');
-            $say('  Starting Papyrus again...');
+            $say($this->translator->get('restore.starting'));
 
             $this->control->start($say);
         }
 
         $say('');
-        $say('  The restore did not complete.');
+        $say($this->translator->get('restore.failed'));
 
         foreach (explode("\n", $e->getMessage()) as $line) {
             $say('  '.$line);
@@ -297,15 +302,14 @@ final class RestoreCommand
     private function usage(callable $say): void
     {
         $say('');
-        $say('  papyrus restore <backup.json>');
+        $say($this->translator->get('restore.usage.heading'));
         $say('');
-        $say('    Puts both databases back as one operation, or leaves both as they were.');
+        $say($this->translator->get('restore.usage.summary'));
         $say('');
-        $say('    --yes    Do not ask first. For a script, not for a person.');
-        $say('    --help   This.');
+        $say($this->translator->get('restore.usage.yes'));
+        $say($this->translator->get('restore.usage.help'));
         $say('');
-        $say('    Papyrus is stopped while the files are replaced and started again afterwards,');
-        $say('    including when the restore fails. Whatever is there now is kept, not deleted.');
+        $say($this->translator->get('restore.usage.after'));
         $say('');
     }
 }

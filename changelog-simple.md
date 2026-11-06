@@ -20,8 +20,11 @@ have had an independent AI language review, but no native speaker has checked th
 search filter hint and local-source labels are translated, and the source buttons fit a
 narrow screen.
 
-Legal pages, the FAQ, the installer, the launcher, and technical error text from a source or
-the manga server are still in English.
+The Windows installer now offers the same four languages, and the launcher follows
+`PAPYRUS_LOCALE`, then the Windows display language, then English.
+
+Legal pages, the FAQ, technical error text from a source or the manga server, and the
+diagnostic bundle's internal text files are still in English.
 
 ## Version 1.5.6, 5 November 2026
 

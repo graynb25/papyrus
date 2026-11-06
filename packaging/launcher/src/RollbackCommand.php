@@ -35,7 +35,12 @@ final class RollbackCommand
         private readonly MigrationRecord $record,
         private readonly string $databaseFile,
         private readonly FileMover $mover = new LocalFileMover,
-    ) {}
+        ?Translator $translator = null,
+    ) {
+        $this->translator = $translator ?? new Translator;
+    }
+
+    private readonly Translator $translator;
 
     public static function forSupervisor(Supervisor $supervisor): self
     {
@@ -46,6 +51,7 @@ final class RollbackCommand
             $control,
             new MigrationRecord($supervisor->dataDirectory(), dirname(__DIR__, 3)),
             $supervisor->databaseFile(),
+            translator: $supervisor->translator(),
         );
     }
 
@@ -58,8 +64,8 @@ final class RollbackCommand
 
         if ($options['unknown'] !== null) {
             $say('');
-            $say(sprintf('  There is no option %s.', $options['unknown']));
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.no_option', ['option' => $options['unknown']]));
+            $say($this->translator->get('rollback.unknown_option'));
             $this->usage($say);
 
             return 1;
@@ -79,8 +85,8 @@ final class RollbackCommand
 
         if (! is_string($snapshot) || $snapshot === '') {
             $say('');
-            $say('  There is no recorded pre-migration snapshot to roll back to.');
-            $say('  Pass --snapshot=<path> with a reader-half file from the reader-snapshots folder.');
+            $say($this->translator->get('rollback.no_snapshot'));
+            $say($this->translator->get('rollback.no_snapshot_hint'));
 
             return 1;
         }
@@ -97,43 +103,46 @@ final class RollbackCommand
 
         if ($problem !== null) {
             $say('');
-            $say('  This snapshot cannot be used. Nothing has been changed.');
+            $say($this->translator->get('rollback.cannot_use'));
             $say('  '.$problem);
 
             return 1;
         }
 
         $say('');
-        $say('  Snapshot: '.$snapshot);
+        $say($this->translator->get('rollback.snapshot', ['path' => $snapshot]));
 
         if (is_array($record)) {
             $version = $record['from_version'] ?? null;
             $commit = $record['from_commit'] ?? null;
 
             if (is_string($version) && $version !== '') {
-                $say('  Taken by Papyrus '.$version.(is_string($commit) && $commit !== '' ? ' ('.$commit.')' : ''));
+                $say($this->translator->get('rollback.taken_by', [
+                    'version' => $version,
+                    'commit' => is_string($commit) && $commit !== '' ? ' ('.$commit.')' : '',
+                ]));
             }
         }
 
-        $say('  Current database: '.$this->databaseFile);
+        $say($this->translator->get('rollback.current_database', ['path' => $this->databaseFile]));
 
         if (! $options['yes'] && ! $this->confirm($say)) {
             $say('');
-            $say('  Nothing has been changed.');
+            $say($this->translator->get('common.nothing_changed'));
 
             return 0;
         }
 
         if (($pid = $this->facts->supervisorPid()) !== null) {
             $say('');
-            $say(sprintf('  Another launcher (pid %d) is running this install.', $pid));
-            $say('  Close it, then run rollback from a terminal.');
+            $say($this->translator->get('rollback.other_launcher', ['pid' => $pid]));
+            $say($this->translator->get('rollback.other_launcher_hint'));
 
             return 1;
         }
 
         $say('');
-        $say('  Stopping Papyrus...');
+        $say($this->translator->get('rollback.stopping'));
 
         $stopped = $this->control->stop($say);
 
@@ -143,7 +152,7 @@ final class RollbackCommand
         );
 
         if ($failed !== []) {
-            $say('  Papyrus did not stop, so the database was not touched.');
+            $say($this->translator->get('rollback.did_not_stop'));
 
             return 1;
         }
@@ -163,8 +172,8 @@ final class RollbackCommand
             @unlink($temporary);
             $this->restoreCurrent($backup, $say);
             $say('');
-            $say('  The rollback did not finish: '.$e->getMessage());
-            $say('  The database from before the rollback was put back.');
+            $say($this->translator->get('rollback.did_not_finish', ['message' => $e->getMessage()]));
+            $say($this->translator->get('rollback.put_back'));
 
             return 1;
         }
@@ -173,18 +182,18 @@ final class RollbackCommand
 
         if ($problem !== null) {
             $say('');
-            $say('  The restored database did not open cleanly: '.$problem);
-            $say('  The database from before the rollback is at '.$backup['target'].'.');
+            $say($this->translator->get('rollback.restored_problem', ['problem' => $problem]));
+            $say($this->translator->get('rollback.backup_at', ['path' => $backup['target']]));
 
             return 1;
         }
 
         $say('');
-        $say('  Restored the reader database from '.$snapshot.'.');
-        $say('  The database from before the rollback is at '.$backup['target'].'.');
-        $say('  Its write-ahead log and shared-memory file, if any, are beside it.');
-        $say('  Reinstall the Papyrus version you upgraded from, then start it.');
-        $say('  If that installer refuses the downgrade, run it with /FORCEDOWNGRADE.');
+        $say($this->translator->get('rollback.restored', ['path' => $snapshot]));
+        $say($this->translator->get('rollback.backup_at', ['path' => $backup['target']]));
+        $say($this->translator->get('rollback.wal_note'));
+        $say($this->translator->get('rollback.reinstall'));
+        $say($this->translator->get('rollback.forcedowngrade'));
 
         return 0;
     }
@@ -226,12 +235,12 @@ final class RollbackCommand
                 }
             }
 
-            $say('  Could not save the current database, so nothing was changed: '.$e->getMessage());
+            $say($this->translator->get('rollback.could_not_save', ['message' => $e->getMessage()]));
 
             return null;
         }
 
-        $say('  Current database saved to '.$backup.'.');
+        $say($this->translator->get('rollback.saved', ['path' => $backup]));
 
         return ['target' => $backup, 'files' => $moved];
     }
@@ -247,8 +256,11 @@ final class RollbackCommand
             try {
                 $this->mover->move($saved, $original);
             } catch (Throwable $e) {
-                $say('  Could not put '.$original.' back: '.$e->getMessage());
-                $say('  It is still at '.$saved.'.');
+                $say($this->translator->get('rollback.could_not_put_back', [
+                    'path' => $original,
+                    'message' => $e->getMessage(),
+                ]));
+                $say($this->translator->get('rollback.still_at', ['path' => $saved]));
             }
         }
     }
@@ -278,7 +290,7 @@ final class RollbackCommand
             }
 
             if (! hash_equals(strtolower($record['snapshot_sha256']), $digest)) {
-                return 'The snapshot digest does not match the one recorded before the migration.';
+                return $this->translator->get('rollback.digest_mismatch');
             }
         }
 
@@ -288,20 +300,20 @@ final class RollbackCommand
     private function databaseProblem(string $path): ?string
     {
         if (! is_file($path) || filesize($path) === 0) {
-            return 'There is no file at '.$path.', or it is empty.';
+            return $this->translator->get('rollback.no_file', ['path' => $path]);
         }
 
         $handle = @fopen($path, 'rb');
 
         if ($handle === false) {
-            return 'Could not read '.$path.'.';
+            return $this->translator->get('rollback.could_not_read', ['path' => $path]);
         }
 
         $header = fread($handle, strlen(self::SQLITE_HEADER));
         fclose($handle);
 
         if ($header !== self::SQLITE_HEADER) {
-            return 'The file is not a SQLite database.';
+            return $this->translator->get('rollback.not_sqlite');
         }
 
         return null;
@@ -309,12 +321,14 @@ final class RollbackCommand
 
     private function confirm(callable $say): bool
     {
-        $say('  This replaces the reader database with the snapshot.');
-        $say('  Type "yes" to continue: ');
+        $word = $this->translator->get('rollback.confirm_word');
+
+        $say($this->translator->get('rollback.confirm_replace'));
+        $say($this->translator->get('rollback.confirm_type', ['word' => $word]));
 
         $line = fgets(STDIN);
 
-        return is_string($line) && trim($line) === 'yes';
+        return is_string($line) && strtolower(trim($line)) === strtolower($word);
     }
 
     /**
@@ -343,11 +357,11 @@ final class RollbackCommand
     private function usage(callable $say): void
     {
         $say('');
-        $say('  Usage: papyrus.php rollback [--snapshot=<path>] [--yes]');
+        $say($this->translator->get('rollback.usage'));
         $say('');
-        $say('  Restores the reader database from the snapshot taken before the last migration.');
-        $say('  Without --snapshot, the path recorded in last-migration.json is used.');
-        $say('  The current database is saved beside it before anything is replaced.');
-        $say('  This command does not start Papyrus; reinstall the previous version afterwards.');
+        $say($this->translator->get('rollback.usage.summary'));
+        $say($this->translator->get('rollback.usage.recorded'));
+        $say($this->translator->get('rollback.usage.saved'));
+        $say($this->translator->get('rollback.usage.no_start'));
     }
 }

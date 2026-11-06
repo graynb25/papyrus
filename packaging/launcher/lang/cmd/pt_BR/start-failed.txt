@@ -1,0 +1,4 @@
+O Papyrus não iniciou. As linhas acima dizem por quê.
+<blank>
+Esta janela fica aberta para que elas possam ser lidas ou copiadas em um relatório de erro.
+Pressione qualquer tecla para fechá-la.

@@ -33,8 +33,13 @@ Portuguese are AI drafts that have had an independent AI language review; native
 not been performed, and none of them should be described as native-reviewed. Visual QA is
 complete at desktop and mobile widths for the tested web surfaces. The pass translated the
 search filter hint and ComicInfo labels, and the source action buttons now wrap on narrow
-screens. Legal pages, the FAQ, the installer, the launcher, and raw source or server error
-text remain English.
+screens.
+
+The Windows installer offers a language picker for the same four languages, and the packaged
+launcher follows `PAPYRUS_LOCALE`, then the Windows UI language, then English. The launcher
+keeps its own standalone catalogues so it works when the application does not. Legal pages,
+the FAQ, raw source or server error text, and the diagnostic bundle's internal text files
+remain English.
 
 ## 1.5.6 - 2026-11-05
 

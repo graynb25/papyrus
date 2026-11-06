@@ -156,8 +156,17 @@ test rather than falling back silently. `SpanishCatalogTest` also reads literal 
 `trans_choice()` calls in the covered reader-facing files, including concatenated strings,
 so a sentence added there without a catalog entry fails the test.
 
-Legal pages, the FAQ, the installer, the launcher, and raw source, server, passkey, or
-exception text remain English by scope.
+The packaged launcher has its own catalogues under `packaging/launcher/lang/`. They are
+plain PHP arrays so the launcher works without Laravel. Add the same key to `en.php`, `es.php`,
+`fr.php`, and `pt_BR.php`. The batch guard messages under `packaging/launcher/lang/cmd/` stay
+ASCII-safe fragments; `Papyrus.cmd` itself must remain ASCII because cmd.exe misreads accented
+UTF-8 in a batch file. Update `packaging/installer/papyrus.iss` for installer messages: add
+the English `[CustomMessages]` entry and the `spanish.`, `french.`, and
+`brazilianportuguese.` variants. Keep the file UTF-8 with a BOM.
+
+Legal pages, the FAQ, raw source, server, passkey, or exception text, and the diagnostic
+bundle's internal text files remain English by scope. The installer's `pause` prompt and
+cmd.exe's `Access is denied.` cannot be localized from batch.
 
 ## Tests
 

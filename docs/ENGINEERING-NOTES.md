@@ -7718,6 +7718,37 @@ The local Flux toast view at `resources/views/flux/toast/index.blade.php` must k
 locale into the cached HTML: a Spanish render left the next English render with a Spanish
 aria-label. Re-diff the local copy against the vendor view on every Flux upgrade.
 
+## 18. Packaged installer and launcher localization
+
+The launcher cannot use Laravel because it must keep working when the application does not.
+Its catalogues are plain PHP arrays under `packaging/launcher/lang/`, and
+`packaging/launcher/src/Translator.php` resolves `PAPYRUS_LOCALE`, then the Windows UI
+language list, then `LocaleName`, then English. `pt-PT` is deliberately not folded into
+`pt_BR`; unsupported tags fall through rather than refusing. The catalogues carry the same
+209 keys and the same placeholders. The installer scans the stop log for `did not stop`, so
+every translated stop-failure line keeps that English phrase and translates the explanation
+after it.
+
+`Papyrus.cmd` stays ASCII. Measured: cmd.exe loses the first character of accented UTF-8
+lines without a BOM, and a BOM makes the first line an unknown command. The script switches
+to code page 65001 and reads the guard text from `packaging/launcher/lang/cmd/{locale}/`.
+It calls `reg.exe` and `findstr.exe` by absolute path under `%SystemRoot%\System32`, because
+the install directory is reader-writable and a bare name could resolve to a file beside it.
+A batch fragment may contain `<blank>` for an empty line, because `for /f` skips empty lines.
+
+The installer script is UTF-8 with a BOM, which Inno Setup 6 needs to read the accents in
+`[CustomMessages]`. English is first in `[Languages]`, followed by the shipped Spanish,
+French, and Brazilian Portuguese files. `ShowLanguageDialog=yes` and
+`LanguageDetectionMethod=uilanguage` let a normal install pick a language; Inno suppresses the
+page under its silent flags. Every `[Code]` message is a `CustomMessage()` or `FmtMessage()`
+entry, and `InstallerLanguagesTest` checks that every name used exists in all four languages.
+
+A candidate build uses `--no-record` on `build-installer.php` and `build-portable.php`. It
+writes the manifest beside the artifact but does not replace the committed
+`releases/<version>.json`; a release build omits the flag. The launcher diagnostic bundle's
+internal text files, `pause`, cmd.exe's `Access is denied.`, and raw lower-layer exception
+text remain English.
+
 ---
 
 265. **A history rewrite changes the documents, not just the commits.**

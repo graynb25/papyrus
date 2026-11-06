@@ -334,6 +334,90 @@ class HealthTest extends TestCase
     }
 
     /**
+     * The real probe's structured answer carries the translated sentence, not its state token.
+     *
+     * The child that reads the jobs table cannot translate its own output, so it prints a stable
+     * state before a `|` and the parent replaces the rest with the reader's language. The state is
+     * a decision, the sentence is what a reader sees, and showing the raw token would be neither.
+     */
+    public function test_a_structured_queue_answer_shows_the_sentence_without_the_state(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'draining|vaciando  40 en cola, todos se están tomando',
+        )->render();
+
+        $this->assertStringContainsString('vaciando  40 en cola, todos se están tomando', $report);
+        $this->assertStringNotContainsString('draining|', $report);
+        $this->assertDoesNotMatchRegularExpression('/FAIL\s+queue/', $report);
+    }
+
+    public function test_a_structured_not_draining_answer_is_a_failure(): void
+    {
+        $report = $this->healthWithQueue(
+            $this->supervisor(['queue', 'scheduler']),
+            'not-draining|NO ESTÁ VACIANDO, 1 en cola y el más antiguo lleva 70 minutos vencido',
+        )->render();
+
+        $this->assertMatchesRegularExpression('/FAIL\s+queue\s+NO ESTÁ VACIANDO/', $report);
+        $this->assertStringNotContainsString('not-draining|', $report);
+    }
+
+    /**
+     * The child probe and the parent agree on a stable state before the translated sentence.
+     *
+     * The child cannot translate, so it prints `state|numbers` and the parent formats the reader's
+     * language from the numbers. This runs the real child against a real SQLite file in the test
+     * scratch directory, because a protocol that only exists in a string constant is a protocol
+     * nothing has ever spoken.
+     */
+    public function test_the_queue_probe_prints_a_stable_state_before_its_numbers(): void
+    {
+        $directory = $this->scratchPath('papyrus-queue-probe');
+        $script = $directory.DIRECTORY_SEPARATOR.'probe.php';
+        $database = $directory.DIRECTORY_SEPARATOR.'jobs.sqlite';
+
+        $probe = (new \ReflectionClassConstant(Health::class, 'QUEUE_PROBE'))->getValue();
+
+        $this->assertIsString($probe);
+        file_put_contents($script, $probe);
+
+        $pdo = new \PDO('sqlite:'.$database);
+        $pdo->exec('CREATE TABLE jobs (id INTEGER PRIMARY KEY, reserved_at INTEGER, available_at INTEGER)');
+
+        $this->assertSame('idle|0', $this->runQueueProbe($script, $database));
+
+        $pdo->exec('INSERT INTO jobs (reserved_at, available_at) VALUES (NULL, '.(time() + 3600).')');
+        $this->assertSame('draining-all|1', $this->runQueueProbe($script, $database));
+
+        $pdo->exec('DELETE FROM jobs');
+        $pdo->exec('INSERT INTO jobs (reserved_at, available_at) VALUES (NULL, '.(time() - 10).')');
+        $this->assertMatchesRegularExpression('/^draining\|1\|\d+$/', $this->runQueueProbe($script, $database));
+
+        $pdo->exec('DELETE FROM jobs');
+        $pdo->exec('INSERT INTO jobs (reserved_at, available_at) VALUES (NULL, '.(time() - 120).')');
+        $this->assertMatchesRegularExpression('/^not-draining\|1\|\d+$/', $this->runQueueProbe($script, $database));
+
+        $this->assertStringStartsWith('not-checked|', $this->runQueueProbe($script, $directory.DIRECTORY_SEPARATOR.'missing.sqlite'));
+    }
+
+    private function runQueueProbe(string $script, string $database): string
+    {
+        $output = [];
+        $status = 1;
+
+        exec(
+            escapeshellarg(PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($database).' 2>&1',
+            $output,
+            $status,
+        );
+
+        $this->assertSame(0, $status, 'the queue probe exited non-zero: '.implode(' ', $output));
+
+        return trim(implode(' ', $output));
+    }
+
+    /**
      * A health check whose scheduler silence is a number rather than a file.
      *
      * The production answer is the scheduler log's own modification time, which is the right thing

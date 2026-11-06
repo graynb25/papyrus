@@ -1,0 +1,10 @@
+Papyrus ne peut pas démarrer : Windows a refusé d'exécuter le moteur PHP dans
+  "%PAPYRUS_PHP%"
+<blank>
+Le fichier est présent et complet, mais quelque chose l'empêche de s'exécuter.
+Lors d'un premier démarrage, il s'agit presque toujours d'un antivirus qui analyse
+une nouvelle copie de 600 Mo de binaires avant d'en autoriser l'exécution.
+<blank>
+Attendre une minute et redémarrer suffit généralement. Sinon, excluez
+ce dossier de votre antivirus et réinstallez.
+<blank>

@@ -1,0 +1,4 @@
+Papyrus no se inició. Las líneas de arriba dicen por qué.
+<blank>
+La ventana se mantiene abierta para que se puedan leer o copiar en un informe de error.
+Pulsa cualquier tecla para cerrarla.

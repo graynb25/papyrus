@@ -1,0 +1,10 @@
+O Papyrus não pode iniciar: o Windows recusou executar o runtime do PHP em
+  "%PAPYRUS_PHP%"
+<blank>
+O arquivo está presente e completo, mas algo não permite que ele seja executado.
+Na primeira execução, quase sempre é um antivírus, que analisa uma nova
+cópia de 600 MB de binários antes de permitir que qualquer um seja executado.
+<blank>
+Esperar um minuto e iniciar de novo geralmente funciona. Se não funcionar, exclua
+esta pasta do seu antivírus e reinstale.
+<blank>

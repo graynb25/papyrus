@@ -157,8 +157,18 @@ final class BackupPair
     /**
      * A one-line description for a reader, naming both halves and what they held.
      */
-    public function describe(): string
+    public function describe(?Translator $translator = null): string
     {
+        if ($translator !== null) {
+            return $translator->get('restore.description', [
+                'token' => $this->token,
+                'taken' => $this->takenAt,
+                'series' => $this->seriesStates,
+                'chapters' => $this->chapterStates,
+                'version' => $this->suwayomiVersion,
+            ]);
+        }
+
         return sprintf(
             '%s, taken %s: %d series and %d chapter states, against Suwayomi %s',
             $this->token,

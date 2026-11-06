@@ -1,0 +1,10 @@
+Papyrus no puede iniciarse: Windows se negó a ejecutar el entorno de PHP en
+  "%PAPYRUS_PHP%"
+<blank>
+El archivo está presente y completo, pero algo no le permite ejecutarse.
+En el primer inicio casi siempre es un antivirus, que analiza una copia
+nueva de 600 MB de binarios antes de permitir que se ejecute cualquiera.
+<blank>
+Esperar un minuto y volver a iniciar suele funcionar. Si no funciona, excluye
+esta carpeta de tu antivirus y reinstala.
+<blank>

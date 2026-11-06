@@ -46,7 +46,14 @@ final class SummaryLog
     /** How many previous files to keep. One is enough: the run before the one that failed. */
     private const KEEP_GENERATIONS = 1;
 
-    public function __construct(private readonly string $logDirectory) {}
+    public function __construct(
+        private readonly string $logDirectory,
+        ?Translator $translator = null,
+    ) {
+        $this->translator = $translator ?? new Translator;
+    }
+
+    private readonly Translator $translator;
 
     public function path(): string
     {
@@ -208,17 +215,17 @@ final class SummaryLog
         $directory = $this->logDirectory;
 
         if (! is_dir($directory)) {
-            return 'the log directory does not exist: '.$directory;
+            return $this->translator->get('summary.log_dir_missing', ['path' => $directory]);
         }
 
         if (! is_writable($directory)) {
-            return 'the log directory is not writable: '.$directory;
+            return $this->translator->get('summary.log_dir_unwritable', ['path' => $directory]);
         }
 
         $path = $this->path();
 
         if (is_file($path) && ! is_writable($path)) {
-            return 'the summary log exists but is not writable: '.$path;
+            return $this->translator->get('summary.log_file_unwritable', ['path' => $path]);
         }
 
         return 'ok';
@@ -232,8 +239,7 @@ final class SummaryLog
         $status = $this->diagnose();
 
         if ($status !== 'ok') {
-            throw new RuntimeException('This install cannot write a log, which means a failure would '
-                .'be invisible. '.$status);
+            throw new RuntimeException($this->translator->get('summary.assert', ['status' => $status]));
         }
     }
 }

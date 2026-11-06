@@ -97,6 +97,8 @@ final class PapyrusCmdTest extends TestCase
      */
     private function installTheRealScript(): string
     {
+        $this->installTheLanguageFragments();
+
         $source = __DIR__.'/../../packaging/launcher/Papyrus.cmd';
         $contents = (string) file_get_contents($source);
 
@@ -105,6 +107,39 @@ final class PapyrusCmdTest extends TestCase
         file_put_contents($target, str_replace("\n", "\r\n", str_replace(["\r\n", "\r"], "\n", $contents)));
 
         return $target;
+    }
+
+    /**
+     * The guard messages are separate files in the install, so the scratch tree needs them too.
+     */
+    private function installTheLanguageFragments(): void
+    {
+        $source = __DIR__.'/../../packaging/launcher/lang/cmd';
+        $target = $this->scratch.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'lang'.DIRECTORY_SEPARATOR.'cmd';
+
+        $items = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST,
+        );
+
+        foreach ($items as $item) {
+            $relative = substr($item->getPathname(), strlen($source) + 1);
+            $destination = $target.DIRECTORY_SEPARATOR.$relative;
+
+            if ($item->isDir()) {
+                if (! is_dir($destination)) {
+                    mkdir($destination, 0o777, true);
+                }
+
+                continue;
+            }
+
+            if (! is_dir(dirname($destination))) {
+                mkdir(dirname($destination), 0o777, true);
+            }
+
+            copy($item->getPathname(), $destination);
+        }
     }
 
     /**

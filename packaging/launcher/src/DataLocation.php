@@ -50,7 +50,11 @@ final class DataLocation
     /**
      * The data directory for this install, and the sentence explaining it.
      *
-     * @return array{path: string, reason: string}
+     * `reason` stays the English sentence for callers that print it directly. `reason_key` is the
+     * stable name the launcher translates into the reader's language, so the sentence and the key
+     * can never be changed independently.
+     *
+     * @return array{path: string, reason: string, reason_key: string}
      */
     public function resolve(string $root): array
     {
@@ -73,6 +77,7 @@ final class DataLocation
                 'path' => $local.DIRECTORY_SEPARATOR.'Papyrus',
                 'reason' => 'this install is under your AppData, so this is where Windows keeps '
                     .'your own data, rather than beside the program',
+                'reason_key' => 'installed',
             ];
         }
 
@@ -82,6 +87,7 @@ final class DataLocation
             return [
                 'path' => $portable,
                 'reason' => 'beside the install, so the whole thing can be moved or carried together',
+                'reason_key' => 'portable',
             ];
         }
 
@@ -90,6 +96,7 @@ final class DataLocation
                 'path' => $local.DIRECTORY_SEPARATOR.'Papyrus',
                 'reason' => 'the install is somewhere that cannot be written to, so this is under '
                     .'%LOCALAPPDATA% where Windows keeps a reader\'s own data',
+                'reason_key' => 'unwritable',
             ];
         }
 
@@ -101,6 +108,7 @@ final class DataLocation
         return [
             'path' => $portable,
             'reason' => 'no writable location was found, so Papyrus will say where it tried',
+            'reason_key' => 'none',
         ];
     }
 

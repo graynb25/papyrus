@@ -40,29 +40,38 @@ rem runs a JVM, a web server and two workers, and when it does not start the rea
 rem output here. A wrapper that closed the window regardless would turn "Suwayomi did not come up on
 rem port 4567" into a shortcut that appears to do nothing, which is the single most expensive kind
 rem of bug report to receive.
+rem
+rem ## Why the guard messages are separate files
+rem
+rem The guard blocks are reader-facing and translated, and cmd.exe cannot read accented UTF-8 in a
+rem batch file reliably: measured here, a chcp 65001 script saved as UTF-8 without a BOM loses the
+rem first character of every accented line, and a BOM makes the first line an unknown command. So
+rem this file stays ASCII and reads a UTF-8 fragment through `for /f` after chcp 65001. The message
+rem still expands PAPYRUS_ROOT and PAPYRUS_PHP because `call echo` runs on each fragment line.
 
 setlocal
+
+rem The launcher's own PHP output is UTF-8. Setting the console page once here makes both that and
+rem the guard fragments render their accents instead of mojibake. Failure is ignored: an old console
+rem without 65001 should still start the app.
+chcp 65001 >nul 2>&1
 
 set "PAPYRUS_ROOT=%~dp0"
 set "PAPYRUS_PHP=%PAPYRUS_ROOT%runtime\bin\php.exe"
 set "PAPYRUS_LAUNCHER=%PAPYRUS_ROOT%packaging\launcher\papyrus.php"
+set "PAPYRUS_REG=%SystemRoot%\System32\reg.exe"
+set "PAPYRUS_FINDSTR=%SystemRoot%\System32\findstr.exe"
+
+call :detect_language
 
 if not exist "%PAPYRUS_PHP%" (
-    echo Papyrus cannot start: the PHP runtime is missing from
-    echo   "%PAPYRUS_ROOT%runtime\bin"
-    echo.
-    echo This install is incomplete. Reinstalling Papyrus will fix it.
-    echo.
+    call :message missing-php
     pause
     exit /b 1
 )
 
 if not exist "%PAPYRUS_LAUNCHER%" (
-    echo Papyrus cannot start: the launcher is missing from
-    echo   "%PAPYRUS_ROOT%packaging\launcher"
-    echo.
-    echo This install is incomplete. Reinstalling Papyrus will fix it.
-    echo.
+    call :message missing-launcher
     pause
     exit /b 1
 )
@@ -93,16 +102,7 @@ rem print anything, and no data directory was created. The gate and the tests re
 rem an empty file, so only a reader's double-click showed it.
 "%PAPYRUS_PHP%" -n -v > nul 2>&1
 if errorlevel 1 (
-    echo Papyrus cannot start: Windows refused to run the PHP runtime at
-    echo   "%PAPYRUS_PHP%"
-    echo.
-    echo The file is present and complete, but something will not let it execute.
-    echo On a first run this is almost always antivirus software, which scans a new
-    echo copy of 600MB of binaries before allowing any of them to run.
-    echo.
-    echo Waiting a minute and starting again usually works. If it does not, exclude
-    echo this folder from your antivirus and reinstall.
-    echo.
+    call :message refused-runtime
     pause
     exit /b 1
 )
@@ -112,11 +112,71 @@ set "PAPYRUS_EXIT=%ERRORLEVEL%"
 
 if not "%PAPYRUS_EXIT%"=="0" (
     echo.
-    echo Papyrus did not start. The lines above say why.
-    echo.
-    echo Keeping this window open so they can be read, or copied into a bug report.
-    echo Press any key to close it.
+    call :message start-failed
     pause > nul
 )
 
 exit /b %PAPYRUS_EXIT%
+
+rem -------------------------------------------------------------------------------------------
+rem Language detection. PAPYRUS_LOCALE wins, then the Windows UI language list, then LocaleName,
+rem then English. The same order as the PHP translator, so the guard text and the launcher's own
+rem output agree.
+rem -------------------------------------------------------------------------------------------
+
+:detect_language
+set "PAPYRUS_LANG="
+if defined PAPYRUS_LOCALE call :locale_from_tag "%PAPYRUS_LOCALE%"
+if not defined PAPYRUS_LANG (
+    for /f "tokens=2,*" %%A in ('%PAPYRUS_REG% query "HKCU\Control Panel\International\User Profile" /v Languages 2^>nul ^| %PAPYRUS_FINDSTR% /i "Languages"') do call :locale_from_multi "%%B"
+)
+if not defined PAPYRUS_LANG (
+    for /f "tokens=2,*" %%A in ('%PAPYRUS_REG% query "HKCU\Control Panel\International" /v LocaleName 2^>nul ^| %PAPYRUS_FINDSTR% /i "LocaleName"') do call :locale_from_tag "%%B"
+)
+if not defined PAPYRUS_LANG set "PAPYRUS_LANG=en"
+goto :eof
+
+rem The UI language list is a REG_MULTI_SZ printed as `en-US\0es-CO`; the first tag wins.
+:locale_from_multi
+set "PAPYRUS_TAG=%~1"
+for /f "tokens=1 delims=\" %%T in ("%PAPYRUS_TAG%") do set "PAPYRUS_TAG=%%T"
+call :locale_from_tag "%PAPYRUS_TAG%"
+goto :eof
+
+:locale_from_tag
+set "PAPYRUS_TAG=%~1"
+if /i "%PAPYRUS_TAG%"=="en" set "PAPYRUS_LANG=en"
+if /i "%PAPYRUS_TAG:~0,3%"=="en-" set "PAPYRUS_LANG=en"
+if /i "%PAPYRUS_TAG:~0,3%"=="en_" set "PAPYRUS_LANG=en"
+if /i "%PAPYRUS_TAG%"=="es" set "PAPYRUS_LANG=es"
+if /i "%PAPYRUS_TAG:~0,3%"=="es-" set "PAPYRUS_LANG=es"
+if /i "%PAPYRUS_TAG:~0,3%"=="es_" set "PAPYRUS_LANG=es"
+if /i "%PAPYRUS_TAG%"=="fr" set "PAPYRUS_LANG=fr"
+if /i "%PAPYRUS_TAG:~0,3%"=="fr-" set "PAPYRUS_LANG=fr"
+if /i "%PAPYRUS_TAG:~0,3%"=="fr_" set "PAPYRUS_LANG=fr"
+if /i "%PAPYRUS_TAG%"=="pt" set "PAPYRUS_LANG=pt_BR"
+if /i "%PAPYRUS_TAG%"=="pt-br" set "PAPYRUS_LANG=pt_BR"
+if /i "%PAPYRUS_TAG%"=="pt_br" set "PAPYRUS_LANG=pt_BR"
+goto :eof
+
+rem -------------------------------------------------------------------------------------------
+rem One guard block, expanded. `call echo` is what expands PAPYRUS_ROOT and PAPYRUS_PHP inside the
+rem fragment; plain `type` would print the variable names. A line reading `<blank>` is an empty line,
+rem because `for /f` skips genuinely empty lines.
+rem -------------------------------------------------------------------------------------------
+
+:message
+set "PAPYRUS_MESSAGE=%PAPYRUS_ROOT%packaging\launcher\lang\cmd\%PAPYRUS_LANG%\%~1.txt"
+if not exist "%PAPYRUS_MESSAGE%" set "PAPYRUS_MESSAGE=%PAPYRUS_ROOT%packaging\launcher\lang\cmd\en\%~1.txt"
+if not exist "%PAPYRUS_MESSAGE%" (
+    echo This install is incomplete. Reinstalling Papyrus will fix it.
+    goto :eof
+)
+for /f "usebackq delims=" %%L in ("%PAPYRUS_MESSAGE%") do (
+    if "%%L"=="<blank>" (
+        echo.
+    ) else (
+        call echo %%L
+    )
+)
+goto :eof

@@ -35,12 +35,19 @@ described as native-reviewed.
   sources, downloads, insights, health, settings appearance and backups, and 404 in all
   three locales. The reader and later tour steps were not visually exercised because no
   live source was available.
+- The Windows installer offers the same four languages. The packaged launcher follows
+  `PAPYRUS_LOCALE`, then the Windows UI language, then English. Its catalogues live in
+  `packaging/launcher/lang/`; the batch guard fragments live in `packaging/launcher/lang/cmd/`.
 
 ## Still English
 
 - Legal pages and the FAQ, including the FAQ inside Settings.
-- The Windows installer and the launcher.
-- Console command output, which is operator-facing rather than reader-facing.
+- Console command output from the application's Artisan commands, which is operator-facing
+  rather than reader-facing.
+- The installer's `pause` prompt and cmd.exe's `Access is denied.`, which are built-in and
+  cannot be localized from batch. The installer's own dialogs and messages are translated.
+- The launcher's diagnostic bundle internals: `README.txt`, `summary.txt`, `processes.txt`,
+  and `environment.txt`. The launcher's console output is translated.
 - Technical error text that comes from a source, the manga server, a passkey, or an
   exception. The label around it is translated; the raw message is not.
 - Progress notes written by background backup and import jobs remain as they were stored.

@@ -1,0 +1,10 @@
+Papyrus cannot start: Windows refused to run the PHP runtime at
+  "%PAPYRUS_PHP%"
+<blank>
+The file is present and complete, but something will not let it execute.
+On a first run this is almost always antivirus software, which scans a new
+copy of 600 MB of binaries before allowing any of them to run.
+<blank>
+Waiting a minute and starting again usually works. If it does not, exclude
+this folder from your antivirus and reinstall.
+<blank>

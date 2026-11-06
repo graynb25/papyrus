@@ -1,0 +1,5 @@
+Papyrus no puede iniciarse: falta el entorno de ejecución de PHP en
+  "%PAPYRUS_ROOT%runtime\bin"
+<blank>
+Esta instalación está incompleta. Reinstalar Papyrus lo solucionará.
+<blank>

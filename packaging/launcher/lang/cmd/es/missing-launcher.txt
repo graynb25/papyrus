@@ -1,0 +1,5 @@
+Papyrus no puede iniciarse: falta el lanzador en
+  "%PAPYRUS_ROOT%packaging\launcher"
+<blank>
+Esta instalación está incompleta. Reinstalar Papyrus lo solucionará.
+<blank>

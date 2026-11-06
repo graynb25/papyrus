@@ -1,0 +1,5 @@
+Papyrus cannot start: the launcher is missing from
+  "%PAPYRUS_ROOT%packaging\launcher"
+<blank>
+This install is incomplete. Reinstalling Papyrus will fix it.
+<blank>

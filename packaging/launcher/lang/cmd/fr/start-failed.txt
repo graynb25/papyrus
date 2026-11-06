@@ -1,0 +1,4 @@
+Papyrus n'a pas démarré. Les lignes ci-dessus en indiquent la raison.
+<blank>
+Cette fenêtre reste ouverte pour qu'elles puissent être lues ou copiées dans un rapport de bogue.
+Appuyez sur une touche pour la fermer.

@@ -31,8 +31,16 @@ final class ReaderSnapshotResult
     /**
      * One line, in the words a reader reads when they want to know what they have.
      */
-    public function describe(): string
+    public function describe(?Translator $translator = null): string
     {
+        if ($translator !== null) {
+            return $translator->get('snapshot.counts', [
+                'series' => number_format($this->seriesStates),
+                'chapters' => number_format($this->chapterStates),
+                'bytes' => number_format($this->bytes),
+            ]);
+        }
+
         return sprintf(
             '%s series and %s chapter states, %s bytes',
             number_format($this->seriesStates),
