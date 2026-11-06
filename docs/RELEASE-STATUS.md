@@ -34,7 +34,8 @@ Updated 2026-11-06.
   `<html lang="es">` even when the request carried `Accept-Language: en-US`, and the generated
   `.env` held `APP_LOCALE=es` and `PAPYRUS_LOCALE_NEGOTIATION=false`. The uninstall removed
   the program and the marker and kept the data directory.
-  The automated Windows Sandbox gate passed every check on 2026-11-06 on this build. It
+  The automated Windows Sandbox gate passed every check on 2026-11-06, first on the stop-fix
+  build and again on the final `633eb85` build. It
   started the packaged tree through `Papyrus.cmd` on `8402`, registered the first account,
   rendered the sources page, added the extension store, installed MangaTaro, listed One
   Piece with 1,204 chapters, read chapter 1 page 0 through the app proxy (200,
@@ -45,8 +46,8 @@ Updated 2026-11-06.
   the installer language is carried into the first run, the tour card no longer leaves the
   screen after a series is added, and the extension step targets the Available grid rather
   than its tab so the install controls are not dimmed under the overlay. The artifacts have
-  been rebuilt from `633eb85`; the automated gate and manual tour still need to be repeated
-  on that build.
+  been rebuilt from `633eb85`, and the automated gate passed again on that build. The manual
+  tour is the remaining check.
 - **1.5.6 is published.** It was built from `8a398ab` and released as `v1.5.6`.
   The installer is 257,605,124 bytes, SHA-256
   `138465bd176d2fb4c56737b40cb65b70c70f27f4a6b79d34658981671ba686d3`; the portable is
