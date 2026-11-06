@@ -504,4 +504,32 @@ final class PapyrusCmdTest extends TestCase
 
         $this->assertFileExists($marker, 'the runtime check must let the launcher run');
     }
+
+    public function test_an_installer_locale_file_selects_the_guard_language(): void
+    {
+        file_put_contents(
+            $this->scratch.DIRECTORY_SEPARATOR.'packaging'.DIRECTORY_SEPARATOR.'launcher'.DIRECTORY_SEPARATOR.'papyrus.php',
+            "<?php\nexit(0);\n",
+        );
+
+        file_put_contents($this->scratch.DIRECTORY_SEPARATOR.'installer-locale.txt', 'fr');
+
+        $cmd = $this->installTheRealScript();
+        $previous = getenv('PAPYRUS_LOCALE');
+
+        try {
+            putenv('PAPYRUS_LOCALE');
+
+            $result = $this->runCmd('cmd.exe /c '.escapeshellarg($cmd).' < NUL');
+        } finally {
+            if (is_string($previous)) {
+                putenv('PAPYRUS_LOCALE='.$previous);
+            } else {
+                putenv('PAPYRUS_LOCALE');
+            }
+        }
+
+        $this->assertNotSame(0, $result['status']);
+        $this->assertStringContainsString('Papyrus ne peut pas démarrer', $result['output']);
+    }
 }

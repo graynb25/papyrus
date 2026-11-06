@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Support\EnvironmentFile;
+use App\Support\Locale;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
@@ -46,6 +47,7 @@ class ConfigureInstall extends Command
         {--data= : The data directory. Created if missing, and made absolute}
         {--suwayomi=http://127.0.0.1:4567 : Where Suwayomi answers}
         {--app-url= : The URL the app is served on}
+        {--locale= : The interface locale chosen in the installer}
         {--env-file= : The .env to write. Defaults to the one in the application root}
         {--report : Print what changed, for the launcher to show or log}';
 
@@ -273,6 +275,31 @@ class ConfigureInstall extends Command
         if (is_string($appUrl) && $appUrl !== '' && $this->current($values, 'APP_URL') !== $appUrl) {
             $values['APP_URL'] = $appUrl;
             $changed[] = 'APP_URL';
+        }
+
+        $locale = $this->option('locale');
+
+        if (is_string($locale) && $locale !== '') {
+            $normalized = Locale::normalize($locale);
+
+            if ($normalized !== null && in_array($normalized, Locale::catalogued(), true)) {
+                if ($this->current($values, 'APP_LOCALE') !== $normalized) {
+                    $values['APP_LOCALE'] = $normalized;
+                    $changed[] = 'APP_LOCALE';
+                }
+
+                /*
+                 * A language chosen in the installer is a deliberate install-wide default, not
+                 * a hint for the browser to overrule on the first page. English keeps
+                 * negotiation because it is also the installer's fallback and the example's
+                 * default; a non-English choice turns negotiation off so the reader lands in
+                 * the language they picked.
+                 */
+                if ($normalized !== 'en' && $this->current($values, 'PAPYRUS_LOCALE_NEGOTIATION') !== 'false') {
+                    $values['PAPYRUS_LOCALE_NEGOTIATION'] = 'false';
+                    $changed[] = 'PAPYRUS_LOCALE_NEGOTIATION';
+                }
+            }
         }
 
         return $changed;

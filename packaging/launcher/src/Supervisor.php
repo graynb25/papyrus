@@ -1646,6 +1646,12 @@ final class Supervisor
                      * port nothing is listening on.
                      */
                     '--app-url='.$this->readerUrl(),
+                    /*
+                     * The language the installer or the reader chose becomes the install's
+                     * default. Without it the app starts in the source language and the reader
+                     * has to choose again in Settings.
+                     */
+                    '--locale='.$this->translator->locale(),
                 ],
                 logName: 'configure.log',
             );

@@ -87,7 +87,7 @@ final class TourSteps
             [
                 'key' => 'install-extension',
                 'route' => 'sources',
-                'selector' => '[data-tour="available"]',
+                'selector' => '[data-tour="available-grid"]',
                 'title' => __('Install an extension'),
                 'body' => __('Open Available. Each extension covers one site, or one language of it. Install the one that matches what you read.'),
                 'mode' => self::MODE_INTERACTIVE,
@@ -127,7 +127,7 @@ final class TourSteps
             [
                 'key' => 'read',
                 'route' => 'series',
-                'selector' => '[data-tour="read-chapter"]',
+                'selector' => '[data-tour="first-chapter"]',
                 'title' => __('Read a chapter'),
                 'body' => __('Open the first chapter. The reader saves your place as you go. Done when you are ready.'),
                 'mode' => self::MODE_INTERACTIVE,

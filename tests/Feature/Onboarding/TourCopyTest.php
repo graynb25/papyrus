@@ -41,6 +41,20 @@ class TourCopyTest extends TestCase
         $this->assertSame($selectors, array_unique($selectors));
     }
 
+    /**
+     * The two targets that are a list, not a control, have to be the row the reader acts on.
+     *
+     * A step anchored to the whole chapter section put the card off the screen at the one moment
+     * the reader had just added the series, and they had to skip the tour. The extension step has
+     * the same shape: the Available tab is smaller than the grid it opens, and anchoring to the tab
+     * left the install buttons dimmed under the overlay.
+     */
+    public function test_the_interactive_steps_target_the_extension_grid_and_the_first_chapter(): void
+    {
+        $this->assertSame('[data-tour="available-grid"]', TourSteps::at(5)['selector'] ?? null);
+        $this->assertSame('[data-tour="first-chapter"]', TourSteps::at(9)['selector'] ?? null);
+    }
+
     public function test_the_copy_carries_no_url(): void
     {
         foreach (TourSteps::forOwner() as $step) {

@@ -54,22 +54,30 @@ final class Translator
     /**
      * The translator for the environment this process was started in.
      *
-     * `PAPYRUS_LOCALE` first, then the Windows UI language, then English. The Windows query is made
-     * when no explicit locale is set, or when the explicit one names no catalogue, because it starts
-     * `reg.exe` and most packaged starts do not need it.
+     * `PAPYRUS_LOCALE` first, then the language chosen in the installer, then the Windows UI
+     * language, then English. The Windows query is made only when neither explicit choice names a
+     * catalogue, because it starts `reg.exe` and most packaged starts do not need it.
+     *
+     * `$installerLocale` is read from the marker the installer writes. It is a fallback rather than
+     * a new first choice: a reader who sets `PAPYRUS_LOCALE` has said something more specific than
+     * the language the setup wizard happened to use.
      */
-    public static function fromEnvironment(): self
+    public static function fromEnvironment(?string $installerLocale = null): self
     {
         $explicit = getenv('PAPYRUS_LOCALE');
         $explicit = is_string($explicit) ? $explicit : null;
 
         /*
          * A supported explicit tag is answered without starting `reg.exe`. An unsupported one is
-         * not a refusal: it falls through to the Windows UI language and then to English, which is
-         * the same order `resolve()` applies.
+         * not a refusal: it falls through to the next candidate, which may be the installer
+         * language or the Windows UI language.
          */
         if (self::normalize($explicit) !== null) {
             return new self(self::resolve($explicit));
+        }
+
+        if (self::normalize($installerLocale) !== null) {
+            return new self(self::resolve($installerLocale));
         }
 
         return new self(self::resolve($explicit, self::windowsLocale()));

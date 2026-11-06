@@ -71,6 +71,60 @@ final class LauncherTranslatorTest extends TestCase
         }
     }
 
+    public function test_the_installer_language_is_used_when_papyrus_locale_is_absent(): void
+    {
+        $previous = getenv('PAPYRUS_LOCALE');
+
+        try {
+            putenv('PAPYRUS_LOCALE');
+
+            $translator = Translator::fromEnvironment('es');
+
+            $this->assertSame('es', $translator->locale());
+            $this->assertStringContainsString('Ejecuta', $translator->get('health.assert'));
+        } finally {
+            if (is_string($previous)) {
+                putenv('PAPYRUS_LOCALE='.$previous);
+            } else {
+                putenv('PAPYRUS_LOCALE');
+            }
+        }
+    }
+
+    public function test_an_explicit_papyrus_locale_beats_the_installer_language(): void
+    {
+        $previous = getenv('PAPYRUS_LOCALE');
+
+        try {
+            putenv('PAPYRUS_LOCALE=fr-FR');
+
+            $this->assertSame('fr', Translator::fromEnvironment('es')->locale());
+        } finally {
+            if (is_string($previous)) {
+                putenv('PAPYRUS_LOCALE='.$previous);
+            } else {
+                putenv('PAPYRUS_LOCALE');
+            }
+        }
+    }
+
+    public function test_an_unsupported_installer_language_falls_through(): void
+    {
+        $previous = getenv('PAPYRUS_LOCALE');
+
+        try {
+            putenv('PAPYRUS_LOCALE');
+
+            $this->assertSame('en', Translator::fromEnvironment('de-DE')->locale());
+        } finally {
+            if (is_string($previous)) {
+                putenv('PAPYRUS_LOCALE='.$previous);
+            } else {
+                putenv('PAPYRUS_LOCALE');
+            }
+        }
+    }
+
     /**
      * A placeholder followed by a literal unit is replaced as a prefix.
      *

@@ -40,7 +40,22 @@ namespace Papyrus\Launcher;
 require __DIR__.'/src/SystemTools.php';
 require __DIR__.'/src/Translator.php';
 
-$translator = Translator::fromEnvironment();
+/*
+ * The language the reader chose in the installer, when there was one.
+ *
+ * It lives beside the launcher rather than in the data directory because the installer writes it
+ * before the data directory exists. `Papyrus.cmd` reads the same file, so the guard text and the
+ * launcher output start in the chosen language before the application can run.
+ */
+$installerLocale = null;
+$installerLocaleFile = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'installer-locale.txt';
+
+if (is_file($installerLocaleFile)) {
+    $installerLocale = trim((string) file_get_contents($installerLocaleFile));
+    $installerLocale = $installerLocale === '' ? null : $installerLocale;
+}
+
+$translator = Translator::fromEnvironment($installerLocale);
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, $translator->get('launcher.terminal_only').PHP_EOL);

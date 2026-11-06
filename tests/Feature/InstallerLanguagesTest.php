@@ -75,6 +75,21 @@ final class InstallerLanguagesTest extends TestCase
         $this->assertStringContainsString("'/O'.\$out,", $script);
     }
 
+    /**
+     * The wizard's language has to reach the launcher, not stop at its own window.
+     */
+    public function test_the_installer_writes_the_selected_language_for_the_launcher(): void
+    {
+        $this->assertStringContainsString("ExpandConstant('{app}\\installer-locale.txt')", $this->script);
+        $this->assertStringContainsString("CompareText(ActiveLanguage, 'spanish')", $this->script);
+        $this->assertStringContainsString("CompareText(ActiveLanguage, 'french')", $this->script);
+        $this->assertStringContainsString("CompareText(ActiveLanguage, 'brazilianportuguese')", $this->script);
+        $this->assertStringContainsString("Result := 'es'", $this->script);
+        $this->assertStringContainsString("Result := 'fr'", $this->script);
+        $this->assertStringContainsString("Result := 'pt_BR'", $this->script);
+        $this->assertStringContainsString('CurStepChanged', $this->script);
+    }
+
     public function test_every_message_the_script_asks_for_exists_in_all_four_languages(): void
     {
         $messages = $this->customMessages();

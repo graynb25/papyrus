@@ -136,6 +136,40 @@ class ConfigureInstallTest extends TestCase
         $this->assertSame('false', $values['APP_DEBUG']);
     }
 
+    public function test_an_installer_language_becomes_the_install_default(): void
+    {
+        $this->configure(['--locale' => 'es'])->assertSuccessful();
+
+        $values = $this->envValues();
+
+        $this->assertSame('es', $values['APP_LOCALE']);
+        $this->assertSame(
+            'false',
+            $values['PAPYRUS_LOCALE_NEGOTIATION'],
+            'a language chosen in the installer must not be overruled by the browser on first run',
+        );
+    }
+
+    public function test_an_english_installer_language_keeps_browser_negotiation(): void
+    {
+        $this->configure(['--locale' => 'en'])->assertSuccessful();
+
+        $values = $this->envValues();
+
+        $this->assertSame('en', $values['APP_LOCALE']);
+        $this->assertSame('true', $values['PAPYRUS_LOCALE_NEGOTIATION']);
+    }
+
+    public function test_an_unsupported_installer_language_is_ignored(): void
+    {
+        $this->configure(['--locale' => 'de-DE'])->assertSuccessful();
+
+        $values = $this->envValues();
+
+        $this->assertSame('en', $values['APP_LOCALE']);
+        $this->assertSame('true', $values['PAPYRUS_LOCALE_NEGOTIATION']);
+    }
+
     /**
      * The shipped log setup is daily at info, with bounded retention.
      *

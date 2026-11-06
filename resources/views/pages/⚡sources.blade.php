@@ -2232,7 +2232,10 @@ new class extends AdultContentPage
                 which is what made the page taller than it had anything to say, and every
                 row was a name, a badge and a package name with nothing to look at.
             --}}
-            <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <ul
+                @if ($view === 'available') data-tour="available-grid" @endif
+                class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            >
                 @foreach ($this->extensions as $extension)
                     @php($installed = ($extension['isInstalled'] ?? false) === true)
 

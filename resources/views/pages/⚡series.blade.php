@@ -9,8 +9,8 @@ use App\Live\Series\SeriesFormatting;
 use App\Live\Series\SeriesPageData;
 use App\Models\Source;
 use App\Support\ChapterNotes;
-use App\Support\ReadingState;
 use App\Support\ReaderSettings;
+use App\Support\ReadingState;
 use App\Suwayomi\SeriesGateway;
 use App\Suwayomi\SuwayomiException;
 use Flux\Flux;
@@ -1783,7 +1783,10 @@ new class extends Component
                     @foreach ($this->formatting->pageSlice($this->chapters, $this->page, self::PER_PAGE) as $chapter)
                         @php($state = $this->chapterStates[(int) $chapter['id']] ?? null)
 
-                        <li class="group flex items-center gap-3 border-b border-zinc-200/70 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-zinc-100/60 sm:px-4 dark:border-white/[0.05] dark:hover:bg-white/[0.03]">
+                        <li
+                            @if ($loop->first) data-tour="first-chapter" @endif
+                            class="group flex items-center gap-3 border-b border-zinc-200/70 px-3.5 py-2.5 transition-colors last:border-b-0 hover:bg-zinc-100/60 sm:px-4 dark:border-white/[0.05] dark:hover:bg-white/[0.03]"
+                        >
                             {{--
                                 The read flag, as a control.
 

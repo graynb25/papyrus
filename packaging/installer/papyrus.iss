@@ -22,9 +22,9 @@
 ; branch. Data lives at `%LOCALAPPDATA%\Papyrus`, which is a different folder from
 ; `%LOCALAPPDATA%\Programs\Papyrus`, so uninstalling removes the program and leaves the library.
 ;
-; That is also why there is no `[UninstallDelete]` here, and why there must never be one that
-; reaches outside `{app}`. A reader who uninstalls because the app is broken must not lose their
-; library in the same breath.
+; That is also why nothing below reaches outside `{app}` with `[UninstallDelete]`. A reader who
+; uninstalls because the app is broken must not lose their library in the same breath. The one
+; entry in that section removes `installer-locale.txt`, a generated marker, and nothing else.
 ;
 ; ## One executable
 ;
@@ -203,6 +203,11 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Papyrus.cmd"; IconFilename:
 
 [Run]
 Filename: "{app}\Papyrus.cmd"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; The launcher reads this to start in the language chosen in the wizard. It is generated, not
+; reader data, and it lives inside {app}; the library is under %LOCALAPPDATA%\Papyrus.
+Type: files; Name: "{app}\installer-locale.txt"
 
 [Code]
 // Stop Papyrus before installing over it, and say so before doing it.
@@ -431,6 +436,43 @@ begin
 
   if FileExists(StopLog) then
     DeleteFile(StopLog);
+end;
+
+//
+ // Carry the wizard's language into the first start.
+ //
+ // The launcher and the application both resolve an explicit PAPYRUS_LOCALE first, then this
+ // marker, then the Windows UI language. Writing it here means a reader who picked Spanish in
+ // setup does not have to pick it again in Settings. The file is left alone on an upgrade so an
+ // existing install keeps the language it already uses.
+ //
+function InstallerLocale(): String;
+begin
+  if CompareText(ActiveLanguage, 'spanish') = 0 then
+    Result := 'es'
+  else if CompareText(ActiveLanguage, 'french') = 0 then
+    Result := 'fr'
+  else if CompareText(ActiveLanguage, 'brazilianportuguese') = 0 then
+    Result := 'pt_BR'
+  else
+    Result := 'en';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Marker: String;
+begin
+  if CurStep <> ssPostInstall then
+  begin
+    Exit;
+  end;
+
+  Marker := ExpandConstant('{app}\installer-locale.txt');
+
+  if not FileExists(Marker) then
+  begin
+    SaveStringToFile(Marker, InstallerLocale(), False);
+  end;
 end;
 
 //

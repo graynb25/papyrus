@@ -62,6 +62,11 @@ set "PAPYRUS_LAUNCHER=%PAPYRUS_ROOT%packaging\launcher\papyrus.php"
 set "PAPYRUS_REG=%SystemRoot%\System32\reg.exe"
 set "PAPYRUS_FINDSTR=%SystemRoot%\System32\findstr.exe"
 
+rem The setup wizard's language is the next choice after an explicit environment override. Read
+rem it before the Windows UI language, so the pick made during installation is the default the
+rem reader sees on first start instead of having to choose again in Settings.
+if not defined PAPYRUS_LOCALE if exist "%PAPYRUS_ROOT%installer-locale.txt" set /p PAPYRUS_LOCALE=<"%PAPYRUS_ROOT%installer-locale.txt"
+
 call :detect_language
 
 if not exist "%PAPYRUS_PHP%" (
