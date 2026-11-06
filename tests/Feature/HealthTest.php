@@ -406,11 +406,24 @@ class HealthTest extends TestCase
         $output = [];
         $status = 1;
 
-        exec(
-            escapeshellarg(PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($database).' 2>&1',
-            $output,
-            $status,
-        );
+        /*
+         * Carry the ini this process was started with, exactly as the launcher does.
+         *
+         * The checkout PHP finds a php.ini beside its executable, so a bare child happened to
+         * load pdo_sqlite. The packaged PHP has no such default: the launcher starts it with
+         * `-c <data>\php\php.ini`, and a child without that argument cannot open SQLite. The
+         * packaged-runtime gate found the difference as `not-checked|could not find driver`.
+         */
+        $ini = php_ini_loaded_file();
+        $command = escapeshellarg(PHP_BINARY);
+
+        if (is_string($ini) && $ini !== '') {
+            $command .= ' -c '.escapeshellarg($ini);
+        }
+
+        $command .= ' '.escapeshellarg($script).' '.escapeshellarg($database).' 2>&1';
+
+        exec($command, $output, $status);
 
         $this->assertSame(0, $status, 'the queue probe exited non-zero: '.implode(' ', $output));
 
