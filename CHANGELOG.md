@@ -21,7 +21,7 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## 1.5.8 - unreleased
+## 1.5.8 - 2026-11-07
 
 A visual pass over the whole app: landing wall, library, series, reader, search, browse, sources, health, insights, and settings. No migrations, no new palette, no component replacements.
 

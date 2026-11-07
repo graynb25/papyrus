@@ -9,9 +9,9 @@ No commit hashes, no file names, no jargon.
 
 ---
 
-## Version 1.5.8, not yet released
+## Version 1.5.8, 7 November 2026
 
-This release is still being built. The interface is getting a full visual pass with no changes to how anything works.
+This release is published. The interface has a full visual pass with no changes to how anything works.
 
 ### A calmer landing, library, series, and reader
 

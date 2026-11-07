@@ -14,8 +14,8 @@ bytes and portable 299,848,123 bytes from `f7a61cf`, hashes in `releases/1.5.8.j
 89 of 89 with 0 failures, manual Spanish tour through a real read. The 1.5.8 tree is the
 UI pass on top of the 1.5.7 tree as `8ee1c7c`, plus the version bump.
 
-The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`, and is the current
-release. Its installer is 257,924,136 bytes and its portable zip is 299,842,534 bytes;
+The 1.5.8 release is published, tagged `v1.5.8`, and is the current
+release. The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`. Its installer is 257,924,136 bytes and its portable zip is 299,842,534 bytes;
 both hashes are in `releases/1.5.7.json`, and the portable has a `.sha256` sidecar. The
 automated Windows Sandbox gate passed every check on 2026-11-06, the manual installer tour
 selected Spanish and passed through the reader page, and the full suite on the packaged

@@ -2,7 +2,7 @@
 
 Updated 2026-11-07.
 
-- **1.5.8 is built and proven locally, not published.** The UI pass merged as `8ee1c7c` on top of the
+- **1.5.8 is published.** The UI pass merged as `8ee1c7c` on top of the
   1.5.7 tree: landing wall, library, series, reader, search, browse, sources, health,
   insights, and settings summaries, plus 24 translated sentences in Spanish, French, and
   Brazilian Portuguese. No migrations. The six gates passed on the release tree: full suite
@@ -20,7 +20,8 @@ Updated 2026-11-07.
   series with 1,204 chapters, and real chapter 1 reader pages, in session
   `session-20261106-215135` under the 1.5.8 release worktree with all 36 loop frames reviewed.
   CI run `42333756410` passed in 13m11s on the release tree.
-  The portable zip has not been repeated on a clean guest. `VERSION` reads `1.5.8`.
+  The portable zip has not been repeated on a clean guest. `VERSION` reads `1.5.8`. Release:
+  https://github.com/graynb25/papyrus/releases/tag/v1.5.8.
 - **1.5.7 is published.** Spanish, French, and Brazilian Portuguese are available
   as interface languages, and all three non-English catalogs are AI drafts that have had an
   independent AI language review. Native-speaker review has not been performed. Visual QA
