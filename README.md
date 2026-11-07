@@ -46,19 +46,22 @@ this is not something to monetise.
 ## Status
 
 Discovery and the read path work in the checkout and have been walked against live Suwayomi.
-The 1.5.7 manual installer tour passed on 2026-11-06 through the reader shortcut, including a
-source read and the first-run tour. The 1.5.7 automated clean-machine gate passed every check
-on the same day, including a source page read through the app proxy. The 1.5.7 portable zip
-was built, content and hash verified, and walked locally; the clean-machine C: and D: runs
-remain the 1.5.6 evidence. Each new build must run all of them again; an earlier version's
-pass is not evidence for a later one. Search, source management, health, downloads, migration
-between sources, the series page, the reader and settings are implemented.
+The 1.5.9 manual installer tour passed on 2026-11-07 on a clean guest, including a
+source read and the first-run tour. The 1.5.9 automated clean-machine gate passed every check
+on the same day, including a real chapter page. The 1.5.9 portable zip
+was built, content and hash verified, and its uploaded copy was downloaded again with a
+matching SHA-256; the clean-machine C: and D: runs remain the 1.5.6 evidence. Each new build
+must run all of them again; an earlier version's pass is not evidence for a later one. Search,
+source management, health, downloads, migration between sources, the series page, the reader
+and settings are implemented.
 
-**Release status.** 1.5.7 is the current release, published on 2026-11-06. It adds Spanish,
-French, and Brazilian Portuguese across the application, the Windows installer, and the
-packaged launcher, and carries the installer language into the first run. It also fixes the
-launcher stop message and the first-run tour targets. 1.5.1 was built and proven locally but
-was not published. See [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
+**Release status.** 1.5.9 is the current release, published on 2026-11-07. It refreshes an
+extension's Update button as soon as its update finishes and adds `Update all` with a pending
+count to the Installed sources view. 1.5.8 was the visual pass over the landing, library,
+series, reader, search, browse, sources, health, insights, and settings pages. 1.5.7 added
+Spanish, French, and Brazilian Portuguese across the application, the Windows installer, and
+the packaged launcher. 1.5.1 was built and proven locally but was not published. See
+[docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 **Repository history.** The public history was rewritten on 2026-11-01 to remove the
 design-review screenshots and machine-identity values. Commit hashes in historical notes
@@ -772,17 +775,24 @@ trusting the clock; three ways of running it wrong fail with no output at all, a
 in [`build/sandbox/papyrus.wsb`](build/sandbox/papyrus.wsb).
 [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) lists what it asserts and what it found.
 
-**Current state, 2026-11-05:** the gate passed on the 1.5.6 build. All 89 checks held, and the
-run wrote `build/sandbox-results/sandbox-report.txt` and a screenshot showing Edge on the
-Papyrus login page. It started the install through the reader shortcut, created the first
-account, rendered `/sources`, added a store, installed MangaTaro, fetched One Piece, and read
-page 0 of chapter 1 through the authenticated proxy: 200 `image/webp`, 175,432 bytes,
-SHA-256 `9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`. The app URL
-matched the bound port 8402. The gate copies `build/install` and starts it through the reader
-shortcut; it does not run the setup executable. The separate manual installer tour passed all
-nine steps on 2026-11-05 in the 1.5.6 release worktree, session
-`session-20261105-112810`. The 2026-10-26 run 19 was the first full gate pass; its host policy
-fix was `HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0.
+**Current state, 2026-11-07:** the gate passed every check on the 1.5.9 build, including
+registration, the sources page, MangaTaro, One Piece, a real chapter page, diagnostics, HTTPS,
+and a clean stop. The gate writes its report and screenshot under
+`build/sandbox-results/`. The gate copies
+`build/install` and starts it through the reader shortcut; it does not run the
+setup executable. The separate manual installer tour passed all nine steps on 2026-11-07 in
+`build/manual-sandbox-results/session-20261107-121108`, running the real setup in Spanish on a
+clean guest, and read a real chapter page.
+
+**Historical detail, 1.5.6, 2026-11-05:** the gate passed all 89 checks on that build, started
+the install through the reader shortcut, created the first account, rendered `/sources`, added
+a store, installed MangaTaro, fetched One Piece, and read page 0 of chapter 1 through the
+authenticated proxy: 200 `image/webp`, 175,432 bytes, SHA-256
+`9996ffbb9d1fadac23357e56c611f93b1c07e980737592baa0658bf567574e6e`. The app URL matched the
+bound port 8402. The manual installer tour passed all nine steps on 2026-11-05 in the 1.5.6
+release worktree, session `session-20261105-112810`. The 2026-10-26 run 19 was the first full
+gate pass; its host policy fix was
+`HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowVGPU` set to DWORD 0.
 
 There is a fifth gate and it is not a command: open the page. Three bugs in this project
 passed the whole suite and showed up on the first click.
@@ -830,7 +840,7 @@ something to monetise.
 | **[CHANGELOG.md](CHANGELOG.md)** | Every user-visible change, with the commit that made it |
 | [changelog-simple.md](changelog-simple.md) | The same release notes for a reader rather than a developer |
 | [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md) | What is published, what is not, and the current release decision |
-| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.7 zip is published with a SHA-256 sidecar; the clean-machine C: and D: runs remain the 1.5.6 evidence |
+| [docs/PORTABLE.md](docs/PORTABLE.md) | Running without installing. The 1.5.9 zip is published with a SHA-256 sidecar; the clean-machine C: and D: runs remain the 1.5.6 evidence |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | What this deployment does and does not protect you from, and the three secrets in it |
 | [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) | What we ship and refuse to ship, signing, backup, publishing |
 | [`docs/DESKTOP-PACKAGING.md`](docs/DESKTOP-PACKAGING.md) | The Windows packaging work, phase by phase, and the defect table |

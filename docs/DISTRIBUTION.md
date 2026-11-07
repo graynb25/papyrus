@@ -9,19 +9,36 @@ measurement. Where something is a judgement call rather than a fact it says so.
 
 ## Current delivery status, 2026-11-07
 
-The 1.5.8 artifacts are built and proven locally but not published: installer 257,928,912
-bytes and portable 299,848,123 bytes from `f7a61cf`, hashes in `releases/1.5.8.json`, gate
-89 of 89 with 0 failures, manual Spanish tour through a real read. The 1.5.8 tree is the
-UI pass on top of the 1.5.7 tree as `8ee1c7c`, plus the version bump.
+The 1.5.9 release is published, tagged `v1.5.9` at `83750b7`, and is the current
+release. It adds the immediate extension-update refresh and the `Update all` control on
+the Installed sources view. The installer is 257,929,710 bytes with SHA-256
+`87bf37f597a354b46f9069949de7c33652c9bbcc97f014e5f686c0336b7a00b5`; the portable is
+299,849,028 bytes with SHA-256
+`01ef92717952332cbc3fce70386ffc586b0394a65a212fe2d17553973331b3ca`. Both are recorded in
+`releases/1.5.9.json`, and the uploaded setup, portable, and sidecar were downloaded again
+with matching SHA-256 values. The automated Windows Sandbox gate passed every check on
+2026-11-07, and the manual installer tour passed in Spanish on a clean guest through the
+nine-step tour and a real chapter page. The full suite on the packaged PHP 8.5.12 passed
+3,193 tests with 57,459 assertions, and the six gates passed. The clean-machine portable
+C: and D: runs remain the 1.5.6 evidence and have not been repeated for 1.5.7, 1.5.8, or
+1.5.9. Release: https://github.com/graynb25/papyrus/releases/tag/v1.5.9.
 
-The 1.5.8 release is published, tagged `v1.5.8`, and is the current
-release. The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`. Its installer is 257,924,136 bytes and its portable zip is 299,842,534 bytes;
-both hashes are in `releases/1.5.7.json`, and the portable has a `.sha256` sidecar. The
-automated Windows Sandbox gate passed every check on 2026-11-06, the manual installer tour
-selected Spanish and passed through the reader page, and the full suite on the packaged
-PHP 8.5.12 passed 3,177 tests with 56,542 assertions. The portable zip was built, content
-and hash verified, and walked locally; its clean-machine C: and D: runs remain the 1.5.6
-evidence and have not been repeated for 1.5.7. The release is
+The 1.5.8 release is published, tagged `v1.5.8`, and precedes it. The UI pass merged as
+`8ee1c7c` on top of the 1.5.7 tree, plus the version bump; the artifacts were built from
+`f7a61cf`. The installer is 257,928,912 bytes and the portable is 299,848,123 bytes, with
+hashes in `releases/1.5.8.json`. The automated gate passed 89 of 89 checks with 0 failures,
+and the manual Spanish tour completed through a real read. The portable zip has not been
+repeated on a clean guest. Release:
+https://github.com/graynb25/papyrus/releases/tag/v1.5.8.
+
+The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`. Its installer is
+257,924,136 bytes and its portable zip is 299,842,534 bytes; both hashes are in
+`releases/1.5.7.json`, and the portable has a `.sha256` sidecar. The automated Windows
+Sandbox gate passed every check on 2026-11-06, the manual installer tour selected Spanish
+and passed through the reader page, and the full suite on the packaged PHP 8.5.12 passed
+3,177 tests with 56,542 assertions. The portable zip was built, content and hash verified,
+and walked locally; its clean-machine C: and D: runs remain the 1.5.6 evidence and have not
+been repeated for 1.5.7. The release is
 https://github.com/graynb25/papyrus/releases/tag/v1.5.7.
 
 The 1.5.6 release is also published from `8a398ab`, tagged `v1.5.6`. Its installer is
@@ -64,7 +81,7 @@ fetched, and page 0 of chapter 1 read through the authenticated proxy as a 175,4
 gate copies `build/install` rather than running the setup executable. macOS and Linux packaging
 below remain proposals, not available downloads.
 
-The 1.5.1 build was not published. 1.5.2 through 1.5.6 were published from the rewritten
+The 1.5.1 build was not published. 1.5.2 through 1.5.9 were published from the rewritten
 tree. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 The 1.5.2 and later installers are unsigned. The only signing material is a self-signed

@@ -3,13 +3,14 @@
 The portable shape: a folder you copy anywhere and run. No installer, no registry, no administrator
 rights.
 
-> **Release status (2026-11-06).** 1.5.7 is published, including a portable zip
-> with a SHA-256 sidecar. The 1.5.7 zip was built, content and hash verified, and walked
-> locally; the clean-machine C: and D: runs below remain the 1.5.6 evidence. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> **Release status (2026-11-07).** 1.5.9 is published, including a portable zip
+> with a SHA-256 sidecar. The 1.5.9 zip was built, content and hash verified, and its
+> uploaded copy was downloaded again with a matching SHA-256; the clean-machine C: and D:
+> runs below remain the 1.5.6 evidence. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 ---
 
-## Status: 1.5.6 clean-machine C: and D: runs passed
+## Clean-machine evidence: 1.5.6 C: and D: runs passed
 
 The 1.5.6 portable zip was built from `8a398ab` on 2026-11-05 at 299,506,107 bytes with 10,245
 entries and SHA-256 `bc8cd08c383bc8c2c47f6d51fae31c1c4411a99cbaa9b5449e17b28aeb685409`. The
@@ -40,9 +41,14 @@ What is true today:
 | | |
 | --- | --- |
 | The data location rule | implemented and tested |
-| The 1.5.7 archive builder | built and content/hash verified on 2026-11-06 |
-| An archive anyone can download | **yes, 1.5.7 with a SHA-256 sidecar** |
-| A clean first launch with source reading | **1.5.6 passed on C: and D: on 2026-11-05; 1.5.7 clean-machine not repeated** |
+| The 1.5.9 archive builder | built and content/hash verified on 2026-11-07; the uploaded copy was re-downloaded with a matching SHA-256 |
+| An archive anyone can download | **yes, 1.5.9 with a SHA-256 sidecar** |
+| A clean first launch with source reading | **1.5.6 passed on C: and D: on 2026-11-05; 1.5.7, 1.5.8, and 1.5.9 clean-machine not repeated** |
+
+The 1.5.9 zip was built from `9c823d4` at 299,849,028 bytes with SHA-256
+`01ef92717952332cbc3fce70386ffc586b0394a65a212fe2d17553973331b3ca`. The uploaded copy was
+downloaded again and its SHA-256 matches. It has not been run on a clean guest; the 1.5.6
+C: and D: runs above remain the clean-machine evidence.
 
 The 1.5.7 zip was built from `633eb85` at 299,842,534 bytes with 10,388 entries, SHA-256
 `3f4c34d92896aff61bc1d7322b374dc530986e56ab81909ad448a97279076a9a`. It was unpacked and

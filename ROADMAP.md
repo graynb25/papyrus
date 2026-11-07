@@ -24,10 +24,10 @@ Severity is the project's existing scale:
 
 Not a list, because [CHANGELOG.md](CHANGELOG.md) is the list. The shape of what exists: a Windows
 installer, a published portable zip, live backups and restores of both databases, daily backups, a
-diagnostics bundle, a health check that asks real questions, and a Suwayomi version check. 1.5.7
+diagnostics bundle, a health check that asks real questions, and a Suwayomi version check. 1.5.9
 is the current release; see [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md). The portable zip has
-been published since 1.5.2, and the 1.5.7 zip was built and content verified; the clean-machine
-C: and D: runs remain the 1.5.6 evidence.
+been published since 1.5.2, and the 1.5.9 zip was built, content verified, and re-downloaded with
+a matching SHA-256; the clean-machine C: and D: runs remain the 1.5.6 evidence.
 
 ---
 

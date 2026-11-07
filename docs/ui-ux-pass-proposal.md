@@ -37,9 +37,10 @@ proposed outside the app's existing tokens.
 ## Progress at a glance
 
 This is an implementation tracker, not release sign-off. `Done` means the
-proposed change has matching code and focused test evidence. It still needs the
-owner's visual review. `Partial` means a useful part is present but the block's
-full outcome or its proof is still open. `Active` is work in this change set.
+proposed change has matching code and focused test evidence. The owner confirmed
+the 1.5.8 UI pass on 2026-11-07; it merged as `8ee1c7c` and shipped with that
+release. `Partial` means a useful part is present but the block's full outcome
+or its proof is still open. `Active` is work in this change set.
 
 | State | Count | Blocks |
 | --- | ---: | --- |
@@ -54,6 +55,14 @@ Partial    [##                           ]  2 of 29
 Active     [                             ]  0 of 29
 Remaining  [                             ]  0 of 29
 ```
+
+The 1.5.8 UI pass merged as `8ee1c7c` on top of the 1.5.7 tree and shipped in
+1.5.8: landing wall, library, series, reader, search, browse, sources, health,
+insights, settings summaries, and 24 translated sentences. The 1.5.8 automated
+gate passed 89 of 89 checks, the manual Spanish tour completed all nine steps,
+CI run `42333756410` passed, and the artifacts are recorded in
+`releases/1.5.8.json`. Blocks 19 and 29 remain partial for the specific gaps
+named below.
 
 | Surface | Visual review board |
 | --- | --- |
@@ -201,12 +210,12 @@ Files it would touch: `resources/views/pages/library.blade.php`,
 
 Estimated cost: 90 minutes.
 
-Status (2026-11-05): Done. The empty library names sources and offers an Add a
+Status (2026-11-07): Done. The empty library names sources and offers an Add a
 source door. The source path has the empty store field, trust guidance and
-automatic catalogue load from Blocks 2 through 4. The 1.5.6 automated gate
-started through the reader shortcut, added and trusted a store, installed an
-extension, searched, and read a real source page through the app proxy; the
-1.5.6 manual installer tour reached step 9 of 9 on the same path.
+automatic catalogue load from Blocks 2 through 4. The 1.5.9 automated gate
+passed every check, including registration, the sources page, MangaTaro, One
+Piece, and a real chapter page; the 1.5.9 manual installer tour reached step 9
+of 9 in `session-20261107-121108`.
 
 Preview: The current empty library is captured as
 `onboarding-empty-library-current-2026-10-22T21-41-35-390.jpg` and the current
@@ -1333,9 +1342,9 @@ Preview: The research notes cite the sources this borrows from.
 The six gates from AGENTS.md section 2 run on the tree that carries each
 improvement, not on the branch it was based on:
 
-1. `php -d memory_limit=2048M artisan test --without-tty`
+1. `php -d memory_limit=2048M artisan test`
 2. `php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G`
-3. `php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/`
+3. `php -d memory_limit=2048M vendor/bin/pint --test`
 4. `python ..\.tools\suwayomi\check-dashes.py`
 5. `python tools\check-machine-detail.py`
 6. `python tools\test-check-machine-detail.py`
@@ -1556,8 +1565,8 @@ local-folder and adult-content messages are covered. All three non-English catal
 drafts that have had an independent AI language review; native review has not been
 performed. Visual QA is complete at desktop and mobile widths for the shell, auth, library,
 search, sources, downloads, insights, health, settings appearance and backups, and the 404
-page in all three locales. The reader page and the tour beyond its second step were not
-visually exercised because no live source was available. The pass found the search filter
+page in all three locales. The reader page and all nine tour steps were exercised in the
+1.5.8 and 1.5.9 manual installer tours with a live source. The pass found the search filter
 hint and ComicInfo labels still in English, and the French source action buttons clipped on
 a narrow screen; all three are fixed. The Windows installer now offers the same four
 languages, and the packaged launcher follows `PAPYRUS_LOCALE`, then the Windows UI language,
@@ -1570,9 +1579,9 @@ key parity, placeholders, plural branches, and representative pages.
 The six gates from AGENTS.md section 2 run on the tree that carries each
 improvement, not on the branch it was based on:
 
-1. `php -d memory_limit=2048M artisan test --without-tty`
+1. `php -d memory_limit=2048M artisan test`
 2. `php -d memory_limit=2G vendor/bin/phpstan analyse --no-progress --memory-limit=2G`
-3. `php -d memory_limit=2048M vendor/bin/pint --test app/ tests/ packaging/`
+3. `php -d memory_limit=2048M vendor/bin/pint --test`
 4. `python ..\.tools\suwayomi\check-dashes.py`
 5. `python tools\check-machine-detail.py`
 6. `python tools\test-check-machine-detail.py`
