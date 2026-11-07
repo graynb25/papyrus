@@ -2,6 +2,19 @@
 
 Updated 2026-11-07.
 
+- **1.5.9 is built and verified, not published.** It adds the immediate
+  extension-update refresh and the `Update all` control on the Installed sources view. The
+  full suite on the packaged PHP 8.5.12 passed 3,193 tests with 57,459 assertions, and the
+  six gates passed. The automated Windows Sandbox gate passed every check on 2026-11-07,
+  including registration, the sources page, MangaTaro, One Piece, a real chapter page,
+  diagnostics, HTTPS, and a clean stop. A live browser walk against a controlled Suwayomi
+  GraphQL server showed two Update buttons and `Update all 2` before; one Update button and
+  `Update all 1` after updating one source; and no Update buttons and no bulk control after
+  Update all. The installer is 257,929,710 bytes, SHA-256
+  `87bf37f597a354b46f9069949de7c33652c9bbcc97f014e5f686c0336b7a00b5`; the portable is
+  299,849,028 bytes, SHA-256
+  `01ef92717952332cbc3fce70386ffc586b0394a65a212fe2d17553973331b3ca`. Both are recorded
+  in [`releases/1.5.9.json`](../releases/1.5.9.json). The tag and publication await approval.
 - **1.5.8 is published.** The UI pass merged as `8ee1c7c` on top of the
   1.5.7 tree: landing wall, library, series, reader, search, browse, sources, health,
   insights, and settings summaries, plus 24 translated sentences in Spanish, French, and

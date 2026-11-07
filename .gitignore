@@ -99,6 +99,9 @@ yarn-error.log
 /build/dist-i18n-candidate/
 /build/install-1.5.7-candidate/
 /build/dist-1.5.7-candidate/
+/build/install-1.5.9-sources-candidate/
+/build/install-1.5.9-sources-candidate.vendor-stage/
+/build/dist-1.5.9-sources-candidate/
 # What a sandbox run leaves behind. Readable from the host, useless in the repository.
 /build/sandbox-results/
 # What a manual sandbox session leaves behind: a screenshot every ten seconds, a CSV index, and
