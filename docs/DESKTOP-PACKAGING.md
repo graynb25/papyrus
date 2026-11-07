@@ -1,8 +1,8 @@
 # Packaging Papyrus for Windows
 
 > **Release status (2026-11-07).** 1.5.7 is published from `633eb85`, tagged
-> `v1.5.7`. The 1.5.8 UI pass is merged as `8ee1c7c` and gated, but no installer or
-> portable has been rebuilt from it yet. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
+> `v1.5.7`. The 1.5.8 build from `f7a61cf` is proven locally with gate 89 of 89 and a
+> full manual tour, but not published and not tagged. See [RELEASE-STATUS.md](RELEASE-STATUS.md).
 
 Status: **the 1.5.7 Windows installer builds.** Its build, hashes, automated gate and manual
 tour are recorded below. The paragraphs that follow also record the 1.5.0 and 1.5.1 work that

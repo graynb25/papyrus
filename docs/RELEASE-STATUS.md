@@ -2,12 +2,24 @@
 
 Updated 2026-11-07.
 
-- **1.5.8 is in progress, not published.** The UI pass merged as `8ee1c7c` on top of the
+- **1.5.8 is built and proven locally, not published.** The UI pass merged as `8ee1c7c` on top of the
   1.5.7 tree: landing wall, library, series, reader, search, browse, sources, health,
   insights, and settings summaries, plus 24 translated sentences in Spanish, French, and
-  Brazilian Portuguese. No migrations. The six gates passed on that tree. The installer
-  and portable have not been rebuilt from it yet, and no sandbox runs have been made
-  against it. `VERSION` reads `1.5.8`.
+  Brazilian Portuguese. No migrations. The six gates passed on the release tree: full suite
+  3,190 tests with 3,190 passing, Pint, PHPStan, dash, machine-detail and the checker
+  self-test. The installer is 257,928,912 bytes, SHA-256
+  `9e96713f5be7dde0ecdba289f15d7869569a702fc5e2521399320ea18173492e`; the portable
+  is 299,848,123 bytes with 10,388 entries, SHA-256
+  `14a2ac6e25c928f07495e42f562faeb6e4a3211a8f7eb9d38fe585dc4aff4ecb`. Both are recorded
+  in [`releases/1.5.8.json`](../releases/1.5.8.json); the installer is unsigned. The automated
+  Windows Sandbox gate passed 89 checks with 0 failures: sources page 200 with no failure
+  callout, MangaTaro installed and listed, One Piece fetched, and page 0 of chapter 1 read
+  through the authenticated proxy at 200 `image/webp` and the reference 175,432 bytes. The
+  manual installer tour ran the real setup in Spanish on a clean guest through all nine tour
+  steps: install, register, store, trust, Available grid, MangaTaro install, One Piece search,
+  series with 1,204 chapters, and real chapter 1 reader pages, in session
+  `session-20261106-215135` under the 1.5.8 release worktree with all 36 loop frames reviewed.
+  The portable zip has not been repeated on a clean guest. `VERSION` reads `1.5.8`.
 - **1.5.7 is published.** Spanish, French, and Brazilian Portuguese are available
   as interface languages, and all three non-English catalogs are AI drafts that have had an
   independent AI language review. Native-speaker review has not been performed. Visual QA
