@@ -3,13 +3,14 @@
 The same release notes as [CHANGELOG.md](CHANGELOG.md), written for a reader rather than a developer.
 No commit hashes, no file names, no jargon.
 
-> **Release status (2026-11-07).** 1.5.8 is the current published release. 1.5.1 was
-> built and proven locally but was not published. See
+> **Release status (2026-11-07).** 1.5.8 is the current published release. 1.5.9 is
+> prepared locally and is awaiting packaged verification. 1.5.1 was built and proven
+> locally but was not published. See
 > [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 ---
 
-## Unreleased
+## Version 1.5.9, 7 November 2026
 
 ### Updates finish when they finish
 

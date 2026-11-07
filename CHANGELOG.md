@@ -21,7 +21,9 @@ checkable: each carries the commit that made the change.
 
 ---
 
-## Unreleased
+## 1.5.9 - 2026-11-07
+
+A source maintenance release: updates finish visibly, and the Installed view can update the whole set.
 
 ### Added
 
