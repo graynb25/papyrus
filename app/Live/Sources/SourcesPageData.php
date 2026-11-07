@@ -75,6 +75,26 @@ final class SourcesPageData
     }
 
     /**
+     * How many installed extensions the server says have an update.
+     *
+     * The Installed view needs this to offer one bulk action without sending the
+     * reader to the Updates tab first. A failed count is not a reason to break a
+     * page that can otherwise render its catalogue: the button simply stays off,
+     * and the Updates tab still names the failure through its own read.
+     */
+    public function updateCount(): int
+    {
+        try {
+            return $this->extensions->extensionCount([
+                'has_update' => true,
+                'installed' => true,
+            ]);
+        } catch (SuwayomiException) {
+            return 0;
+        }
+    }
+
+    /**
      * The catalogue as one read: the rows, the count, or why neither could be had.
      *
      * One try for both, because a failure here is one fact the page tells once; two

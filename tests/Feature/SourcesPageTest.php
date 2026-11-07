@@ -186,6 +186,7 @@ class SourcesPageTest extends TestCase
         $variables = $this->requestVariables($request);
 
         $installed = null;
+        $hasUpdate = null;
         $languagesOut = [];
         $ratingsIn = [];
 
@@ -194,6 +195,14 @@ class SourcesPageTest extends TestCase
 
             if (is_array($field)) {
                 $installed = (bool) ($field['equalTo'] ?? false);
+
+                continue;
+            }
+
+            $field = $clause['hasUpdate'] ?? null;
+
+            if (is_array($field)) {
+                $hasUpdate = (bool) ($field['equalTo'] ?? false);
 
                 continue;
             }
@@ -215,8 +224,12 @@ class SourcesPageTest extends TestCase
 
         return array_values(array_filter(
             $this->nodes,
-            function (array $n) use ($installed, $languagesOut, $ratingsIn): bool {
+            function (array $n) use ($installed, $hasUpdate, $languagesOut, $ratingsIn): bool {
                 if ($installed !== null && (bool) ($n['isInstalled'] ?? false) !== $installed) {
+                    return false;
+                }
+
+                if ($hasUpdate !== null && (bool) ($n['hasUpdate'] ?? false) !== $hasUpdate) {
                     return false;
                 }
 
@@ -459,6 +472,21 @@ class SourcesPageTest extends TestCase
                 if ($this->updateShouldFail) {
                     return Http::response(['errors' => [['message' => 'Download failed']]], 200);
                 }
+
+                /*
+                 * The real server clears `hasUpdate` once the package moves. The
+                 * fake has to do the same or a page that re-reads the catalogue
+                 * and one that reuses its pre-mutation rows look identical.
+                 */
+                $updated = $this->requestVariables($request)['id'] ?? '';
+
+                foreach ($this->nodes as &$node) {
+                    if (($node['pkgName'] ?? null) === $updated) {
+                        $node['hasUpdate'] = false;
+                    }
+                }
+
+                unset($node);
 
                 return Http::response(['data' => ['updateExtension' => ['clientMutationId' => null]]]);
             }
@@ -1299,6 +1327,74 @@ class SourcesPageTest extends TestCase
             return str_contains((string) $query, 'updateExtension')
                 && str_contains((string) $query, 'update: true');
         });
+    }
+
+    /**
+     * The button has to go when the source does, not when the next press arrives.
+     *
+     * The trust check read `$this->extensions` before the mutation, so the same
+     * Livewire request rendered the cached rows with the old `hasUpdate` flag.
+     * The next request re-read the server and the first button disappeared, which
+     * is exactly the delayed behaviour the owner reported.
+     */
+    public function test_the_update_button_disappears_in_the_same_response(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([$this->updatableExtension()]);
+
+        $component = $this->page();
+
+        $this->assertStringContainsString('wire:click="update(', $component->html());
+
+        $component->call('update', 'eu.kanade.tachiyomi.extension.en.example');
+
+        $this->assertStringNotContainsString(
+            'wire:click="update(',
+            $component->html(),
+            'The row must be re-read in the same response, not on the next press.',
+        );
+    }
+
+    public function test_update_all_is_offered_from_the_installed_view(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([
+            $this->updatableExtension(),
+            $this->extension('eu.kanade.tachiyomi.extension.en.current', 'Current', true, true),
+        ]);
+
+        $this->page()
+            ->assertSee('Update all')
+            ->assertSee('data-test="update-all"', false);
+    }
+
+    public function test_update_all_from_installed_walks_every_out_of_date_row(): void
+    {
+        $this->store();
+        app(ExtensionManager::class)->trust($this->user, ExtensionStore::query()->first());
+        $this->serveExtensions([
+            $this->updatableExtension(),
+            array_merge(
+                $this->extension('eu.kanade.tachiyomi.extension.en.second', 'Second', true, true),
+                ['hasUpdate' => true],
+            ),
+        ]);
+
+        $component = $this->page()->call('updateAll')->assertHasNoErrors();
+
+        $mutations = count(Http::recorded(fn (Request $request): bool => str_contains(
+            (string) ($request->data()['query'] ?? ''),
+            'update: true',
+        )));
+
+        $this->assertSame(2, $mutations, 'Both out-of-date extensions get their own mutation.');
+        $this->assertStringNotContainsString(
+            'wire:click="updateAll"',
+            $component->html(),
+            'The bulk control disappears when the set is empty.',
+        );
     }
 
     public function test_update_all_walks_every_out_of_date_extension(): void

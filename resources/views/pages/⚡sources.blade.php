@@ -657,6 +657,7 @@ new class extends AdultContentPage
         }
 
         $this->failures = [];
+        $this->forgetCatalogue();
 
         Flux::toast(
             text: __('Its source now runs the version the store ships.'),
@@ -675,11 +676,41 @@ new class extends AdultContentPage
      */
     public function updateAll(): void
     {
-        $targets = $this->extensionManager
-            ->extensions(['has_update' => true, 'installed' => true], 500, 0)
-            ->filter(fn (array $row): bool => $this->rules->isTrusted($row, $this->trustedIds))
-            ->pluck('pkgName')
-            ->all();
+        /*
+         * Read the whole update set, not one page of it.
+         *
+         * The old 500 row cap was invisible in the button's promise. A reader can
+         * install more than 500 extensions from a community store, and "update all"
+         * that silently stops at a page boundary is the same kind of confident
+         * wrong answer as a stale row. The bound is ten pages so a server that
+         * ignores the offset cannot keep this loop alive forever; five thousand
+         * rows is more than the measured catalogue holds.
+         */
+        $targets = [];
+        $offset = 0;
+        $pageSize = 500;
+
+        for ($page = 0; $page < 10; $page++) {
+            $rows = $this->extensionManager->extensions(
+                ['has_update' => true, 'installed' => true],
+                $pageSize,
+                $offset,
+            );
+
+            foreach ($rows as $row) {
+                if ($this->rules->isTrusted($row, $this->trustedIds)) {
+                    $targets[] = (string) $row['pkgName'];
+                }
+            }
+
+            if ($rows->count() < $pageSize) {
+                break;
+            }
+
+            $offset += $pageSize;
+        }
+
+        $targets = array_values(array_unique($targets));
 
         if ($targets === []) {
             Flux::toast(
@@ -693,6 +724,7 @@ new class extends AdultContentPage
 
         $result = $this->extensionManager->updateMany($targets);
 
+        $this->forgetCatalogue();
         $this->failures = $result['failed'];
 
         if ($this->failures !== []) {
@@ -1142,6 +1174,32 @@ new class extends AdultContentPage
     public function lastPage(): int
     {
         return $this->formatting->lastPage($this->total, self::PER_PAGE);
+    }
+
+    /**
+     * How many installed extensions the server says have an update.
+     *
+     * Read only on the views that offer the bulk action, so the Available and All
+     * tabs do not pay for a count they never show.
+     */
+    #[Computed]
+    public function updateCount(): int
+    {
+        return $this->data->updateCount();
+    }
+
+    /**
+     * Drop the catalogue values a mutation made stale.
+     *
+     * The single update used to read `$this->extensions` for its trust check,
+     * which cached the rows before the mutation. The render in the same request
+     * then drew the old `hasUpdate` flag, and the button only disappeared on the
+     * next Livewire request. Forgetting the computed values makes the same
+     * response read the server again.
+     */
+    private function forgetCatalogue(): void
+    {
+        unset($this->catalogue, $this->extensions, $this->total, $this->lastPage, $this->updateCount);
     }
 
     /**
@@ -1840,17 +1898,28 @@ new class extends AdultContentPage
                 One press for the whole update set, which is the reason the
                 Updates view exists at all: a community store ships updates constantly,
                 and forty of them is not a queue a reader should walk.
+
+                It is also offered from Installed, because that is where a reader
+                sees the source list they are actually using. The Updates tab
+                already knows its own total; Installed asks for the count so the
+                button appears without moving tabs first.
             --}}
-            @if ($view === 'updates' && $this->total > 0)
-                <flux:button
-                    size="sm"
-                    variant="primary"
-                    wire:click="updateAll"
-                    wire:loading.attr="disabled"
-                    icon="arrow-path"
-                >
-                    {{ __('Update all') }}
-                </flux:button>
+            @if (in_array($view, ['installed', 'updates'], true))
+                @php($updates = $view === 'updates' ? $this->total : $this->updateCount)
+
+                @if ($updates > 0)
+                    <flux:button
+                        size="sm"
+                        variant="primary"
+                        wire:click="updateAll"
+                        wire:loading.attr="disabled"
+                        icon="arrow-path"
+                        data-test="update-all"
+                    >
+                        {{ __('Update all') }}
+                        <span class="ms-1 text-xs tabular-nums opacity-80">{{ Number::format($updates) }}</span>
+                    </flux:button>
+                @endif
             @endif
         </div>
 
