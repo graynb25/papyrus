@@ -7,7 +7,10 @@ promised.
 Everything here is based on what was measured on this machine, and each finding names the
 measurement. Where something is a judgement call rather than a fact it says so.
 
-## Current delivery status, 2026-11-06
+## Current delivery status, 2026-11-07
+
+The 1.5.8 tree is merged and gated but not yet built: the UI pass sits on top of the
+1.5.7 tree as `8ee1c7c`, and no installer or portable has been rebuilt from it.
 
 The 1.5.7 release is published from `633eb85`, tagged `v1.5.7`, and is the current
 release. Its installer is 257,924,136 bytes and its portable zip is 299,842,534 bytes;

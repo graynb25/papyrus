@@ -1,7 +1,13 @@
 ﻿# Release status
 
-Updated 2026-11-06.
+Updated 2026-11-07.
 
+- **1.5.8 is in progress, not published.** The UI pass merged as `8ee1c7c` on top of the
+  1.5.7 tree: landing wall, library, series, reader, search, browse, sources, health,
+  insights, and settings summaries, plus 24 translated sentences in Spanish, French, and
+  Brazilian Portuguese. No migrations. The six gates passed on that tree. The installer
+  and portable have not been rebuilt from it yet, and no sandbox runs have been made
+  against it. `VERSION` reads `1.5.8`.
 - **1.5.7 is published.** Spanish, French, and Brazilian Portuguese are available
   as interface languages, and all three non-English catalogs are AI drafts that have had an
   independent AI language review. Native-speaker review has not been performed. Visual QA

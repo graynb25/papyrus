@@ -21,6 +21,28 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## 1.5.8 - unreleased
+
+A visual pass over the whole app: landing wall, library, series, reader, search, browse, sources, health, insights, and settings. No migrations, no new palette, no component replacements.
+
+### Added
+
+**The login wall arrives ready and pauses on hover.** The Reading Room fades its ambient glow in once the wall or the ink garden is painted, the drifting rows pause while the pointer is over them, and a newly added cover pops with the app spring curve. A resize after the garden finished growing used to clear the canvas and repaint nothing; it now repaints fully. `8ee1c7c`
+
+**The library names its state out loud.** The header count is tabular with a live region, the continue rail carries its own count pill and wider cards with a stagger entrance, and the shelf chips and sort group are labelled groups with pressed states. `8ee1c7c`
+
+**Series and reader lead with the next step.** The series hero names the resume destination with library and offline action groups beside it, the chapter toolbar sticks with counts and order, and rows show read state plus a plain-language download pill. The reader keeps its back link and page counter always visible and groups settings into reading, pages, and filters. `8ee1c7c`
+
+**System pages summarize instead of listing.** Search and browse group by language shelf with a filter summary and skeleton rhythm, source cards carry moss health pills with direct flag links, health rows read N sources and M dead without opening, and insights rows keep cover plus bar in descending order. `8ee1c7c`
+
+### Fixed
+
+**The settings nav no longer spans the page.** A rebuilt stylesheet had missed the new nav width, so every settings page stretched its nav full width and squeezed the content. The rule is in the build and the nav measures 260px again. `8ee1c7c`
+
+**The auth footer language switcher no longer spans the page.** The shared footer passed the switcher no width cap, so it stretched full width on the login wall. It is capped at 20rem on all three public shells. `8ee1c7c`
+
+**Twenty-four new interface sentences are translated.** The settings summaries, sort label, reader group names, search and browse summaries, and language counts now have Spanish, French, and Brazilian Portuguese values with matching placeholders and plural branches. `8ee1c7c`
+
 ## 1.5.7 - 2026-11-06
 
 A localization release for the application, the Windows installer, and the packaged launcher, plus a launcher stop fix found during the packaged walk.

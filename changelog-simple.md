@@ -9,6 +9,22 @@ No commit hashes, no file names, no jargon.
 
 ---
 
+## Version 1.5.8, not yet released
+
+This release is still being built. The interface is getting a full visual pass with no changes to how anything works.
+
+### A calmer landing, library, series, and reader
+
+The login wall fades in ready, pauses its drift while you hover, and pops newly added covers. The library names its counts, the series page leads with where to resume, and the reader keeps its back link and page counter on screen.
+
+### System pages that summarize
+
+Search and browse group by language, source cards show health at a glance, and settings pages name what each row does before you open it.
+
+### Fixed in this pass
+
+Settings pages no longer stretch their navigation across the page, and the login footer language picker stays a compact box. Twenty-four new interface sentences are translated into Spanish, French, and Brazilian Portuguese.
+
 ## Version 1.5.7, 6 November 2026
 
 ### Choose your interface language
