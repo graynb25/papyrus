@@ -17,8 +17,13 @@ Updated 2026-11-07.
   in [`releases/1.5.9.json`](../releases/1.5.9.json). It is tagged `v1.5.9` at `83750b7`
   and published at https://github.com/graynb25/papyrus/releases/tag/v1.5.9. The uploaded
   setup, portable, and sidecar were downloaded again and their SHA-256 values match. The
-  setup executable was not toured manually on a clean guest; the automated gate ran the
-  packaged 1.5.9 install tree.
+  manual installer tour passed on 2026-11-07 in
+  `build/manual-sandbox-results/session-20261107-121108`: the real setup ran in Spanish on
+  a clean guest, installed per user, launched Papyrus at `http://localhost:8000`, and
+  completed the nine-step guided tour through registration, sources, the extension
+  catalogue, search, One Piece, and a real chapter page. The session holds 40 loop frames
+  and 25 named step frames. The guest did not record the payload count; the installer
+  build checked 10,387 files.
 - **1.5.8 is published.** The UI pass merged as `8ee1c7c` on top of the
   1.5.7 tree: landing wall, library, series, reader, search, browse, sources, health,
   insights, and settings summaries, plus 24 translated sentences in Spanish, French, and
