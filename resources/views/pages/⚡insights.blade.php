@@ -305,7 +305,7 @@ new class extends Component {
                 @endphp
 
                 @foreach ($this->rows as $row)
-                    <li class="flex gap-3 p-4">
+                    <li class="flex gap-3 p-4" data-test="insight-row" data-manga="{{ $row['manga_id'] }}" data-seconds="{{ $row['seconds'] }}">
                         {{-- The reader recognises a series by its cover before its title, so the
                              row opens with the same atom the migrate rows carry: row scale, no
                              tilt, the frame holding its own space. A cover the lens' entry does

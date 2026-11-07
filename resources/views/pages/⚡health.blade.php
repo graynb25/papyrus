@@ -200,7 +200,7 @@ new class extends Component {
             }
         }
 
-        $total = trans_choice('{1} :count variant|[2,*] :count variants', $variants->count(), ['count' => Number::format($variants->count())]);
+        $total = trans_choice('{1} :count source|[2,*] :count sources', $variants->count(), ['count' => Number::format($variants->count())]);
 
         return $parts === [] ? $total : $total.', '.implode(', ', $parts);
     }
@@ -642,6 +642,8 @@ new class extends Component {
                                         HealthDashboard::STATE_HEALTHY => 'green',
                                         default => 'zinc',
                                     } }}"
+                                    data-test="health-state"
+                                    data-state="{{ $row->state }}"
                                 >
                                     {{ $this->stateLabel($row->state) }}
                                 </flux:badge>
@@ -659,14 +661,14 @@ new class extends Component {
                                 {{ $row->site === 'unknown' ? __('no home URL published') : $row->site }}
                             </p>
 
-                            <p class="mt-1 text-[0.7rem] font-medium uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                            <p class="mt-1 text-[0.7rem] font-medium uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400" data-test="site-summary">
                                 {{ $this->siteSummary($row->site) }}
                             </p>
                         </div>
 
                         <div class="flex shrink-0 items-center gap-4 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                            <span>
-                                {{ trans_choice('{1} :count variant|[2,*] :count variants', $row->variants, ['count' => $row->variants]) }}
+                            <span data-test="site-counts">
+                                {{ trans_choice('{1} :count source|[2,*] :count sources', $row->variants, ['count' => $row->variants]) }}
                             </span>
 
                             <span @class([

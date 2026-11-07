@@ -552,7 +552,7 @@ new class extends Component
         grid is one of them.
     --}}
     @unless ($adultRefused)
-        <form wire:submit="runSearch" class="flex flex-wrap items-center gap-2">
+        <form wire:submit="runSearch" class="flex flex-wrap items-center gap-2" role="search" aria-label="{{ __('Search this source') }}">
         <flux:input
             name="query"
             wire:model="query"
@@ -574,6 +574,14 @@ new class extends Component
             </flux:button>
         @endif
     </form>
+
+        <p class="text-xs text-zinc-500 dark:text-zinc-400" data-test="browse-filter-summary">
+            @if ($this->searching)
+                {{ __('Searching :source in :lang.', ['source' => $source->display_name, 'lang' => $source->lang]) }}
+            @else
+                {{ __('Browsing :type from :source in :lang.', ['type' => $type === 'LATEST' ? __('Latest') : __('Popular'), 'source' => $source->display_name, 'lang' => $source->lang]) }}
+            @endif
+        </p>
 
     @if ($this->searching)
         <p class="text-sm text-zinc-500 dark:text-zinc-400" data-test="search-summary">
@@ -661,7 +669,15 @@ new class extends Component
             non-answer. Genre is no substitute, measured the same way: 16 of 20 rows blank on
             Asura Scans and 47 of 50 on MangaFire.
         --}}
-        <ul
+        <section data-test="browse-shelf" data-lang="{{ $source->lang }}" class="space-y-3">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 class="font-display text-sm font-semibold">{{ $source->lang }}</h2>
+                <p class="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                    {{ trans_choice('{1} :count title|[2,*] :count titles', count($rows), ['count' => count($rows)]) }}
+                </p>
+            </div>
+
+            <ul
             class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
             wire:key="browse-grid"
         >
@@ -754,6 +770,7 @@ new class extends Component
                 </li>
             @endforeach
         </ul>
+        </section>
 
         {{--
             The status under the grid. Outside the sentinel below, because the sentinel is
@@ -763,9 +780,13 @@ new class extends Component
             @if ($loadingMore)
                 {{-- Skeleton covers rather than a spinner: the shape that is
                      coming is known, so show its outline filling in. --}}
-                <div class="grid w-full grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" aria-hidden="true">
+                <div class="grid w-full grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" aria-hidden="true" data-test="browse-skeleton">
                     @foreach (range(1, 6) as $ghost)
-                        <div class="skeleton aspect-[2/3] rounded-(--radius-card)"></div>
+                        <div class="space-y-2.5">
+                            <div class="skeleton aspect-[2/3] rounded-(--radius-card)"></div>
+                            <div class="skeleton h-3 w-3/4 rounded"></div>
+                            <div class="skeleton h-3 w-1/2 rounded"></div>
+                        </div>
                     @endforeach
                 </div>
 

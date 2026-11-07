@@ -408,6 +408,44 @@ class InsightsPageTest extends TestCase
             ->assertSee('1 hour');
     }
 
+    public function test_rows_render_largest_first_with_cover_and_bar(): void
+    {
+        $this->extraNode = [
+            'id' => '77',
+            'title' => 'Berserk',
+            'status' => 'ONGOING',
+            'initialized' => true,
+            'source' => ['id' => '1', 'name' => 'MangaFire', 'lang' => 'EN'],
+            'chapters' => ['totalCount' => 100, 'nodes' => []],
+        ];
+
+        SeriesState::factory()->create([
+            'user_id' => $this->alice->id,
+            'suwayomi_manga_id' => 76,
+            'in_library' => true,
+        ]);
+        SeriesState::factory()->create([
+            'user_id' => $this->alice->id,
+            'suwayomi_manga_id' => 77,
+            'in_library' => true,
+        ]);
+
+        $this->sitting($this->alice, 76, 60);
+        $this->sitting($this->alice, 77, 3600);
+
+        $html = $this->get('/insights')->assertOk()->getContent();
+
+        $first = strpos($html, 'data-manga="77"');
+        $second = strpos($html, 'data-manga="76"');
+
+        $this->assertNotFalse($first);
+        $this->assertNotFalse($second);
+        $this->assertLessThan($second, $first, 'The hour of Berserk renders before the minute of Chainsaw Man.');
+
+        $this->assertStringContainsString('bg-vermilion-500', $html);
+        $this->assertStringContainsString(ImageUrl::thumbnail(77), $html);
+    }
+
     public function test_a_future_date_is_refused_as_a_window_and_reads_as_the_whole_ledger(): void
     {
         $this->sitting($this->alice, 76, 5000, daysAgo: 400);

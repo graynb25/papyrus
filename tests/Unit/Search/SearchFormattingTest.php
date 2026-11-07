@@ -3,8 +3,10 @@
 namespace Tests\Unit\Search;
 
 use App\Live\Search\SearchFormatting;
+use App\Models\SearchResult;
 use App\Models\SearchRun;
 use App\Models\Source;
+use App\Search\DedupeGroup;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Tests\TestCase;
@@ -92,6 +94,41 @@ class SearchFormattingTest extends TestCase
 
         $this->assertSame(['en', 'de'], $this->formatting->languages($counts)->pluck('lang')->all());
         $this->assertSame(['ja', 'fr'], $this->formatting->rareLanguages($counts)->pluck('lang')->all());
+    }
+
+    public function test_a_shelf_uses_the_primary_language_then_the_first_mapped_alternative(): void
+    {
+        $group = DedupeGroup::fromResults(new Collection([
+            new SearchResult(['suwayomi_manga_id' => 1, 'suwayomi_source_id' => 11, 'title' => 'One Piece']),
+            new SearchResult(['suwayomi_manga_id' => 2, 'suwayomi_source_id' => 12, 'title' => 'One Piece']),
+        ]));
+
+        $this->assertSame('en', $this->formatting->shelfLanguage($group, [11 => 'en', 12 => 'ja']));
+        $this->assertSame('ja', $this->formatting->shelfLanguage($group, [12 => 'ja']));
+        $this->assertSame('other', $this->formatting->shelfLanguage($group, []));
+    }
+
+    public function test_shelves_group_by_language_largest_first(): void
+    {
+        $enOne = DedupeGroup::fromResults(new Collection([
+            new SearchResult(['suwayomi_manga_id' => 1, 'suwayomi_source_id' => 11, 'title' => 'Alpha']),
+        ]));
+        $enTwo = DedupeGroup::fromResults(new Collection([
+            new SearchResult(['suwayomi_manga_id' => 2, 'suwayomi_source_id' => 11, 'title' => 'Beta']),
+        ]));
+        $jaOne = DedupeGroup::fromResults(new Collection([
+            new SearchResult(['suwayomi_manga_id' => 3, 'suwayomi_source_id' => 12, 'title' => 'Gamma']),
+        ]));
+
+        $shelves = $this->formatting->shelves(
+            new Collection([$jaOne, $enOne, $enTwo]),
+            [11 => 'en', 12 => 'ja'],
+        );
+
+        $this->assertSame(['en', 'ja'], array_column($shelves, 'lang'));
+        $this->assertSame(2, $shelves[0]['groups']->count());
+        $this->assertSame(1, $shelves[1]['groups']->count());
+        $this->assertSame('English', $shelves[0]['name']);
     }
 
     /**

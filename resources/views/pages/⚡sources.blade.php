@@ -1399,11 +1399,15 @@ new class extends AdultContentPage
                                 @endif
 
                                 @if (($group['health']['label'] ?? null) !== null)
-                                    <span @class([
-                                        'inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium',
-                                        'bg-moss-600 text-white dark:bg-moss-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') === 'healthy',
-                                        'bg-zinc-500/10 text-zinc-600 dark:bg-white/10 dark:text-zinc-300' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
-                                    ])>
+                                    <span
+                                        data-test="source-health-pill"
+                                        data-state="{{ $group['health']['state'] ?? 'healthy' }}"
+                                        @class([
+                                            'inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium',
+                                            'bg-moss-600 text-white dark:bg-moss-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') === 'healthy',
+                                            'bg-vermilion-600 text-white dark:bg-vermilion-500 dark:text-white' => ($group['health']['state'] ?? 'healthy') !== 'healthy',
+                                        ])
+                                    >
                                         <span class="drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]">
                                             {{ $group['health']['label'] }}
                                         </span>
@@ -1995,26 +1999,36 @@ new class extends AdultContentPage
             @php($languageLimit = 2)
             @php($collapsedLanguages = count($this->catalogueLanguages) > $languageLimit && ! $this->showAllLanguages)
 
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex flex-wrap items-center gap-3" data-test="language-strip">
                 <flux:label>{{ __('Language') }}</flux:label>
+
+                <span class="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                    {{ trans_choice('{1} :count language|[2,*] :count languages', count($this->catalogueLanguages), ['count' => count($this->catalogueLanguages)]) }}
+                </span>
+
+                @if (count($this->catalogueLanguages) > $languageLimit)
+                    <flux:button size="sm" variant="ghost" wire:click="toggleLanguageRow" data-test="language-strip-toggle">
+                        {{ $this->showAllLanguages ? __('Show fewer languages') : __('Show all languages') }}
+                    </flux:button>
+                @endif
 
                 <div class="w-full max-w-full">
                     <div @class([
-                        'overflow-x-auto pb-1' => $collapsedLanguages,
-                        '[mask-image:linear-gradient(to_right,black_90%,transparent)]' => $collapsedLanguages,
-                        'lg:overflow-visible lg:pb-0 lg:[mask-image:none]' => $collapsedLanguages,
+                        'overflow-x-auto pb-1 [mask-image:linear-gradient(to_right,black_90%,transparent)]' => $collapsedLanguages,
                     ])>
                         <div @class([
-                            'flex items-center gap-2',
+                            'flex items-center gap-1.5',
                             'min-w-max' => $collapsedLanguages,
                             'flex-wrap' => ! $collapsedLanguages,
-                            'lg:min-w-0 lg:flex-wrap' => $collapsedLanguages,
                         ])>
                     @foreach ($this->catalogueLanguages as $index => $language)
+                        @if ($collapsedLanguages && $index >= $languageLimit)
+                            @continue
+                        @endif
                         <flux:button
                             size="sm"
                             :variant="$language['on'] ? 'outline' : 'ghost'"
-                            class="{{ $index >= $languageLimit && ! $this->showAllLanguages ? 'rounded-full! max-lg:hidden' : 'rounded-full!' }}"
+                            class="rounded-full!"
                             wire:click="toggleLanguage({{ Illuminate\Support\Js::from($language['code'])->toHtml() }})"
                             aria-pressed="{{ $language['on'] ? 'true' : 'false' }}"
                             title="{{ $language['code'] }}"
@@ -2038,14 +2052,6 @@ new class extends AdultContentPage
                     </div>
                 </div>
             </div>
-
-            @if (count($this->catalogueLanguages) > $languageLimit)
-                <div class="flex flex-wrap items-center gap-3 lg:hidden">
-                    <flux:button size="sm" variant="ghost" wire:click="toggleLanguageRow">
-                        {{ $this->showAllLanguages ? __('Show fewer languages') : __('Show all languages') }}
-                    </flux:button>
-                </div>
-            @endif
 
             <div class="flex flex-wrap items-center gap-3">
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">

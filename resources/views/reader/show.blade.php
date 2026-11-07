@@ -201,6 +201,66 @@
         }
 
         /*
+         * Top chrome. One bar, always on screen, holding the way back and the
+         * place in the chapter. The hairline above it carries progress, so this
+         * bar carries position in plain numbers. Fixed, so a reader deep in a
+         * long strip never loses the way back to the series.
+         */
+        .reader-topbar {
+            position: fixed;
+            inset-block-start: 2px;
+            inset-inline: 0;
+            z-index: 40;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            padding: .5rem .75rem;
+            background: color-mix(in oklab, var(--ink-950) 72%, transparent);
+            border-block-end: 1px solid var(--glass-hairline);
+            backdrop-filter: blur(16px) saturate(150%);
+            -webkit-backdrop-filter: blur(16px) saturate(150%);
+        }
+
+        .reader-back {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .5rem .75rem;
+            border-radius: 9999px;
+            text-decoration: none;
+            white-space: nowrap;
+            font-size: .75rem;
+            font-weight: 500;
+            color: var(--ink-200);
+            background: var(--glass-surface);
+            border: 1px solid var(--glass-hairline);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+        }
+
+        .reader-back:hover {
+            background: color-mix(in oklab, var(--ink-800) 92%, transparent);
+            border-color: color-mix(in oklab, white 16%, transparent);
+        }
+
+        .reader-back:focus-visible { outline: 2px solid var(--vermilion-500); outline-offset: 2px; }
+
+        .reader-back svg { flex-shrink: 0; }
+
+        /*
+         * Page counter in the top bar. Always visible, tabular so the digits
+         * never shuffle the bar as the reader turns pages.
+         */
+        .reader-counter {
+            margin: 0;
+            font-size: .75rem;
+            font-variant-numeric: tabular-nums;
+            color: var(--ink-400);
+            white-space: nowrap;
+        }
+
+        /*
          * Page counter. Fixed to the top edge, hidden until the reader is near the
          * top of the chapter so it never sits over the artwork.
          */
@@ -220,6 +280,16 @@
         }
 
         body.reader-visible .page-marker { opacity: 1; }
+
+        /*
+         * Room for the always-visible top bar, so the first page never sits
+         * under the back link and the counter. Paged mode keeps its full
+         * height images and lets the translucent bar sit over them, because a
+         * paged image is contained and the bar is narrow.
+         */
+        body { padding-block-start: 3.25rem; }
+        body[data-mode="paged"] { padding-block-start: 0; }
+        body[data-mode="paged"] #paged { padding-block-start: 3.25rem; }
 
         /*
          * Paged mode. One image in the viewport, no scroll. The container scrolls
@@ -275,16 +345,15 @@
         /*
          * Corner controls.
          *
-         * All three share one rule on purpose. They were three separate rules once
+         * All three share one rule on purpose. They were four separate rules once
          * and the settings button ended up unpositioned and unlayered, sitting in
          * the flow under the tap zones, which no amount of reading the CSS would
          * have made obvious. One rule, three offsets.
          *
          * Above the tap zones at z-index 20 so a corner control is always
          * clickable, and along the bottom edge because that is where a thumb is
-         * and the top of a reader belongs to the artwork.
+         * and the top of a reader belongs to the artwork and the top bar.
          */
-        .reader-back,
         .reader-toggle,
         .reader-settings-toggle,
         .reader-note-toggle {
@@ -332,36 +401,18 @@
             transition: background .2s var(--ease-swift), transform .2s var(--ease-swift), border-color .2s;
         }
 
-        .reader-back {
-            inset-inline-end: 1rem;
-            display: inline-flex;
-            align-items: center;
-            gap: .5rem;
-            width: auto;
-            min-width: 2.5rem;
-            padding: .5rem .75rem;
-            border-radius: 9999px;
-            text-decoration: none;
-            white-space: nowrap;
-            font-size: .75rem;
-            font-weight: 500;
-            color: var(--ink-200);
-        }
-
-        .reader-back svg { flex-shrink: 0; }
-        .reader-toggle { inset-inline-end: 4rem; }
-        .reader-settings-toggle { inset-inline-end: 7rem; }
+        .reader-toggle { inset-inline-end: 1rem; }
+        .reader-settings-toggle { inset-inline-end: 4rem; }
 
         /*
-         * A fourth control, so a fourth offset at the same 3rem spacing.
+         * A third control, so a third offset at the same 3rem spacing.
          *
          * The note toggle is last because it is the least used: reading a chapter needs
          * settings far more often than it needs to write about one, and the corner
-         * nearest the back link is the easiest to reach by accident.
+         * nearest the settings button is the easiest to reach by accident.
          */
-        .reader-note-toggle { inset-inline-end: 10rem; }
+        .reader-note-toggle { inset-inline-end: 7rem; }
 
-        .reader-back:hover,
         .reader-toggle:hover,
         .reader-settings-toggle:hover,
         .reader-note-toggle:hover {
@@ -369,13 +420,11 @@
             border-color: color-mix(in oklab, white 16%, transparent);
         }
 
-        .reader-back:active,
         .reader-toggle:active,
         .reader-settings-toggle:active,
         .reader-note-toggle:active { transform: scale(.94); }
 
         /* Visible to a keyboard, which is how a control like this is found. */
-        .reader-back:focus-visible,
         .reader-toggle:focus-visible,
         .reader-settings-toggle:focus-visible,
         .reader-note-toggle:focus-visible { outline: 2px solid var(--vermilion-500); outline-offset: 2px; }
@@ -906,9 +955,28 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
          chapter the reader is. Paged mode has no document scroll, so it hides. --}}
     <div class="reader-progress" aria-hidden="true"></div>
 
-    <div class="page-marker" aria-hidden="true">
-        <span data-reader-current>{{ $resumeAt + 1 }}</span> / <span data-reader-total>{{ $pageCount }}</span>
-    </div>
+    {{--
+        Top chrome, always on screen. The back link and the page counter share
+        one bar so a reader deep in a long strip never loses either. The counter
+        keeps the server-rendered spans, so the place in the chapter is correct
+        before any script runs.
+    --}}
+    <header class="reader-topbar" data-test="reader-topbar">
+        <a href="{{ route('series', ['manga' => $mangaId]) }}"
+           class="reader-back"
+           data-test="reader-back"
+           aria-label="{{ __('Back to the series') }}"
+           title="{{ __('Back to the series') }}">
+            <svg class="size-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+            <span>{{ __('Back to the series') }}</span>
+        </a>
+
+        <p class="reader-counter" data-test="page-counter" aria-hidden="true">
+            <span data-reader-current>{{ $resumeAt + 1 }}</span> / <span data-reader-total>{{ $pageCount }}</span>
+        </p>
+    </header>
 
     {{--
         Resume after the first image rather than jumping the scroll position: on a
@@ -1070,9 +1138,13 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
 
     <div class="reader-panel" id="reader-panel" data-reader-panel hidden>
         <div class="reader-panel-body">
-            <fieldset>
-                <legend>{{ __('Reading mode') }}</legend>
-                <div class="reader-segments" role="group">
+            <h2 style="margin: 0; font-size: 1rem; color: var(--ink-200);">{{ __('Reader settings') }}</h2>
+
+            <fieldset data-test="settings-group-reading">
+                <legend>{{ __('Reading') }}</legend>
+                <p class="reader-panel-note">{{ __('How pages turn.') }}</p>
+
+                <div class="reader-segments" role="group" aria-label="{{ __('Reading mode') }}">
                     <button type="button" data-setting="mode" data-value="vertical"
                             aria-pressed="{{ $settings['mode'] === 'vertical' ? 'true' : 'false' }}">
                         {{ __('Scroll') }}
@@ -1084,59 +1156,64 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
                 </div>
             </fieldset>
 
-            <label>
-                <span>{{ __('Column width') }} <output data-output="width">{{ $settings['width'] }}%</output></span>
-                <input type="range" data-setting="width"
-                       min="{{ $settings['min_width'] }}" max="{{ $settings['max_width'] }}" step="5"
-                       value="{{ $settings['width'] }}">
-            </label>
+            <fieldset data-test="settings-group-pages">
+                <legend>{{ __('Pages') }}</legend>
+                <p class="reader-panel-note">{{ __('Size and surface of each page.') }}</p>
 
-            <label>
-                <span>{{ __('Gap') }} <output data-output="gap">{{ $settings['gap'] }}px</output></span>
-                <input type="range" data-setting="gap"
-                       min="0" max="32" step="2"
-                       value="{{ $settings['gap'] }}">
-            </label>
+                <label>
+                    <span>{{ __('Column width') }} <output data-output="width">{{ $settings['width'] }}%</output></span>
+                    <input type="range" data-setting="width"
+                           min="{{ $settings['min_width'] }}" max="{{ $settings['max_width'] }}" step="5"
+                           value="{{ $settings['width'] }}">
+                </label>
 
-            <label>
-                <span>{{ __('Zoom') }} <output data-output="zoom">{{ round((float) $settings['zoom'], 2) }}&times;</output></span>
-                <input type="range" data-setting="zoom"
-                       min="{{ $settings['min_zoom'] }}" max="{{ $settings['max_zoom'] }}" step="0.1"
-                       value="{{ $settings['zoom'] }}">
-            </label>
+                <label>
+                    <span>{{ __('Gap') }} <output data-output="gap">{{ $settings['gap'] }}px</output></span>
+                    <input type="range" data-setting="gap"
+                           min="0" max="32" step="2"
+                           value="{{ $settings['gap'] }}">
+                </label>
 
-            <fieldset>
-                <legend>{{ __('Background') }}</legend>
-                <div class="reader-segments" role="group">
-                    @foreach (['#0a0a0a' => __('Dark'), '#18181b' => __('Softer'), '#ffffff' => __('Light')] as $colour => $label)
-                        <button type="button" data-setting="background" data-value="{{ $colour }}"
-                                class="reader-swatch"
-                                style="--swatch: {{ $colour }}"
-                                aria-pressed="{{ $settings['background'] === $colour ? 'true' : 'false' }}"
-                                aria-label="{{ $label }}"></button>
-                    @endforeach
-                </div>
+                <label>
+                    <span>{{ __('Zoom') }} <output data-output="zoom">{{ round((float) $settings['zoom'], 2) }}&times;</output></span>
+                    <input type="range" data-setting="zoom"
+                           min="{{ $settings['min_zoom'] }}" max="{{ $settings['max_zoom'] }}" step="0.1"
+                           value="{{ $settings['zoom'] }}">
+                </label>
+
+                <fieldset>
+                    <legend>{{ __('Background') }}</legend>
+                    <div class="reader-segments" role="group">
+                        @foreach (['#0a0a0a' => __('Dark'), '#18181b' => __('Softer'), '#ffffff' => __('Light')] as $colour => $label)
+                            <button type="button" data-setting="background" data-value="{{ $colour }}"
+                                    class="reader-swatch"
+                                    style="--swatch: {{ $colour }}"
+                                    aria-pressed="{{ $settings['background'] === $colour ? 'true' : 'false' }}"
+                                    aria-label="{{ $label }}"></button>
+                        @endforeach
+                    </div>
+                </fieldset>
+
+                <label class="reader-check">
+                    <input type="checkbox" data-setting="fit_height"
+                           @checked($settings['fit_height'])>
+                    <span>{{ __('Fit the whole page on screen') }}</span>
+                </label>
+
+                <label class="reader-check">
+                    <input type="checkbox" data-setting="long_strip"
+                           @checked($settings['long_strip'])>
+                    <span>{{ __('Long strips: never shrink to fit') }}</span>
+                </label>
+
+                <label class="reader-check">
+                    <input type="checkbox" data-setting="hide_tap_zones"
+                           @checked($settings['hide_tap_zones'])>
+                    <span>{{ __('Hide the tap zones') }}</span>
+                </label>
+
+                <p class="reader-panel-note">{{ __('Saved for this series only.') }}</p>
             </fieldset>
-
-            <label class="reader-check">
-                <input type="checkbox" data-setting="fit_height"
-                       @checked($settings['fit_height'])>
-                <span>{{ __('Fit the whole page on screen') }}</span>
-            </label>
-
-            <label class="reader-check">
-                <input type="checkbox" data-setting="long_strip"
-                       @checked($settings['long_strip'])>
-                <span>{{ __('Long strips: never shrink to fit') }}</span>
-            </label>
-
-            <label class="reader-check">
-                <input type="checkbox" data-setting="hide_tap_zones"
-                       @checked($settings['hide_tap_zones'])>
-                <span>{{ __('Hide the tap zones') }}</span>
-            </label>
-
-            <p class="reader-panel-note">{{ __('Saved for this series only.') }}</p>
 
             {{--
                 Colour filters.
@@ -1148,8 +1225,9 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
                 it is a checkbox rather than a second button because a reader who never
                 sees it should not have to think about it.
             --}}
-            <fieldset>
-                <legend>{{ __('Colour filters') }}</legend>
+            <fieldset data-test="settings-group-filters">
+                <legend>{{ __('Filters') }}</legend>
+                <p class="reader-panel-note">{{ __('Colour filters change how pages look. They stay for this visit unless you keep them.') }}</p>
 
                 <label class="reader-slider">
                     <span>{{ __('Brightness') }}</span>
@@ -1179,7 +1257,7 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
                     <output data-filter-output="hue">{{ (int) $settings['hue'] }}&deg;</output>
                 </label>
 
-                <div class="reader-segments" role="group">
+                <div class="reader-segments" role="group" aria-label="{{ __('Colour filters') }}">
                     <button type="button" data-filter-toggle="invert"
                             class="reader-seg {{ $settings['invert'] ? 'is-on' : '' }}"
                             aria-pressed="{{ $settings['invert'] ? 'true' : 'false' }}">
@@ -1196,6 +1274,8 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
                         {{ __('Reset') }}
                     </button>
                 </div>
+
+                <p class="reader-panel-note">{{ __('Colour filters') }}</p>
 
                 <label class="reader-check">
                     <input type="checkbox" data-filter-remember
@@ -1302,16 +1382,6 @@ class="reader {{ $settings['mode'] === 'paged' ? 'reader-visible' : '' }} {{ $na
             </ol>
         </nav>
     @endif
-
-    <a href="{{ route('series', ['manga' => $mangaId]) }}"
-       class="reader-back"
-       aria-label="{{ __('Back to the series') }}"
-       title="{{ __('Back to the series') }}">
-        <svg class="size-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-        </svg>
-        <span>{{ __('Back to the series') }}</span>
-    </a>
 
     @vite('resources/js/reader.js')
 </body>

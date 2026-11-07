@@ -72,12 +72,18 @@
                 var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
                 var showcaseUrl = @json(route('showcase.index'));
 
+                function markReady() {
+                    scene.setAttribute('data-rr-ready', '');
+                }
+
                 // ------------------------------------------------------------ ink garden
                 // The room before the collection exists. Deterministic: the same
                 // seed paints the same garden on every visit, so the fallback is
                 // a place rather than a screensaver.
                 function paintInkGarden() {
                     if (!ink) {
+                        markReady();
+
                         return;
                     }
 
@@ -90,9 +96,21 @@
                     }
 
                     size();
+
+                    // A resize clears the canvas, and the grow cursor is spent by
+                    // then, so repaint the whole garden at once on resize rather
+                    // than leaving a blank room behind.
+                    var resizeTimer = null;
+
                     window.addEventListener('resize', function () {
-                        size();
-                        paint();
+                        if (resizeTimer) {
+                            window.clearTimeout(resizeTimer);
+                        }
+
+                        resizeTimer = window.setTimeout(function () {
+                            size();
+                            paintAll();
+                        }, 150);
                     });
 
                     var seed = 987654321;
@@ -145,6 +163,14 @@
                             stroke(strokes[cursor]);
                             cursor++;
                         }
+
+                        markReady();
+                    }
+
+                    function paintAll() {
+                        ctx.clearRect(0, 0, ink.width, ink.height);
+                        cursor = 0;
+                        paint();
                     }
 
                     if (reduce) {
@@ -163,6 +189,8 @@
 
                         if (cursor < strokes.length) {
                             requestAnimationFrame(grow);
+                        } else {
+                            markReady();
                         }
                     })();
 
@@ -211,6 +239,13 @@
                                 var item = document.createElement('div');
                                 item.className = 'rr-item';
 
+                                // The lead card of each row pops in once, staggered
+                                // with its row, then joins the drift like the rest.
+                                if (!reduce && pass === 0 && k === 0) {
+                                    item.classList.add('is-new');
+                                    item.style.animationDelay = (rowIndex * 90 + 200) + 'ms';
+                                }
+
                                 var img = document.createElement('img');
                                 img.src = cover.url;
                                 img.alt = '';
@@ -234,6 +269,7 @@
                         wall.appendChild(row);
                     });
 
+                    markReady();
                     collectPalette();
                 }
 

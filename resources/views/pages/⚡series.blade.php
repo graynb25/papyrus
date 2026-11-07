@@ -1207,7 +1207,7 @@ new class extends Component
             than a floating banner. The backdrop is the cover itself, blown up and
             blurred, with scrims so the title survives any artwork.
         --}}
-        <section class="relative overflow-hidden rounded-3xl border border-zinc-200/80 dark:border-white/[0.06]">
+        <section class="relative overflow-hidden rounded-3xl border border-zinc-200/80 dark:border-white/[0.06]" data-test="series-hero">
             <div class="absolute inset-0" aria-hidden="true">
                 @if ($cover = $this->coverUrl)
                     <img
@@ -1392,79 +1392,143 @@ new class extends Component
                         </div>
                     @endif
 
-                    {{-- Actions. The primary one is reading, everything else is state. --}}
-                    <div class="mt-5 flex flex-wrap items-center gap-2">
+                    {{-- Actions. One primary Resume, then grouped Library and Offline. --}}
+                    <div class="mt-5 space-y-3" data-test="series-actions">
                         @if ($resume = $this->resumeChapter)
-                            <flux:button
-                                variant="primary"
-                                icon="book-open"
-                                :href="$this->formatting->chapterUrl($this->manga, (int) $resume['id'])"
-                                wire:navigate
-                            >
-                                @if ($this->state->last_read_chapter_id !== null)
-                                    {{ __('Continue reading') }}
-                                @else
-                                    {{ __('Start reading') }}
-                                @endif
-                            </flux:button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <flux:button
+                                    variant="primary"
+                                    icon="book-open"
+                                    :href="$this->formatting->chapterUrl($this->manga, (int) $resume['id'])"
+                                    wire:navigate
+                                    data-test="resume-action"
+                                >
+                                    @if ($this->state->last_read_chapter_id !== null)
+                                        {{ __('Continue reading') }}
+                                    @else
+                                        {{ __('Start reading') }}
+                                    @endif
+                                </flux:button>
+
+                                <span class="min-w-0 truncate text-sm text-zinc-500 dark:text-zinc-400">
+                                    {{ filled($resume['name'] ?? null) ? $resume['name'] : __('Chapter :number', ['number' => $resume['chapterNumber'] ?? '?']) }}
+                                </span>
+                            </div>
                         @endif
 
-                        <flux:button
-                            :variant="$this->state->in_library ? 'filled' : 'outline'"
-                            icon="bookmark"
-                            wire:click="toggleLibrary"
-                            wire:loading.attr="disabled"
-                            data-tour="add-to-library"
-                        >
-                            {{ $this->state->in_library ? __('In library') : __('Add to library') }}
-                        </flux:button>
+                        <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
+                            <div class="flex flex-col gap-1.5" role="group" aria-label="{{ __('Library') }}" data-test="library-group">
+                                <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Library') }}</p>
 
-                        <flux:button
-                            :variant="$this->state->favourited_at ? 'filled' : 'outline'"
-                            icon="heart"
-                            wire:click="toggleFavourite"
-                            aria-label="{{ __('Favourite') }}"
-                            aria-pressed="{{ $this->state->favourited_at ? 'true' : 'false' }}"
-                        />
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <flux:button
+                                        :variant="$this->state->in_library ? 'filled' : 'outline'"
+                                        icon="bookmark"
+                                        wire:click="toggleLibrary"
+                                        wire:loading.attr="disabled"
+                                        data-tour="add-to-library"
+                                    >
+                                        {{ $this->state->in_library ? __('In library') : __('Add to library') }}
+                                    </flux:button>
 
-                        <flux:button
-                            :variant="$this->state->read_later_at ? 'filled' : 'outline'"
-                            icon="clock"
-                            wire:click="toggleReadLater"
-                            aria-label="{{ __('Read later') }}"
-                            aria-pressed="{{ $this->state->read_later_at ? 'true' : 'false' }}"
-                        />
+                                    <flux:button
+                                        :variant="$this->state->favourited_at ? 'filled' : 'outline'"
+                                        icon="heart"
+                                        wire:click="toggleFavourite"
+                                        aria-label="{{ __('Favourite') }}"
+                                        aria-pressed="{{ $this->state->favourited_at ? 'true' : 'false' }}"
+                                    />
 
-                        {{-- The rating, in the same row as the two binary preferences beside it
-                             and for the same reason: they are the three things a reader
-                             decides about a series before deciding to keep it.
+                                    <flux:button
+                                        :variant="$this->state->read_later_at ? 'filled' : 'outline'"
+                                        icon="clock"
+                                        wire:click="toggleReadLater"
+                                        aria-label="{{ __('Read later') }}"
+                                        aria-pressed="{{ $this->state->read_later_at ? 'true' : 'false' }}"
+                                    />
 
-                             It is a star row rather than a dropdown because a rating is an
-                             absolute judgement and a dropdown hides the scale until it is
-                             open. There are five possible answers and all five are worth
-                             seeing at once. --}}
-                        <div class="flex items-center">
-                            <x-rating.stars :value="$this->rating" />
+                                    {{-- The rating, in the same row as the two binary preferences beside it
+                                         and for the same reason: they are the three things a reader
+                                         decides about a series before deciding to keep it.
 
-                            @if ($this->rating !== null)
-                                {{-- Clear, as its own control.
+                                         It is a star row rather than a dropdown because a rating is an
+                                         absolute judgement and a dropdown hides the scale until it is
+                                         open. There are five possible answers and all five are worth
+                                         seeing at once. --}}
+                                    <div class="flex items-center">
+                                        <x-rating.stars :value="$this->rating" />
 
-                                     Tapping the lit star again does clear it, and that is the
-                                     fastest way to do it. But "press the same star twice" is
-                                     not something a reader discovers from the shape of five
-                                     stars, and a rating they cannot see how to remove is a
-                                     rating they may not want to have set at all. The button
-                                     costs one icon. --}}
-                                <flux:button
-                                    size="xs"
-                                    variant="ghost"
-                                    wire:click="clearRating"
-                                    aria-label="{{ __('Clear your rating') }}"
-                                    class="-ml-1"
-                                >
-                                    <flux:icon name="x-mark" class="size-3.5" />
-                                </flux:button>
-                            @endif
+                                        @if ($this->rating !== null)
+                                            {{-- Clear, as its own control.
+
+                                                 Tapping the lit star again does clear it, and that is the
+                                                 fastest way to do it. But "press the same star twice" is
+                                                 not something a reader discovers from the shape of five
+                                                 stars, and a rating they cannot see how to remove is a
+                                                 rating they may not want to have set at all. The button
+                                                 costs one icon. --}}
+                                            <flux:button
+                                                size="xs"
+                                                variant="ghost"
+                                                wire:click="clearRating"
+                                                aria-label="{{ __('Clear your rating') }}"
+                                                class="-ml-1"
+                                            >
+                                                <flux:icon name="x-mark" class="size-3.5" />
+                                            </flux:button>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col gap-1.5" role="group" aria-label="{{ __('Offline') }}" data-test="offline-group">
+                                <p class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ __('Offline') }}</p>
+
+                                <div class="flex flex-wrap items-center gap-2">
+                                    {{--
+                                        Download unread.
+
+                                        Uses our read state, not Suwayomi's: `ChapterType.isRead`
+                                        belongs to Admin(1) and has never meant anything to a reader
+                                        of this app. Skips anything already on disk, so pressing it
+                                        twice does not requeue thirty chapters.
+                                    --}}
+                                    <flux:button
+                                        size="sm"
+                                        variant="outline"
+                                        icon="cloud-arrow-down"
+                                        wire:click="downloadUnread"
+                                        wire:loading.attr="disabled"
+                                        :disabled="$this->unreadDownloadableCount() === 0"
+                                    >
+                                        {{ __('Download unread') }}
+                                        @if ($this->unreadDownloadableCount() > 0)
+                                            <span class="ms-1 text-xs opacity-70 tabular-nums">{{ $this->unreadDownloadableCount() }}</span>
+                                        @endif
+                                    </flux:button>
+
+                                    <flux:button size="sm" variant="outline" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
+                                        {{ __('Refresh chapters') }}
+                                    </flux:button>
+
+                                    {{--
+                                        Move to another source.
+
+                                        A link rather than a button, because it leaves the page: the
+                                        wizard searches 82 sources, which measured 21.9 seconds, and
+                                        that is a different screen with its own progress to report.
+                                    --}}
+                                    <flux:button
+                                        size="sm"
+                                        variant="outline"
+                                        icon="arrow-right-circle"
+                                        href="{{ route('migrate', ['manga' => $this->manga]) }}"
+                                        wire:navigate
+                                    >
+                                        {{ __('Move source') }}
+                                    </flux:button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1530,130 +1594,89 @@ new class extends Component
 
         {{-- Chapters ------------------------------------------------------- --}}
         <section data-tour="read-chapter" class="space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-                <div class="flex items-baseline gap-3">
-                    <flux:heading level="2" class="font-display font-semibold tracking-tight">{{ __('Chapters') }}</flux:heading>
+            <div class="sticky top-0 z-20 -mx-1 border-b border-zinc-200/70 bg-zinc-50/90 px-1 py-2 backdrop-blur dark:border-white/[0.06] dark:bg-zinc-950/85" data-test="chapter-filter">
+                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                    <div class="flex items-baseline gap-3">
+                        <flux:heading level="2" class="font-display font-semibold tracking-tight">{{ __('Chapters') }}</flux:heading>
 
-                    <span class="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 tabular-nums dark:bg-white/[0.06] dark:text-zinc-300">
-                        {{ Number::format($this->readCount) }} / {{ Number::format($this->visibleCount) }}
-                    </span>
-                </div>
+                        <span class="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 tabular-nums dark:bg-white/[0.06] dark:text-zinc-300">
+                            {{ Number::format($this->readCount) }} / {{ Number::format($this->visibleCount) }}
+                        </span>
+                    </div>
 
-                <div class="flex flex-wrap items-center gap-2">
-                    {{--
-                        Reading mode is per series rather than global, because the
-                        case for it is always an exception: night mode everywhere
-                        except the one series with white pages, paged everywhere
-                        except the long webtoons.
-                    --}}
-                    <flux:button.group>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {{--
+                            Reading mode is per series rather than global, because the
+                            case for it is always an exception: night mode everywhere
+                            except the one series with white pages, paged everywhere
+                            except the long webtoons.
+                        --}}
+                        <flux:button.group>
+                            <flux:button
+                                :variant="$this->readingSettings['mode'] === 'vertical' ? 'primary' : 'ghost'"
+                                wire:click="setReadingMode('vertical')"
+                                size="sm"
+                                icon="bars-3-bottom-left"
+                            >
+                                {{ __('Scroll') }}
+                            </flux:button>
+                            <flux:button
+                                :variant="$this->readingSettings['mode'] === 'paged' ? 'primary' : 'ghost'"
+                                wire:click="setReadingMode('paged')"
+                                size="sm"
+                                icon="rectangle-stack"
+                            >
+                                {{ __('Paged') }}
+                            </flux:button>
+                        </flux:button.group>
+
+                        <flux:button.group>
+                            <flux:button
+                                :variant="$order === 'asc' ? 'primary' : 'ghost'"
+                                wire:click="setOrder('asc')"
+                                size="sm"
+                            >
+                                {{ __('Oldest') }}
+                            </flux:button>
+                            <flux:button
+                                :variant="$order === 'desc' ? 'primary' : 'ghost'"
+                                wire:click="setOrder('desc')"
+                                size="sm"
+                            >
+                                {{ __('Newest') }}
+                            </flux:button>
+                        </flux:button.group>
+
+                        {{--
+                            Read state, set by hand.
+
+                            A reader arriving from another app has read chapters this one
+                            has never seen opened. The per-chapter toggle is the check on
+                            each row; these two are the whole-list version of the same
+                            gesture, and the unread one confirms because it clears every
+                            flag on the series in one press.
+                        --}}
                         <flux:button
-                            :variant="$this->readingSettings['mode'] === 'vertical' ? 'primary' : 'ghost'"
-                            wire:click="setReadingMode('vertical')"
                             size="sm"
-                            icon="bars-3-bottom-left"
+                            variant="outline"
+                            icon="check"
+                            wire:click="markAllRead"
+                            wire:loading.attr="disabled"
                         >
-                            {{ __('Scroll') }}
+                            {{ __('Mark all read') }}
                         </flux:button>
+
                         <flux:button
-                            :variant="$this->readingSettings['mode'] === 'paged' ? 'primary' : 'ghost'"
-                            wire:click="setReadingMode('paged')"
                             size="sm"
-                            icon="rectangle-stack"
+                            variant="outline"
+                            icon="arrow-uturn-left"
+                            wire:click="markAllUnread"
+                            wire:loading.attr="disabled"
+                            wire:confirm="{{ __('Mark every chapter unread? The read flags on this series clear.') }}"
                         >
-                            {{ __('Paged') }}
+                            {{ __('Mark all unread') }}
                         </flux:button>
-                    </flux:button.group>
-
-                    <flux:button.group>
-                        <flux:button
-                            :variant="$order === 'asc' ? 'primary' : 'ghost'"
-                            wire:click="setOrder('asc')"
-                            size="sm"
-                        >
-                            {{ __('Oldest') }}
-                        </flux:button>
-                        <flux:button
-                            :variant="$order === 'desc' ? 'primary' : 'ghost'"
-                            wire:click="setOrder('desc')"
-                            size="sm"
-                        >
-                            {{ __('Newest') }}
-                        </flux:button>
-                    </flux:button.group>
-
-                    {{--
-                        Download unread.
-
-                        Uses our read state, not Suwayomi's: `ChapterType.isRead`
-                        belongs to Admin(1) and has never meant anything to a reader
-                        of this app. Skips anything already on disk, so pressing it
-                        twice does not requeue thirty chapters.
-                    --}}
-                    <flux:button
-                        size="sm"
-                        variant="outline"
-                        icon="cloud-arrow-down"
-                        wire:click="downloadUnread"
-                        wire:loading.attr="disabled"
-                        :disabled="$this->unreadDownloadableCount() === 0"
-                    >
-                        {{ __('Download unread') }}
-                        @if ($this->unreadDownloadableCount() > 0)
-                            <span class="ms-1 text-xs opacity-70 tabular-nums">{{ $this->unreadDownloadableCount() }}</span>
-                        @endif
-                    </flux:button>
-
-                    {{--
-                        Read state, set by hand.
-
-                        A reader arriving from another app has read chapters this one
-                        has never seen opened. The per-chapter toggle is the dot on
-                        each row; these two are the whole-list version of the same
-                        gesture, and the unread one confirms because it clears every
-                        flag on the series in one press.
-                    --}}
-                    <flux:button
-                        size="sm"
-                        variant="outline"
-                        icon="check"
-                        wire:click="markAllRead"
-                        wire:loading.attr="disabled"
-                    >
-                        {{ __('Mark all read') }}
-                    </flux:button>
-
-                    <flux:button
-                        size="sm"
-                        variant="outline"
-                        icon="arrow-uturn-left"
-                        wire:click="markAllUnread"
-                        wire:loading.attr="disabled"
-                        wire:confirm="{{ __('Mark every chapter unread? The read flags on this series clear.') }}"
-                    >
-                        {{ __('Mark all unread') }}
-                    </flux:button>
-
-                    <flux:button size="sm" variant="outline" wire:click="refresh" wire:loading.attr="disabled" icon="arrow-path">
-                        {{ __('Refresh chapters') }}
-                    </flux:button>
-
-                    {{--
-                        Move to another source.
-
-                        A link rather than a button, because it leaves the page: the
-                        wizard searches 82 sources, which measured 21.9 seconds, and
-                        that is a different screen with its own progress to report.
-                    --}}
-                    <flux:button
-                        size="sm"
-                        variant="outline"
-                        icon="arrow-right-circle"
-                        href="{{ route('migrate', ['manga' => $this->manga]) }}"
-                        wire:navigate
-                    >
-                        {{ __('Move source') }}
-                    </flux:button>
+                    </div>
                 </div>
             </div>
 
@@ -1834,15 +1857,49 @@ new class extends Component
                             </a>
 
                             {{--
-                                Offline state. `isDownloaded` is the server's own
+                                Offline state in plain words. `isDownloaded` is the server's own
                                 flag, which is the only one that means anything:
                                 it is about pages on disk, not about our read
-                                state. The "queued" marker is ours.
+                                state. The queued marker is ours.
                             --}}
+                            @if ($this->isDownloaded((int) $chapter['id']))
+                                <span
+                                    data-test="download-pill"
+                                    data-state="saved"
+                                    title="{{ __('Ready without the source') }}"
+                                    class="inline-flex shrink-0 items-center gap-1 rounded-full border border-moss-500/40 bg-moss-500/10 px-2 py-0.5 text-xs font-medium text-moss-600 dark:border-moss-400/30 dark:bg-moss-400/10 dark:text-moss-400"
+                                >
+                                    {{ __('Saved') }}
+                                </span>
+                            @elseif ($this->downloadState((int) $chapter['id']) !== null)
+                                <span
+                                    data-test="download-pill"
+                                    data-state="queued"
+                                    title="{{ __('Queued for download') }}"
+                                    class="inline-flex shrink-0 items-center gap-1 rounded-full border border-vermilion-500/40 bg-vermilion-500/10 px-2 py-0.5 text-xs font-medium text-vermilion-600 dark:text-vermilion-400"
+                                >
+                                    <span class="size-1.5 animate-breathe rounded-full bg-vermilion-500" aria-hidden="true"></span>
+                                    {{ __('Queued') }}
+                                </span>
+                            @else
+                                <flux:button
+                                    size="xs"
+                                    variant="outline"
+                                    wire:click="downloadChapter({{ (int) $chapter['id'] }})"
+                                    aria-label="{{ __('Download this chapter') }}"
+                                    title="{{ __('Download this chapter') }}"
+                                    data-test="download-pill"
+                                    data-state="get"
+                                    class="shrink-0 rounded-full! px-2.5!"
+                                >
+                                    {{ __('Get') }}
+                                </flux:button>
+                            @endif
+
                             {{--
                                 The note, as a marker and a way in.
 
-                                Placed after the download control and before the date,
+                                Placed after the download pill and before the date,
                                 because both of those are about the file and this is
                                 about the reader's own words.
 
@@ -1862,28 +1919,9 @@ new class extends Component
                                 wire:click="openNote({{ (int) $chapter['id'] }})"
                                 aria-label="{{ $note !== null ? __('Read your note on this chapter') : __('Add a note on this chapter') }}"
                                 title="{{ $note !== null ? __('Read your note') : __('Add a note') }}"
+                                data-test="note-button"
                                 @class(['text-vermilion-500 dark:text-vermilion-400' => $note !== null])
                             ></flux:button>
-
-                            @if ($this->isDownloaded((int) $chapter['id']))
-                                <flux:tooltip content="{{ __('Ready without the source') }}">
-                                    <flux:icon name="cloud-arrow-down" class="size-4 shrink-0 text-moss-600 dark:text-moss-400" />
-                                </flux:tooltip>
-                            @elseif ($this->downloadState((int) $chapter['id']) !== null)
-                                <flux:tooltip content="{{ __('Queued for download') }}">
-                                    <flux:icon name="clock" class="size-4 shrink-0 animate-breathe text-vermilion-500" />
-                                </flux:tooltip>
-                            @else
-                                <flux:button
-                                    size="xs"
-                                    variant="ghost"
-                                    icon="cloud-arrow-down"
-                                    wire:click="downloadChapter({{ (int) $chapter['id'] }})"
-                                    aria-label="{{ __('Download this chapter') }}"
-                                    title="{{ __('Download') }}"
-                                    class="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                ></flux:button>
-                            @endif
 
                             <span class="hidden shrink-0 text-xs text-zinc-400 tabular-nums dark:text-zinc-500 sm:block">
                                 @if ($chapter['uploadDate'] !== null)

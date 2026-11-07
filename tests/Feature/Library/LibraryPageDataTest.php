@@ -206,6 +206,75 @@ class LibraryPageDataTest extends TestCase
         $this->assertFalse($data->hasContinueFeed(collect()));
     }
 
+    public function test_header_counts_follow_shelf_and_search_filters(): void
+    {
+        $one = app(Library::class)->createCategory($this->user, 'One');
+
+        $this->addToLibrary(1);
+        $this->addToLibrary(2);
+
+        app(Library::class)->attach($this->user, 1, $one->id);
+
+        $data = $this->data();
+        $entries = $data->entries();
+        $filings = $data->filings($entries);
+
+        $this->assertSame(2, $data->totalAll($entries));
+        $this->assertSame(
+            1,
+            $data->totalFiltered($this->filter()->matching($entries, $filings, $one->id, '', 'recent')),
+            'one series filed on the shelf',
+        );
+        $this->assertSame(
+            0,
+            $data->totalFiltered($this->filter()->matching($entries, $filings, null, 'no such title', 'recent')),
+            'a search with no match filters everything out',
+        );
+    }
+
+    public function test_continue_feed_skips_fully_read_and_breaks_ties_by_progress(): void
+    {
+        $moment = CarbonImmutable::parse('2026-02-01 12:00:00');
+
+        // Fully read, but read most recently: still absent, because offering
+        // chapter one here would be the one answer that is certainly wrong.
+        $this->addToLibrary(1, chapters: 2, lastReadAt: $moment->addHour());
+        $this->addToLibrary(2, chapters: 10, lastReadAt: $moment);
+        $this->addToLibrary(3, chapters: 10, lastReadAt: $moment);
+
+        $reading = app(ReadingState::class);
+        $reading->markRead($this->user, 1, 101, true);
+        $reading->markRead($this->user, 1, 102, true);
+        $reading->markRead($this->user, 2, 201, true);
+
+        foreach ([301, 302, 303, 304] as $chapterId) {
+            $reading->markRead($this->user, 3, $chapterId, true);
+        }
+
+        $feed = $this->data()->continueFeed($this->data()->entries());
+
+        $this->assertSame(
+            [3, 2],
+            $feed->pluck('manga_id')->all(),
+            'fully read stays out, and the tied pair breaks toward further progress',
+        );
+    }
+
+    public function test_a_filtered_library_reports_empty_feed_but_keeps_its_totals(): void
+    {
+        $this->addToLibrary(1, lastReadAt: CarbonImmutable::parse('2026-01-05'));
+        $this->addToLibrary(2);
+
+        $data = $this->data();
+        $entries = $data->entries();
+        $matching = $this->filter()->matching($entries, $data->filings($entries), null, 'no such title', 'recent');
+
+        $this->assertSame(2, $data->totalAll($entries));
+        $this->assertSame(0, $data->totalFiltered($matching));
+        $this->assertTrue($data->continueFeed($matching)->isEmpty());
+        $this->assertFalse($data->hasContinueFeed($matching));
+    }
+
     // Checks --------------------------------------------------------------
 
     public function test_checks_read_the_latest_row_per_visible_series(): void

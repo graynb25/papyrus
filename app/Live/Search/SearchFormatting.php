@@ -4,6 +4,7 @@ namespace App\Live\Search;
 
 use App\Models\SearchRun;
 use App\Models\Source;
+use App\Search\DedupeGroup;
 use App\Support\LanguageName;
 use Illuminate\Support\Collection;
 
@@ -89,5 +90,80 @@ final class SearchFormatting
         return $counts
             ->filter(fn (Source $row): bool => (int) $row->getAttribute('total') === 1)
             ->values();
+    }
+
+    /**
+     * The language shelf one result group belongs on.
+     *
+     * The primary decides, because the card links there when there is no choice to
+     * make. A group whose primary has no mapped language falls back to its first
+     * alternative, so a streaming run that has not mirrored the primary yet still
+     * lands somewhere honest. Nothing mapped at all reads as Other.
+     *
+     * @param  array<int, string>  $langBySourceId  suwayomi source id to lang code
+     */
+    public function shelfLanguage(DedupeGroup $group, array $langBySourceId): string
+    {
+        $primaryId = (int) $group->primary->suwayomi_source_id;
+
+        if (isset($langBySourceId[$primaryId]) && trim((string) $langBySourceId[$primaryId]) !== '') {
+            return (string) $langBySourceId[$primaryId];
+        }
+
+        foreach ($group->alternatives as $row) {
+            $id = (int) $row->suwayomi_source_id;
+
+            if (isset($langBySourceId[$id]) && trim((string) $langBySourceId[$id]) !== '') {
+                return (string) $langBySourceId[$id];
+            }
+        }
+
+        return 'other';
+    }
+
+    /**
+     * Result groups sorted into language shelves, largest shelf first.
+     *
+     * Pure over its arguments so the ordering can be pinned without a database:
+     * the page resolves the id to lang map, this decides the shelves. Shelves
+     * order by group count then language name, groups keep the deduplicator
+     * order inside each shelf so the ranking never moves under the reader.
+     *
+     * @param  Collection<int, DedupeGroup>  $groups
+     * @param  array<int, string>  $langBySourceId
+     * @return array<int, array{lang: string, name: string, groups: Collection<int, DedupeGroup>}>
+     */
+    public function shelves(Collection $groups, array $langBySourceId): array
+    {
+        /** @var array<string, Collection<int, DedupeGroup>> $byLang */
+        $byLang = [];
+
+        foreach ($groups as $group) {
+            $lang = $this->shelfLanguage($group, $langBySourceId);
+
+            if (! isset($byLang[$lang])) {
+                $byLang[$lang] = new Collection;
+            }
+
+            $byLang[$lang]->push($group);
+        }
+
+        $shelves = [];
+
+        foreach ($byLang as $lang => $shelfGroups) {
+            $shelves[] = [
+                'lang' => (string) $lang,
+                'name' => LanguageName::name((string) $lang),
+                'groups' => $shelfGroups->values(),
+            ];
+        }
+
+        usort($shelves, static function (array $a, array $b): int {
+            $count = count($b['groups']) <=> count($a['groups']);
+
+            return $count !== 0 ? $count : strcmp((string) $a['name'], (string) $b['name']);
+        });
+
+        return $shelves;
     }
 }

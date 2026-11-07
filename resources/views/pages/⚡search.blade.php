@@ -484,6 +484,17 @@ new class extends AdultContentPage
     }
 
     /**
+     * The groups on language shelves, largest shelf first.
+     *
+     * @return array<int, array{lang: string, name: string, groups: Collection<int, \App\Search\DedupeGroup>}>
+     */
+    #[Computed]
+    public function shelves(): array
+    {
+        return $this->data->shelves($this->groups);
+    }
+
+    /**
      * @return Collection<int, \App\Models\SearchSourceResult>
      */
     #[Computed]
@@ -740,6 +751,8 @@ new class extends AdultContentPage
                         >
                             {{ __('Clear (:count)', ['count' => count($this->langs)]) }}
                         </button>
+                    @else
+                        <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('All languages') }}</span>
                     @endif
                 </div>
 
@@ -750,6 +763,12 @@ new class extends AdultContentPage
                         ['cap' => $this->limit, 'total' => $this->runnableSourceCount],
                     ) }}
                 </p>
+
+                @if (count($this->langs) > 0)
+                    <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400" data-test="search-lang-summary">
+                        {{ __('Searching in :langs.', ['langs' => collect($this->langs)->map(fn ($c) => $this->languageName((string) $c))->implode(', ')]) }}
+                    </p>
+                @endif
 
                 @if ($this->sourcesSkippedByCap > 0)
                     <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">
@@ -1026,6 +1045,18 @@ new class extends AdultContentPage
                         ></div>
                     </div>
                 </div>
+
+                @if ($this->groups->isEmpty())
+                    <div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" aria-hidden="true" data-test="search-skeleton">
+                        @foreach (range(1, 10) as $ghost)
+                            <div class="space-y-2.5">
+                                <div class="skeleton aspect-[2/3] rounded-(--radius-card)"></div>
+                                <div class="skeleton h-3 w-3/4 rounded"></div>
+                                <div class="skeleton h-3 w-1/2 rounded"></div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             </div>
         @endif
 
@@ -1054,8 +1085,8 @@ new class extends AdultContentPage
                                 <flux:icon
                                     @class([
                                         'text-moss-600 dark:text-moss-400' => $outcome->status === 'ok',
-                                        'text-amber-600 dark:text-amber-400' => $outcome->status === 'empty',
-                                        'text-red-600 dark:text-red-400' => in_array($outcome->status, ['error', 'timeout'], true),
+                                        'text-zinc-500 dark:text-zinc-400' => $outcome->status === 'empty',
+                                        'text-vermilion-600 dark:text-vermilion-400' => in_array($outcome->status, ['error', 'timeout'], true),
                                     ])
                                     :name="match ($outcome->status) {
                                         'ok' => 'check-circle',
@@ -1140,10 +1171,19 @@ new class extends AdultContentPage
             --}}
             @include('pages.partials.search-skipped', ['run' => $run])
 
-            <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                @foreach ($this->groups as $group)
-                    @php($primaryId = (int) $group->primary->suwayomi_manga_id)
-                    <li data-series-card @if ($loop->first) data-tour="first-result" @endif class="group relative">
+            @foreach ($this->shelves as $shelf)
+                <section data-test="search-shelf" data-lang="{{ $shelf['lang'] }}" class="space-y-3">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2">
+                        <h2 class="font-display text-sm font-semibold">{{ $shelf['name'] }}</h2>
+                        <p class="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                            {{ trans_choice('{1} :count title|[2,*] :count titles', $shelf['groups']->count(), ['count' => $shelf['groups']->count()]) }}
+                        </p>
+                    </div>
+
+                    <ul class="stagger-enter grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                        @foreach ($shelf['groups'] as $group)
+                            @php($primaryId = (int) $group->primary->suwayomi_manga_id)
+                            <li data-series-card @if ($loop->parent->first && $loop->first) data-tour="first-result" @endif class="group relative">
                         {{--
                             A group with more than one source opens a chooser instead of
                             navigating, because the card was already telling the reader there
@@ -1326,9 +1366,11 @@ new class extends AdultContentPage
                                 </span>
                             </flux:tooltip>
                         @endif
-                    </li>
-                @endforeach
-            </ul>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endforeach
         @endif
     @endif
 

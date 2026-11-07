@@ -79,6 +79,44 @@ final class SearchPageData
     }
 
     /**
+     * The groups on language shelves, largest shelf first.
+     *
+     * The lang map comes from the mirror so a search over unmirrored sources
+     * still renders: unknown ids read as Other rather than dropping the group.
+     *
+     * @param  Collection<int, DedupeGroup>  $groups
+     * @return array<int, array{lang: string, name: string, groups: Collection<int, DedupeGroup>}>
+     */
+    public function shelves(Collection $groups): array
+    {
+        if ($groups->isEmpty()) {
+            return [];
+        }
+
+        $ids = $groups
+            ->flatMap(fn (DedupeGroup $group): array => [
+                (int) $group->primary->suwayomi_source_id,
+                ...$group->alternatives->map(fn (SearchResult $row): int => (int) $row->suwayomi_source_id)->all(),
+            ])
+            ->unique()
+            ->values()
+            ->all();
+
+        $langs = Source::query()
+            ->whereIn('suwayomi_source_id', $ids)
+            ->pluck('lang', 'suwayomi_source_id')
+            ->all();
+
+        $map = [];
+
+        foreach ($langs as $key => $code) {
+            $map[(int) $key] = (string) $code;
+        }
+
+        return $this->formatting->shelves($groups, $map);
+    }
+
+    /**
      * Per-source status rows, busiest source first.
      *
      * @return Collection<int, SearchSourceResult>

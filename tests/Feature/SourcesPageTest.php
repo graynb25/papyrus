@@ -2559,13 +2559,11 @@ class SourcesPageTest extends TestCase
     }
 
     /**
-     * The whole language list is in the page, and the toggle is only for narrow widths.
+     * The language strip compacts to two and the toggle is always on screen.
      *
-     * The row used to slice itself to two languages in PHP, so desktop lost the rest
-     * and the toggle was the only way back. CSS now decides where the list is clipped:
-     * every language is rendered, the first two are the only ones shown below the lg
-     * breakpoint until Show all is pressed, and the toggle that reveals the rest is
-     * hidden at desktop width.
+     * The strip is a horizontal scroll when collapsed so the catalogue stays
+     * compact, and the show-all toggle is visible at every width rather than
+     * only on narrow screens.
      */
     public function test_every_language_is_rendered_and_the_show_all_control_is_mobile_only(): void
     {
@@ -2574,21 +2572,15 @@ class SourcesPageTest extends TestCase
 
         $html = $this->page()->set('view', 'available')->html();
 
-        $this->assertStringContainsString('aria-label="English, 2 sources"', $html);
-        $this->assertStringContainsString('aria-label="Japanese, 2 sources"', $html);
-        $this->assertStringContainsString('aria-label="French, 2 sources"', $html);
-        $this->assertMatchesRegularExpression(
-            '/<button[^>]*class="[^"]*\bmax-lg:hidden\b[^"]*"[^>]*aria-label="Japanese, 2 sources"/s',
-            $html,
-        );
+        $this->assertStringContainsString('data-test="language-strip"', $html);
+        $this->assertStringContainsString('overflow-x-auto', $html);
+        $this->assertStringContainsString('Show all languages', $html);
         $this->assertDoesNotMatchRegularExpression(
-            '/<button[^>]*class="[^"]*\bmax-lg:hidden\b[^"]*"[^>]*aria-label="French, 2 sources"/s',
-            $html,
-        );
-        $this->assertMatchesRegularExpression(
             '/<div[^>]*class="[^"]*\blg:hidden\b[^"]*"[^>]*>\s*<button[^>]*wire:click="toggleLanguageRow"/s',
             $html,
         );
+
+        $this->page()->set('view', 'available')->call('toggleLanguageRow')->assertSee('Show fewer languages');
     }
 
     /**

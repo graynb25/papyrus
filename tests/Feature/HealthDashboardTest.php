@@ -263,8 +263,21 @@ class HealthDashboardTest extends TestCase
         $this->health($bad, ['consecutive_failures' => 3, 'is_dead' => false]);
 
         $this->page()
-            ->assertSee('2 variants')
+            ->assertSee('2 sources')
             ->assertSee('1 failing');
+    }
+
+    public function test_a_site_row_names_dead_sources_in_its_summary(): void
+    {
+        $good = $this->source('https://dead.example.test', 'en', 'Dead EN');
+        $bad = $this->source('https://dead.example.test', 'ja', 'Dead JA');
+
+        $this->health($good, ['total_successes' => 10]);
+        $this->health($bad, ['consecutive_failures' => 5, 'is_dead' => true]);
+
+        $this->page()
+            ->assertSee('2 sources')
+            ->assertSee('1 dead');
     }
 
     /**

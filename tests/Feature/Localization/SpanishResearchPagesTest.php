@@ -266,7 +266,7 @@ class SpanishResearchPagesTest extends TestCase
         app()->setLocale('es');
 
         $this->assertSame(
-            '3 variantes, 1 sin servicio, 1 con fallos, 1 en silencio',
+            '3 fuentes, 1 sin servicio, 1 con fallos, 1 en silencio',
             Livewire::test('pages::health')->instance()->siteSummary($site),
         );
     }

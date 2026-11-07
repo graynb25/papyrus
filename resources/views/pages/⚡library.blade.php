@@ -1005,6 +1005,7 @@ new class extends Component
         <x-slot:title>{{ __('Library') }}</x-slot:title>
 
         <x-slot:meta>
+            <span class="tabular-nums" aria-live="polite">
             @if ($this->totalAll === 0)
                 {{ __('Nothing added yet.') }}
             @elseif ($this->shelf !== null)
@@ -1020,6 +1021,7 @@ new class extends Component
                     ['count' => $this->totalAll, 'unread' => $this->totalUnread]
                 ) }}
             @endif
+            </span>
         </x-slot:meta>
 
         <x-slot:actions>
@@ -1354,9 +1356,13 @@ new class extends Component
     @if ($this->hasContinueFeed)
         <section aria-labelledby="continue-heading" class="space-y-3">
             <div class="flex items-baseline justify-between gap-3">
-                <flux:heading id="continue-heading" size="sm" level="2" class="font-display font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-                    {{ __('Continue reading') }}
-                </flux:heading>
+                <div class="flex items-baseline gap-2.5">
+                    <flux:heading id="continue-heading" size="sm" level="2" class="font-display font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+                        {{ __('Continue reading') }}
+                    </flux:heading>
+
+                    <span class="rounded-full bg-vermilion-500/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-vermilion-600 dark:text-vermilion-400">{{ $this->continueFeed->count() }}</span>
+                </div>
 
                 <flux:text size="xs" class="hidden text-zinc-400 dark:text-zinc-500 sm:block">
                     {{ __('Your most recent, with the next chapter ready.') }}
@@ -1366,12 +1372,14 @@ new class extends Component
             {{-- A rail, not a grid: the feed answers "what was I reading", and a
                  horizontal shelf keeps the answer one glance wide no matter how
                  many series it holds. The masked edges fade the ends out, and
-                 snap makes one wheel nudge land on the next card. --}}
-            <ul class="rail-scroll -mx-1 flex snap-x gap-3.5 px-1 pb-2 pt-1">
+                 snap makes one wheel nudge land on the next card. Cards enter
+                 with the shared rise, staggered, so the rail settles after the
+                 header. --}}
+            <ul class="rail-scroll stagger-enter -mx-1 flex snap-x gap-4 px-1 pb-2 pt-1">
                 @foreach ($this->continueFeed as $index => $entry)
                     @php($where = $entry['continue_at'])
 
-                    <li class="w-40 shrink-0 sm:w-44" style="animation-delay: {{ $index * 0.06 }}s">
+                    <li class="w-44 shrink-0 sm:w-48" style="animation-delay: {{ $index * 0.06 }}s">
                         <a
                             href="{{ route('reader.show', ['manga' => $entry['manga_id'], 'chapter' => $where['chapter_id']]) }}"
                             wire:navigate
@@ -1447,11 +1455,12 @@ new class extends Component
                 class="w-full max-w-64 sm:order-3 sm:w-56"
             />
 
-            <div class="flex flex-1 flex-wrap items-center gap-1.5 sm:order-1">
+            <div class="flex flex-1 flex-wrap items-center gap-1.5 sm:order-1" role="group" aria-label="{{ __('Shelves') }}">
                 <flux:button
                     :variant="$this->shelf === null ? 'primary' : 'ghost'"
                     size="sm"
                     wire:click="$set('shelf', null)"
+                    aria-pressed="{{ $this->shelf === null ? 'true' : 'false' }}"
                     class="rounded-full! px-3.5!"
                 >
                     {{ __('All') }}
@@ -1463,6 +1472,7 @@ new class extends Component
                         :variant="$this->shelf === $one['id'] ? 'primary' : 'ghost'"
                         size="sm"
                         wire:click="$set('shelf', {{ $one['id'] }})"
+                        aria-pressed="{{ $this->shelf === $one['id'] ? 'true' : 'false' }}"
                         class="rounded-full! px-3.5!"
                     >
                         {{ $one['name'] }}
@@ -1496,7 +1506,7 @@ new class extends Component
                 </form>
             </div>
 
-            <flux:button.group class="sm:order-2">
+            <flux:button.group class="sm:order-2" aria-label="{{ __('Sort library') }}">
                 @foreach ([
                     'recent' => __('Recent'),
                     'unread' => __('Unread'),
@@ -1507,6 +1517,7 @@ new class extends Component
                         :variant="$this->sort === $value ? 'primary' : 'ghost'"
                         size="sm"
                         wire:click="$set('sort', '{{ $value }}')"
+                        aria-pressed="{{ $this->sort === $value ? 'true' : 'false' }}"
                     >{{ $label }}</flux:button>
                 @endforeach
             </flux:button.group>

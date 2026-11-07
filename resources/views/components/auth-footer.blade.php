@@ -58,5 +58,5 @@
         >{{ __('Log in') }}</a>
     </nav>
 
-    <x-locale-switcher class="mt-3" />
+    <x-locale-switcher class="mt-3 max-w-xs" />
 </footer>
