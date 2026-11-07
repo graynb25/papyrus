@@ -21,6 +21,16 @@ checkable: each carries the commit that made the change.
 
 ---
 
+## Unreleased
+
+### Added
+
+**The Installed sources view offers Update all.** The bulk action already existed on the Updates tab; it is now beside the Installed list, with the number of pending updates, because that is where a reader looks at the sources they actually use. The bulk walk also reads every page of the update set instead of stopping at the first 500. `78186e7`
+
+### Fixed
+
+**An extension's Update button disappears when the update finishes, not on the next press.** The update action read the extension list for its trust check, which cached the rows before the mutation; the same response then redrew the old `hasUpdate` flag. The catalogue is now re-read after a single update and after update all. `78186e7`
+
 ## 1.5.8 - 2026-11-07
 
 A visual pass over the whole app: landing wall, library, series, reader, search, browse, sources, health, insights, and settings. No migrations, no new palette, no component replacements.

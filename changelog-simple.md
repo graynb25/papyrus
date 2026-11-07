@@ -3,11 +3,19 @@
 The same release notes as [CHANGELOG.md](CHANGELOG.md), written for a reader rather than a developer.
 No commit hashes, no file names, no jargon.
 
-> **Release status (2026-11-06).** 1.5.7 is the current published release. 1.5.1 was
+> **Release status (2026-11-07).** 1.5.8 is the current published release. 1.5.1 was
 > built and proven locally but was not published. See
 > [docs/RELEASE-STATUS.md](docs/RELEASE-STATUS.md).
 
 ---
+
+## Unreleased
+
+### Updates finish when they finish
+
+An updated source now loses its Update button as soon as the update completes, rather than
+waiting for another source to be updated. The Installed tab also offers Update all with a
+count of the pending updates, so a long update set can be handled in one press.
 
 ## Version 1.5.8, 7 November 2026
 
